@@ -15,16 +15,16 @@ interface INAVCalculator {
     /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
     /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
     /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param bridging Whether this asset is undergoing a bridge operation
-    /// @param stale Whether this asset's USD price is currently considered stale
+    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific, e.g., heartbeat timeout)
+    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices on L2 chains)
     struct Position {
         address underlyingAsset;
         int256 balance;
         int256 usd;
         uint256 usdRate;
         uint256 usdRateDecimals;
-        bool bridging;
         bool stale;
+        bool sequencerDown;
     }
 
     /// @notice An enriched position record including on‑chain amounts plus human‑readable metadata
@@ -36,10 +36,10 @@ interface INAVCalculator {
     /// @param underlyingAssetDecimals Number of decimals of the underlying asset
     /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
     /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param stale Whether this asset's USD price is currently considered stale
+    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific, e.g., heartbeat timeout)
     /// @param balance The equivalent balance of this underlyng asset (signed to allow negative/debt positions)
     /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
-    /// @param bridging Whether this asset is undergoing a bridge operation
+    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices on L2 chains)
     struct PositionWithMetadata {
         string protocol;
         string position;
@@ -52,21 +52,23 @@ interface INAVCalculator {
         bool stale;
         int256 balance;
         int256 usd;
-        bool bridging;
+        bool sequencerDown;
     }
 
     /// @notice The complete NAV snapshot
     /// @param block Block number this reading refers to
     /// @param timestamp Block timestamp this reading refers to
     /// @param usd Total USD calculated
-    /// @param issues Counter of issues found (bridging & stale operations).
-    /// @notice   Anything other than 0 means this reading should not be used to compute deposits/withdrawals,
-    /// @notice   but may still be kept for notifications & historical purposes
+    /// @param stalePriceAssets Array of assets that have stale prices (asset-specific issues)
+    /// @param sequencerDown Whether the L2 sequencer is down (global issue affecting all prices)
+    /// @notice   If sequencerDown is true or stalePriceAssets.length > 0, this reading should not be used to
+    /// @notice   compute deposits/withdrawals, but may still be kept for notifications & historical purposes
     struct NAV {
         uint64 block;
         uint64 timestamp;
         int256 usd;
-        uint16 issues;
+        address[] stalePriceAssets;
+        bool sequencerDown;
     }
 
     /// @notice A known ERC20 asset
@@ -75,6 +77,26 @@ interface INAVCalculator {
     struct Asset {
         address addr;
         uint8 decimals;
+    }
+
+    /// @notice Comprehensive price data for a token
+    /// @param oracle The address of the price oracle
+    /// @param priceType The type of oracle (Chainlink or Custom)
+    /// @param price The current price
+    /// @param decimals The decimals used by the oracle
+    /// @param chainlinkHeartbeat The heartbeat interval (Chainlink only)
+    /// @param updatedAt The timestamp when price was last updated (Chainlink only, 0 for custom)
+    /// @param stale Whether the price is stale (asset-specific, e.g., heartbeat timeout)
+    /// @param sequencerDown Whether L2 sequencer is down (L2 only, false on L1)
+    struct PriceData {
+        address oracle;
+        IPrices.PriceType priceType;
+        uint256 price;
+        uint8 decimals;
+        uint256 chainlinkHeartbeat;
+        uint256 updatedAt; // For Chainlink: timestamp from latestRoundData, for Custom: 0
+        bool stale;
+        bool sequencerDown;
     }
 
     //
@@ -99,6 +121,15 @@ interface INAVCalculator {
     /// @param oldSequencerGracePeriod The old sequencer grace period in seconds
     /// @param newSequencerGracePeriod The new sequencer grace period in seconds
     event L2SequencerGracePeriodUpdated(uint256 oldSequencerGracePeriod, uint256 newSequencerGracePeriod);
+
+    /// @notice Event emitted when an asset is added to the calculator
+    /// @param asset The address of the asset
+    /// @param decimals The number of decimals the asset uses
+    event AssetAdded(address indexed asset, uint8 decimals);
+
+    /// @notice Event emitted when an asset is removed from the calculator
+    /// @param asset The address of the asset
+    event AssetRemoved(address indexed asset);
 
     //
     // Errors
@@ -155,6 +186,9 @@ interface INAVCalculator {
     /// @return the number of assets known by this calculator.
     function assetCount() external view returns (uint256);
 
+    /// @notice Returns the current initialization version as tracked by OpenZeppelin's Initializable storage
+    function version() external view returns (uint64);
+
     /// @notice Reads the current NAV of a given account.
     /// @param account The address of the account to calculate for.
     /// @dev This function reads all known assets, and might exhaust gas if there are too many
@@ -185,8 +219,8 @@ interface INAVCalculator {
     ///              • `usdRate` – USD price per full token unit (scaled by `usdRateDecimals`)
     ///              • `usdRateDecimals` – decimals used in `usdRate`
     ///              • `usd` – amount of USD equivalent represented with NAV_DECIMALS decimals
-    ///              • `bridging` – whether this asset is undergoing a bridge operation
-    ///              • `stale` – whether this asset's USD price is currently considered stale
+    ///              • `stale` – whether this asset's USD price is currently considered stale (asset-specific)
+    ///              • `sequencerDown` – whether the L2 sequencer is down (global issue, affects all prices)
     function readPosition(address account, address underlyingAsset, uint256 idx)
         external
         view
@@ -206,18 +240,18 @@ interface INAVCalculator {
     ///               • `underlyingAssetDecimals` — Number of decimals of the underlying asset
     ///               • `usdRate` — The USD price per one full token unit, scaled by `usdRateDecimals`
     ///               • `usdRateDecimals` — How many decimals are used in `usdRate`
-    ///               • `stale` — Whether this asset’s USD price is currently considered stale
+    ///               • `stale` — Whether this asset's USD price is currently considered stale (asset-specific)
     ///               • `balance` — The equivalent balance of this underlying asset (signed to allow negative/debt
     /// positions)
     ///               • `usd` — Amount of USD equivalent represented with `NAV_DECIMALS` decimals
-    ///               • `bridging` — Whether this asset is undergoing a bridge operation
+    ///               • `sequencerDown` — Whether the L2 sequencer is down (global issue, affects all prices)
     function readPositionWithMetadata(address account, address underlyingAsset, uint256 idx)
         external
         view
         returns (PositionWithMetadata memory p);
 
     /// @notice Reads the holdings of a given account, for a limited range of assets.
-    /// Also includes the corresponding usd total, and the amount of issues found long the way.
+    /// Also includes the corresponding usd total, assets with stale prices, and sequencer status.
     ///
     /// Important:
     /// - The ordering of balances in the returned array is not guaranteed. Entries may change order as oracles
@@ -236,11 +270,12 @@ interface INAVCalculator {
     /// @param from The index of the first balance oracle
     /// @param to The index of the last balance oracle
     /// @return usd The total USD value of the positions
-    /// @return issues The amount of issues found
+    /// @return stalePriceAssets Array of assets that have stale prices (asset-specific issues)
+    /// @return sequencerDown Whether the L2 sequencer is down (global issue affecting all prices)
     function readPositionsRange(address account, uint256 from, uint256 to)
         external
         view
-        returns (int256 usd, uint16 issues);
+        returns (int256 usd, address[] memory stalePriceAssets, bool sequencerDown);
 
     /// @notice The amount of decimals returned with each USD value
     /// @return The amount of decimals
@@ -254,4 +289,39 @@ interface INAVCalculator {
     /// @notice Returns the assets for this calculator
     /// @return The assets known by this calculator
     function assets() external view returns (address[] memory);
+
+    /// @notice Returns comprehensive price data for a given token
+    /// @param underlyingAsset The address of the token
+    /// @return priceData The complete price information including oracle details, price, staleness, and sequencer status
+    function getPriceData(address underlyingAsset) external view returns (PriceData memory priceData);
+
+    /// @notice Returns, for a single account, correlated arrays of assets, balances and USD values (one entry per asset)
+    /// @param account The address to calculate for
+    /// @return assets The list of assets with non‑zero aggregated balances for the account
+    /// @return balances The aggregated balances per asset (signed to allow debt)
+    /// @return usdValues The USD values per asset, scaled by `NAV_DECIMALS`
+    function readAccountPositions(address account)
+        external
+        view
+        returns (
+            address[] memory assets,
+            int256[] memory balances,
+            int256[] memory usdValues
+        );
+
+    /// @notice Returns overall health status
+    /// @return sequencerDown Whether the L2 sequencer is down (false on L1)
+    /// @return stalePriceAssets Array of assets with stale prices
+    function healthCheck()
+        external
+        view
+        returns (
+            bool sequencerDown,
+            address[] memory stalePriceAssets
+        );
+
+    /// @notice Returns true if the account has any non‑zero aggregated balance across all assets/oracles
+    /// @param account The address to check
+    /// @return has Any position present
+    function hasPositions(address account) external view returns (bool has);
 }

@@ -2,10 +2,11 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 
-contract sDAI_PriceOracleTest is Test {
+contract sDAI_PriceOracleTest is TestEnvConfigurator {
     sDAI_PriceOracle sDAI_priceOracle;
     address sDAIAddress;
     address dsrManager;
@@ -13,7 +14,7 @@ contract sDAI_PriceOracleTest is Test {
     uint256 heartbeat;
 
     function setUp() public {
-        uint256 fork = vm.createFork(vm.envString("MAINNET_URL"));
+        uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(20_579_373);
 

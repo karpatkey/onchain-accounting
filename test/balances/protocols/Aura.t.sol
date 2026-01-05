@@ -2,13 +2,14 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {Aura, IBaseRewardPool4626} from "src/balances/protocols/Aura.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments, NotAuthorized} from "src/errors.sol";
 
-contract AuraTest is Test {
+contract AuraTest is TestEnvConfigurator {
     Aura public oracle;
     // Tokens in the pool
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
@@ -28,7 +29,7 @@ contract AuraTest is Test {
         IBalanceOracleCustom.PositionMetadata({protocol: "Aura", position: "Some Aura Pool", positionType: "Staked"});
 
     function setUp() public {
-        uint256 fork = vm.createFork(vm.envString("MAINNET_URL"));
+        uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_131_922);
         oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, AURA, auraMetadata);

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -9,7 +10,7 @@ import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 
 import "src/errors.sol";
 
-contract SparkTest is Test {
+contract SparkTest is TestEnvConfigurator {
     uint256 public fork;
     uint256 public forkBlock;
 
@@ -31,7 +32,7 @@ contract SparkTest is Test {
     });
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
     }
 

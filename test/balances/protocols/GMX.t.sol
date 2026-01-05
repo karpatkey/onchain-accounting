@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {GmxBalanceOracle} from "src/balances/protocols/GMX.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -14,7 +15,7 @@ import {IBalances} from "src/balances/Balances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import "test/SuperTest.sol";
 
-contract GMXTest is Test {
+contract GMXTest is TestEnvConfigurator {
     IERC20 public constant WETH = IERC20(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
     IERC20 public constant USDC = IERC20(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
     IERC20 public constant BTC = IERC20(0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f);
@@ -48,7 +49,7 @@ contract GMXTest is Test {
     });
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ARBITRUM_URL"));
+        fork = vm.createFork(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
 
         GmxBalanceOracle.TokenFeed[] memory feeds = new GmxBalanceOracle.TokenFeed[](1);

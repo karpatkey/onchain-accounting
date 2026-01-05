@@ -12,6 +12,7 @@ import "test/SuperTest.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {Test} from "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -26,7 +27,7 @@ import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_
 
 import "forge-std/Script.sol";
 
-contract NAVCalculatorForkHarness is Test {
+contract NAVCalculatorForkHarness is TestEnvConfigurator {
     address public safe = address(0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B);
 
     AaveV3InstanceBalanceOracle public aaveOracle;
@@ -107,7 +108,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public ethToUsdChainlink = address(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(20_993_780);
         setup_NAVCalculator();
@@ -116,7 +117,8 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function test_mainnetFork_read() public view {
         INAVCalculator.NAV memory reading = super.fork_read();
 
-        assertEq(reading.issues, 0);
+        assertEq(reading.stalePriceAssets.length, 0);
+        assertEq(reading.sequencerDown, false);
         assertEq(reading.usd, 12_742_160_647_301);
     }
 
@@ -194,7 +196,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     address public compoundToUsdChainlink = address(0xe1011160d78a80E2eEBD60C228EEf7af4Dfcd4d7);
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("OP_URL"));
+        fork = vm.createFork(getAlchemyUrl("opt-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(126_963_147);
         setup_NAVCalculator();
@@ -263,7 +265,7 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     bytes32 public marketIdWsethUsdc = 0xdba352d93a64b17c71104cbddc6aef85cd432322a1446b5b65163cbbc615cd0c;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("BASE_URL"));
+        fork = vm.createFork(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(21_360_710);
         setup_NAVCalculator();
@@ -272,7 +274,8 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     function test_baseFork_read() public view {
         INAVCalculator.NAV memory reading = super.fork_read();
 
-        assertEq(reading.issues, 0);
+        assertEq(reading.stalePriceAssets.length, 0);
+        assertEq(reading.sequencerDown, false);
         assertEq(morphoBlueOracle.balanceOf(address(usdc), safe), 25_277_122_725);
         assertEq(aaveOracle.balanceOf(address(usdc), safe), 25_162_172_577);
         assertEq(compoundV3Comet.balanceOf(address(compound), safe), 860_559_000_000_000_000);
@@ -344,7 +347,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     address public compoundRewardContract = address(0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae);
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ARBITRUM_URL"));
+        fork = vm.createFork(getAlchemyUrl("arb-mainnet"));
 
         vm.selectFork(fork);
         vm.rollFork(266_194_155);
@@ -408,7 +411,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public daiToUsdChainlink = address(0x678df3415fc31947dA4324eC63212874be5a82f8);
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("GNOSIS_URL"));
+        fork = vm.createFork(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(36_738_104);
         setup_NAVCalculator();
@@ -417,7 +420,8 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function test_gnosisFork_read() public view {
         INAVCalculator.NAV memory reading = super.fork_read();
 
-        assertEq(reading.issues, 0);
+        assertEq(reading.stalePriceAssets.length, 0);
+        assertEq(reading.sequencerDown, false);
         assertEq(reading.usd, 15_378_167_317_682);
     }
 

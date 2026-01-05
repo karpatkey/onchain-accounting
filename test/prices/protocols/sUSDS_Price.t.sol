@@ -2,17 +2,18 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 
-contract sUSDS_PriceOracleTest is Test {
+contract sUSDS_PriceOracleTest is TestEnvConfigurator {
     sUSDS_PriceOracle sUSDS_priceOracle;
     address sUSDSAddress;
     address UsdsToUsdChainlink;
     uint256 heartbeat;
 
     function setUp() public {
-        uint256 fork = vm.createFork(vm.envString("MAINNET_URL"));
+        uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(23_143_100);
 

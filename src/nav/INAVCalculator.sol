@@ -107,11 +107,6 @@ interface INAVCalculator {
     /// @param nativeTokenSymbol The symbol of the chain's native token
     event NativeTokenSymbolSet(string indexed nativeTokenSymbol);
 
-    /// @notice Event emitted when the asset recoverer is updated by a call to `setAssetRecoverer`
-    /// @param oldAssetRecoverer The address of the old asset recoverer
-    /// @param newAssetRecoverer The address of the new asset recoverer
-    event AssetRecovererUpdated(address indexed oldAssetRecoverer, address indexed newAssetRecoverer);
-
     /// @notice Event emitted when the Chainlink uptime feed is updated by a call to `setChainlinkUptimeFeed`
     /// @param oldChainlinkUptimeFeed The address of the old Chainlink uptime feed
     /// @param newChainlinkUptimeFeed The address of the new Chainlink uptime feed
@@ -169,10 +164,6 @@ interface INAVCalculator {
     /// @dev This function can only be called by the manager role
     /// @param nativeTokenSymbol The symbol of the native token
     function setNativeTokenSymbol(string memory nativeTokenSymbol) external;
-
-    /// @notice Update The asset recoverer address
-    /// @param addr The new asset recoverer
-    function setAssetRecoverer(address addr) external;
 
     /// @notice Update the Chainlink L2 sequencer uptime feed address
     /// @param newChainlinkL2UptimeFeed The new Chainlink L2 sequencer uptime feed address

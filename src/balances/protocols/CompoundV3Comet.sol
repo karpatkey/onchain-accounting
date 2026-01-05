@@ -140,7 +140,7 @@ contract CompoundV3Comet is IBalanceOracleCustom {
     }
 
     /// @inheritdoc IBalanceOracleCustom
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = address(0); // FIXME
         return assets;

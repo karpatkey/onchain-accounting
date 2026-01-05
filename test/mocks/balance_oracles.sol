@@ -1,48 +1,42 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-/// @notice Mock custom balance oracle
 contract Mock_CustomBalanceOracle is IBalanceOracleCustom {
-    IBalanceOracleCustom.PositionMetadata public metadata;
     mapping(address => mapping(address => int256)) public balances;
-    address[] public underlyingAssets;
+    address[] public underlyingAassetsSupported;
+    PositionMetadata internal _positionMetadata;
 
-    constructor() {
-        metadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Mock Protocol",
-            position: "Mock Position",
-            positionType: "Mock Type"
-        });
+    function setBalance(address token, address account, int256 balance) external {
+        balances[token][account] = balance;
     }
 
-    function setBalance(address underlyingAsset, address account, int256 balance) external {
-        balances[underlyingAsset][account] = balance;
+    function balanceOf(address token, address account) external view returns (int256) {
+        return int256(balances[token][account]);
     }
 
-    function setUnderlyingAssetsSupported(address[] memory assets) external {
-        underlyingAssets = assets;
+    function setUnderlyingAssetsSupported(address[] calldata underlyingAssets) external {
+        for (uint256 i = 0; i < underlyingAssets.length; i++) {
+            underlyingAassetsSupported.push(underlyingAssets[i]);
+        }
     }
 
-    function setPositionMetadata(IBalanceOracleCustom.PositionMetadata memory metadata_) external {
-        metadata = metadata_;
+    function underlyingAssetsSupported() external view returns (address[] memory) {
+        return underlyingAassetsSupported;
     }
 
-    function balanceOf(address underlyingAsset, address account) external view override returns (int256) {
-        return balances[underlyingAsset][account];
+    function setPositionMetadata(PositionMetadata memory positionMetadata_) external {
+        _positionMetadata = positionMetadata_;
     }
 
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        return underlyingAssets;
+    function positionMetadata() external view override returns (PositionMetadata memory) {
+        return _positionMetadata;
     }
 
-    function positionMetadata() external view override returns (IBalanceOracleCustom.PositionMetadata memory) {
-        return metadata;
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

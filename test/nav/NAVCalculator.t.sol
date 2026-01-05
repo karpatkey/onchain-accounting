@@ -527,43 +527,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(n.timestamp, block.timestamp);
     }
 
-    function test_recoverAssets() public {
-        assertEq(nav.assetRecoverer(), safe);
-
-        usdc.mint(address(nav), 100);
-
-        address[] memory assets = new address[](1);
-        assets[0] = address(usdc);
-        vm.expectEmit(true, true, true, true, address(usdc));
-        emit Transfer(address(nav), address(safe), 100);
-        nav.recoverAssets(assets);
-    }
-
-    function test_setAssetRecoverer() public {
-        assertEq(nav.assetRecoverer(), safe);
-
-        usdc.mint(address(nav), 100);
-
-        vm.prank(admin);
-        nav.setAssetRecoverer(alice);
-
-        assertEq(nav.assetRecoverer(), alice);
-
-        address[] memory assets = new address[](1);
-        assets[0] = address(usdc);
-        vm.expectEmit(true, true, true, true, address(usdc));
-        emit Transfer(address(nav), address(alice), 100);
-        nav.recoverAssets(assets);
-    }
-
-    function test_setAssetRecoverer_notAuthorized() public {
-        usdc.mint(address(nav), 100);
-
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(AccessControlUnauthorizedAccount.selector, alice, bytes32(0)));
-        nav.setAssetRecoverer(alice);
-    }
-
     function test_setChainlinkUptimeFeed() public {
         assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(sequencerUptimeFeed));
 

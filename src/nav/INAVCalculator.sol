@@ -1,0 +1,257 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.13;
+
+import {IPrices} from "src/prices/Prices.sol";
+import {IBalances} from "src/balances/Balances.sol";
+
+/// @title INAVCalculator Interface
+/// @notice Interface for NAVCalculator contract
+/// @author kpk
+interface INAVCalculator {
+    /// @notice A holding a specific asset, and its corresponding usd equivalent
+    ///   This can represent a direct ERC20 balance, or a position deposited in a 3rd party contract
+    /// @param underlyingAsset Address of the token
+    /// @param balance The amount of the asset
+    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
+    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
+    /// @param usdRateDecimals The decimals with which usdRate is represented
+    /// @param bridging Whether this asset is undergoing a bridge operation
+    /// @param stale Whether this asset's USD price is currently considered stale
+    struct Position {
+        address underlyingAsset;
+        int256 balance;
+        int256 usd;
+        uint256 usdRate;
+        uint256 usdRateDecimals;
+        bool bridging;
+        bool stale;
+    }
+
+    /// @notice An enriched position record including on‑chain amounts plus human‑readable metadata
+    /// @param protocol The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
+    /// @param position The specified position within the protocol
+    /// @param positionType The type of the position (e.g., "Supplied", "Borrowed", "Native", "ERC20", etc.).
+    /// @param underlyingAsset The address of the underlying token
+    /// @param underlyingAssetSymbol The symbol of the underlying asset (e.g. "USDC", "ETH")
+    /// @param underlyingAssetDecimals Number of decimals of the underlying asset
+    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
+    /// @param usdRateDecimals The decimals with which usdRate is represented
+    /// @param stale Whether this asset's USD price is currently considered stale
+    /// @param balance The equivalent balance of this underlyng asset (signed to allow negative/debt positions)
+    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
+    /// @param bridging Whether this asset is undergoing a bridge operation
+    struct PositionWithMetadata {
+        string protocol;
+        string position;
+        string positionType;
+        address underlyingAsset;
+        string underlyingAssetSymbol;
+        uint8 underlyingAssetDecimals;
+        uint256 usdRate;
+        uint256 usdRateDecimals;
+        bool stale;
+        int256 balance;
+        int256 usd;
+        bool bridging;
+    }
+
+    /// @notice The complete NAV snapshot
+    /// @param block Block number this reading refers to
+    /// @param timestamp Block timestamp this reading refers to
+    /// @param usd Total USD calculated
+    /// @param issues Counter of issues found (bridging & stale operations).
+    /// @notice   Anything other than 0 means this reading should not be used to compute deposits/withdrawals,
+    /// @notice   but may still be kept for notifications & historical purposes
+    struct NAV {
+        uint64 block;
+        uint64 timestamp;
+        int256 usd;
+        uint16 issues;
+    }
+
+    /// @notice A known ERC20 asset
+    /// @param addr The address of the asset
+    /// @param decimals The number of decimals the asset uses
+    struct Asset {
+        address addr;
+        uint8 decimals;
+    }
+
+    //
+    // Events
+    //
+
+    /// @notice Event emitted when the string for the native token symbol is set
+    /// @param nativeTokenSymbol The symbol of the chain's native token
+    event NativeTokenSymbolSet(string indexed nativeTokenSymbol);
+
+    /// @notice Event emitted when the asset recoverer is updated by a call to `setAssetRecoverer`
+    /// @param oldAssetRecoverer The address of the old asset recoverer
+    /// @param newAssetRecoverer The address of the new asset recoverer
+    event AssetRecovererUpdated(address indexed oldAssetRecoverer, address indexed newAssetRecoverer);
+
+    /// @notice Event emitted when the Chainlink uptime feed is updated by a call to `setChainlinkUptimeFeed`
+    /// @param oldChainlinkUptimeFeed The address of the old Chainlink uptime feed
+    /// @param newChainlinkUptimeFeed The address of the new Chainlink uptime feed
+    event ChainlinkUptimeFeedUpdated(address indexed oldChainlinkUptimeFeed, address indexed newChainlinkUptimeFeed);
+
+    /// @notice Event emitted when the L2 sequencer grace period is updated by a call to `setSequencerGracePeriod`
+    /// @param oldSequencerGracePeriod The old sequencer grace period in seconds
+    /// @param newSequencerGracePeriod The new sequencer grace period in seconds
+    event L2SequencerGracePeriodUpdated(uint256 oldSequencerGracePeriod, uint256 newSequencerGracePeriod);
+
+    //
+    // Errors
+    //
+
+    /// @notice Emitted when an asset is not found
+    error AssetNotFound();
+
+    /// @notice Emitted when 'setSequencerGracePeriod' is called and 'chainlinkUptimeFeed' is the zero address
+    error UptimeFeedNotSet();
+
+    /// @notice Adds a new asset to the calculator along with its price oracle
+    /// @param asset The address of the asset to add
+    /// @param oracle The address of the price oracle to use
+    /// @param priceType The type of the price oracle
+    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
+    /// oracles.
+    function addPrice(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
+
+    /// @notice Adds a new balance source to an existing underlying asset.
+    /// @param underlyingAsset The address of the token to add a balance oracle to.
+    /// @param oracle The address of the balance oracle to use.
+    /// @param balanceType The type of the balance.
+    function addBalance(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external;
+
+    /// @notice Removes the oracle for a given token.
+    /// @param underlyingAsset The address of the token.
+    function removePrice(address underlyingAsset) external;
+
+    /// @notice Removes the oracle for a given token.
+    /// @param underlyingAsset The address of the token.
+    /// @param oracle The address of the oracle.
+    function removeBalance(address underlyingAsset, address oracle) external;
+
+    /// @notice Sets the symbol of the native token used for display purposes (e.g. "xDAI")
+    /// @dev This function can only be called by the manager role
+    /// @param nativeTokenSymbol The symbol of the native token
+    function setNativeTokenSymbol(string memory nativeTokenSymbol) external;
+
+    /// @notice Update The asset recoverer address
+    /// @param addr The new asset recoverer
+    function setAssetRecoverer(address addr) external;
+
+    /// @notice Update the Chainlink L2 sequencer uptime feed address
+    /// @param newChainlinkL2UptimeFeed The new Chainlink L2 sequencer uptime feed address
+    function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
+
+    /// @notice Sets the Chainlink L2 sequencer grace period
+    /// @param newSequencerGracePeriod The new Chainlink L2 sequencer grace period in seconds
+    function setChainlinkL2SequencerGracePeriod(uint256 newSequencerGracePeriod) external;
+
+    /// @notice Counts the number of assets known by this calculator.
+    /// @return the number of assets known by this calculator.
+    function assetCount() external view returns (uint256);
+
+    /// @notice Reads the current NAV of a given account.
+    /// @param account The address of the account to calculate for.
+    /// @dev This function reads all known assets, and might exhaust gas if there are too many
+    /// assets known by the calculator contract at the time of calling.
+    /// It is recommended to use the readPositionsRange function instead, with an appropriate range of assets and call
+    /// it multiple times if necessary.
+    /// @return The NAV of the account.
+    function read(address account) external view returns (NAV memory);
+
+    /// @notice Reads the holdings of a given account, for a limited range of assets
+    ///   Also includes the corresponding usd total, and the amount of issues found long the way
+    ///
+    /// Important :
+    /// - The ordering of oracles in the underlying data structure is not guaranteed. Entries may change order as
+    ///    oracles are added or removed . It is not safe to assume a fixed order or that the same
+    ///    query will yield a consistent oracle order.
+    ///
+    /// - Ensure that any external integrations using
+    ///    the oracle data accounts for potential reordering, and calls `balanceOracleAt` directly for
+    ///    verification if needed.
+    ///
+    /// @param account The address to calculate for
+    /// @param underlyingAsset The address of the token to calculate
+    /// @param idx The index of the balance oracle
+    /// @return p A `Position` struct containing:
+    ///              • `underlyingAsset` – the token address
+    ///              • `balance` – the on‑chain asset amount (signed to allow negative/debt)
+    ///              • `usdRate` – USD price per full token unit (scaled by `usdRateDecimals`)
+    ///              • `usdRateDecimals` – decimals used in `usdRate`
+    ///              • `usd` – amount of USD equivalent represented with NAV_DECIMALS decimals
+    ///              • `bridging` – whether this asset is undergoing a bridge operation
+    ///              • `stale` – whether this asset's USD price is currently considered stale
+    function readPosition(address account, address underlyingAsset, uint256 idx)
+        external
+        view
+        returns (Position memory p);
+
+    /// @notice Reads a single enriched position record—including human‑readable metadata for a given account and
+    /// balance oracle.
+    /// @param account The address to calculate for
+    /// @param underlyingAsset The address of the token to calculate
+    /// @param idx The index of the balance oracle
+    /// @return p A `PositionWithMetadata` struct containing:
+    ///               • `protocol` — The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
+    ///               • `position` — The specified position within the protocol
+    ///               • `positionType` — The type of the position (e.g., "Supplied", "Borrowed", "ERC20", etc.)
+    ///               • `underlyingAsset`— The address of the underlying token
+    ///               • `underlyingAssetSymbol` — The symbol of the underlying asset (e.g. "USDC", "ETH")
+    ///               • `underlyingAssetDecimals` — Number of decimals of the underlying asset
+    ///               • `usdRate` — The USD price per one full token unit, scaled by `usdRateDecimals`
+    ///               • `usdRateDecimals` — How many decimals are used in `usdRate`
+    ///               • `stale` — Whether this asset’s USD price is currently considered stale
+    ///               • `balance` — The equivalent balance of this underlying asset (signed to allow negative/debt
+    /// positions)
+    ///               • `usd` — Amount of USD equivalent represented with `NAV_DECIMALS` decimals
+    ///               • `bridging` — Whether this asset is undergoing a bridge operation
+    function readPositionWithMetadata(address account, address underlyingAsset, uint256 idx)
+        external
+        view
+        returns (PositionWithMetadata memory p);
+
+    /// @notice Reads the holdings of a given account, for a limited range of assets.
+    /// Also includes the corresponding usd total, and the amount of issues found long the way.
+    ///
+    /// Important:
+    /// - The ordering of balances in the returned array is not guaranteed. Entries may change order as oracles
+    ///    are added or removed from the nav calculator. It is not safe to assume a fixed order or that the same
+    ///    query will yield a consistent oracle order.
+    ///
+    /// - To ensure complete and consistent data, it is recommended to retrieve the full range in a single query.
+    ///
+    /// - If a caller splits their query range into smaller parts (e.g., retrieving assets 0 to 20 in two
+    ///    separate calls: 0-10 and 11-20), there is a risk of duplicating or missing assets if a oracle for that asset
+    /// was added or removed. Ensure that any external integrations using
+    ///    the oracle data account for potential reordering, and calls `balanceOracleAt` directly for
+    ///    verification if needed.
+    ///
+    /// @param account The address to calculate for
+    /// @param from The index of the first balance oracle
+    /// @param to The index of the last balance oracle
+    /// @return usd The total USD value of the positions
+    /// @return issues The amount of issues found
+    function readPositionsRange(address account, uint256 from, uint256 to)
+        external
+        view
+        returns (int256 usd, uint16 issues);
+
+    /// @notice The amount of decimals returned with each USD value
+    /// @return The amount of decimals
+    function usdDecimals() external view returns (uint8);
+
+    /// @notice Returns the asset at a given index
+    /// @param idx The index of the asset
+    /// @return The asset at the given index
+    function assetAt(uint256 idx) external view returns (Asset memory);
+
+    /// @notice Returns the assets for this calculator
+    /// @return The assets known by this calculator
+    function assets() external view returns (address[] memory);
+}

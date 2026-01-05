@@ -5,8 +5,5 @@ error InvalidArguments();
 error DuplicateBridgeOperation();
 error BridgeOperationNotFound();
 error CantFinalizeOnSameBlock();
-error NoPendingDepositRequest();
-error NoPendingRedeemRequest();
-error InsufficientShares();
 error NotAuthorized();
 error NotChainlinkOracle();

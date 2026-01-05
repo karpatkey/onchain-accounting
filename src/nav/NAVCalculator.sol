@@ -10,7 +10,6 @@ import {IPrices, Prices} from "src/prices/Prices.sol";
 import {IBalances, Balances} from "src/balances/Balances.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {BridgeAware} from "./BridgeAware.sol";
-import {RecoverFunds} from "../RecoverFunds.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 import "src/errors.sol";
@@ -26,8 +25,7 @@ contract NAVCalculator is
     INAVCalculator,
     Prices,
     Balances,
-    BridgeAware,
-    RecoverFunds
+    BridgeAware
 {
     //
     // Libraries
@@ -63,7 +61,6 @@ contract NAVCalculator is
         public
         initializer
     {
-        __UUPSUpgradeable_init();
         __AccessControl_init();
         __Prices_init(chainlinkL2SequencerUptimeFeed_);
         __Balances_init();
@@ -318,15 +315,6 @@ contract NAVCalculator is
     function _bridgeAware_ensureCanCall(bytes4 /* selector */ ) internal view override(BridgeAware) {
         //  TODO: test this
         if (!hasRole(OPERATOR, msg.sender)) revert NotAuthorized();
-    }
-
-    //
-    // RecoverFunds
-    //
-
-    /// @inheritdoc RecoverFunds
-    function _assetRecoverer() internal view override(RecoverFunds) returns (address) {
-        return assetRecoverer;
     }
 
     //

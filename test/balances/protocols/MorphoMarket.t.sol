@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
@@ -9,7 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "src/errors.sol";
 
-contract MorphoMarketTest is Test {
+contract MorphoMarketTest is TestEnvConfigurator {
     uint256 public fork;
     uint256 public forkBlock;
 
@@ -23,7 +24,7 @@ contract MorphoMarketTest is Test {
         IBalanceOracleCustom.PositionMetadata({protocol: "Morpho", position: "Some market", positionType: "Supplied"});
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
     }
 

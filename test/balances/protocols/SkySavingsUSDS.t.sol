@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {SkySavingsUsdsBalanceOracle} from "src/balances/protocols/SkySavingsUsds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -9,7 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import "src/errors.sol";
 
-contract SavingsUSDSTest is Test {
+contract SavingsUSDSTest is TestEnvConfigurator {
     IERC4626 public constant SAVINGS_USDS = IERC4626(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD);
     IERC20 public constant USDS = IERC20(0xdC035D45d973E3EC169d2276DDab16f1e407384F);
     address public constant TEST_USER = 0x7F311a4D48377030bD810395f4CCfC03bdbe9Ef3;
@@ -21,7 +22,7 @@ contract SavingsUSDSTest is Test {
         IBalanceOracleCustom.PositionMetadata({protocol: "Sky", position: "SavingsUSDS", positionType: "Supplied"});
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 

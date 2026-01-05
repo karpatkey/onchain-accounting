@@ -3,11 +3,12 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "src/errors.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 
-contract AavePoolBalanceOracleTest is Test {
+contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     uint256 fork;
     uint256 forkBlock;
 
@@ -27,7 +28,7 @@ contract AavePoolBalanceOracleTest is Test {
     });
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(20_576_908);
 
@@ -120,7 +121,7 @@ contract AavePoolBalanceOracleTest is Test {
     }
 
     function test_mainnet_balanceOf_lend_usdt() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(21_379_222);
 

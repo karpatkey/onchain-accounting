@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {AaveV3SafetyModuleBalanceOracle, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -13,7 +14,7 @@ interface IStakeTokenExtended is IStakeToken {
     function distributionEnd() external view returns (uint256);
 }
 
-contract AaveV3SafetyModule is Test {
+contract AaveV3SafetyModule is TestEnvConfigurator {
     IStakeTokenExtended public constant STK_GHO = IStakeTokenExtended(0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d);
     IStakeTokenExtended public constant STK_AAVE = IStakeTokenExtended(0x4da27a545c0c5B758a6BA100e3a049001de870f5);
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
@@ -29,7 +30,7 @@ contract AaveV3SafetyModule is Test {
         IBalanceOracleCustom.PositionMetadata({protocol: "Aave v3", position: "Safety Module", positionType: "Staked"});
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
         ghoOracle = new AaveV3SafetyModuleBalanceOracle(address(STK_GHO), safetyModuleMetadata);

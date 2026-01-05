@@ -2,16 +2,17 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {LDO_PriceOracle} from "src/prices/protocols/LDO_Price.sol";
 
-contract LDO_PriceOracleTest is Test {
+contract LDO_PriceOracleTest is TestEnvConfigurator {
     LDO_PriceOracle LDO_priceOracle;
     address _ldoToken;
     address _ldoToEthOracle;
     address _ethToUsdOracle;
 
     function setUp() public {
-        uint256 fork = vm.createFork(vm.envString("MAINNET_URL"));
+        uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_575_288);
 

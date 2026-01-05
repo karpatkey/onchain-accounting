@@ -9,7 +9,6 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {IBalances, Balances} from "src/balances/Balances.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
-import {RecoverFunds} from "../RecoverFunds.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 import "src/errors.sol";
@@ -24,8 +23,7 @@ contract NAVCalculator is
     AccessControlUpgradeable,
     INAVCalculator,
     Prices,
-    Balances,
-    RecoverFunds
+    Balances
 {
     //
     // Libraries
@@ -61,7 +59,6 @@ contract NAVCalculator is
         public
         initializer
     {
-        __UUPSUpgradeable_init();
         __AccessControl_init();
         __Prices_init(chainlinkL2SequencerUptimeFeed_);
         __Balances_init();
@@ -137,13 +134,6 @@ contract NAVCalculator is
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         _nativeTokenSymbol = nativeTokenSymbol;
         emit NativeTokenSymbolSet(nativeTokenSymbol);
-    }
-
-    /// @inheritdoc INAVCalculator
-    function setAssetRecoverer(address newAssetRecoverer) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        address oldAssetRecoverer = assetRecoverer;
-        assetRecoverer = newAssetRecoverer;
-        emit AssetRecovererUpdated(oldAssetRecoverer, newAssetRecoverer);
     }
 
     /// @inheritdoc INAVCalculator
@@ -479,15 +469,6 @@ contract NAVCalculator is
         }
 
         return false;
-    }
-
-    //
-    // RecoverFunds
-    //
-
-    /// @inheritdoc RecoverFunds
-    function _assetRecoverer() internal view override(RecoverFunds) returns (address) {
-        return assetRecoverer;
     }
 
     //

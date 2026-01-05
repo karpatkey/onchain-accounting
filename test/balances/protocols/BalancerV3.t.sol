@@ -2,13 +2,14 @@
 pragma solidity ^0.8.20;
 
 import {console2, Test} from "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments, NotAuthorized} from "src/errors.sol";
 
-contract Balancerv3Test is Test {
+contract Balancerv3Test is TestEnvConfigurator {
     BalancerV3PoolBalanceOracle public oracle;
     // Tokens in the pool
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
@@ -31,7 +32,7 @@ contract Balancerv3Test is Test {
     });
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_087_430);
         oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, balancerMetadata);

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
@@ -12,7 +13,7 @@ interface CometRewardsAux {
     function getRewardOwed(address comet, address account) external returns (address token, uint256 owed);
 }
 
-contract CompoundV3CometTest is Test {
+contract CompoundV3CometTest is TestEnvConfigurator {
     int64 BASE_INDEX_SCALE = 1e15;
 
     address compoundRewards = address(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
@@ -36,7 +37,7 @@ contract CompoundV3CometTest is Test {
     });
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
 
         oracle = new CompoundV3Comet(compoundRewards, address(usdcv3), rewardToken, compoundMetadata);

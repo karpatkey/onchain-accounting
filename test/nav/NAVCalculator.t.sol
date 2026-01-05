@@ -214,13 +214,15 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.block, 1);
 
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
         assertEq(r.usd, 0);
 
         vm.roll(2);
         r = nav.read(safe);
         assertEq(r.block, 2);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
         assertEq(r.usd, 0);
     }
 
@@ -228,7 +230,8 @@ contract NAVCalculatorTest is SuperTest {
         usdc.mint(safe, 10 ** usdc.decimals());
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 1e8);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, address(usdc), 0);
         assertEq(p.underlyingAsset, address(usdc));
@@ -236,7 +239,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.usd, 1e8);
         assertEq(p.usdRate, 1e8);
         assertEq(p.usdRateDecimals, 8);
-        assertEq(p.bridging, false);
         assertEq(p.stale, false);
     }
 
@@ -250,7 +252,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 3_564_627_000_000);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, nav.NATIVE_ADDRESS(), 0);
         assertEq(p.underlyingAsset, nav.NATIVE_ADDRESS());
@@ -258,7 +261,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.usd, 3_564_627_000_000);
         assertEq(p.usdRate, 324_057_000_000);
         assertEq(p.usdRateDecimals, 8);
-        assertEq(p.bridging, false);
         assertEq(p.stale, false);
     }
 
@@ -271,7 +273,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 3_564_627_000_000);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.PositionWithMetadata memory p = nav.readPositionWithMetadata(safe, nav.NATIVE_ADDRESS(), 0);
         assertEq(p.protocol, "Portfolio balance");
@@ -282,7 +285,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset, nav.NATIVE_ADDRESS());
         assertEq(p.usdRate, 324_057_000_000);
         assertEq(p.usdRateDecimals, 8);
-        assertEq(p.bridging, false);
         assertEq(p.balance, int256(11e18));
         assertEq(p.usd, 3_564_627_000_000);
         assertEq(p.stale, false);
@@ -292,7 +294,8 @@ contract NAVCalculatorTest is SuperTest {
         usdc.mint(safe, 10 ** usdc.decimals());
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 1e8);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.PositionWithMetadata memory p = nav.readPositionWithMetadata(safe, address(usdc), 0);
         assertEq(p.protocol, "Portfolio balance");
@@ -303,7 +306,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset, address(usdc));
         assertEq(p.usdRate, 1e8);
         assertEq(p.usdRateDecimals, 8);
-        assertEq(p.bridging, false);
         assertEq(p.balance, int256(10 ** usdc.decimals()));
         assertEq(p.usd, 1e8);
         assertEq(p.stale, false);
@@ -323,7 +325,6 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset, address(usdc));
         assertEq(p.usdRate, 1e8);
         assertEq(p.usdRateDecimals, 8);
-        assertEq(p.bridging, false);
         assertEq(p.balance, int256(123 * 10 ** usdc.decimals()));
         assertEq(p.usd, 123e8);
         assertEq(p.stale, false);
@@ -333,13 +334,13 @@ contract NAVCalculatorTest is SuperTest {
         dai.mint(safe, 10 ** dai.decimals());
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 100_000_000);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, address(dai), 0);
         assertEq(p.usd, 1e8);
         assertEq(p.balance, int256(10 ** dai.decimals()));
         assertEq(p.underlyingAsset, address(dai));
-        assertEq(p.bridging, false);
         assertEq(p.stale, false);
 
         vm.startPrank(navCalculatorManager);
@@ -348,38 +349,27 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r_2 = nav.read(safe);
         assertEq(r_2.usd, 45_700_000_000);
-        assertEq(r_2.issues, 0);
+        assertEq(r_2.stalePriceAssets.length, 0);
+        assertEq(r_2.sequencerDown, false);
 
         INAVCalculator.Position memory p_2 = nav.readPosition(safe, address(dai), 1);
         assertEq(p_2.usd, 45_600_000_000);
         assertEq(p_2.balance, int256(456 * 10 ** dai.decimals()));
         assertEq(p_2.underlyingAsset, address(dai));
-        assertEq(p_2.bridging, false);
         assertEq(p_2.stale, false);
-    }
-
-    function test_read_dai_bridging() public {
-        vm.prank(ops);
-        nav.bridgeStart(address(dai));
-
-        INAVCalculator.NAV memory r = nav.read(safe);
-        assertEq(r.issues, 1);
-
-        INAVCalculator.Position memory p = nav.readPosition(safe, address(dai), 0);
-        assertEq(p.bridging, true);
     }
 
     function test_read_weth() public {
         weth.mint(safe, 10 ** weth.decimals());
         INAVCalculator.NAV memory r = nav.read(safe);
         assertApproxEqRel(r.usd, 3240 * 1e8, 0.01 ether);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, address(weth), 0);
         assertApproxEqRel(p.usd, 3240 * 1e8, 0.01 ether);
         assertEq(p.balance, int256(10 ** weth.decimals()));
         assertEq(p.underlyingAsset, address(weth));
-        assertEq(p.bridging, false);
         assertEq(p.stale, false);
     }
 
@@ -388,7 +378,8 @@ contract NAVCalculatorTest is SuperTest {
         dai.mint(safe, 10 ** dai.decimals());
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 2 * 1e8);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
 
         INAVCalculator.Position memory p1 = nav.readPosition(safe, address(usdc), 0);
         assertEq(p1.underlyingAsset, address(usdc));
@@ -416,11 +407,12 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 1e8);
-        assertEq(r.issues, 1);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, true);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, address(usdc), 0);
         assertEq(p.underlyingAsset, address(usdc));
-        assertEq(p.stale, true);
+        assertEq(p.stale, false);
     }
 
     function test_read_sequencerWithinGracePeriod() public {
@@ -438,11 +430,12 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 1e8);
-        assertEq(r.issues, 1);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, true);
 
         INAVCalculator.Position memory p = nav.readPosition(safe, address(usdc), 0);
         assertEq(p.underlyingAsset, address(usdc));
-        assertEq(p.stale, true);
+        assertEq(p.stale, false);
     }
 
     function test_read_multipleBalancesSameAsset() public {
@@ -457,7 +450,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 2 * 1e8);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
     }
 
     function test_read_singleNegativeBalanceAndOnePositiveBalance() public {
@@ -472,7 +466,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, 0 * 1e8);
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
     }
 
     function test_read_negativeBalances() public {
@@ -489,7 +484,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.read(safe);
         assertEq(r.usd, -(2 * 1e8));
-        assertEq(r.issues, 0);
+        assertEq(r.stalePriceAssets.length, 0);
+        assertEq(r.sequencerDown, false);
     }
 
     function test_read_BalanceOracleNotSet() public {
@@ -522,7 +518,8 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.NAV memory n = nav.read(safe);
         assertEq(n.usd, 0);
-        assertEq(n.issues, 0);
+        assertEq(n.stalePriceAssets.length, 0);
+        assertEq(n.sequencerDown, false);
         assertEq(n.block, block.number);
         assertEq(n.timestamp, block.timestamp);
     }

@@ -2,11 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
 
-contract DaiDsrBalanceOracleTest is Test {
+contract DaiDsrBalanceOracleTest is TestEnvConfigurator {
     uint256 fork;
     uint256 forkBlock;
 
@@ -20,7 +21,7 @@ contract DaiDsrBalanceOracleTest is Test {
         IBalanceOracleCustom.PositionMetadata({protocol: "Maker", position: "DSR", positionType: "Supplied"});
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
+        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         forkBlock = vm.parseUint(vm.envString("MAINNET_FORK_BLOCK"));
 
         vm.selectFork(fork);

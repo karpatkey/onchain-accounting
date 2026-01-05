@@ -75,6 +75,10 @@ contract Mock_PriceOracleChainlink is AggregatorV3Interface {
         return decimals_;
     }
 
+    function version() external pure override returns (uint256) {
+        return 0;
+    }
+
     function getRoundData(uint80)
         external
         pure
@@ -98,6 +102,14 @@ contract Mock_ChainlinkL2SequencerUptimeFeed is AggregatorV3Interface {
     }
 
     function decimals() external pure override returns (uint8) {
+        return 0;
+    }
+
+    function description() external pure override returns (string memory) {
+        return "L2 Sequencer Uptime Feed";
+    }
+
+    function version() external pure override returns (uint256) {
         return 0;
     }
 
@@ -127,6 +139,14 @@ contract Mock_ChainlinkL2SequencerUptimeFeedDown is AggregatorV3Interface {
         return 0;
     }
 
+    function description() external pure override returns (string memory) {
+        return "L2 Sequencer Uptime Feed";
+    }
+
+    function version() external pure override returns (uint256) {
+        return 0;
+    }
+
     function getRoundData(uint80)
         external
         pure
@@ -151,6 +171,14 @@ contract Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod is AggregatorV3Int
     }
 
     function decimals() external pure override returns (uint8) {
+        return 0;
+    }
+
+    function description() external pure override returns (string memory) {
+        return "L2 Sequencer Uptime Feed";
+    }
+
+    function version() external pure override returns (uint256) {
         return 0;
     }
 

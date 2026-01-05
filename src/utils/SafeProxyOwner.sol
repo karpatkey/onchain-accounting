@@ -4,18 +4,12 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-enum Operation {
-    Call, // 0
-    DelegateCall // 1
-
-}
-
 /// @dev Tuple describing a call to batch through `MultiSend` and `MultiSendCallOnly`
 struct Tx {
     address to;
     uint256 value;
     bytes data;
-    Operation operation; // default is Call
+    Enum.Operation operation; // default is Call
 }
 
 /// @title      Minimal interface of a Safe used by `SafeProxyOwner`

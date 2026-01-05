@@ -7,8 +7,7 @@ import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {
     Mock_PriceOracleCustom,
-    Mock_PriceOracleChainlink,
-    Mock_PriceOracleCustomStaled
+    Mock_PriceOracleChainlink
 } from "test/mocks/price_oracles.sol";
 
 contract PricesHarness is Prices {
@@ -34,7 +33,7 @@ contract PricesTest is Test {
     Mock_PriceOracleCustom public oracleusdc;
     Mock_PriceOracleChainlink public oracleaBUIDL;
     Mock_PriceOracleChainlink public disabledUptimeFeed;
-    Mock_PriceOracleCustomStaled public customStaled;
+    Mock_PriceOracleCustom public customStaled;
 
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
@@ -47,7 +46,8 @@ contract PricesTest is Test {
         disabledUptimeFeed = new Mock_PriceOracleChainlink("UptimeFeed", 1, 8);
         manager = new PricesHarness(address(0));
         managerL2 = new PricesHarness(address(chainlinkUptimeFeed));
-        customStaled = new Mock_PriceOracleCustomStaled("usdc", address(usdc), 100_000_000, 8);
+        customStaled = new Mock_PriceOracleCustom("usdc", address(usdc), 100_000_000, 8);
+        customStaled.setStale(true);
     }
 
     function test_latestPrice_WithNonStalePrices() public {

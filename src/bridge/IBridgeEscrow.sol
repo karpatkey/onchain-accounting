@@ -18,7 +18,6 @@ interface IBridgeEscrow {
         uint64 sourceChainId; // Chain ID where assets originate
         uint64 destinationChainId; // Chain ID where assets are destined
         address portfolioSafe; // Portfolio Safe address
-        uint256 globalNonce; // Incrementing counter per portfolioSafe
         address asset; // Token address (address(0) for native)
         uint256 amount; // Amount being bridged
         uint256 timestamp; // Block timestamp when invoice created
@@ -32,8 +31,7 @@ interface IBridgeEscrow {
         address indexed asset,
         uint256 amount,
         uint64 sourceChainId,
-        uint64 destinationChainId,
-        uint256 nonce
+        uint64 destinationChainId
     );
 
     /// @notice Event emitted when invoice status changes
@@ -43,7 +41,7 @@ interface IBridgeEscrow {
     event AssetsDeposited(bytes32 indexed invoiceId, address indexed asset, uint256 amount);
 
     /// @notice Event emitted when assets are released from escrow
-    event AssetsReleased(bytes32 indexed invoiceId, address indexed asset, uint256 amount, address indexed recipient);
+    event AssetsReleased(bytes32 indexed invoiceId, uint64 indexed sourceChainId, address asset, uint256 amount, address recipient);
 
     /// @notice Event emitted when a portfolio safe is authorized
     event PortfolioSafeAuthorized(address indexed safe);
@@ -57,34 +55,39 @@ interface IBridgeEscrow {
     /// @notice Event emitted when an adapter is revoked
     event AdapterRevoked(address indexed adapter);
 
+    /// @notice Event emitted when an asset is registered
+    event AssetRegistered(bytes6 indexed symbol, address indexed asset);
+
+    /// @notice Event emitted when an asset is unregistered
+    event AssetUnregistered(bytes6 indexed symbol);
+
+    /// @notice Event emitted when invoice completion attempts fail during batch operation
+    event InvoiceCompletionFailed(bytes32[] invoiceIds);
+
     /// @notice Deposits assets from a portfolio safe and immediately bridges them
     /// @param destinationChainId The destination chain ID
-    /// @param asset The token address (address(0) for native)
+    /// @param assetSymbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
     /// @param amount The amount to bridge
     /// @param adapter The bridge adapter address to use
     /// @param bridgeData Bridge-specific data
     /// @return invoiceId The unique invoice identifier
     function depositAndBridge(
         uint64 destinationChainId,
-        address asset,
+        bytes6 assetSymbol,
         uint256 amount,
         address adapter,
         bytes calldata bridgeData
     ) external payable returns (bytes32 invoiceId);
 
-    /// @notice Releases assets to the destination portfolio safe
-    /// @param invoiceId The invoice ID for the destination
-    /// @param sourceInvoiceId The invoice ID from source chain
-    /// @param sourceChainId The source chain ID
-    /// @param portfolioSafe The portfolio safe address
-    /// @param asset The token address
-    /// @param amount The amount received
-    function release(
+    /// @notice Releases funds based on invoice ID validation
+    /// @param invoiceId The invoice ID to decode and validate
+    /// @param portfolioSafe The portfolio safe address (must match decoded invoiceId)
+    /// @param amount The amount to release
+    /// @dev This function decodes the invoiceId, looks up asset from symbol, validates all parameters match,
+    ///      checks for nonce replay, and releases the funds if all validations pass.
+    function releaseByInvoiceId(
         bytes32 invoiceId,
-        bytes32 sourceInvoiceId,
-        uint64 sourceChainId,
         address portfolioSafe,
-        address asset,
         uint256 amount
     ) external;
 
@@ -92,10 +95,33 @@ interface IBridgeEscrow {
     /// @param invoiceId The invoice ID to cancel
     function cancelInvoice(bytes32 invoiceId) external;
 
+    /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
+    /// @param invoiceIds Array of invoice IDs to mark as completed
+    /// @dev This function should be called by an operator after assets have been released on the destination chain.
+    ///      It updates the invoice status on the source chain for bookkeeping purposes only.
+    function markInvoiceCompleted(bytes32[] calldata invoiceIds) external;
+
     /// @notice Gets an invoice by ID
     /// @param invoiceId The invoice ID
     /// @return The invoice struct
     function getInvoice(bytes32 invoiceId) external view returns (Invoice memory);
+
+    /// @notice Decodes an invoice ID into its components and validates the checksum
+    /// @param invoiceId The invoice ID to decode
+    /// @return sourceChainId Source chain ID (truncated to uint24)
+    /// @return destinationChainId Destination chain ID (truncated to uint24)
+    /// @return portfolioSafe Portfolio safe address (truncated to 10 bytes, padded with zeros)
+    /// @return assetSymbol Asset symbol (bytes6)
+    /// @dev Reverts if the checksum is invalid
+    function decodeInvoiceId(bytes32 invoiceId)
+        external
+        pure
+        returns (
+            uint24 sourceChainId,
+            uint24 destinationChainId,
+            address portfolioSafe,
+            bytes6 assetSymbol
+        );
 
     /// @notice Gets all active invoices for a portfolio safe
     /// @param portfolioSafe The portfolio safe address
@@ -112,11 +138,6 @@ interface IBridgeEscrow {
     /// @param asset The token address
     /// @return The amount in transit for this safe
     function getInTransitBalanceFor(address portfolioSafe, address asset) external view returns (uint256);
-
-    /// @notice Gets the nonce for a portfolio safe
-    /// @param portfolioSafe The portfolio safe address
-    /// @return The current nonce
-    function nonces(address portfolioSafe) external view returns (uint256);
 
     /// @notice Gets the in-transit balance by safe and asset
     /// @param portfolioSafe The portfolio safe address

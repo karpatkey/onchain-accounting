@@ -9,6 +9,7 @@ error NotChainlinkOracle();
 error InvoiceNotFound();
 error InvoiceAlreadyExists();
 error InvalidInvoiceStatus();
+error InvalidInvoice();
 error TransferFailed();
 error InsufficientBalance();
 error InvalidChainId();

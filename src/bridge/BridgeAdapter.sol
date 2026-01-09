@@ -106,8 +106,8 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
 
         _completeBridge(invoiceId, sourceInvoiceId, sourceChainId, portfolioSafe, asset, amount, bridgeData);
 
-        // Call BridgeEscrow.release()
-        IBridgeEscrow(bridgeEscrow).release(invoiceId, sourceInvoiceId, sourceChainId, portfolioSafe, asset, amount);
+        // Call BridgeEscrow.releaseByInvoiceId()
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(invoiceId, portfolioSafe, amount);
 
         emit BridgeCompleted(invoiceId, sourceInvoiceId, sourceChainId);
     }

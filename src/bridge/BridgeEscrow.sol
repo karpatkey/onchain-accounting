@@ -189,11 +189,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     /// @param amount The amount to release
     /// @dev This function decodes the invoiceId, looks up asset from symbol, validates all parameters match,
     ///      and releases the funds if all validations pass. Note: Invoice status updates should only occur on the source chain.
-    function releaseByInvoiceId(
-        bytes32 invoiceId,
-        address portfolioSafe,
-        uint256 amount
-    ) external {
+    function releaseByInvoiceId(bytes32 invoiceId, address portfolioSafe, uint256 amount) external {
         // Check if this invoiceId has already been completed (bookkeeping check)
         if (completedInvoices[invoiceId]) {
             revert InvoiceAlreadyExists(); // Invoice already completed
@@ -456,11 +452,9 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
 
         // Pack with checksum: data (22 bytes) + checksum (10 bytes) = 32 bytes
         return bytes32(
-            (uint256(uint24(sourceChainId)) << 232) |
-            (uint256(uint24(destinationChainId)) << 208) |
-            (uint256(uint80(uint160(portfolioSafe))) << 128) |
-            (uint256(uint48(assetSymbol)) << 80) |
-            uint256(checksum)
+            (uint256(uint24(sourceChainId)) << 232) | (uint256(uint24(destinationChainId)) << 208)
+                | (uint256(uint80(uint160(portfolioSafe))) << 128) | (uint256(uint48(assetSymbol)) << 80)
+                | uint256(checksum)
         );
     }
 
@@ -474,12 +468,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (
-            uint24 sourceChainId,
-            uint24 destinationChainId,
-            address portfolioSafe,
-            bytes6 assetSymbol
-        )
+        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol)
     {
         uint256 id = uint256(invoiceId);
         sourceChainId = uint24(id >> 232);
@@ -490,12 +479,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         uint80 storedChecksum = uint80(id);
 
         // Reconstruct data without checksum (using truncated portfolioSafe)
-        bytes memory data = abi.encodePacked(
-            sourceChainId,
-            destinationChainId,
-            portfolioSafeTruncated,
-            assetSymbol
-        );
+        bytes memory data = abi.encodePacked(sourceChainId, destinationChainId, portfolioSafeTruncated, assetSymbol);
 
         // Calculate expected checksum (first 10 bytes of hash)
         bytes32 hash = keccak256(data);

@@ -11,4 +11,3 @@ bytes32 constant OPERATOR = keccak256("OPERATOR"); // 0x523a704056dcd17bcf83bed8
 
 bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
 
-

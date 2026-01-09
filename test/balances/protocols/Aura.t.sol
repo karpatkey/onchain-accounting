@@ -87,14 +87,15 @@ contract AuraTest is TestEnvConfigurator {
         uint256 bptBefore = IERC20(POOL).balanceOf(address(sender));
 
         // Add liquidity through router
-        uint256 amountOut = IRouter(ROUTER).addLiquidityUnbalancedToERC4626Pool(
-            POOL,
-            wrapUnderlying,
-            amountsIn,
-            800, // exactBptAmountOut - we want at least 1 wei of BPT
-            false, // wethIsEth
-            "" // no custom userData needed
-        );
+        uint256 amountOut = IRouter(ROUTER)
+            .addLiquidityUnbalancedToERC4626Pool(
+                POOL,
+                wrapUnderlying,
+                amountsIn,
+                800, // exactBptAmountOut - we want at least 1 wei of BPT
+                false, // wethIsEth
+                "" // no custom userData needed
+            );
 
         uint256 bptAfter = IERC20(POOL).balanceOf(address(sender));
         uint256 bptReceived = bptAfter - bptBefore;
@@ -126,14 +127,15 @@ contract AuraTest is TestEnvConfigurator {
         uint256 bptBalance = IERC20(POOL).balanceOf(address(sender));
 
         // Remove all BPT tokens
-        IRouter(ROUTER).removeLiquidityProportionalFromERC4626Pool(
-            POOL,
-            unwrapWrapped,
-            bptBalance,
-            minAmountsOut,
-            false, // wethIsEth
-            "" // userData
-        );
+        IRouter(ROUTER)
+            .removeLiquidityProportionalFromERC4626Pool(
+                POOL,
+                unwrapWrapped,
+                bptBalance,
+                minAmountsOut,
+                false, // wethIsEth
+                "" // userData
+            );
 
         vm.stopPrank();
     }

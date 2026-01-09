@@ -177,7 +177,8 @@ contract Aura is IBalanceOracleCustom {
 
         if (pool.totalSupply() != 0) {
             secondRewardPerToken = rewardPerTokenStored
-                + (((pool.lastTimeRewardApplicable() - lastUpdateTime) * (pool.rewardRate()) * (1e18)) / pool.totalSupply());
+                + (((pool.lastTimeRewardApplicable() - lastUpdateTime) * (pool.rewardRate()) * (1e18))
+                    / pool.totalSupply());
         }
 
         return
@@ -233,15 +234,14 @@ contract Aura is IBalanceOracleCustom {
         assembly {
             let ptr := mload(0x40)
             mstore(ptr, slot)
-            result :=
-                staticcall(
-                    gas(), // forward all gas
-                    auraToken, // to Aura token
-                    ptr,
-                    0x20, // input at ptr, 32 bytes (slot)
-                    ptr,
-                    0x20 // store output in same ptr
-                )
+            result := staticcall(
+                gas(), // forward all gas
+                auraToken, // to Aura token
+                ptr,
+                0x20, // input at ptr, 32 bytes (slot)
+                ptr,
+                0x20 // store output in same ptr
+            )
             result := mload(ptr)
         }
     }

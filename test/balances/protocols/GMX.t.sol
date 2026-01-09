@@ -43,9 +43,7 @@ contract GMXTest is TestEnvConfigurator {
     address public ops;
     address public safe;
     IBalanceOracleCustom.PositionMetadata gmxMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "GMX",
-        position: "ETH/USDC-WETH/USDC Long",
-        positionType: "Perpetual"
+        protocol: "GMX", position: "ETH/USDC-WETH/USDC Long", positionType: "Perpetual"
     });
 
     function setUp() public {
@@ -417,8 +415,9 @@ contract GMXTest is TestEnvConfigurator {
         safe = makeAddr("safe");
 
         address navImpl = address(new NAVCalculator());
-        address navProxy =
-            UnsafeUpgrades.deployUUPSProxy(navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(0))));
+        address navProxy = UnsafeUpgrades.deployUUPSProxy(
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(0)))
+        );
         nav = NAVCalculator(navProxy);
 
         vm.startPrank(admin);

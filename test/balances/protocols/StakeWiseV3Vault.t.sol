@@ -14,9 +14,7 @@ contract StakewiseVaultTest is TestEnvConfigurator {
     address public osGNO = address(0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0);
     address public vault = address(0x4b4406Ed8659D03423490D8b62a1639206dA0A7a);
     IBalanceOracleCustom.PositionMetadata positionMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Stakewise v3",
-        position: "Some vault",
-        positionType: "Staked"
+        protocol: "Stakewise v3", position: "Some vault", positionType: "Staked"
     });
 
     StakeWiseV3VaultBalanceOracle public oracle;

@@ -134,24 +134,18 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         IBalanceOracleCustom.PositionMetadata memory aaveMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3",
-            position: "Core Instance",
-            positionType: "Supplied/Borrowed"
+            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
         });
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aaveMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory compoundMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3",
-            position: "USDC Comet",
-            positionType: "Supplied/Borrowed"
+            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
         });
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory morphoMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Morpho",
-            position: "Some market",
-            positionType: "Supplied"
+            protocol: "Morpho", position: "Some market", positionType: "Supplied"
         });
         morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, morphoMetadata);
 
@@ -222,16 +216,12 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3",
-            position: "Core Instance",
-            positionType: "Supplied/Borrowed"
+            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
         });
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3",
-            position: "USDC Comet",
-            positionType: "Supplied/Borrowed"
+            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
         });
         compoundV3CometWithMultiplier = new CompoundV3CometWithMultiplier(
             compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata
@@ -301,24 +291,18 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3",
-            position: "Core Instance",
-            positionType: "Supplied/Borrowed"
+            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
         });
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3",
-            position: "USDC Comet",
-            positionType: "Supplied/Borrowed"
+            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
         });
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory morphoPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Morpho",
-            position: "Some Market",
-            positionType: "Supplied"
+            protocol: "Morpho", position: "Some Market", positionType: "Supplied"
         });
         morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, morphoPositionMetadata);
 
@@ -380,16 +364,12 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3",
-            position: "Core Instance",
-            positionType: "Supplied/Borrowed"
+            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
         });
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
 
         IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3",
-            position: "USDC Comet",
-            positionType: "Supplied/Borrowed"
+            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
         });
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata);

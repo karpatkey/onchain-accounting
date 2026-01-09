@@ -91,9 +91,7 @@ abstract contract SuperTest is Test {
         mockBalanceOracle.setUnderlyingAssetsSupported(underlyingAssets);
         mockBalanceOracle.setPositionMetadata(
             IBalanceOracleCustom.PositionMetadata({
-                protocol: "Mock Protocol",
-                position: "Mock Position",
-                positionType: "Mock Type"
+                protocol: "Mock Protocol", position: "Mock Position", positionType: "Mock Type"
             })
         );
 
@@ -143,7 +141,6 @@ abstract contract SuperTest is Test {
         setupFund(zeroPercent, 100, 50, 1000); // 1% management, 0.5% redemption, 10% performance
     }
 
-
     function setupNAVCalculatorWithParams(address admin_, address safe_, address chainlinkUptimeFeed_)
         public
         returns (NAVCalculator)
@@ -170,25 +167,15 @@ abstract contract SuperTest is Test {
         vm.label(address(nav), "nav");
     }
 
-
     ///  Returns the current NAV of the fund
     function t_currentNav() public view returns (uint256 currentNav) {
         INAVCalculator.NAV memory navReading = nav.read(address(safe));
         return uint256(navReading.usd);
     }
 
-
-
-
-
-
-
-
     function t_readNav() internal view returns (INAVCalculator.NAV memory navReading) {
         navReading = nav.read(address(safe));
     }
-
-
 
     // ERC20 transfer events
     event Transfer(address indexed from, address indexed to, uint256 value);

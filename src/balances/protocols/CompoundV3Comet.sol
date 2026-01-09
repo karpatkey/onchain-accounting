@@ -267,12 +267,16 @@ contract CompoundV3Comet is IBalanceOracleCustom {
             uint256 baseMinForRewards = cometExtInterface.baseMinForRewards();
 
             if (totalSupplyBase >= baseMinForRewards) {
-                trackingSupplyIndex +=
-                    (_divBaseWei(cometExtInterface.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase)).toUint64();
+                trackingSupplyIndex += (_divBaseWei(
+                        cometExtInterface.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase
+                    ))
+                .toUint64();
             }
             if (totalBorrowBase >= baseMinForRewards) {
-                trackingBorrowIndex +=
-                    (_divBaseWei(cometExtInterface.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase)).toUint64();
+                trackingBorrowIndex += (_divBaseWei(
+                        cometExtInterface.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase
+                    ))
+                .toUint64();
             }
         }
 
@@ -298,14 +302,18 @@ contract CompoundV3Comet is IBalanceOracleCustom {
         if (principal >= 0) {
             uint256 indexDelta = uint256(trackingSupplyIndex - baseTrackingIndex);
 
-            baseTrackingAccrued += (
-                uint104(principal) * indexDelta / cometExtInterface.trackingIndexScale() / accrualDescaleFactor
-            ).toUint64();
+            baseTrackingAccrued += (uint104(principal)
+                * indexDelta
+                / cometExtInterface.trackingIndexScale()
+                / accrualDescaleFactor)
+            .toUint64();
         } else {
             uint256 indexDelta = uint256(trackingBorrowIndex - baseTrackingIndex);
-            baseTrackingAccrued += (
-                uint104(-principal) * indexDelta / cometExtInterface.trackingIndexScale() / accrualDescaleFactor
-            ).toUint64();
+            baseTrackingAccrued += (uint104(-principal)
+                * indexDelta
+                / cometExtInterface.trackingIndexScale()
+                / accrualDescaleFactor)
+            .toUint64();
         }
     }
 
@@ -351,10 +359,7 @@ interface ICompoundRewards {
     /// @return token The address of the reward token associated with the Comet contract.
     /// @return rescaleFactor A scaling factor to adjust the reward token's value.
     /// @return shouldUpscale A boolean indicating whether the reward token should be upscaled.
-    function rewardConfig(address comet)
-        external
-        view
-        returns (address token, uint64 rescaleFactor, bool shouldUpscale);
+    function rewardConfig(address comet) external view returns (address token, uint64 rescaleFactor, bool shouldUpscale);
 
     /// @notice Returns the amount of rewards that have been claimed by a specific user for a given Comet contract.
     /// @param comet The address of the Comet contract.

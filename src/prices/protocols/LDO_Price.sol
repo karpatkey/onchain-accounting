@@ -98,9 +98,8 @@ contract LDO_PriceOracle is IPriceOracleCustom {
         // LDO/ETH price is in 8 decimals, ETH/USD price is in 8 decimals
         // First multiply the prices together (this will have 8 + 8 = 16 decimals)
         // Then divide by 10^8 to get back to 8 decimals (matching ETH/USD)
-        price = LDO_to_ETH_price.toUint256().mulDiv(
-            ETH_to_USD_price.toUint256(), 10 ** LDO_to_ETH_chainlinkOracle.decimals(), Math.Rounding.Floor
-        );
+        price = LDO_to_ETH_price.toUint256()
+            .mulDiv(ETH_to_USD_price.toUint256(), 10 ** LDO_to_ETH_chainlinkOracle.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceOracleCustom

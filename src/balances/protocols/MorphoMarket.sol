@@ -79,8 +79,12 @@ contract MorphoMarketBalanceOracle is IBalanceOracleCustom {
         Position memory position = morpho.position(marketId, account);
 
         if (underlyingAsset == loanToken) {
-            (uint256 totalSupplyAssets, uint256 totalSupplyShares, uint256 totalBorrowAssets, uint256 totalBorrowShares)
-            = morpho.expectedMarketBalances(marketParams);
+            (
+                uint256 totalSupplyAssets,
+                uint256 totalSupplyShares,
+                uint256 totalBorrowAssets,
+                uint256 totalBorrowShares
+            ) = morpho.expectedMarketBalances(marketParams);
 
             if (totalBorrowShares == 0 || totalSupplyShares == 0) {
                 return 0;
@@ -88,11 +92,11 @@ contract MorphoMarketBalanceOracle is IBalanceOracleCustom {
 
             uint256 borrowedAssets =
                 totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid
-                // underestimating the debt
+            // underestimating the debt
 
             uint256 suppliedAssets =
                 totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to
-                // avoid overestimating the supply
+            // avoid overestimating the supply
 
             return suppliedAssets.toInt256() - borrowedAssets.toInt256();
         } else if (underlyingAsset == collateralToken) {

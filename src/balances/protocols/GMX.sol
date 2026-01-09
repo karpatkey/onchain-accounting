@@ -171,12 +171,10 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
 
         if (underlyingAsset == positionInfo.position.addresses.collateralToken) {
             total += int256(positionInfo.position.numbers.collateralAmount)
-                - (
-                    int256(
-                        positionInfo.fees.borrowing.borrowingFeeAmount + positionInfo.fees.funding.fundingFeeAmount
-                            + positionInfo.fees.positionFeeAmount
-                    )
-                );
+            - (int256(
+                    positionInfo.fees.borrowing.borrowingFeeAmount + positionInfo.fees.funding.fundingFeeAmount
+                        + positionInfo.fees.positionFeeAmount
+                ));
         }
 
         return total;

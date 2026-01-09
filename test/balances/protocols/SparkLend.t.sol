@@ -26,9 +26,7 @@ contract SparkTest is TestEnvConfigurator {
 
     SparkLendBalanceOracle public oracle;
     IBalanceOracleCustom.PositionMetadata sparkPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Spark",
-        position: "Spark Pool",
-        positionType: "Supplied/Borrowed"
+        protocol: "Spark", position: "Spark Pool", positionType: "Supplied/Borrowed"
     });
 
     function setUp() public {

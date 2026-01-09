@@ -136,10 +136,7 @@ abstract contract Prices is IPrices, Initializable {
         }
 
         priceOracles[token] = PriceOracle({
-            oracle: oracle,
-            priceType: priceType,
-            decimals: decimals,
-            chainlinkHeartbeat: chainlinkHeartbeat
+            oracle: oracle, priceType: priceType, decimals: decimals, chainlinkHeartbeat: chainlinkHeartbeat
         });
 
         emit PriceOracleSet(token, oracle, chainlinkHeartbeat, priceType);

@@ -31,9 +31,7 @@ contract CompoundV3CometTest is TestEnvConfigurator {
 
     CompoundV3Comet oracle;
     IBalanceOracleCustom.PositionMetadata compoundMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Compound v3",
-        position: "USDC Comet",
-        positionType: "Supplied/Borrowed"
+        protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
     });
 
     function setUp() public {

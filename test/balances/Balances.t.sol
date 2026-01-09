@@ -45,9 +45,7 @@ contract BalancesTest is Test {
         customOracle.setUnderlyingAssetsSupported(underlyingAssets);
         customOracle.setPositionMetadata(
             IBalanceOracleCustom.PositionMetadata({
-                protocol: "Mock Protocol",
-                position: "Mock Position",
-                positionType: "Mock Type"
+                protocol: "Mock Protocol", position: "Mock Position", positionType: "Mock Type"
             })
         );
         vm.stopPrank();

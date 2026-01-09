@@ -256,12 +256,14 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
             uint256 baseMinForRewards = cometExtInterface.baseMinForRewards();
 
             if (totalSupplyBase >= baseMinForRewards) {
-                trackingSupplyIndex +=
-                    _divBaseWei(cometExtInterface.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase).toUint64();
+                trackingSupplyIndex += _divBaseWei(
+                        cometExtInterface.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase
+                    ).toUint64();
             }
             if (totalBorrowBase >= baseMinForRewards) {
-                trackingBorrowIndex +=
-                    _divBaseWei(cometExtInterface.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase).toUint64();
+                trackingBorrowIndex += _divBaseWei(
+                        cometExtInterface.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase
+                    ).toUint64();
             }
         }
 
@@ -287,14 +289,18 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
         if (principal >= 0) {
             uint256 indexDelta = uint256(trackingSupplyIndex - baseTrackingIndex);
 
-            baseTrackingAccrued += (
-                uint104(principal) * indexDelta / cometExtInterface.trackingIndexScale() / accrualDescaleFactor
-            ).toUint64();
+            baseTrackingAccrued += (uint104(principal)
+                * indexDelta
+                / cometExtInterface.trackingIndexScale()
+                / accrualDescaleFactor)
+            .toUint64();
         } else {
             uint256 indexDelta = uint256(trackingBorrowIndex - baseTrackingIndex);
-            baseTrackingAccrued += (
-                uint104(-principal) * indexDelta / cometExtInterface.trackingIndexScale() / accrualDescaleFactor
-            ).toUint64();
+            baseTrackingAccrued += (uint104(-principal)
+                * indexDelta
+                / cometExtInterface.trackingIndexScale()
+                / accrualDescaleFactor)
+            .toUint64();
         }
     }
 

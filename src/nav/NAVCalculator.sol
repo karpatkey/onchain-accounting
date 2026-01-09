@@ -17,14 +17,7 @@ import "src/constants.sol";
 /// @title NAV Calculator
 /// @notice Calculates NAV based on on-chain balances and price oracles.
 /// @author kpk
-contract NAVCalculator is
-    Initializable,
-    UUPSUpgradeable,
-    AccessControlUpgradeable,
-    INAVCalculator,
-    Prices,
-    Balances
-{
+contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // Libraries
     //
@@ -64,7 +57,6 @@ contract NAVCalculator is
         __Balances_init();
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
         assetRecoverer = assetRecoverer_;
-
     }
 
     //
@@ -318,11 +310,7 @@ contract NAVCalculator is
     }
 
     /// @inheritdoc INAVCalculator
-    function getPriceData(address underlyingAsset)
-        external
-        view
-        returns (INAVCalculator.PriceData memory priceData)
-    {
+    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceData memory priceData) {
         _requireAssetExists(underlyingAsset);
 
         PriceOracle storage oracle = priceOracles[underlyingAsset];
@@ -352,11 +340,7 @@ contract NAVCalculator is
     function readAccountPositions(address account)
         external
         view
-        returns (
-            address[] memory assetAddresses,
-            int256[] memory assetBalances,
-            int256[] memory assetUsdValues
-        )
+        returns (address[] memory assetAddresses, int256[] memory assetBalances, int256[] memory assetUsdValues)
     {
         uint256 totalAssets = _assetDecimals.length();
 
@@ -410,14 +394,7 @@ contract NAVCalculator is
     }
 
     /// @inheritdoc INAVCalculator
-    function healthCheck()
-        external
-        view
-        returns (
-            bool sequencerDown,
-            address[] memory stalePriceAssets
-        )
-    {
+    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets) {
         uint256 totalAssets = _assetDecimals.length();
 
         // Check sequencer status once
@@ -476,7 +453,13 @@ contract NAVCalculator is
     //
 
     /// @inheritdoc UUPSUpgradeable
-    function _authorizeUpgrade(address /* newImpl */ ) internal view override(UUPSUpgradeable) {
+    function _authorizeUpgrade(
+        address /* newImpl */
+    )
+        internal
+        view
+        override(UUPSUpgradeable)
+    {
         if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) revert NotAuthorized();
     }
 

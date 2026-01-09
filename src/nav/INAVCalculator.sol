@@ -304,4 +304,34 @@ interface INAVCalculator {
     /// @param account The address to check
     /// @return has Any position present
     function hasPositions(address account) external view returns (bool has);
+
+    /// @notice Reads the current NAV of a given account, converted to a base asset.
+    /// @param account The address of the account to calculate for.
+    /// @param baseAsset The address of the asset to convert NAV to (e.g., ETH address).
+    /// @dev This function reads all known assets, and might exhaust gas if there are too many
+    /// assets known by the calculator contract at the time of calling.
+    /// It is recommended to use the readPositionsRangeInBaseAsset function instead, with an appropriate range of assets and call
+    /// it multiple times if necessary.
+    /// @return nav The NAV of the account in the base asset, with the same structure as read() but with baseAssetValue instead of usd.
+    /// @return baseAssetValue The NAV value in the base asset, represented with the base asset's decimals.
+    /// @return baseAssetStale Whether the base asset's price is stale.
+    function readInBaseAsset(address account, address baseAsset)
+        external
+        view
+        returns (NAV memory nav, int256 baseAssetValue, bool baseAssetStale);
+
+    /// @notice Reads a single position, with its value converted to a base asset.
+    /// @param account The address to calculate for
+    /// @param underlyingAsset The address of the token to calculate
+    /// @param idxBalanceOracle The index of the balance oracle
+    /// @param baseAsset The address of the asset to convert the position value to (e.g., ETH address).
+    /// @return p The position struct with baseAssetValue field populated.
+    /// @return baseAssetValue The position value in the base asset, represented with the base asset's decimals.
+    /// @return baseAssetStale Whether the base asset's price is stale.
+    function readPositionInBaseAsset(
+        address account,
+        address underlyingAsset,
+        uint256 idxBalanceOracle,
+        address baseAsset
+    ) external view returns (Position memory p, int256 baseAssetValue, bool baseAssetStale);
 }

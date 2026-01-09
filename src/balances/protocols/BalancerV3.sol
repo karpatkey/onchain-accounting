@@ -314,7 +314,6 @@ interface IGaugeV3 is IERC20 {
     /// @return The future epoch time
     function future_epoch_time() external view returns (uint256);
 }
-
 /// @notice General interface for token exchange rates.
 
 ///

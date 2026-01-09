@@ -7,7 +7,8 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {
-    CometExtInterface, CompoundV3CometWithMultiplier
+    CometExtInterface,
+    CompoundV3CometWithMultiplier
 } from "src/balances/protocols/CompoundV3CometWithMultiplier.sol";
 import "src/errors.sol";
 
@@ -34,9 +35,7 @@ contract CompoundV3CometWithMultiplierTest is TestEnvConfigurator {
 
     CompoundV3CometWithMultiplier oracle;
     IBalanceOracleCustom.PositionMetadata compoundMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Compound v3",
-        position: "USDC Comet",
-        positionType: "Supplied/Borrowed"
+        protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
     });
 
     function setUp() public {

@@ -26,9 +26,7 @@ contract Balancerv3Test is TestEnvConfigurator {
     address public constant BALANCER_MINTER = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b;
     uint256 fork;
     IBalanceOracleCustom.PositionMetadata balancerMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Balancer v3",
-        position: "Some pool",
-        positionType: "Supplied"
+        protocol: "Balancer v3", position: "Some pool", positionType: "Supplied"
     });
 
     function setUp() public {
@@ -184,14 +182,15 @@ contract Balancerv3Test is TestEnvConfigurator {
         uint256 bptBefore = IERC20(POOL).balanceOf(address(sender));
 
         // Add liquidity through router
-        uint256 amountOut = IRouter(ROUTER).addLiquidityUnbalancedToERC4626Pool(
-            POOL,
-            wrapUnderlying,
-            amountsIn,
-            1, // exactBptAmountOut - we want at least 1 wei of BPT
-            false, // wethIsEth
-            "" // no custom userData needed
-        );
+        uint256 amountOut = IRouter(ROUTER)
+            .addLiquidityUnbalancedToERC4626Pool(
+                POOL,
+                wrapUnderlying,
+                amountsIn,
+                1, // exactBptAmountOut - we want at least 1 wei of BPT
+                false, // wethIsEth
+                "" // no custom userData needed
+            );
 
         uint256 bptAfter = IERC20(POOL).balanceOf(address(sender));
         uint256 bptReceived = bptAfter - bptBefore;
@@ -228,13 +227,13 @@ contract Balancerv3Test is TestEnvConfigurator {
         // Remove all BPT tokens
         (address[] memory tokensOut, uint256[] memory amountsOut) = IRouter(ROUTER)
             .removeLiquidityProportionalFromERC4626Pool(
-            POOL,
-            unwrapWrapped,
-            bptBalance,
-            minAmountsOut,
-            false, // wethIsEth
-            "" // userData
-        );
+                POOL,
+                unwrapWrapped,
+                bptBalance,
+                minAmountsOut,
+                false, // wethIsEth
+                "" // userData
+            );
 
         vm.stopPrank();
 

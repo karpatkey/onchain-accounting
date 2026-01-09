@@ -94,12 +94,7 @@ abstract contract Balances is IBalances, Initializable {
     }
 
     /// @inheritdoc IBalances
-    function balanceOracleAt(address underlyingAsset, uint256 idx)
-        public
-        view
-        override
-        returns (address, BalanceType)
-    {
+    function balanceOracleAt(address underlyingAsset, uint256 idx) public view override returns (address, BalanceType) {
         (address oracleAddress, uint256 balanceTypeUInt) = _balanceOracles[underlyingAsset].at(idx);
         return (oracleAddress, BalanceType(balanceTypeUInt));
     }
@@ -204,9 +199,7 @@ abstract contract Balances is IBalances, Initializable {
             metadata = IBalanceOracleCustom(oracle).positionMetadata();
         } else if (balanceType == BalanceType.Native) {
             metadata = IBalanceOracleCustom.PositionMetadata({
-                protocol: "Portfolio balance",
-                position: _nativeTokenSymbol,
-                positionType: "Native"
+                protocol: "Portfolio balance", position: _nativeTokenSymbol, positionType: "Native"
             });
         } else {
             string memory symbol;
@@ -216,9 +209,7 @@ abstract contract Balances is IBalances, Initializable {
                 symbol = "";
             }
             metadata = IBalanceOracleCustom.PositionMetadata({
-                protocol: "Portfolio balance",
-                position: symbol,
-                positionType: "ERC20"
+                protocol: "Portfolio balance", position: symbol, positionType: "ERC20"
             });
         }
 

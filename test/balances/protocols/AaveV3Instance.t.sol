@@ -22,9 +22,7 @@ contract AavePoolBalanceOracleTest is TestEnvConfigurator {
 
     AaveV3InstanceBalanceOracle oracle;
     IBalanceOracleCustom.PositionMetadata aaveMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Aave v3",
-        position: "Core Instance",
-        positionType: "Supplied/Borrowed"
+        protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
     });
 
     function setUp() public {

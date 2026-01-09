@@ -142,8 +142,7 @@ interface INAVCalculator {
     /// @param priceType The type of the price oracle
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
     /// oracles.
-    function addPrice(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
-        external;
+    function addPrice(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat) external;
 
     /// @notice Adds a new balance source to an existing underlying asset.
     /// @param underlyingAsset The address of the token to add a balance oracle to.
@@ -294,22 +293,12 @@ interface INAVCalculator {
     function readAccountPositions(address account)
         external
         view
-        returns (
-            address[] memory assets,
-            int256[] memory balances,
-            int256[] memory usdValues
-        );
+        returns (address[] memory assets, int256[] memory balances, int256[] memory usdValues);
 
     /// @notice Returns overall health status
     /// @return sequencerDown Whether the L2 sequencer is down (false on L1)
     /// @return stalePriceAssets Array of assets with stale prices
-    function healthCheck()
-        external
-        view
-        returns (
-            bool sequencerDown,
-            address[] memory stalePriceAssets
-        );
+    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets);
 
     /// @notice Returns true if the account has any non‑zero aggregated balance across all assets/oracles
     /// @param account The address to check

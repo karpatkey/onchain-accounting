@@ -200,7 +200,6 @@ contract SafeProxyOwner is Ownable {
     function _execFromSafe(address safe, address to, uint256 value, bytes memory data, Enum.Operation operation)
         private
     {
-<<<<<<< HEAD
         bool ok = ISafe(safe)
             .execTransaction(
                 to,
@@ -214,20 +213,6 @@ contract SafeProxyOwner is Ownable {
                 payable(address(0)),
                 _selfSignature()
             );
-=======
-        bool ok = ISafe(safe).execTransaction(
-            to,
-            value,
-            data,
-            operation,
-            0, // safeTxGas
-            0, // baseGas
-            0, // gasPrice
-            address(0), // gasToken
-            payable(address(0)),
-            _selfSignature()
-        );
->>>>>>> main
         if (!ok) revert SafeTransactionFailed();
     }
 }

@@ -448,6 +448,81 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         return false;
     }
 
+    /// @inheritdoc INAVCalculator
+    function readInBaseAsset(address account, address baseAsset)
+        external
+        view
+        returns (NAV memory nav, int256 baseAssetValue, bool baseAssetStale)
+    {
+        // Build NAV struct (replicating read() logic to avoid external call)
+        nav.block = uint64(block.number);
+        nav.timestamp = uint64(block.timestamp);
+
+        uint256 length = _assetDecimals.length();
+
+        if (length != 0) {
+            // read all of the account's positions
+            // NOTE: this can exceed gas limit
+            (nav.usd, nav.stalePriceAssets, nav.sequencerDown) = readPositionsRange(account, 0, length - 1);
+        } else {
+            // Initialize empty arrays when no assets
+            nav.stalePriceAssets = new address[](0);
+            nav.sequencerDown = false;
+        }
+
+        // Validate that base asset exists and has a price oracle
+        _requireAssetExists(baseAsset);
+        _requirePriceOracleExists(baseAsset);
+
+        // Get the base asset price and decimals
+        (uint256 baseAssetPrice, uint8 baseAssetPriceDecimals, bool baseAssetStale_) = _latestPrice(baseAsset);
+        baseAssetStale = baseAssetStale_;
+
+        // Get base asset decimals
+        uint8 baseAssetDecimals = _getAssetDecimals(baseAsset);
+
+        // Convert USD NAV to base asset value
+        baseAssetValue = _fromUsd(nav.usd, baseAssetPrice, baseAssetPriceDecimals, baseAssetDecimals);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function readPositionInBaseAsset(
+        address account,
+        address underlyingAsset,
+        uint256 idxBalanceOracle,
+        address baseAsset
+    ) external view returns (Position memory p, int256 baseAssetValue, bool baseAssetStale) {
+        // Get the position (replicating readPosition() logic to avoid external call)
+        _requireAssetExists(underlyingAsset);
+        _requirePriceOracleExists(underlyingAsset);
+
+        (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(underlyingAsset);
+
+        // Check sequencer status once
+        bool sequencerDown = _isSequencerDown();
+
+        // Get decimals once (asset already validated above)
+        uint8 decimals = _getAssetDecimals(underlyingAsset);
+
+        p = _readPositionWithPrice(
+            account, underlyingAsset, idxBalanceOracle, usdRate, usdRateDecimals, stale, sequencerDown, decimals
+        );
+
+        // Validate that base asset exists and has a price oracle
+        _requireAssetExists(baseAsset);
+        _requirePriceOracleExists(baseAsset);
+
+        // Get the base asset price and decimals
+        (uint256 baseAssetPrice, uint8 baseAssetPriceDecimals, bool baseAssetStale_) = _latestPrice(baseAsset);
+        baseAssetStale = baseAssetStale_;
+
+        // Get base asset decimals
+        uint8 baseAssetDecimals = _getAssetDecimals(baseAsset);
+
+        // Convert USD position value to base asset value
+        baseAssetValue = _fromUsd(p.usd, baseAssetPrice, baseAssetPriceDecimals, baseAssetDecimals);
+    }
+
     //
     // UUPSUpgradeable
     //
@@ -581,5 +656,40 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         usd = (balance * int256(usdRate)) / int256(10 ** denominator);
+    }
+
+    /// @notice Converts USD value to a base asset value
+    /// @param usdValue The USD value with NAV_DECIMALS decimals
+    /// @param baseAssetPrice The USD price of the base asset
+    /// @param baseAssetPriceDecimals The number of decimals of the base asset price
+    /// @param baseAssetDecimals The number of decimals of the base asset
+    /// @return baseAssetValue The computed value in the base asset with baseAssetDecimals
+    function _fromUsd(
+        int256 usdValue,
+        uint256 baseAssetPrice,
+        uint8 baseAssetPriceDecimals,
+        uint8 baseAssetDecimals
+    ) internal pure returns (int256 baseAssetValue) {
+        if (baseAssetPrice == 0) {
+            revert InvalidArguments();
+        }
+
+        // Calculate the scaling factor needed
+        // We need: (usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)) / (baseAssetPrice * 10^NAV_DECIMALS)
+        // This ensures the result is in baseAssetDecimals
+        
+        // Check for potential overflow in exponent calculation
+        uint256 totalDecimals = uint256(baseAssetDecimals) + uint256(baseAssetPriceDecimals);
+        if (totalDecimals > 255) {
+            revert InvalidArguments();
+        }
+
+        // Calculate numerator: usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)
+        int256 numerator = usdValue * int256(10 ** totalDecimals);
+        
+        // Calculate denominator: baseAssetPrice * 10^NAV_DECIMALS
+        int256 denominator = int256(baseAssetPrice) * int256(10 ** NAV_DECIMALS);
+
+        baseAssetValue = numerator / denominator;
     }
 }

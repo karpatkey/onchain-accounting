@@ -664,12 +664,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @param baseAssetPriceDecimals The number of decimals of the base asset price
     /// @param baseAssetDecimals The number of decimals of the base asset
     /// @return baseAssetValue The computed value in the base asset with baseAssetDecimals
-    function _fromUsd(
-        int256 usdValue,
-        uint256 baseAssetPrice,
-        uint8 baseAssetPriceDecimals,
-        uint8 baseAssetDecimals
-    ) internal pure returns (int256 baseAssetValue) {
+    function _fromUsd(int256 usdValue, uint256 baseAssetPrice, uint8 baseAssetPriceDecimals, uint8 baseAssetDecimals)
+        internal
+        pure
+        returns (int256 baseAssetValue)
+    {
         if (baseAssetPrice == 0) {
             revert InvalidArguments();
         }
@@ -677,7 +676,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Calculate the scaling factor needed
         // We need: (usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)) / (baseAssetPrice * 10^NAV_DECIMALS)
         // This ensures the result is in baseAssetDecimals
-        
+
         // Check for potential overflow in exponent calculation
         uint256 totalDecimals = uint256(baseAssetDecimals) + uint256(baseAssetPriceDecimals);
         if (totalDecimals > 255) {
@@ -686,7 +685,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Calculate numerator: usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)
         int256 numerator = usdValue * int256(10 ** totalDecimals);
-        
+
         // Calculate denominator: baseAssetPrice * 10^NAV_DECIMALS
         int256 denominator = int256(baseAssetPrice) * int256(10 ** NAV_DECIMALS);
 

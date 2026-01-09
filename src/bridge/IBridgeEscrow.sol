@@ -41,7 +41,9 @@ interface IBridgeEscrow {
     event AssetsDeposited(bytes32 indexed invoiceId, address indexed asset, uint256 amount);
 
     /// @notice Event emitted when assets are released from escrow
-    event AssetsReleased(bytes32 indexed invoiceId, uint64 indexed sourceChainId, address asset, uint256 amount, address recipient);
+    event AssetsReleased(
+        bytes32 indexed invoiceId, uint64 indexed sourceChainId, address asset, uint256 amount, address recipient
+    );
 
     /// @notice Event emitted when a portfolio safe is authorized
     event PortfolioSafeAuthorized(address indexed safe);
@@ -85,11 +87,7 @@ interface IBridgeEscrow {
     /// @param amount The amount to release
     /// @dev This function decodes the invoiceId, looks up asset from symbol, validates all parameters match,
     ///      checks for nonce replay, and releases the funds if all validations pass.
-    function releaseByInvoiceId(
-        bytes32 invoiceId,
-        address portfolioSafe,
-        uint256 amount
-    ) external;
+    function releaseByInvoiceId(bytes32 invoiceId, address portfolioSafe, uint256 amount) external;
 
     /// @notice Cancels an invoice and returns assets (if still in escrow)
     /// @param invoiceId The invoice ID to cancel
@@ -116,12 +114,7 @@ interface IBridgeEscrow {
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (
-            uint24 sourceChainId,
-            uint24 destinationChainId,
-            address portfolioSafe,
-            bytes6 assetSymbol
-        );
+        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol);
 
     /// @notice Gets all active invoices for a portfolio safe
     /// @param portfolioSafe The portfolio safe address

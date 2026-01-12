@@ -10,7 +10,7 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import "src/errors.sol";
 
 contract BalancesHarness is Balances {
-    constructor() {
+    constructor() initializer {
         __Balances_init();
     }
 
@@ -145,7 +145,7 @@ contract BalancesTest is Test {
 
     function test_readBalanceOraclesWithMetadata() public {
         address ethAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-            balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         balances.setBalanceOracle(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
 
         IBalances.BalanceOracleWithMetadata[] memory oracles_1 = balances.balanceOraclesWithMetadata(address(usdc));

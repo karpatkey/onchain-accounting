@@ -23,13 +23,8 @@ contract MorphoMarketTest is TestEnvConfigurator {
     IBalanceOracleCustom.PositionMetadata morphoMetadata =
         IBalanceOracleCustom.PositionMetadata({protocol: "Morpho", position: "Some market", positionType: "Supplied"});
 
-    function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
-    }
-
     function test_mainnet_balanceOf_supply_usdc() public {
-        vm.rollFork(20_361_884);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
         address user = address(0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
@@ -41,7 +36,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_borrowUsdc() public {
-        vm.rollFork(20_728_491);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
         address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
@@ -54,7 +49,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_collateralMKR() public {
-        vm.rollFork(20_728_491);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
         address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
@@ -67,7 +62,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_unsupportedToken() public {
-        vm.rollFork(20_728_491);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
         address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
@@ -80,6 +75,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_underlyingAssetsSupported() public {
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
@@ -92,6 +88,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_collateralAndLoanTokens() public {
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);

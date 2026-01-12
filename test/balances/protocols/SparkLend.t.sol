@@ -29,13 +29,8 @@ contract SparkTest is TestEnvConfigurator {
         protocol: "Spark", position: "Spark Pool", positionType: "Supplied/Borrowed"
     });
 
-    function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
-    }
-
     function test_mainnet_balanceOf_supply_dai() public {
-        vm.rollFork(20_734_274);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
 
@@ -46,7 +41,7 @@ contract SparkTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_supply_wbtc() public {
-        vm.rollFork(20_734_274);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
         address user = address(0xB6875EC94bE06d159A28d627422b7c9388cc8861);
@@ -56,7 +51,7 @@ contract SparkTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_borrow_weth() public {
-        vm.rollFork(20_734_274);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
         address user = address(0xB6875EC94bE06d159A28d627422b7c9388cc8861);
@@ -66,7 +61,7 @@ contract SparkTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_supply_gnosis() public {
-        vm.rollFork(17_772_457);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
         address user = address(0x849D52316331967b6fF1198e5E32A0eB168D039d);
         int256 balance = oracle.balanceOf(gno, user);
@@ -74,7 +69,7 @@ contract SparkTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_debt_dai() public {
-        vm.rollFork(17_772_457);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
         address user = address(0x849D52316331967b6fF1198e5E32A0eB168D039d);
         int256 balance = oracle.balanceOf(dai, user);
@@ -82,7 +77,7 @@ contract SparkTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_reward_steth() public {
-        vm.rollFork(19_685_985);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 19_685_985);
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
         address user = address(0x4F2083f5fBede34C2714aFfb3105539775f7FE64);
 

@@ -47,27 +47,12 @@ contract GMXTest is TestEnvConfigurator {
     });
 
     function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("arb-mainnet"));
-        vm.selectFork(fork);
-
-        GmxBalanceOracle.TokenFeed[] memory feeds = new GmxBalanceOracle.TokenFeed[](1);
-        feeds[0] = GmxBalanceOracle.TokenFeed(address(WETH), ETH_USD);
-
-        oracle = new GmxBalanceOracle(
-            BTC_USDC_LONG_MARKET,
-            GMX_READER,
-            GMX_REFERRAL_STORAGE,
-            address(USDC),
-            address(WETH),
-            false,
-            feeds,
-            gmxMetadata
-        );
+        // Fork will be created per-test with specific block numbers to reduce RPC calls
+        // Oracle creation is moved to individual tests to avoid calling non-contract addresses
     }
 
     function test_WETH_WETH_Short_firstBlock_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(341_553_384);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 341_553_384);
 
         address user = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
 
@@ -94,8 +79,7 @@ contract GMXTest is TestEnvConfigurator {
     }
 
     function test_WETH_WETH_Short_WithFees_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(340_833_501);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 340_833_501);
 
         address user = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
 
@@ -122,8 +106,7 @@ contract GMXTest is TestEnvConfigurator {
     }
 
     function test_WETH_USDC_Long_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(301_945_721);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 301_945_721);
 
         address user = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
 
@@ -150,8 +133,7 @@ contract GMXTest is TestEnvConfigurator {
     }
 
     function test_BTC_USDC_Long_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(340_833_501);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 340_833_501);
 
         address user = 0x08c788aFdACF6cf81180D2bBBE42A7434D0C7A92;
 
@@ -180,8 +162,7 @@ contract GMXTest is TestEnvConfigurator {
     }
 
     function test_WETH_USDC_Long_Whale1_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(341_593_396);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 341_593_396);
 
         address user = 0x91666112b851E33D894288A95846d14781e86cad;
 
@@ -208,8 +189,7 @@ contract GMXTest is TestEnvConfigurator {
     }
 
     function test_WETH_USDC_Long_Whale2_Oracle() public {
-        vm.selectFork(fork);
-        vm.rollFork(341_593_396);
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), 341_593_396);
 
         address user = 0xe2823659bE02E0F48a4660e4Da008b5E1aBFdF29;
 
@@ -235,7 +215,23 @@ contract GMXTest is TestEnvConfigurator {
         assertEq(balanceWETH, 775_713_648_496_240_752_489);
     }
 
-    function test_balanceOfZeroAddress() public view {
+    function test_balanceOfZeroAddress() public {
+        fork = vm.createSelectFork(getAlchemyUrl("arb-mainnet"), FORK_BLOCK);
+
+        GmxBalanceOracle.TokenFeed[] memory feeds = new GmxBalanceOracle.TokenFeed[](1);
+        feeds[0] = GmxBalanceOracle.TokenFeed(address(WETH), ETH_USD);
+
+        oracle = new GmxBalanceOracle(
+            BTC_USDC_LONG_MARKET,
+            GMX_READER,
+            GMX_REFERRAL_STORAGE,
+            address(USDC),
+            address(WETH),
+            false,
+            feeds,
+            gmxMetadata
+        );
+
         int256 balanceWETH = oracle.balanceOf(address(WETH), address(0));
         assertEq(balanceWETH, 0);
 

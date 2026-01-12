@@ -148,7 +148,8 @@ interface INAVCalculator {
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
     /// oracles.
     /// @dev Cannot be called before registering the asset. Replaces any existing price oracle.
-    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat) external;
+    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
 
     /// @notice Sets a balance oracle for an existing asset.
     /// @param underlyingAsset The address of the token to set a balance oracle for.

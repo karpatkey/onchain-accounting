@@ -116,14 +116,17 @@ abstract contract SuperTest is Test {
         // IPrices.PriceType.Chainlink,type(uint256).max);
         // No need to add the balance oracle for the native token, as it is added in the constructor
 
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
 
-        nav.addPrice(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
-        nav.addBalance(address(dai), address(dai), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(dai));
+        nav.setPriceOracle(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
+        nav.setBalanceOracle(address(dai), address(dai), IBalances.BalanceType.ERC20);
 
-        nav.addPrice(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(weth), address(weth), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(weth));
+        nav.setPriceOracle(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(weth), address(weth), IBalances.BalanceType.ERC20);
 
         vm.stopPrank();
     }

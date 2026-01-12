@@ -24,7 +24,8 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_setUp() public {
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, 86_400);
+        nav.registerAsset(address(nav.NATIVE_ADDRESS()));
+        nav.setPriceOracle(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, 86_400);
         vm.stopPrank();
 
         vm.deal(safe, 11 ether);
@@ -63,9 +64,9 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(uint8(priceType_), uint8(IPrices.PriceType.Chainlink));
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(dai), address(mockBalanceOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(weth), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(dai), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(weth), address(mockBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
 
         address[] memory balanceOracles = nav.balanceOracles(address(usdc));
@@ -91,19 +92,20 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(nav.assetRecoverer(), safe);
     }
 
-    function test_addBalance() public {
+    function test_setBalanceOracle() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         vm.stopPrank();
     }
 
-    function test_addBalance_notAuthorized() public {
+    function test_setBalanceOracle_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
@@ -111,22 +113,23 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         vm.stopPrank();
     }
 
-    function test_addPrice() public {
+    function test_setPriceOracle() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_addPrice_notAuthorized() public {
+    function test_setPriceOracle_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
@@ -134,11 +137,11 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_addBalance_withoutPrice() public {
+    function test_setBalanceOracle_withoutAsset() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
@@ -146,65 +149,69 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.prank(navCalculatorManager);
         vm.expectRevert(INAVCalculator.AssetNotFound.selector);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
     }
 
-    function test_removeBalance_ops() public {
+    function test_unsetBalanceOracle_ops() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.removeBalance(address(usdc), address(usdc));
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.unsetBalanceOracle(address(usdc), address(usdc));
         vm.stopPrank();
     }
 
-    function test_removeBalance_notAuthorized() public {
+    function test_unsetBalanceOracle_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         vm.stopPrank();
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.removeBalance(address(usdc), address(usdc));
+        nav.unsetBalanceOracle(address(usdc), address(usdc));
         vm.stopPrank();
     }
 
-    function test_removePrice_ops() public {
+    function test_unsetPriceOracle_ops() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
 
-        nav.removePrice(address(usdc));
+        nav.unsetPriceOracle(address(usdc));
         vm.stopPrank();
     }
 
-    function test_removePrice_notAuthorized() public {
+    function test_unsetPriceOracle_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.removePrice(address(usdc));
+        nav.unsetPriceOracle(address(usdc));
         vm.stopPrank();
     }
 
@@ -244,7 +251,8 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_read_eth() public {
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.registerAsset(address(nav.NATIVE_ADDRESS()));
+        nav.setPriceOracle(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
 
         vm.deal(safe, 11 ether);
@@ -266,7 +274,8 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_read_eth_with_metadata() public {
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.registerAsset(address(nav.NATIVE_ADDRESS()));
+        nav.setPriceOracle(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
         vm.deal(safe, 11 ether);
         assertEq(address(safe).balance, 11 ether);
@@ -313,7 +322,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_read_usdc_with_metadata_customOracle() public {
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
 
         INAVCalculator.PositionWithMetadata memory p = nav.readPositionWithMetadata(safe, address(usdc), 1);
@@ -344,7 +353,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.stale, false);
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(dai), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(dai), address(mockBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
 
         INAVCalculator.NAV memory r_2 = nav.read(safe);
@@ -399,8 +408,9 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
@@ -422,8 +432,9 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.addPrice(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
@@ -441,7 +452,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_read_multipleBalancesSameAsset() public {
         Mock_CustomBalanceOracle stakingBalanceOracle = new Mock_CustomBalanceOracle();
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
 
         // mint 1 USDC to both the safe and the custom oracle
@@ -457,7 +468,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_read_singleNegativeBalanceAndOnePositiveBalance() public {
         Mock_CustomBalanceOracle stakingBalanceOracle = new Mock_CustomBalanceOracle();
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
 
         //Set the custom oracle to -1 USDC  and  mint 1 USDC to the safe
         stakingBalanceOracle.setBalance(address(usdc), safe, -1 * int256(10 ** usdc.decimals()));
@@ -474,8 +485,8 @@ contract NAVCalculatorTest is SuperTest {
         Mock_CustomBalanceOracle stakingBalanceOracle = new Mock_CustomBalanceOracle();
         Mock_CustomBalanceOracle aaveBalanceOracle = new Mock_CustomBalanceOracle();
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(dai), address(aaveBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(stakingBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(dai), address(aaveBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
 
         // mint 1 USDC to both the safe and the custom oracle
@@ -494,7 +505,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.readPosition(safe, address(usdc), 2);
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalance(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(mockBalanceOracle), IBalances.BalanceType.Custom);
         vm.stopPrank();
         assertEq(nav.balanceOracleCountFor(address(usdc)), 2);
         vm.expectRevert(IBalances.BalanceOracleNotSet.selector);
@@ -504,14 +515,9 @@ contract NAVCalculatorTest is SuperTest {
     function test_read_noAssets_doesNotRevert() public {
         vm.startPrank(navCalculatorManager);
 
-        nav.removeBalance(address(usdc), address(usdc));
-        nav.removePrice(address(usdc));
-
-        nav.removeBalance(address(dai), address(dai));
-        nav.removePrice(address(dai));
-
-        nav.removeBalance(address(weth), address(weth));
-        nav.removePrice(address(weth));
+        nav.unregisterAsset(address(usdc));
+        nav.unregisterAsset(address(dai));
+        nav.unregisterAsset(address(weth));
         vm.stopPrank();
 
         assertEq(nav.assetCount(), 0);

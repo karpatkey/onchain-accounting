@@ -125,11 +125,16 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function setupPriceOracle() internal override {
         sdaiPriceOracle = new sDAI_PriceOracle(address(sdai), dsrManager, daiToUsdChainlink, heartbeat);
 
-        nav.addPrice(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPrice(address(dai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPrice(address(sdai), address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
-        nav.addPrice(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPrice(address(eth), ethToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(dai));
+        nav.setPriceOracle(address(dai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(sdai));
+        nav.setPriceOracle(address(sdai), address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
+        nav.registerAsset(address(compound));
+        nav.setPriceOracle(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(eth));
+        nav.setPriceOracle(address(eth), ethToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
@@ -154,24 +159,24 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         daiDsr = new DaiDsrBalanceOracle(address(dai), dsr, dsrMetadata);
 
         // usdc
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
 
         // dai
-        nav.addBalance(address(dai), address(dai), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(dai), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(dai), address(daiDsr), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(dai), address(dai), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(dai), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(dai), address(daiDsr), IBalances.BalanceType.Custom);
 
         // sDai
-        nav.addBalance(address(sdai), address(sdai), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(sdai), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(sdai), address(sdai), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(sdai), address(aaveOracle), IBalances.BalanceType.Custom);
 
         // Compound
 
-        nav.addBalance(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.addBalance(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
     }
 }
 
@@ -208,10 +213,12 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.addPrice(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
 
         // Compound
-        nav.addPrice(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(compound));
+        nav.setPriceOracle(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
@@ -228,14 +235,14 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         );
 
         // usdc
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
 
         // Compound
 
-        nav.addBalance(address(compound), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
-        nav.addBalance(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(compound), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
     }
 }
 
@@ -275,13 +282,15 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.addPrice(
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(
             address(usdc), address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B), IPrices.PriceType.Chainlink, heartbeat
         );
 
         // Compound
 
-        nav.addPrice(
+        nav.registerAsset(address(compound));
+        nav.setPriceOracle(
             address(compound),
             address(0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428),
             IPrices.PriceType.Chainlink,
@@ -307,14 +316,14 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, morphoPositionMetadata);
 
         // usdc
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
 
         // Compound
-        nav.addBalance(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.addBalance(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
     }
 }
 
@@ -348,13 +357,15 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.addPrice(
+        nav.registerAsset(address(usdc));
+        nav.setPriceOracle(
             address(usdc), address(0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3), IPrices.PriceType.Chainlink, heartbeat
         );
 
         // Compound
 
-        nav.addPrice(
+        nav.registerAsset(address(compound));
+        nav.setPriceOracle(
             address(compound),
             address(0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884),
             IPrices.PriceType.Chainlink,
@@ -374,12 +385,12 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata);
 
-        nav.addBalance(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.addBalance(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
 
-        nav.addBalance(address(compound), address(compound), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
     }
 }
 
@@ -408,14 +419,17 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function setupPriceOracle() internal override {
         savingsXDAIPrice = new sXDAI_PriceOracle(savingsXDaiContract, daiToUsdChainlink, heartbeat);
 
-        nav.addPrice(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPrice(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPrice(address(savingsXDaiContract), address(savingsXDAIPrice), IPrices.PriceType.Custom, heartbeat);
+        nav.registerAsset(address(xdai));
+        nav.setPriceOracle(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(wxdai));
+        nav.setPriceOracle(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(savingsXDaiContract));
+        nav.setPriceOracle(address(savingsXDaiContract), address(savingsXDAIPrice), IPrices.PriceType.Custom, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
         // wxdai
-        nav.addBalance(address(wxdai), address(wxdai), IBalances.BalanceType.ERC20);
-        nav.addBalance(address(savingsXDaiContract), address(savingsXDaiContract), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(wxdai), address(wxdai), IBalances.BalanceType.ERC20);
+        nav.setBalanceOracle(address(savingsXDaiContract), address(savingsXDaiContract), IBalances.BalanceType.ERC20);
     }
 }

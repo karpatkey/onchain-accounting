@@ -40,16 +40,16 @@ interface IBalances {
     // Events
     //
 
-    /// @notice Event emitted when a balance oracle is added for an underlying asset.
+    /// @notice Event emitted when a balance oracle is set for an underlying asset.
     /// @param underlyingAsset The address of the token for which the oracle is set.
     /// @param oracle The address of the oracle being set.
     /// @param oracleType The type of the oracle (ERC20 or Custom).
-    event BalanceOracleAdd(address indexed underlyingAsset, address indexed oracle, BalanceType oracleType);
+    event BalanceOracleSet(address indexed underlyingAsset, address indexed oracle, BalanceType oracleType);
 
-    /// @notice Event emitted when a balance oracle is removed for an underlying asset.
-    /// @param underlyingAsset The address of the token for which the oracle is removed.
-    /// @param oracle The address of the balance oracles to remove from the token oracle set.
-    event BalanceOracleRemoved(address indexed underlyingAsset, address oracle);
+    /// @notice Event emitted when a balance oracle is unset for an underlying asset.
+    /// @param underlyingAsset The address of the token for which the oracle is unset.
+    /// @param oracle The address of the balance oracle being unset.
+    event BalanceOracleUnset(address indexed underlyingAsset, address oracle);
 
     //
     // Errors

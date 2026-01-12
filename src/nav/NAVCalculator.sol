@@ -64,7 +64,27 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     //
 
     /// @inheritdoc INAVCalculator
-    function addPrice(address underlyingAsset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    function registerAsset(address asset) external {
+        if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
+        if (asset == address(0)) {
+            revert InvalidArguments();
+        }
+
+        // Check if asset already exists
+        if (_assetDecimals.contains(asset)) {
+            revert InvalidArguments(); // Asset already registered
+        }
+
+        // Assumption: All native assets use 18 decimals (EVM standard)
+        // If deploying on a chain with different native decimals, this must be made configurable
+        uint8 decimals = asset == NATIVE_ADDRESS ? 18 : IERC20Metadata(asset).decimals();
+        _assetDecimals.set(asset, decimals);
+
+        emit AssetRegistered(asset, decimals);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external
     {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
@@ -72,18 +92,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             revert InvalidArguments();
         }
 
-        // Assumption: All native assets use 18 decimals (EVM standard)
-        // If deploying on a chain with different native decimals, this must be made configurable
-        uint8 decimals = underlyingAsset == NATIVE_ADDRESS ? 18 : IERC20Metadata(underlyingAsset).decimals();
-        _assetDecimals.set(underlyingAsset, decimals);
+        _requireAssetExists(asset);
 
-        _setPriceOracle(underlyingAsset, oracle, chainlinkHeartbeat, priceType);
-
-        emit AssetAdded(underlyingAsset, decimals);
+        _setPriceOracle(asset, oracle, chainlinkHeartbeat, priceType);
     }
 
     /// @inheritdoc INAVCalculator
-    function addBalance(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external {
+    function setBalanceOracle(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         if (oracle == address(0)) {
             revert InvalidArguments();
@@ -91,34 +106,58 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(underlyingAsset);
 
-        _addBalanceOracle(underlyingAsset, oracle, balanceType);
+        _setBalanceOracle(underlyingAsset, oracle, balanceType);
     }
 
     /// @inheritdoc INAVCalculator
-    function removePrice(address underlyingAsset) external {
+    function unsetPriceOracle(address underlyingAsset) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
-        if (balanceOracleCountFor(underlyingAsset) > 0) {
-            revert InvalidArguments();
-        }
+        _requireAssetExists(underlyingAsset);
+        _requirePriceOracleExists(underlyingAsset);
 
-        bool success = _assetDecimals.remove(underlyingAsset);
-
-        if (!success) {
-            revert AssetNotFound();
-        }
-        _removePriceOracle(underlyingAsset);
-
-        emit AssetRemoved(underlyingAsset);
+        _unsetPriceOracle(underlyingAsset);
     }
 
     /// @inheritdoc INAVCalculator
-    function removeBalance(address underlyingAsset, address oracle) external {
+    function unsetBalanceOracle(address underlyingAsset, address oracle) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
         _requireAssetExists(underlyingAsset);
 
-        _removeBalanceOracle(underlyingAsset, oracle);
+        _unsetBalanceOracle(underlyingAsset, oracle);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function unregisterAsset(address underlyingAsset) external {
+        if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
+
+        _requireAssetExists(underlyingAsset);
+
+        // Unset price oracle if it exists
+        if (priceOracles[underlyingAsset].oracle != address(0)) {
+            _unsetPriceOracle(underlyingAsset);
+        }
+
+        // Unset all balance oracles
+        address[] memory oraclesToRemove = balanceOracles(underlyingAsset);
+
+        // Remove all balance oracles
+        for (uint256 i = 0; i < oraclesToRemove.length; i++) {
+            // Skip native address oracle as it cannot be removed
+            if (underlyingAsset == NATIVE_ADDRESS && oraclesToRemove[i] == NATIVE_ADDRESS) {
+                continue;
+            }
+            _unsetBalanceOracle(underlyingAsset, oraclesToRemove[i]);
+        }
+
+        // Remove the asset itself
+        bool success = _assetDecimals.remove(underlyingAsset);
+        if (!success) {
+            revert AssetNotFound();
+        }
+
+        emit AssetUnregistered(underlyingAsset);
     }
 
     /// @inheritdoc INAVCalculator

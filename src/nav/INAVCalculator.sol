@@ -117,14 +117,14 @@ interface INAVCalculator {
     /// @param newSequencerGracePeriod The new sequencer grace period in seconds
     event L2SequencerGracePeriodUpdated(uint256 oldSequencerGracePeriod, uint256 newSequencerGracePeriod);
 
-    /// @notice Event emitted when an asset is added to the calculator
+    /// @notice Event emitted when an asset is registered in the calculator
     /// @param asset The address of the asset
     /// @param decimals The number of decimals the asset uses
-    event AssetAdded(address indexed asset, uint8 decimals);
+    event AssetRegistered(address indexed asset, uint8 decimals);
 
-    /// @notice Event emitted when an asset is removed from the calculator
+    /// @notice Event emitted when an asset is unregistered from the calculator
     /// @param asset The address of the asset
-    event AssetRemoved(address indexed asset);
+    event AssetUnregistered(address indexed asset);
 
     //
     // Errors
@@ -136,28 +136,42 @@ interface INAVCalculator {
     /// @notice Emitted when 'setSequencerGracePeriod' is called and 'chainlinkUptimeFeed' is the zero address
     error UptimeFeedNotSet();
 
-    /// @notice Adds a new asset to the calculator along with its price oracle
-    /// @param asset The address of the asset to add
+    /// @notice Registers a new asset in the calculator without any oracles.
+    /// @param asset The address of the asset to register
+    /// @dev Trying to read anything related to such asset would fail until oracles are set.
+    function registerAsset(address asset) external;
+
+    /// @notice Sets the price oracle for an existing asset.
+    /// @param asset The address of the asset
     /// @param oracle The address of the price oracle to use
     /// @param priceType The type of the price oracle
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
     /// oracles.
-    function addPrice(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat) external;
+    /// @dev Cannot be called before registering the asset. Replaces any existing price oracle.
+    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat) external;
 
-    /// @notice Adds a new balance source to an existing underlying asset.
-    /// @param underlyingAsset The address of the token to add a balance oracle to.
+    /// @notice Sets a balance oracle for an existing asset.
+    /// @param underlyingAsset The address of the token to set a balance oracle for.
     /// @param oracle The address of the balance oracle to use.
     /// @param balanceType The type of the balance.
-    function addBalance(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external;
+    /// @dev Cannot be called before registering the asset. Replaces any existing balance oracle with the same address.
+    function setBalanceOracle(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external;
 
-    /// @notice Removes the oracle for a given token.
-    /// @param underlyingAsset The address of the token.
-    function removePrice(address underlyingAsset) external;
+    /// @notice Unsets the price oracle for a given asset.
+    /// @param underlyingAsset The address of the asset.
+    /// @dev The asset remains registered after this operation.
+    function unsetPriceOracle(address underlyingAsset) external;
 
-    /// @notice Removes the oracle for a given token.
-    /// @param underlyingAsset The address of the token.
-    /// @param oracle The address of the oracle.
-    function removeBalance(address underlyingAsset, address oracle) external;
+    /// @notice Unsets a balance oracle for a given asset.
+    /// @param underlyingAsset The address of the asset.
+    /// @param oracle The address of the balance oracle to unset.
+    /// @dev The asset remains registered after this operation.
+    function unsetBalanceOracle(address underlyingAsset, address oracle) external;
+
+    /// @notice Unregisters an asset, removing all oracles and the asset itself.
+    /// @param underlyingAsset The address of the asset to unregister.
+    /// @dev This is a shortcut that unsets price and balance oracles, then removes the asset.
+    function unregisterAsset(address underlyingAsset) external;
 
     /// @notice Sets the symbol of the native token used for display purposes (e.g. "xDAI")
     /// @dev This function can only be called by the manager role

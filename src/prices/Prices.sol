@@ -113,9 +113,7 @@ abstract contract Prices is IPrices, Initializable {
             revert InvalidPriceOracleType();
         }
 
-        if (priceOracles[token].oracle != address(0)) {
-            revert PriceOracleAlreadySet();
-        }
+        // Allow replacing existing price oracle (no revert)
     }
 
     /// @notice Sets the oracle for a given token.
@@ -147,6 +145,13 @@ abstract contract Prices is IPrices, Initializable {
     function _removePriceOracle(address token) internal {
         delete priceOracles[token];
         emit PriceOracleRemoved(token);
+    }
+
+    /// @notice Unsets the oracle for a given token.
+    /// @param token The address of the token.
+    function _unsetPriceOracle(address token) internal {
+        delete priceOracles[token];
+        emit PriceOracleUnset(token);
     }
 
     /// @notice Gap for upgradeability

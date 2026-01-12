@@ -10,16 +10,16 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import "src/errors.sol";
 
 contract BalancesHarness is Balances {
-    constructor() initializer {
+    constructor() {
         __Balances_init();
     }
 
-    function addBalanceOracle(address token, address oracle, IBalances.BalanceType _type) public {
-        _addBalanceOracle(token, oracle, _type);
+    function setBalanceOracle(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) public {
+        _setBalanceOracle(underlyingAsset, oracle, balanceType);
     }
 
-    function removeBalanceOracle(address token, address oracle) public {
-        _removeBalanceOracle(token, oracle);
+    function unsetBalanceOracle(address underlyingAsset, address oracle) public {
+        _unsetBalanceOracle(underlyingAsset, oracle);
     }
 }
 
@@ -60,7 +60,7 @@ contract BalancesTest is Test {
     }
 
     function test_setAndGetERC20BalanceOracle() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
 
         usdc.mint(alice, 1000);
 
@@ -69,7 +69,7 @@ contract BalancesTest is Test {
     }
 
     function test_setAndGetCustomBalanceOracle() public {
-        balances.addBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
+        balances.setBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
 
         customOracle.setBalance(address(customOracle), alice, 2000);
 
@@ -78,7 +78,7 @@ contract BalancesTest is Test {
     }
 
     function test_setAndGetCustomBalanceOracleNegativeBalance() public {
-        balances.addBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
+        balances.setBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
 
         customOracle.setBalance(address(customOracle), alice, -2000);
 
@@ -86,11 +86,11 @@ contract BalancesTest is Test {
         assertEq(balance, -2000);
     }
 
-    function test_addBalanceOracle_nativeAddress() public {
+    function test_setBalanceOracle_nativeAddress() public {
         address nativeAddress = address(balances.NATIVE_ADDRESS());
 
         vm.expectRevert(IBalances.DuplicateBalanceOracle.selector);
-        balances.addBalanceOracle(nativeAddress, nativeAddress, IBalances.BalanceType.Native);
+        balances.setBalanceOracle(nativeAddress, nativeAddress, IBalances.BalanceType.Native);
     }
 
     function test_getNativeBalance() public {
@@ -99,18 +99,18 @@ contract BalancesTest is Test {
         assertEq(balance, 1337);
     }
 
-    function test_removeBalanceOracle() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        balances.removeBalanceOracle(address(usdc), address(usdc));
+    function test_unsetBalanceOracle() public {
+        balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        balances.unsetBalanceOracle(address(usdc), address(usdc));
 
         vm.expectRevert();
         balances.balanceOf(address(usdc), 0, alice);
     }
 
-    function test_removeBalanceOracle_cantRemoveNativeTokenNativeBalanceOracle() public {
+    function test_unsetBalanceOracle_cantRemoveNativeTokenNativeBalanceOracle() public {
         address nativeAddress = balances.NATIVE_ADDRESS();
         vm.expectRevert(InvalidArguments.selector);
-        balances.removeBalanceOracle(nativeAddress, nativeAddress);
+        balances.unsetBalanceOracle(nativeAddress, nativeAddress);
     }
 
     function test_checkOracleSupport_ERC20() public view {
@@ -136,17 +136,17 @@ contract BalancesTest is Test {
         balances.checkBalanceOracleSupport(address(usdc), address(usdc), IBalances.BalanceType.Custom);
     }
 
-    function test_addBalanceOracle_duplicate() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+    function test_setBalanceOracle_duplicate() public {
+        balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
 
         vm.expectRevert();
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
     }
 
     function test_readBalanceOraclesWithMetadata() public {
         address ethAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        balances.addBalanceOracle(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
+            balances.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        balances.setBalanceOracle(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
 
         IBalances.BalanceOracleWithMetadata[] memory oracles_1 = balances.balanceOraclesWithMetadata(address(usdc));
 

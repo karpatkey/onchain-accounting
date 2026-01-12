@@ -428,9 +428,12 @@ contract GMXTest is TestEnvConfigurator {
 
         // Setup price oracles
         vm.startPrank(ops);
-        nav.addPrice(address(WETH), ETH_USD, IPrices.PriceType.Chainlink, 3600);
-        nav.addPrice(address(USDC), USDC_USD, IPrices.PriceType.Chainlink, 3600);
-        nav.addPrice(address(BTC), BTC_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(WETH));
+        nav.setPriceOracle(address(WETH), ETH_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(USDC));
+        nav.setPriceOracle(address(USDC), USDC_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(BTC));
+        nav.setPriceOracle(address(BTC), BTC_USD, IPrices.PriceType.Chainlink, 3600);
 
         vm.stopPrank();
     }

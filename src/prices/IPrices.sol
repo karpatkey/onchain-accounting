@@ -38,6 +38,10 @@ interface IPrices {
     /// @param underlyingAsset The address of the token.
     event PriceOracleRemoved(address indexed underlyingAsset);
 
+    /// @notice Emitted when an oracle is unset for a token.
+    /// @param underlyingAsset The address of the token.
+    event PriceOracleUnset(address indexed underlyingAsset);
+
     //
     // Errors
     //

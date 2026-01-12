@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-
 import {IBalances} from "./IBalances.sol";
 import {IBalanceOracleCustom} from "./IBalanceOracleCustom.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -151,19 +150,19 @@ abstract contract Balances is IBalances, Initializable {
     /// @param underlyingAsset The address of the token.
     /// @param oracle The address of the oracle.
     /// @param balanceType The type of the oracle.
-    function _addBalanceOracle(address underlyingAsset, address oracle, BalanceType balanceType) internal {
+    function _setBalanceOracle(address underlyingAsset, address oracle, BalanceType balanceType) internal {
         checkBalanceOracleSupport(underlyingAsset, oracle, balanceType);
 
         _balanceOracles[underlyingAsset].set(oracle, uint256(balanceType));
         balanceOracleTotalCount++;
 
-        emit BalanceOracleAdd(underlyingAsset, oracle, balanceType);
+        emit BalanceOracleSet(underlyingAsset, oracle, balanceType);
     }
 
-    /// @notice Removes the oracle for a given underlying asset.
+    /// @notice Unsets the oracle for a given underlying asset.
     /// @param underlyingAsset The address of the token.
     /// @param oracle The address of the oracle.
-    function _removeBalanceOracle(address underlyingAsset, address oracle) internal {
+    function _unsetBalanceOracle(address underlyingAsset, address oracle) internal {
         if (underlyingAsset == NATIVE_ADDRESS && oracle == NATIVE_ADDRESS) revert InvalidArguments();
 
         bool removed = _balanceOracles[underlyingAsset].remove(oracle);
@@ -174,7 +173,7 @@ abstract contract Balances is IBalances, Initializable {
 
         balanceOracleTotalCount--;
 
-        emit BalanceOracleRemoved(underlyingAsset, oracle);
+        emit BalanceOracleUnset(underlyingAsset, oracle);
     }
 
     /// @notice Fetches metadata for the oracle at a specific index for an asset

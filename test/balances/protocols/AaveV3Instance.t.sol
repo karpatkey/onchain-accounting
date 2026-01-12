@@ -10,7 +10,6 @@ import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance
 
 contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     uint256 fork;
-    uint256 forkBlock;
 
     address usdc = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
     address dai = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
@@ -26,9 +25,7 @@ contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     });
 
     function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
-        vm.rollFork(20_576_908);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_576_908);
 
         oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, aaveMetadata);
     }
@@ -119,9 +116,7 @@ contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     }
 
     function test_mainnet_balanceOf_lend_usdt() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
-        vm.rollFork(21_379_222);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 21_379_222);
 
         oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, aaveMetadata);
         address user = address(0x18709E89BD403F470088aBDAcEbE86CC60dda12e);

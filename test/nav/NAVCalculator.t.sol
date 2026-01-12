@@ -252,7 +252,9 @@ contract NAVCalculatorTest is SuperTest {
     function test_read_eth() public {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(nav.NATIVE_ADDRESS()));
-        nav.setPriceOracle(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.setPriceOracle(
+            address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+        );
         vm.stopPrank();
 
         vm.deal(safe, 11 ether);
@@ -275,7 +277,9 @@ contract NAVCalculatorTest is SuperTest {
     function test_read_eth_with_metadata() public {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(nav.NATIVE_ADDRESS()));
-        nav.setPriceOracle(address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.setPriceOracle(
+            address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+        );
         vm.stopPrank();
         vm.deal(safe, 11 ether);
         assertEq(address(safe).balance, 11 ether);

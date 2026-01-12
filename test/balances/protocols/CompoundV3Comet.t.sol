@@ -35,14 +35,11 @@ contract CompoundV3CometTest is TestEnvConfigurator {
     });
 
     function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_570_307);
 
         oracle = new CompoundV3Comet(compoundRewards, address(usdcv3), rewardToken, compoundMetadata);
 
         comet = CometExtInterface(address(usdcv3));
-
-        vm.rollFork(20_570_307);
     }
 
     function test_initialization() public view {

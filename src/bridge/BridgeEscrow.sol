@@ -8,6 +8,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
+import {BridgeData} from "./BridgeData.sol";
 import "src/errors.sol";
 import "src/constants.sol";
 
@@ -179,8 +180,14 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
             IERC20(asset).safeTransfer(adapter, amount);
         }
 
-        // Call adapter's bridge function
-        IBridgeAdapter(adapter).bridge(invoiceId, asset, amount, bridgeData);
+        // Decode incoming bridgeData and add asset/amount to create complete BridgeParams
+        BridgeData.BridgeParams memory params = BridgeData.decode(bridgeData);
+        params.asset = asset;
+        params.amount = amount;
+        bytes memory completeBridgeData = BridgeData.encode(params);
+
+        // Call adapter's bridge function with complete bridgeData
+        IBridgeAdapter(adapter).bridge(invoiceId, completeBridgeData);
     }
 
     /// @notice Releases funds based on invoice ID validation

@@ -7,7 +7,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
-import {BridgeData} from "./BridgeData.sol";
+import {InvoiceDataLib} from "./InvoiceDataLib.sol";
 import "src/errors.sol";
 import "src/constants.sol";
 
@@ -36,16 +36,6 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
 
     /// @notice Adapter version
     string public adapterVersion;
-
-    //
-    // Events
-    //
-
-    /// @notice Event emitted when a bridge is initiated
-    event BridgeInitiated(bytes32 indexed invoiceId, address indexed asset, uint256 amount);
-
-    /// @notice Event emitted when a bridge is completed
-    event BridgeCompleted(bytes32 indexed invoiceId, bytes32 indexed sourceInvoiceId, uint64 sourceChainId);
 
     //
     // Constructor
@@ -81,50 +71,48 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
     //
 
     /// @inheritdoc IBridgeAdapter
-    function bridge(bytes32 invoiceId, bytes calldata bridgeData) external override {
+    function bridge(bytes calldata messagePayload) external override {
         // Verify caller is BridgeEscrow
         if (msg.sender != bridgeEscrow) revert NotAuthorized();
 
-        // Decode standardized bridge data
-        BridgeData.BridgeParams memory params = BridgeData.decode(bridgeData);
+        // Decode messagePayload into struct once
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        _bridge(invoiceId, params);
+        // Pass decoded struct to adapter implementation
+        _bridge(data);
 
-        emit BridgeInitiated(invoiceId, params.asset, params.amount);
+        emit BridgeInitiated(data.invoiceId, data.amount); 
     }
 
     /// @inheritdoc IBridgeAdapter
-    function completeBridge(
-        bytes32 invoiceId,
-        address portfolioSafe,
-        uint256 amount,
-        bytes calldata bridgeData
-    ) external override {
-        // Verify caller is authorized (could be operator or bridge protocol callback)
+    function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override {
+        // Verify caller is authorized
         if (!hasRole(OPERATOR_ROLE, msg.sender)) {
             revert NotAuthorized();
         }
-
-        // Decode standardized completion data
-        BridgeData.CompletionParams memory completionParams = BridgeData.decodeCompletion(bridgeData);
-
-        // Extract invoiceId from bridge message if adapter supports it
-        // This allows adapters to relay invoiceId in bridge messages and extract it on destination
-        bytes32 extractedInvoiceId = _extractInvoiceIdFromBridgeData(completionParams.protocolData);
         
-        // Use extracted invoiceId if available, otherwise use the parameter
-        bytes32 invoiceIdToUse = extractedInvoiceId != bytes32(0) ? extractedInvoiceId : invoiceId;
-
-        // Decode invoiceId to get sourceChainId (invoiceId already encodes this)
-        (uint24 decodedSourceChainId,,,) = IBridgeEscrow(bridgeEscrow).decodeInvoiceId(invoiceIdToUse);
-
-        _completeBridge(invoiceIdToUse, completionParams);
-
-        // Call BridgeEscrow.releaseByInvoiceId() with the invoiceId to use
-        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(invoiceIdToUse, portfolioSafe, amount);
-
-        // sourceInvoiceId is the same as invoiceIdToUse (the invoice from source chain)
-        emit BridgeCompleted(invoiceIdToUse, invoiceIdToUse, uint64(decodedSourceChainId));
+        // Validate messagePayload is not empty
+        if (messagePayload.length == 0) {
+            revert InvalidCompletionData();
+        }
+        
+        // Decode messagePayload into struct once using InvoiceDataLib
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+        
+        // Validate checksum (adapter-level validation before calling escrow)
+        if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
+            data.invoiceId, data.amount, data.timestampByte, data.checksum24
+        )) {
+            revert InvalidInvoice();
+        }
+        
+        // Call bridge-specific completion logic
+        _completeBridge(messagePayload, protocolData);
+        
+        // Call BridgeEscrow.releaseByInvoiceId() with messagePayload (mandatory checksum validation)
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
+        
+        emit BridgeCompleted(data.invoiceId);
     }
 
     /// @inheritdoc IBridgeAdapter
@@ -137,37 +125,23 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
         return adapterVersion;
     }
 
+
     //
     // Abstract Functions
     //
 
     /// @notice Abstract function - implement bridge-specific logic
-    /// @param invoiceId The invoice ID
-    /// @param params Standardized bridge parameters (asset, amount, destinationChainId, recipient, messagePayload)
-    function _bridge(bytes32 invoiceId, BridgeData.BridgeParams memory params) internal virtual;
-
-    /// @notice Virtual function to extract invoiceId from bridge protocol data
-    /// @dev Override this if your adapter relays invoiceId in bridge messages
-    /// @param protocolData Bridge-specific protocol data (e.g., CCTP message, CCIP message)
-    /// @return extractedInvoiceId The extracted invoiceId, or bytes32(0) if not found/not supported
-    /// @dev Default implementation returns bytes32(0), meaning use the parameter passed to completeBridge
-    function _extractInvoiceIdFromBridgeData(bytes memory protocolData)
-        internal
-        view
-        virtual
-        returns (bytes32 extractedInvoiceId)
-    {
-        // Default: don't extract, use parameter
-        protocolData; // Silence unused parameter warning
-        return bytes32(0);
-    }
+    /// @param data The decoded invoice data struct
+    /// @dev Adapter receives decoded struct with all invoice components
+    ///      Adapter should encode data back to messagePayload if needed for the bridge protocol
+    function _bridge(InvoiceDataLib.InvoiceData memory data) internal virtual;
 
     /// @notice Abstract function - implement bridge-specific completion logic
-    /// @param invoiceId The invoice ID (extracted from message or passed as parameter)
-    /// @param params Standardized completion parameters (messagePayload, protocolData)
-    /// @dev All other information (sourceChainId, portfolioSafe, asset, amount) can be derived
-    ///      from invoiceId via decodeInvoiceId() if needed by the adapter
-    function _completeBridge(bytes32 invoiceId, BridgeData.CompletionParams memory params) internal virtual;
+    /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
+    /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
+    /// @dev All information (invoiceId, sourceChainId, portfolioSafe, asset, amount) can be derived
+    ///      from messagePayload via decodeInvoiceId() if needed by the adapter
+    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal virtual;
 
     //
     // ERC165 Support

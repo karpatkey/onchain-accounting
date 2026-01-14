@@ -13,3 +13,6 @@
 [submodule "lib/morpho-blue"]
 	path = lib/morpho-blue
 	url = https://github.com/morpho-org/morpho-blue
+[submodule "lib/omnibridge"]
+	path = lib/omnibridge
+	url = https://github.com/gnosischain/omnibridge

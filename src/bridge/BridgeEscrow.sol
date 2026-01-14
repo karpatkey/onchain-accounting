@@ -8,7 +8,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
-import {BridgeData} from "./BridgeData.sol";
+import {InvoiceDataLib} from "./InvoiceDataLib.sol";
 import "src/errors.sol";
 import "src/constants.sol";
 
@@ -18,7 +18,6 @@ import "src/constants.sol";
 contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
-    using EnumerableSet for EnumerableSet.Bytes32Set;
 
     //
     // Constants
@@ -31,11 +30,12 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     // State Variables
     //
 
-    /// @notice Invoice storage
+    /// @notice Invoice storage keyed by hashed invoice (checksum)
     mapping(bytes32 => Invoice) public invoices;
 
     /// @notice Active invoices per portfolio safe
-    mapping(address => EnumerableSet.Bytes32Set) private _activeInvoices;
+    mapping(address => bytes32[]) private _activeInvoices;
+    mapping(address => mapping(bytes32 => bool)) private _activeInvoicesSet;
 
     /// @notice Total in-transit balance per asset
     mapping(address => uint256) public inTransitBalances;
@@ -52,7 +52,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     /// @notice Current chain ID
     uint64 public chainId;
 
-    /// @notice Tracks completed invoices by invoiceId for bookkeeping
+    /// @notice Tracks completed invoices by hashed invoice for bookkeeping
     mapping(bytes32 => bool) public completedInvoices;
 
     /// @notice Maps asset symbol to asset address on this chain
@@ -114,9 +114,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         uint64 destinationChainId,
         bytes6 assetSymbol,
         uint256 amount,
-        address adapter,
-        bytes calldata bridgeData
-    ) external payable returns (bytes32 invoiceId) {
+        address adapter
+    ) external payable returns (bytes32 invoiceHash) {
         // Only authorized portfolio safes can deposit
         if (!_authorizedPortfolioSafes.contains(msg.sender)) {
             revert NotAuthorized();
@@ -134,8 +133,37 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         address asset = assetRegistry[assetSymbol];
         if (asset == address(0)) revert InvalidArguments(); // Asset not registered
 
-        // Generate invoice ID with checksum (no nonce needed)
-        invoiceId = _generateInvoiceId(chainId, destinationChainId, msg.sender, assetSymbol);
+        // Generate invoice ID (32 bytes, excludes amount)
+        bytes32 invoiceId = _generateInvoiceId(chainId, destinationChainId, msg.sender, assetSymbol);
+
+        // Truncate timestamp to uint8 (only need to check if in past)
+        uint8 timestampByte = uint8(block.timestamp);
+
+        // Calculate checksum for invoiceId + amount + timestampByte (24 bytes)
+        bytes24 checksum24 = _calculateInvoiceIdChecksum(invoiceId, amount, timestampByte);
+
+        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
+        invoiceHash = bytes32(uint256(uint192(checksum24)));
+
+        // Check if invoice already exists (hash must be unique)
+        if (invoices[invoiceHash].invoiceId != bytes32(0)) {
+            revert InvoiceAlreadyExists();
+        }
+
+        // Create InvoiceData struct with all components
+        InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.InvoiceData({
+            invoiceId: invoiceId,
+            sourceChainId: uint24(chainId),
+            destinationChainId: uint24(destinationChainId),
+            portfolioSafe: msg.sender,
+            assetSymbol: assetSymbol,
+            amount: amount,
+            timestampByte: timestampByte,
+            checksum24: checksum24
+        });
+
+        // Encode to messagePayload for storage and interface compatibility
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Create invoice with BRIDGING status (since we bridge immediately)
         Invoice memory invoice = Invoice({
@@ -149,8 +177,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
             status: InvoiceStatus.BRIDGING
         });
 
-        invoices[invoiceId] = invoice;
-        _activeInvoices[msg.sender].add(invoiceId);
+        invoices[invoiceHash] = invoice;
+        
+        // Add to active invoices (invoiceIds are unique, so no need to check for duplicates)
+        _activeInvoices[msg.sender].push(invoiceHash);
+        _activeInvoicesSet[msg.sender][invoiceHash] = true;
 
         // Transfer assets from portfolio safe
         if (asset == address(0)) {
@@ -180,70 +211,93 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
             IERC20(asset).safeTransfer(adapter, amount);
         }
 
-        // Decode incoming bridgeData and add asset/amount to create complete BridgeParams
-        BridgeData.BridgeParams memory params = BridgeData.decode(bridgeData);
-        params.asset = asset;
-        params.amount = amount;
-        bytes memory completeBridgeData = BridgeData.encode(params);
+        // Call adapter's bridge function with messagePayload
+        // BridgeAdapter will decode it once and pass struct to _bridge()
+        IBridgeAdapter(adapter).bridge(messagePayload);
 
-        // Call adapter's bridge function with complete bridgeData
-        IBridgeAdapter(adapter).bridge(invoiceId, completeBridgeData);
+        return invoiceHash;
     }
 
-    /// @notice Releases funds based on invoice ID validation
-    /// @param invoiceId The invoice ID to decode and validate
-    /// @param portfolioSafe The portfolio safe address (must match decoded invoiceId)
-    /// @param amount The amount to release
-    /// @dev This function decodes the invoiceId, looks up asset from symbol, validates all parameters match,
-    ///      and releases the funds if all validations pass. Note: Invoice status updates should only occur on the source chain.
-    function releaseByInvoiceId(bytes32 invoiceId, address portfolioSafe, uint256 amount) external {
-        // Check if this invoiceId has already been completed (bookkeeping check)
-        if (completedInvoices[invoiceId]) {
-            revert InvoiceAlreadyExists(); // Invoice already completed
-        }
-
-        // Decode invoice ID (validates checksum internally)
-        (uint24 sourceChainId, uint24 destinationChainId, address decodedPortfolioSafe, bytes6 assetSymbol) =
-            this.decodeInvoiceId(invoiceId);
-
-        // Validate destination chain matches current chain
-        if (uint64(destinationChainId) != chainId) {
-            revert InvalidArguments(); // Wrong destination chain
-        }
-
-        // Verify portfolio safe is authorized (check full address first)
-        if (!_authorizedPortfolioSafes.contains(portfolioSafe)) {
+    /// @notice Releases funds based on invoice ID extracted from messagePayload
+    /// @param messagePayload The message payload containing invoiceId and checksum
+    /// @dev Extracts invoiceId and checksum from messagePayload, validates checksum, and releases funds
+    /// @dev This is the ONLY way to release funds - checksum validation is mandatory
+    /// @dev Only authorized adapters or operators can call this function to prevent unauthorized releases
+    function releaseByInvoiceId(bytes memory messagePayload) external {
+        // Require caller to be either an authorized adapter or an operator
+        if (!_authorizedAdapters.contains(msg.sender) && !hasRole(OPERATOR_ROLE, msg.sender)) {
             revert NotAuthorized();
         }
 
-        // Validate portfolio safe matches decoded invoiceId (compare only lower 10 bytes since it's truncated)
-        // The decoded address is padded with zeros, so we compare only the lower 80 bits
-        if (uint80(uint160(portfolioSafe)) != uint80(uint160(decodedPortfolioSafe))) {
-            revert InvalidArguments(); // Portfolio safe mismatch
+        // Extract invoiceId, amount, and meta from messagePayload (exactly 3 slots)
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+        bytes32 invoiceId = data.invoiceId;
+        uint256 amount = data.amount;
+        uint8 timestampByte = data.timestampByte;
+        bytes24 checksum24 = data.checksum24;
+        
+        // MANDATORY: Validate timestamp is in the past (not exact match, just must be <= current)
+        if (timestampByte > uint8(block.timestamp)) {
+            revert InvalidInvoice(); // Timestamp must be in the past
+        }
+        
+        // MANDATORY: Validate checksum matches invoiceId + amount + timestampByte - revert if invalid
+        if (!this.validateInvoiceIdChecksum(invoiceId, amount, timestampByte, checksum24)) {
+            revert InvalidInvoice(); // Checksum mismatch - security check failed
         }
 
+        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
+        bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
+
+        // Check if already completed
+        if (completedInvoices[invoiceHash]) {
+            revert InvoiceAlreadyExists();
+        }
+
+        // Fetch invoice by hash
+        Invoice storage invoice = invoices[invoiceHash];
+        if (invoice.invoiceId == bytes32(0)) {
+            revert InvoiceNotFound();
+        }
+
+        // Additional sanity: ensure invoiceId and amount match stored record
+        // Note: timestamp is only checked to be in past, not exact match
+        if (invoice.invoiceId != invoiceId || invoice.amount != amount) {
+            revert InvalidInvoice();
+        }
+        
+        // Use already-decoded data from InvoiceDataLib.decode() instead of decoding again
+        // Validate destination chain
+        if (uint64(data.destinationChainId) != chainId) {
+            revert InvalidArguments();
+        }
+        
+        // Verify portfolio safe is authorized
+        if (!_authorizedPortfolioSafes.contains(data.portfolioSafe)) {
+            revert NotAuthorized();
+        }
+        
         // Look up asset address from symbol
-        address asset = assetRegistry[assetSymbol];
-        if (asset == address(0)) revert InvalidArguments(); // Asset not registered
-
-        // Mark invoice as completed for bookkeeping (invoice state only exists on source chain)
-        completedInvoices[invoiceId] = true;
-
+        address asset = assetRegistry[data.assetSymbol];
+        if (asset == address(0)) revert InvalidArguments();
+        
+        // Mark invoice as completed
+        completedInvoices[invoiceHash] = true;
+        
         // Decrease in-transit balances
         if (inTransitBalances[asset] < amount) revert InsufficientBalance();
         inTransitBalances[asset] -= amount;
-        inTransitBalancesBySafe[portfolioSafe][asset] -= amount;
-
+        inTransitBalancesBySafe[data.portfolioSafe][asset] -= amount;
+        
         // Transfer assets to portfolio safe
         if (asset == address(0)) {
-            (bool success,) = portfolioSafe.call{value: amount}("");
+            (bool success,) = data.portfolioSafe.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
-            IERC20(asset).safeTransfer(portfolioSafe, amount);
+            IERC20(asset).safeTransfer(data.portfolioSafe, amount);
         }
-
-        // Only emit AssetsReleased - InvoiceStatusUpdated should be emitted on source chain
-        emit AssetsReleased(invoiceId, sourceChainId, asset, amount, portfolioSafe);
+        
+        emit AssetsReleased(invoiceId, data.sourceChainId, asset, amount, data.portfolioSafe);
     }
 
     //
@@ -251,8 +305,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     //
 
     /// @inheritdoc IBridgeEscrow
-    function cancelInvoice(bytes32 invoiceId) external onlyRole(OPERATOR_ROLE) {
-        Invoice storage invoice = invoices[invoiceId];
+    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(OPERATOR_ROLE) {
+        Invoice storage invoice = invoices[invoiceHash];
 
         if (invoice.invoiceId == bytes32(0)) revert InvoiceNotFound();
         if (invoice.status == InvoiceStatus.COMPLETED) revert InvalidInvoiceStatus();
@@ -286,45 +340,50 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         }
 
         // Remove from active invoices
-        _activeInvoices[invoice.portfolioSafe].remove(invoiceId);
+        if (_activeInvoicesSet[invoice.portfolioSafe][invoiceHash]) {
+            _removeActiveInvoice(invoice.portfolioSafe, invoiceHash);
+        }
 
-        emit InvoiceStatusUpdated(invoiceId, oldStatus, InvoiceStatus.CANCELLED);
-        emit AssetsReleased(invoiceId, invoice.sourceChainId, asset, amount, invoice.portfolioSafe);
+        emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.CANCELLED);
+        emit AssetsReleased(invoice.invoiceId, invoice.sourceChainId, asset, amount, invoice.portfolioSafe);
     }
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
-    /// @param invoiceIds Array of invoice IDs to mark as completed
+    /// @param invoiceHashes Array of invoice hashes to mark as completed
     /// @dev This function should be called by an operator after assets have been released on the destination chain.
     ///      It updates the invoice status on the source chain for bookkeeping purposes only.
     ///      Invalid invoices (not found or wrong status) are skipped and processing continues.
-    function markInvoiceCompleted(bytes32[] calldata invoiceIds) external onlyRole(OPERATOR_ROLE) {
-        uint256 length = invoiceIds.length;
+    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external override onlyRole(OPERATOR_ROLE) {
+        uint256 length = invoiceHashes.length;
         bytes32[] memory failedInvoiceIds = new bytes32[](length);
         uint256 failedCount = 0;
 
         for (uint256 i = 0; i < length; i++) {
-            bytes32 invoiceId = invoiceIds[i];
-            Invoice storage invoice = invoices[invoiceId];
+            bytes32 invoiceHash = invoiceHashes[i];
+            Invoice storage invoice = invoices[invoiceHash];
 
             // Skip if invoice doesn't exist or is not in BRIDGING status
             if (invoice.invoiceId == bytes32(0)) {
-                failedInvoiceIds[failedCount] = invoiceId;
+                failedInvoiceIds[failedCount] = bytes32(0);
                 failedCount++;
                 continue;
             }
             if (invoice.status != InvoiceStatus.BRIDGING) {
-                failedInvoiceIds[failedCount] = invoiceId;
+                failedInvoiceIds[failedCount] = invoice.invoiceId;
                 failedCount++;
                 continue;
             }
 
             InvoiceStatus oldStatus = invoice.status;
             invoice.status = InvoiceStatus.COMPLETED;
+            completedInvoices[invoiceHash] = true;
 
             // Remove from active invoices
-            _activeInvoices[invoice.portfolioSafe].remove(invoiceId);
+            if (_activeInvoicesSet[invoice.portfolioSafe][invoiceHash]) {
+                _removeActiveInvoice(invoice.portfolioSafe, invoiceHash);
+            }
 
-            emit InvoiceStatusUpdated(invoiceId, oldStatus, InvoiceStatus.COMPLETED);
+            emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.COMPLETED);
         }
 
         // Emit event for failed invoice completions if any
@@ -359,13 +418,13 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     //
 
     /// @inheritdoc IBridgeEscrow
-    function getInvoice(bytes32 invoiceId) external view override returns (Invoice memory) {
-        return invoices[invoiceId];
+    function getInvoice(bytes32 invoiceHash) external view override returns (Invoice memory) {
+        return invoices[invoiceHash];
     }
 
     /// @inheritdoc IBridgeEscrow
     function getActiveInvoices(address portfolioSafe) external view override returns (bytes32[] memory) {
-        return _activeInvoices[portfolioSafe].values();
+        return _activeInvoices[portfolioSafe];
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -389,10 +448,10 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     }
 
     /// @notice Checks if an invoice has been completed
-    /// @param invoiceId The invoice ID to check
+    /// @param invoiceHash The hashed invoice ID to check
     /// @return True if the invoice has been completed
-    function isInvoiceCompleted(bytes32 invoiceId) external view returns (bool) {
-        return completedInvoices[invoiceId];
+    function isInvoiceCompleted(bytes32 invoiceHash) external view override returns (bool) {
+        return completedInvoices[invoiceHash];
     }
 
     //
@@ -431,71 +490,74 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     // Internal Functions
     //
 
-    /// @notice Generates a unique invoice ID (decodable with checksum)
+    /// @notice Generates a 32-byte invoice ID (excludes amount)
     /// @param sourceChainId Source chain ID
     /// @param destinationChainId Destination chain ID
-    /// @param portfolioSafe Portfolio safe address
-    /// @param assetSymbol Asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
-    /// @return invoiceId The generated invoice ID
-    /// @dev Encoding: [sourceChainId (3 bytes) | destinationChainId (3 bytes) | portfolioSafe truncated (10 bytes) | assetSymbol (6 bytes) | checksum (10 bytes)]
-    /// @dev Checksum is calculated as keccak256 of the other fields, truncated to 10 bytes
+    /// @param portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @param assetSymbol Asset symbol (bytes6)
+    /// @return invoiceId The 32-byte invoice ID
     function _generateInvoiceId(
         uint64 sourceChainId,
         uint64 destinationChainId,
         address portfolioSafe,
         bytes6 assetSymbol
     ) internal pure returns (bytes32) {
-        // Pack data without checksum: sourceChainId (3) + destinationChainId (3) + portfolioSafe (10) + assetSymbol (6) = 22 bytes
-        bytes memory data = abi.encodePacked(
-            uint24(sourceChainId),
-            uint24(destinationChainId),
-            uint80(uint160(portfolioSafe)), // Truncate to 10 bytes
-            assetSymbol
-        );
-
-        // Calculate checksum (first 10 bytes of keccak256 hash)
-        bytes32 hash = keccak256(data);
-        uint80 checksum = uint80(uint256(hash) >> 176);
-
-        // Pack with checksum: data (22 bytes) + checksum (10 bytes) = 32 bytes
+        // Pack data: 3 + 3 + 20 + 6 = 32 bytes exactly
         return bytes32(
-            (uint256(uint24(sourceChainId)) << 232) | (uint256(uint24(destinationChainId)) << 208)
-                | (uint256(uint80(uint160(portfolioSafe))) << 128) | (uint256(uint48(assetSymbol)) << 80)
-                | uint256(checksum)
+            (uint256(uint24(sourceChainId)) << 232) |           // Bits 232-255 (3 bytes)
+            (uint256(uint24(destinationChainId)) << 208) |      // Bits 208-231 (3 bytes)
+            (uint256(uint160(portfolioSafe)) << 48) |           // Bits 48-207 (20 bytes)
+            (uint256(uint48(assetSymbol)))                       // Bits 0-47 (6 bytes)
         );
     }
 
-    /// @notice Decodes an invoice ID into its components and validates the checksum
-    /// @param invoiceId The invoice ID to decode
-    /// @return sourceChainId Source chain ID (truncated to uint24)
-    /// @return destinationChainId Destination chain ID (truncated to uint24)
-    /// @return portfolioSafe Portfolio safe address (truncated to 10 bytes, padded with zeros)
-    /// @return assetSymbol Asset symbol (bytes6)
-    /// @dev Reverts if the checksum is invalid
+    /// @notice Calculates checksum for invoiceId + amount + timestampByte (returns 24 bytes)
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @param amount The amount being bridged
+    /// @param timestampByte The timestamp truncated to uint8
+    /// @return checksum24 The 24-byte checksum (first 24 bytes of keccak256 hash of invoiceId + amount + timestampByte)
+    function _calculateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint8 timestampByte) internal pure returns (bytes24) {
+        bytes32 fullHash = keccak256(abi.encodePacked(invoiceId, amount, timestampByte));
+        return bytes24(fullHash);
+    }
+
+    /// @notice Decodes a 32-byte invoice ID into its components
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @return sourceChainId Source chain ID
+    /// @return destinationChainId Destination chain ID
+    /// @return portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @return assetSymbol Asset symbol
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol)
+        returns (
+            uint24 sourceChainId,
+            uint24 destinationChainId,
+            address portfolioSafe,
+            bytes6 assetSymbol
+        )
     {
         uint256 id = uint256(invoiceId);
-        sourceChainId = uint24(id >> 232);
-        destinationChainId = uint24(id >> 208);
-        uint80 portfolioSafeTruncated = uint80(id >> 128);
-        portfolioSafe = address(uint160(portfolioSafeTruncated));
-        assetSymbol = bytes6(uint48(id >> 80));
-        uint80 storedChecksum = uint80(id);
+        
+        sourceChainId = uint24(id >> 232);           // Bits 232-255 (3 bytes)
+        destinationChainId = uint24(id >> 208);      // Bits 208-231 (3 bytes)
+        portfolioSafe = address(uint160(id >> 48));  // Bits 48-207 (20 bytes)
+        assetSymbol = bytes6(uint48(id));            // Bits 0-47 (6 bytes)
+    }
 
-        // Reconstruct data without checksum (using truncated portfolioSafe)
-        bytes memory data = abi.encodePacked(sourceChainId, destinationChainId, portfolioSafeTruncated, assetSymbol);
-
-        // Calculate expected checksum (first 10 bytes of hash)
-        bytes32 hash = keccak256(data);
-        uint80 expectedChecksum = uint80(uint256(hash) >> 176);
-
-        // Validate checksum - revert if invalid
-        if (storedChecksum != expectedChecksum) {
-            revert InvalidInvoice(); // Invalid checksum
-        }
+    /// @notice Validates invoiceId + amount + timestampByte checksum from messagePayload
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @param amount The amount being bridged
+    /// @param timestampByte The timestamp truncated to uint8
+    /// @param checksum24 The 24-byte checksum from messagePayload
+    /// @return True if checksum is valid
+    function validateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint8 timestampByte, bytes24 checksum24)
+        external
+        pure
+        returns (bool)
+    {
+        bytes24 expectedChecksum = _calculateInvoiceIdChecksum(invoiceId, amount, timestampByte);
+        return checksum24 == expectedChecksum;
     }
 
     /// @notice Internal function to authorize a portfolio safe
@@ -520,6 +582,26 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
             revert InvalidArguments();
         }
         _authorizedAdapters.add(adapter);
+    }
+
+    /// @notice Internal function to remove an active invoice
+    /// @param portfolioSafe The portfolio safe address
+    /// @param invoiceId The invoice ID to remove
+    function _removeActiveInvoice(address portfolioSafe, bytes32 invoiceId) internal {
+        bytes32[] storage activeList = _activeInvoices[portfolioSafe];
+        uint256 length = activeList.length;
+        
+        for (uint256 i = 0; i < length; i++) {
+            if (activeList[i] == invoiceId) {
+                // Move last element to current position
+                activeList[i] = activeList[length - 1];
+                // Remove last element
+                activeList.pop();
+                // Remove from set
+                _activeInvoicesSet[portfolioSafe][invoiceId] = false;
+                break;
+            }
+        }
     }
 }
 

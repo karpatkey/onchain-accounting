@@ -5,22 +5,30 @@ pragma solidity ^0.8;
 /// @notice Interface for bridge adapter implementations
 /// @author kpk
 interface IBridgeAdapter {
+    //
+    // Events
+    //
+
+    /// @notice Event emitted when a bridge is initiated
+    event BridgeInitiated(bytes32 indexed invoiceId, uint256 amount);
+
+    /// @notice Event emitted when a bridge is completed
+    event BridgeCompleted(bytes32 indexed invoiceId);
+
+    //
+    // Functions
+    //
+
     /// @notice Initiates a bridge operation
-    /// @param invoiceId The invoice ID from BridgeEscrow
-    /// @param bridgeData Encoded BridgeParams (asset, amount, destinationChainId, recipient, messagePayload)
-    function bridge(bytes32 invoiceId, bytes calldata bridgeData) external;
+    /// @param messagePayload Encoded payload from BridgeEscrow (exactly 3 slots: invoiceId, amount, meta)
+    /// @dev Adapter should decode messagePayload to extract invoiceId, amount, and derive other needed data
+    function bridge(bytes calldata messagePayload) external;
 
     /// @notice Completes a bridge operation on destination chain
-    /// @param invoiceId The invoice ID for the destination (can be extracted from bridgeData if adapter supports it)
-    /// @param portfolioSafe The portfolio safe address (needed for releaseByInvoiceId)
-    /// @param amount The amount received (needed for releaseByInvoiceId)
-    /// @param bridgeData Encoded CompletionParams (messagePayload, protocolData)
-    function completeBridge(
-        bytes32 invoiceId,
-        address portfolioSafe,
-        uint256 amount,
-        bytes calldata bridgeData
-    ) external;
+    /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
+    /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
+    /// @dev Extracts invoiceId and checksum from messagePayload and calls BridgeEscrow.releaseByInvoiceId()
+    function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external;
 
     /// @notice Returns the bridge provider name (e.g., "CCTP", "Gnosis")
     /// @return The bridge provider name

@@ -17,6 +17,12 @@
       "rev": "55d2d99304fb3fb930c688462ae2ccabb1d533ad"
     }
   },
+  "lib/omnibridge": {
+    "tag": {
+      "name": "1.1.0",
+      "rev": "c814f686487c50462b132b9691fd77cc2de237d3"
+    }
+  },
   "lib/openzeppelin-contracts-upgradeable": {
     "tag": {
       "name": "v5.5.0",

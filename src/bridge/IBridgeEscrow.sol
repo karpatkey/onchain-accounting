@@ -14,7 +14,7 @@ interface IBridgeEscrow {
 
     /// @notice Invoice structure tracking a bridge operation
     struct Invoice {
-        bytes32 invoiceId; // Unique identifier
+        bytes32 invoiceId; // Unique identifier (32 bytes, excludes amount)
         uint64 sourceChainId; // Chain ID where assets originate
         uint64 destinationChainId; // Chain ID where assets are destined
         address portfolioSafe; // Portfolio Safe address
@@ -71,54 +71,65 @@ interface IBridgeEscrow {
     /// @param assetSymbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
     /// @param amount The amount to bridge
     /// @param adapter The bridge adapter address to use
-    /// @param bridgeData Bridge-specific data
-    /// @return invoiceId The unique invoice identifier
+    /// @return invoiceHash The hashed invoice identifier (checksum: invoiceId + amount + timestampByte)
     function depositAndBridge(
         uint64 destinationChainId,
         bytes6 assetSymbol,
         uint256 amount,
-        address adapter,
-        bytes calldata bridgeData
-    ) external payable returns (bytes32 invoiceId);
+        address adapter
+    ) external payable returns (bytes32 invoiceHash);
 
-    /// @notice Releases funds based on invoice ID validation
-    /// @param invoiceId The invoice ID to decode and validate
-    /// @param portfolioSafe The portfolio safe address (must match decoded invoiceId)
-    /// @param amount The amount to release
-    /// @dev This function decodes the invoiceId, looks up asset from symbol, validates all parameters match,
-    ///      checks for nonce replay, and releases the funds if all validations pass.
-    function releaseByInvoiceId(bytes32 invoiceId, address portfolioSafe, uint256 amount) external;
+    /// @notice Releases funds based on invoice ID extracted from messagePayload
+    /// @param messagePayload The message payload containing invoiceId, amount, timestamp, and checksum
+    /// @dev Extracts these fields, validates checksum, and releases funds
+    /// @dev This is the ONLY way to release funds - checksum validation is mandatory
+    function releaseByInvoiceId(bytes memory messagePayload) external;
 
     /// @notice Cancels an invoice and returns assets (if still in escrow)
-    /// @param invoiceId The invoice ID to cancel
-    function cancelInvoice(bytes32 invoiceId) external;
+    /// @param invoiceHash The hashed invoice ID (checksum) to cancel
+    function cancelInvoice(bytes32 invoiceHash) external;
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
-    /// @param invoiceIds Array of invoice IDs to mark as completed
+    /// @param invoiceHashes Array of hashed invoice IDs to mark as completed
     /// @dev This function should be called by an operator after assets have been released on the destination chain.
     ///      It updates the invoice status on the source chain for bookkeeping purposes only.
-    function markInvoiceCompleted(bytes32[] calldata invoiceIds) external;
+    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external;
 
-    /// @notice Gets an invoice by ID
-    /// @param invoiceId The invoice ID
+    /// @notice Gets an invoice by its hashed ID
+    /// @param invoiceHash The hashed invoice ID (checksum)
     /// @return The invoice struct
-    function getInvoice(bytes32 invoiceId) external view returns (Invoice memory);
+    function getInvoice(bytes32 invoiceHash) external view returns (Invoice memory);
 
-    /// @notice Decodes an invoice ID into its components and validates the checksum
-    /// @param invoiceId The invoice ID to decode
-    /// @return sourceChainId Source chain ID (truncated to uint24)
-    /// @return destinationChainId Destination chain ID (truncated to uint24)
-    /// @return portfolioSafe Portfolio safe address (truncated to 10 bytes, padded with zeros)
-    /// @return assetSymbol Asset symbol (bytes6)
-    /// @dev Reverts if the checksum is invalid
+    /// @notice Decodes a 32-byte invoice ID into its components
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @return sourceChainId Source chain ID
+    /// @return destinationChainId Destination chain ID
+    /// @return portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @return assetSymbol Asset symbol
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol);
+        returns (
+            uint24 sourceChainId,
+            uint24 destinationChainId,
+            address portfolioSafe,
+            bytes6 assetSymbol
+        );
 
-    /// @notice Gets all active invoices for a portfolio safe
+    /// @notice Validates invoiceId + amount + timestampByte checksum from messagePayload
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @param amount The amount being bridged
+    /// @param timestampByte The timestamp truncated to uint8
+    /// @param checksum24 The 24-byte checksum from messagePayload (first 24 bytes of keccak256 hash)
+    /// @return True if checksum is valid
+    function validateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint8 timestampByte, bytes24 checksum24)
+        external
+        pure
+        returns (bool);
+
+    /// @notice Gets all active invoice hashes for a portfolio safe
     /// @param portfolioSafe The portfolio safe address
-    /// @return Array of active invoice IDs
+    /// @return Array of active hashed invoice IDs
     function getActiveInvoices(address portfolioSafe) external view returns (bytes32[] memory);
 
     /// @notice Gets the total in-transit balance for an asset
@@ -147,5 +158,15 @@ interface IBridgeEscrow {
     /// @param adapter The adapter address
     /// @return True if authorized
     function isAuthorizedAdapter(address adapter) external view returns (bool);
+
+    /// @notice Checks if an invoice (by hash) has been completed
+    /// @param invoiceHash The hashed invoice ID
+    /// @return True if completed
+    function isInvoiceCompleted(bytes32 invoiceHash) external view returns (bool);
+
+    /// @notice Gets the asset address for a given asset symbol
+    /// @param symbol The asset symbol (bytes6)
+    /// @return The asset address, or address(0) if not registered
+    function assetRegistry(bytes6 symbol) external view returns (address);
 }
 

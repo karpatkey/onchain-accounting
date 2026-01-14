@@ -14,4 +14,5 @@ error TransferFailed();
 error InsufficientBalance();
 error InvalidChainId();
 error InvalidNonce();
+error InvalidCompletionData();
 

@@ -35,12 +35,16 @@ The existing bridge system follows a standardized adapter pattern:
    - Standardized `CompletionParams` structure (messagePayload, protocolData)
 
 3. **Invoice System**:
-   - Invoice IDs encode: sourceChainId, destinationChainId, portfolioSafe (truncated), assetSymbol, checksum
+   - Invoice IDs encode: sourceChainId, destinationChainId, portfolioSafe (full 20 bytes), assetSymbol, amount (64 bytes total)
+   - Checksum (32 bytes) is calculated from invoiceId using keccak256 and included in messagePayload
+- messagePayload format: `abi.encode(invoiceId, amount, timestamp, checksum)`
+   - Uses 3 storage slots efficiently: bytes64 (2 slots) + bytes32 (1 slot)
    - Invoices track asset movement and maintain bookkeeping
+   - **CRITICAL**: messagePayload is mandatory for fund release - all bridges must preserve it
 
 ## Bridge Analysis
 
-### 1. Circle Cross-Chain Transfer Protocol (CCTP) - ✅ INTEGRATED
+### 1. Circle Cross-Chain Transfer Protocol (CCTP) - ✅ INTEGRATED                                                                                                                                   
 
 #### Architecture
 - Circle's official cross-chain protocol for USDC transfers
@@ -77,6 +81,7 @@ The existing bridge system follows a standardized adapter pattern:
 - **Message Passing**: Uses `destinationCaller` parameter to specify recipient contract
 - **InvoiceId Correlation**: Stored in mapping using `sourceDomain + nonce` as key
 - **Completion**: Requires operator to provide attestation + message for `receiveMessage()`
+- **messagePayload**: Must be preserved through CCTP message (invoiceId + amount + timestamp + checksum)
 - **Native Tokens**: Not supported (reverts if native token attempted)
 
 #### Current Implementation
@@ -84,9 +89,12 @@ The existing bridge system follows a standardized adapter pattern:
 - **Bridge Flow**:
   1. `_bridge()`: Calls `TokenMessenger.depositForBurnWithCaller()` to burn USDC
   2. Stores invoiceId mapping: `messageToInvoiceId[sourceDomain][nonce] = invoiceId`
-  3. `_completeBridge()`: Calls `MessageTransmitter.receiveMessage()` with attestation
-  4. `_extractInvoiceIdFromBridgeData()`: Extracts from message using domain + nonce lookup
+  3. messagePayload is provided by BridgeEscrow and must be preserved through CCTP message
+  4. `_completeBridge()`: Calls `MessageTransmitter.receiveMessage()` with attestation
+  5. Extracts messagePayload from CompletionParams and validates checksum
+  6. BridgeAdapter base class calls `releaseByInvoiceId(messagePayload)`
 - **Configuration**: Domain ID mappings via `setDomainMapping()`
+- **messagePayload**: ✅ Handled correctly - extracted from CompletionParams and validated
 
 #### Implementation Approach
 ```solidity
@@ -135,28 +143,31 @@ The existing bridge system follows a standardized adapter pattern:
 - ⚠️ Completion still requires operator call (tokens auto-transferred, but release needs operator)
 
 #### Integration Considerations
-- **Message Passing**: InvoiceId encoded in message data: `abi.encode(invoiceId, messagePayload)`
+- **Message Passing**: messagePayload contains `abi.encode(invoiceId, amount, timestamp, checksum)`
+- **messagePayload Preservation**: Must be sent in CCIP message data and preserved for completion
 - **Completion**: Tokens auto-transferred by router, but `completeBridge()` still needed to release from escrow
+- **Completion Requirements**: messagePayload is mandatory - must be provided in CompletionParams
 - **Fee Management**: Must estimate fees before bridging, pay in LINK or native token
 - **Native Tokens**: Supported natively (no wrapping required)
-- **Callback**: `ccipReceive()` stores invoiceId mapping, but doesn't auto-complete
+- **Callback**: `ccipReceive()` stores invoiceId mapping and messagePayload, but doesn't auto-complete
 
 #### Current Implementation
 - **Adapter**: `CcipBridgeAdapter.sol`
 - **Bridge Flow**:
   1. `_bridge()`: 
      - Estimates fee via `router.getFee()`
-     - Encodes invoiceId in message data
-     - Calls `router.ccipSend()` with tokens and message
+    - Sends messagePayload (already contains invoiceId + amount + timestamp + checksum) in CCIP message data
+     - Calls `router.ccipSend()` with tokens and messagePayload
      - Stores mapping: `messageIdToInvoiceId[messageId] = invoiceId`
   2. `ccipReceive()`: Called automatically by router when message arrives
-     - Stores invoiceId mapping for later extraction
+     - Extracts messagePayload from message.data
+     - Stores invoiceId mapping and messagePayload for later extraction
      - Tokens already transferred to adapter
-  3. `_completeBridge()`: Operator calls with message data
-     - Extracts invoiceId from message
-     - Releases funds from BridgeEscrow
-  4. `_extractInvoiceIdFromBridgeData()`: Extracts from messageId mapping or message data
+  3. `_completeBridge()`: Operator calls with messagePayload in CompletionParams
+    - Extracts and validates messagePayload (invoiceId + amount + timestamp + checksum)
+     - BridgeAdapter base class calls `releaseByInvoiceId(messagePayload)`
 - **Configuration**: Chain selector mappings via `setChainSelectorMapping()`, extraArgs per chain
+- **messagePayload**: ✅ Handled correctly - preserved through CCIP messages and validated
 
 #### Implementation Approach
 ```solidity
@@ -201,17 +212,24 @@ The existing bridge system follows a standardized adapter pattern:
 - ⚠️ Requires separate mediator contracts per chain pair
 
 #### Integration Considerations
-- **Message Passing**: Can encode invoiceId in AMB message
+- **Message Passing**: Must encode messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`) in AMB message
+- **messagePayload Size**: Verify AMB supports at least 96 bytes for message payload
 - **Completion**: Requires monitoring AMB messages or operator intervention
+- **Completion Requirements**: messagePayload must be extracted from AMB message and provided in CompletionParams
 - **Native Tokens**: Supports ETH and xDAI natively
 - **Token Mapping**: May require token registration on both sides
 
 #### Implementation Approach
 ```solidity
 // Key functions to implement:
-- _bridge(): Call omnibridge.relayTokens() or omnibridge.relayTokensAndCall()
-- _completeBridge(): Monitor AMB messages or use operator to complete
-- _extractInvoiceIdFromBridgeData(): Extract from AMB message data
+- _bridge(): 
+  - Call omnibridge.relayTokensAndCall() with messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`)
+  - Store messagePayload mapping for later retrieval
+- _completeBridge(): 
+  - Extract messagePayload from AMB message or stored mapping
+  - Pass messagePayload in CompletionParams
+  - BridgeAdapter base class handles releaseByInvoiceId() call
+- messagePayload: Must be preserved through AMB message (74 bytes)
 ```
 
 ---
@@ -253,21 +271,29 @@ The existing bridge system follows a standardized adapter pattern:
 #### Integration Considerations
 - **Deposits (L1 → L2)**: Fast, can be completed immediately
 - **Withdrawals (L2 → L1)**: Require 7-day challenge period + finalization
-- **Message Passing**: Can use CrossDomainMessenger to relay invoiceId
+- **Message Passing**: Must use CrossDomainMessenger to relay messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`)
+- **messagePayload Size**: Verify CrossDomainMessenger supports at least 96 bytes for message payload
 - **Native ETH**: Supported natively
 - **Completion**: Deposits auto-complete; withdrawals need two-step process (prove + finalize)
+- **Completion Requirements**: messagePayload must be preserved through both deposit and withdrawal flows
 
 #### Implementation Approach
 ```solidity
 // L1 → L2 (Deposit):
-- _bridge(): Call L1StandardBridge.depositETHTo() or depositERC20To()
-- _completeBridge(): Auto-completes on L2 (can use CrossDomainMessenger callback)
+- _bridge(): 
+  - Call L1StandardBridge.depositETHTo() or depositERC20To() with messagePayload
+  - Use CrossDomainMessenger to relay messagePayload
+- _completeBridge(): 
+  - Extract messagePayload from CrossDomainMessenger message
+  - Pass messagePayload in CompletionParams
 
 // L2 → L1 (Withdrawal):
-- _bridge(): Call L2StandardBridge.withdrawTo()
+- _bridge(): 
+  - Call L2StandardBridge.withdrawTo() with messagePayload
+  - Store messagePayload for later use
 - _completeBridge(): Two-step process:
-  1. Prove withdrawal (after challenge period)
-  2. Finalize withdrawal
+  1. Prove withdrawal (after challenge period) - preserve messagePayload
+  2. Finalize withdrawal - extract messagePayload and pass in CompletionParams
 ```
 
 ---
@@ -308,18 +334,22 @@ The existing bridge system follows a standardized adapter pattern:
 
 #### Integration Considerations
 - **Deposit Flow**: 
-  1. Call `SpokePool.deposit()` on source chain
+  1. Call `SpokePool.deposit()` on source chain with messagePayload
   2. Relayer fills deposit on destination chain
   3. Recipient contract receives tokens + message
 - **Message Passing**: Requires adapter to be recipient and implement `handleAcrossMessage`
+- **messagePayload**: Must include `abi.encode(invoiceId, amount, timestamp, checksum)` in deposit message
+- **messagePayload Size**: Verify SpokePool supports at least 96 bytes for message payload
 - **Completion**: Can be automatic if adapter is recipient, or operator-triggered
+- **Completion Requirements**: messagePayload must be extracted from `handleAcrossMessage` and provided in CompletionParams
 - **Fees**: Must account for relayer fees in amount calculations
 
 #### Implementation Approach
 ```solidity
 // Source Chain:
-- _bridge(): Call SpokePool.deposit() with message containing invoiceId
-- Set recipient as adapter address on destination chain
+- _bridge(): 
+  - Call SpokePool.deposit() with message containing messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`)
+  - Set recipient as adapter address on destination chain
 
 // Destination Chain:
 - Implement IAcrossReceiver interface:
@@ -330,8 +360,9 @@ The existing bridge system follows a standardized adapter pattern:
     address relayer,
     bytes memory message
   ) external;
-- Extract invoiceId from message
-- Call completeBridge() automatically or via operator
+- Extract messagePayload from message parameter
+- Store messagePayload for completeBridge()
+- Call completeBridge() with messagePayload in CompletionParams (automatic or via operator)
 ```
 
 ---
@@ -374,8 +405,10 @@ The existing bridge system follows a standardized adapter pattern:
 #### Integration Considerations
 - **Swap Function**: Use `Router.swap()` for cross-chain transfers
 - **Fee Estimation**: Must call `quoteLayerZeroFee()` before swapping
-- **Message Passing**: Can include payload in swap call
+- **Message Passing**: Must include messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`) in LayerZero payload
+- **messagePayload Size**: Verify LayerZero supports at least 96 bytes for payload (typically supports much larger)
 - **Completion**: Can use LayerZero's `lzReceive` callback for automatic completion
+- **Completion Requirements**: messagePayload must be extracted from `lzReceive` payload and provided in CompletionParams
 - **Native ETH**: May need to wrap to WETH for some chains
 
 #### Implementation Approach
@@ -383,7 +416,7 @@ The existing bridge system follows a standardized adapter pattern:
 // Source Chain:
 - _bridge(): 
   1. Call Router.quoteLayerZeroFee() to get fee
-  2. Call Router.swap() with payload containing invoiceId
+  2. Call Router.swap() with payload containing messagePayload (`abi.encode(invoiceId, amount, timestamp, checksum)`)
   3. Pay LayerZero fee in native token
 
 // Destination Chain:
@@ -394,8 +427,8 @@ The existing bridge system follows a standardized adapter pattern:
     uint64 _nonce,
     bytes calldata _payload
   ) external;
-- Extract invoiceId from payload
-- Call completeBridge() automatically
+- Extract messagePayload from payload (contains invoiceId + amount + timestamp + checksum)
+- Call completeBridge() with messagePayload in CompletionParams
 ```
 
 ---
@@ -408,26 +441,31 @@ The existing bridge system follows a standardized adapter pattern:
 1. **Research & Design** (2-3 days)
    - Review Stargate Router interface
    - Understand LayerZero integration
-   - Design payload encoding for invoiceId
+   - Verify LayerZero payload size limits (must support ≥96 bytes)
+   - Design messagePayload encoding (`abi.encode(invoiceId, amount, timestamp, checksum)`)
 
 2. **Implementation** (4-5 days)
    - Create `StargateBridgeAdapter.sol`
    - Implement `ILayerZeroReceiver` interface
-   - Implement `_bridge()` using Router.swap()
+   - Implement `_bridge()` using Router.swap() with messagePayload
    - Implement fee estimation logic
-   - Implement `lzReceive()` for automatic completion
+   - Implement `lzReceive()` to extract and store messagePayload
+   - Implement `_completeBridge()` to pass messagePayload in CompletionParams
    - Add pool ID and chain ID mapping configuration
 
 3. **Testing** (3-4 days)
    - Test swap flow with fee estimation
-   - Test LayerZero message receiving
-   - Test automatic completion via lzReceive
+   - Test LayerZero message receiving with 96-byte messagePayload
+   - Test messagePayload preservation through bridge
+   - Test automatic completion via lzReceive with messagePayload
+   - Test checksum validation in completion flow
    - Test with different chains and assets
    - Integration tests with BridgeEscrow
 
 4. **Documentation** (1 day)
    - Document pool ID configuration
    - Document LayerZero fee requirements
+   - Document messagePayload requirements
 
 **Estimated Time: 10-13 days**
 
@@ -439,24 +477,30 @@ The existing bridge system follows a standardized adapter pattern:
 1. **Research & Design** (2-3 days)
    - Review L1StandardBridge and L2StandardBridge interfaces
    - Understand CrossDomainMessenger integration
+   - Verify CrossDomainMessenger message size limits (must support ≥96 bytes)
    - Design two-step withdrawal process (prove + finalize)
+   - Design messagePayload preservation through deposit/withdrawal flows
 
 2. **Implementation** (4-5 days)
    - Create `OptimismBridgeAdapter.sol`
-   - Implement L1 → L2 deposit flow
-   - Implement L2 → L1 withdrawal flow (with prove + finalize)
+   - Implement L1 → L2 deposit flow with messagePayload
+   - Implement L2 → L1 withdrawal flow (with prove + finalize) preserving messagePayload
    - Implement CrossDomainMessenger callback handling
+   - Implement `_completeBridge()` to extract and pass messagePayload in CompletionParams
    - Add chain selector mapping (L1 vs L2)
 
 3. **Testing** (3-4 days)
-   - Test L1 → L2 deposits
-   - Test L2 → L1 withdrawals (prove + finalize)
+   - Test L1 → L2 deposits with messagePayload preservation
+   - Test L2 → L1 withdrawals (prove + finalize) with messagePayload
+   - Test messagePayload extraction from CrossDomainMessenger
+   - Test checksum validation in completion flow
    - Test with different assets (ETH, ERC20)
    - Integration tests with BridgeEscrow
 
 4. **Documentation** (1 day)
    - Document withdrawal challenge period
    - Document configuration requirements
+   - Document messagePayload requirements
 
 **Estimated Time: 10-13 days**
 
@@ -468,26 +512,32 @@ The existing bridge system follows a standardized adapter pattern:
 1. **Research & Design** (2-3 days)
    - Review SpokePool contract interface
    - Understand relayer network and fill mechanism
+   - Verify SpokePool message size limits (must support ≥96 bytes)
    - Design `handleAcrossMessage` implementation
+   - Design messagePayload encoding in deposit message
 
 2. **Implementation** (4-5 days)
    - Create `AcrossBridgeAdapter.sol`
    - Implement `IAcrossReceiver` interface
-   - Implement `_bridge()` using SpokePool.deposit()
-   - Implement `handleAcrossMessage()` for automatic completion
-   - Implement operator-triggered completion fallback
+   - Implement `_bridge()` using SpokePool.deposit() with messagePayload
+   - Implement `handleAcrossMessage()` to extract messagePayload and complete bridge
+   - Implement operator-triggered completion fallback with messagePayload
+   - Implement `_completeBridge()` to pass messagePayload in CompletionParams
    - Add relayer fee configuration
 
 3. **Testing** (3-4 days)
-   - Test deposit flow
-   - Test message handling and automatic completion
-   - Test operator fallback completion
+   - Test deposit flow with messagePayload
+   - Test messagePayload extraction from handleAcrossMessage
+   - Test message handling and automatic completion with messagePayload
+   - Test operator fallback completion with messagePayload
+   - Test checksum validation in completion flow
    - Test with different assets and chains
    - Integration tests with BridgeEscrow
 
 4. **Documentation** (1 day)
    - Document relayer fee structure
    - Document message handling requirements
+   - Document messagePayload requirements
 
 **Estimated Time: 10-13 days**
 
@@ -499,24 +549,29 @@ The existing bridge system follows a standardized adapter pattern:
 1. **Research & Design** (2-3 days)
    - Review Omnibridge contract interfaces
    - Understand AMB message passing mechanism
-   - Design invoiceId encoding in messages
+   - Verify AMB message size limits (must support ≥96 bytes)
+   - Design messagePayload encoding in AMB messages (`abi.encode(invoiceId, amount, timestamp, checksum)`)
 
 2. **Implementation** (3-4 days)
    - Create `GnosisBridgeAdapter.sol`
-   - Implement `_bridge()` using Omnibridge relay functions
+   - Implement `_bridge()` using Omnibridge relay functions with messagePayload
    - Implement `_completeBridge()` with AMB message handling
-   - Implement `_extractInvoiceIdFromBridgeData()` from AMB messages
+   - Implement messagePayload extraction from AMB messages
+   - Implement `_completeBridge()` to pass messagePayload in CompletionParams
    - Add domain/chain ID mapping configuration
 
 3. **Testing** (2-3 days)
-   - Unit tests for bridge initiation
-   - Unit tests for bridge completion
+   - Unit tests for bridge initiation with messagePayload
+   - Unit tests for bridge completion with messagePayload extraction
+   - Test messagePayload preservation through AMB
+   - Test checksum validation in completion flow
    - Integration tests with BridgeEscrow
-   - Test message passing and invoiceId extraction
+   - Test message passing and messagePayload extraction
 
 4. **Documentation** (1 day)
    - Document configuration requirements
    - Document limitations and use cases
+   - Document messagePayload requirements
 
 **Estimated Time: 8-11 days**
 
@@ -524,22 +579,52 @@ The existing bridge system follows a standardized adapter pattern:
 
 ## Common Implementation Patterns
 
-### 1. InvoiceId Relay Pattern
+### 1. MessagePayload Pattern (CRITICAL)
 
-All adapters should support relaying invoiceId in bridge messages:
+**All adapters MUST preserve messagePayload through the bridge protocol.** The messagePayload is mandatory for fund release and contains both invoiceId and checksum.
 
 ```solidity
-// Encode invoiceId in message payload
-bytes memory messageData = abi.encode(invoiceId, messagePayload);
+// BridgeEscrow creates messagePayload during depositAndBridge():
+bytes memory messagePayload = abi.encode(invoiceId, amount, timestamp, checksum);
+// Total size: 96 bytes (64 bytes invoiceId + 32 bytes checksum when ABI encoded)
+// Storage: Uses 3 slots efficiently (bytes64 = 2 slots, bytes32 = 1 slot)
 
-// Extract on destination
-(bytes32 extractedInvoiceId, bytes memory payload) = abi.decode(messageData, (bytes32, bytes));
+// In _bridge(): Send messagePayload through bridge protocol
+// Example for CCIP:
+bytes memory messageData = params.messagePayload; // Already contains invoiceId + amount + timestamp + checksum
+router.ccipSend(destinationChainSelector, message);
+
+// In _completeBridge(): Extract and validate messagePayload
+bytes memory messagePayload = params.messagePayload;
+(bytes32 invoiceId, uint256 amount, uint256 timestamp, bytes32 checksum) =
+    abi.decode(messagePayload, (bytes32, uint256, uint256, bytes32));
+
+// Validate checksum before releasing funds
+        if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(invoiceId, amount, timestamp, checksum)) {
+    revert InvalidInvoice();
+}
+
+// BridgeAdapter.completeBridge() automatically calls:
+IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
 ```
+
+**Key Requirements:**
+- messagePayload format: `abi.encode(invoiceId, amount, timestamp, checksum)`
+- Checksum is full 32-byte keccak256 hash (better security than truncated)
+- Storage efficient: Uses 3 slots (bytes64 = 2 slots, bytes32 = 1 slot)
+- messagePayload MUST be preserved through bridge protocol messages
+- messagePayload MUST be provided in `CompletionParams.messagePayload`
+- messagePayload is MANDATORY - cannot release funds without it
+- Verify bridge protocol supports at least 96 bytes for message payload
 
 ### 2. Automatic vs Operator Completion
 
 - **Automatic**: Use bridge protocol callbacks (CCIP, Across, Stargate)
+  - Callbacks must extract messagePayload from protocol messages
+  - Store messagePayload for later use in completeBridge()
 - **Operator**: Manual completion for bridges without callbacks (Gnosis, Optimism withdrawals)
+  - Operator must provide messagePayload in CompletionParams
+  - messagePayload can be retrieved from bridge protocol events or stored mappings
 
 ### 3. Chain ID Mapping
 
@@ -561,14 +646,34 @@ Each adapter needs chain ID mapping:
 - Handle fee token approvals (if needed)
 - Account for fees in amount calculations
 
+### 6. MessagePayload Size Verification
+
+**CRITICAL**: Before implementing each bridge, verify the protocol supports at least 96 bytes for message payloads:
+
+- **CCIP**: ✅ Supports arbitrary payloads (no limit issue)
+- **CCTP**: ⚠️ Limited message passing - verify 96 bytes supported via destinationCaller
+- **Gnosis AMB**: ⚠️ Check AMB message size limits (must support ≥96 bytes)
+- **Optimism CrossDomainMessenger**: ⚠️ Check message size limits (must support ≥96 bytes)
+- **Across SpokePool**: ⚠️ Check message size limits in deposit() (must support ≥96 bytes)
+- **Stargate/LayerZero**: ✅ Typically supports much larger payloads (verify ≥96 bytes)
+
+**Note**: messagePayload is 96 bytes (64 bytes invoiceId + 32 bytes checksum). The checksum uses the full keccak256 hash for better security and efficient storage (3 slots total).
+
+If a bridge protocol has size limitations, consider:
+1. Using alternative encoding (if protocol allows)
+2. Storing messagePayload off-chain and using a hash reference
+3. Using a different bridge protocol for that use case
+
 ---
 
 ## Testing Strategy
 
 ### Unit Tests
-- Bridge initiation logic
-- Bridge completion logic
-- InvoiceId extraction
+- Bridge initiation logic with messagePayload
+- Bridge completion logic with messagePayload extraction
+- messagePayload preservation through bridge protocol
+- Checksum validation in completion flow
+- InvoiceId extraction from messagePayload
 - Chain ID mapping
 - Fee calculations
 
@@ -628,13 +733,19 @@ Each adapter needs chain ID mapping:
 1. **Message Passing Failures**: Some bridges rely on external validators/relayers
    - Mitigation: Implement operator fallback for manual completion
 
-2. **Fee Estimation Errors**: Incorrect fee estimates can cause failed transactions
+2. **messagePayload Loss**: If messagePayload is lost or corrupted, funds cannot be released
+   - Mitigation: Store messagePayload in adapter state, emit events, verify preservation in tests
+
+3. **Message Size Limitations**: Some bridges may not support 96-byte payloads
+   - Mitigation: Verify size limits during research phase, have fallback encoding strategies
+
+4. **Fee Estimation Errors**: Incorrect fee estimates can cause failed transactions
    - Mitigation: Add buffer to fee estimates, implement retry logic
 
-3. **Chain ID Mappings**: Incorrect mappings can cause funds to be sent to wrong chains
+5. **Chain ID Mappings**: Incorrect mappings can cause funds to be sent to wrong chains
    - Mitigation: Comprehensive testing, admin controls for mapping updates
 
-4. **Withdrawal Delays**: Optimism withdrawals have 7-day challenge period
+6. **Withdrawal Delays**: Optimism withdrawals have 7-day challenge period
    - Mitigation: Document clearly, implement proper status tracking
 
 ### Operational Risks
@@ -671,6 +782,8 @@ Each adapter needs chain ID mapping:
 3. ✅ Invoice bookkeeping maintained correctly
 4. ✅ Asset custody handled securely
 5. ✅ Message passing works for invoiceId relay
+6. ✅ messagePayload with checksum validation implemented
+7. ✅ Mandatory messagePayload requirement for fund release enforced
 
 ### Remaining Goals
 1. ✅ All four new bridges integrated and functional

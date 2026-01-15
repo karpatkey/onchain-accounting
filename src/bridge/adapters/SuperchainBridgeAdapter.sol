@@ -6,9 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {IL1StandardBridge} from "./interfaces/IL1StandardBridge.sol";
-import {IL2StandardBridge} from "./interfaces/IL2StandardBridge.sol";
-import {IOptimismPortal} from "./interfaces/IOptimismPortal.sol";
+import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./interfaces/ISuperchainInterfaces.sol";
 import {Types} from "@optimism/libraries/Types.sol";
 import {ISuperchainBridgeAdapter} from "./interfaces/ISuperchainBridgeAdapter.sol";
 import "src/errors.sol";

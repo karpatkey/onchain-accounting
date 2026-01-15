@@ -2,8 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {IOmnibridge} from "./IOmnibridge.sol";
-import {IAMB} from "./IAMB.sol";
+import {IOmnibridge, IAMB} from "./IGnosisInterfaces.sol";
 
 /// @title IGnosisBridgeAdapter Interface
 /// @notice Interface for Gnosis Bridge Adapter

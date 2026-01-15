@@ -6,8 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {IOmnibridge} from "./interfaces/IOmnibridge.sol";
-import {IAMB} from "./interfaces/IAMB.sol";
+import {IOmnibridge, IAMB} from "./interfaces/IGnosisInterfaces.sol";
 import {IGnosisBridgeAdapter} from "./interfaces/IGnosisBridgeAdapter.sol";
 import "src/errors.sol";
 

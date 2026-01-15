@@ -187,7 +187,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        bool isETH = (asset == address(0));
+        bool isETH = _isNativeToken(asset);
 
         // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
         // If we're on L1 (mainnet), it's L1 → L2 deposit
@@ -226,6 +226,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Deposit ERC20 token to L2
             // Get L2 token address from mapping
             address l2Token = l1ToL2Token[asset];
+            // Note: l2Token can be address(0) if not mapped, which is different from native token check
+            // We use _isNativeToken() for asset checks, but l2Token == address(0) here means "not mapped"
             if (l2Token == address(0)) {
                 // If not mapped, assume same address (for standard bridge tokens)
                 l2Token = asset;
@@ -260,13 +262,18 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         if (isETH) {
             // Withdraw ETH to L1
-            l2Bridge.withdrawTo{value: data.amount}(receiver, defaultL1GasLimit, messagePayload);
+            // L2StandardBridge.withdrawTo signature: withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _minGasLimit, bytes calldata _extraData)
+            // For ETH, _l2Token should be Predeploys.LEGACY_ERC20_ETH (0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000)
+            address LEGACY_ERC20_ETH = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
+            l2Bridge.withdrawTo{value: data.amount}(
+                LEGACY_ERC20_ETH, receiver, data.amount, defaultL1GasLimit, messagePayload
+            );
         } else {
             // Withdraw ERC20 token to L1
             // Approve L2 bridge to spend tokens
             IERC20(asset).forceApprove(address(l2Bridge), data.amount);
 
-            // Withdraw ERC20 token to L1
+            // Withdraw ERC20 token to L1 using the 5-parameter version
             l2Bridge.withdrawTo(asset, receiver, data.amount, defaultL1GasLimit, messagePayload);
         }
 
@@ -350,7 +357,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // We just need to verify they're available
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
 
-        if (asset != address(0)) {
+        if (!_isNativeToken(asset)) {
             uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
             if (adapterBalance < data.amount) {
                 // Tokens not yet available - may need to wait for cross-domain message

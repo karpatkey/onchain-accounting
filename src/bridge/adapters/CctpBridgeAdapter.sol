@@ -118,7 +118,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         bytes32 mintRecipient = bytes32(uint256(uint160(data.portfolioSafe)));
 
         // Validate asset is not native (CCTP only supports USDC)
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             revert InvalidArguments();
         }
 

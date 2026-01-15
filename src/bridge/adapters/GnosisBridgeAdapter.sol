@@ -116,7 +116,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // messagePayload already contains invoiceId + amount + timestamp + checksum, so we send it as-is
         bytes memory messageData = messagePayload;
 
-        if (asset == address(0)) {
+        // Check if asset is native token (address(0) or NATIVE_ADDRESS_ERC7528)
+        if (_isNativeToken(asset)) {
             // Native tokens (ETH/xDAI) are not directly supported by Omnibridge
             // They must be wrapped first (e.g., WETH/WXDAI) before bridging
             revert NativeTokenNotSupported();
@@ -164,7 +165,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // On Mainnet (chainId == 1), tokens need to be manually claimed from Omnibridge.
         // Verify that tokens are available in the adapter before proceeding.
         // On Gnosis Chain (chainId == 100), tokens are automatically transferred via onTokenTransfer.
-        if (uint64(data.destinationChainId) == 1 && asset != address(0)) {
+        if (uint64(data.destinationChainId) == 1 && !_isNativeToken(asset)) {
             uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
             if (adapterBalance < data.amount) {
                 // Tokens not yet available - operator must ensure AMB message is processed
@@ -266,7 +267,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///      On Gnosis Chain, tokens are automatically transferred via onTokenTransfer.
     ///      On Mainnet, tokens may need to be manually claimed from Omnibridge first.
     function areTokensAvailable(bytes32 invoiceId, address asset) external view returns (bool) {
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             return false;
         }
 

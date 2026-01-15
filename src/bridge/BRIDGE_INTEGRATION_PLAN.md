@@ -8,11 +8,49 @@ This document outlines the bridge integration status and plan for the onchain-ac
 1. **Circle Cross-Chain Transfer Protocol (CCTP)** - Multi-chain USDC transfers
 2. **Chainlink Cross-Chain Interoperability Protocol (CCIP)** - Multi-chain token and message transfers
 3. **Gnosis Bridge (Omnibridge)** - For bridging between Gnosis Chain and Ethereum
+4. **Superchain (Optimism Canonical Bridge)** - For mainnet → L2 ETH transfers (Optimism, Base, Unichain, etc.)
+5. **Stargate Finance** - For ETH and ERC20 transfers across multiple chains
+6. **Across Protocol** - For L2 ↔ mainnet ETH transfers
 
-### Planned Bridge Integrations 🔄
-1. **Superchain (Optimism Canonical Bridge)** - ✅ INTEGRATED - For mainnet → L2 ETH transfers (Optimism, Base, Unichain, etc.)
-2. **Stargate Finance** - ✅ INTEGRATED - For ETH and ERC20 transfers across multiple chains
-3. **Across Protocol** - ✅ INTEGRATED - For L2 ↔ mainnet ETH transfers
+## Current Status Summary
+
+### Implementation Status ✅
+
+**All 6 bridge adapters have been fully implemented and are ready for testing:**
+
+1. ✅ **CCTP** - Circle's official USDC bridge protocol
+2. ✅ **CCIP** - Chainlink's cross-chain messaging protocol
+3. ✅ **Gnosis** - Omnibridge for Ethereum ↔ Gnosis Chain
+4. ✅ **Superchain** - Optimism canonical bridge for L1 ↔ L2 transfers
+5. ✅ **Stargate** - LayerZero-based multi-chain bridge
+6. ✅ **Across** - Relayer-based fast bridge protocol
+
+### Key Achievements
+
+- ✅ **Standardized Architecture**: All bridges follow the same adapter pattern with consistent interfaces
+- ✅ **MessagePayload System**: InvoiceDataLib provides standardized encoding/decoding (96 bytes: invoiceId + amount + meta)
+- ✅ **Invoice Bookkeeping**: Complete invoice tracking system with checksum validation
+- ✅ **Asset Custody**: Secure escrow management through BridgeEscrow
+- ✅ **Configuration Management**: All bridges have proper configuration systems in place
+- ✅ **Documentation**: Comprehensive documentation for all integrated bridges
+
+### Remaining Work
+
+- ⏳ **Testing**: Comprehensive test coverage needed for all bridges (>80% target)
+- ⏳ **Integration Testing**: Full end-to-end testing with BridgeEscrow
+- ⏳ **Fork Testing**: Mainnet fork tests with real bridge contracts
+- ⏳ **Final Polish**: Integration testing and system-wide validation
+
+### Implementation Phases Completed
+
+- Phase 0: CCTP Adapter ✅
+- Phase 0.5: CCIP Adapter ✅
+- Phase 1: Stargate Adapter ✅
+- Phase 2: Superchain Adapter ✅
+- Phase 3: Across Adapter ✅
+- Phase 4: Gnosis Adapter ✅
+
+**All implementation phases complete. Remaining work focuses on testing and validation.**
 
 ## Current Architecture Overview
 
@@ -20,7 +58,7 @@ The existing bridge system follows a standardized adapter pattern:
 
 - **BridgeEscrow**: Manages invoice bookkeeping and asset custody
 - **BridgeAdapter** (abstract base): Provides standardized interface for all bridges
-- **Bridge-specific adapters**: Implement bridge-specific logic (CCTP, CCIP, Gnosis currently)
+- **Bridge-specific adapters**: Implement bridge-specific logic (CCTP, CCIP, Gnosis, Superchain, Stargate, Across)
 
 ### Key Components
 
@@ -514,6 +552,80 @@ The existing bridge system follows a standardized adapter pattern:
 
 ## Implementation Plan
 
+### Phase 0: Circle Cross-Chain Transfer Protocol (CCTP) Adapter - ✅ COMPLETED
+
+#### Tasks
+1. **Research & Design** ✅
+   - Reviewed Circle's CCTP protocol architecture
+   - Understood TokenMessenger and MessageTransmitter contracts
+   - Verified domain ID mapping requirements (CCTP uses domain IDs, not chain IDs)
+   - Designed invoiceId correlation via domain + nonce mapping
+   - Designed messagePayload handling (provided by operator in CompletionParams)
+
+2. **Implementation** ✅
+   - Created `CctpBridgeAdapter.sol`
+   - Implemented `_bridge()` using TokenMessenger.depositForBurnWithCaller()
+   - Implemented invoiceId mapping via sourceDomain + nonce
+   - Implemented `_completeBridge()` with attestation handling
+   - Implemented messagePayload validation using InvoiceDataLib
+   - Added domain ID mapping configuration
+
+3. **Testing** (Pending)
+   - Test USDC bridging flow with domain ID mappings
+   - Test messagePayload validation in completion flow
+   - Test invoiceId correlation via domain + nonce
+   - Test checksum validation in completion flow
+   - Test with different chains and domain IDs
+   - Integration tests with BridgeEscrow
+
+4. **Documentation** ✅
+   - Domain ID mapping requirements documented
+   - Asset restriction (USDC only) documented
+   - Attestation service requirements documented
+   - messagePayload requirements documented
+
+**Status: Implementation Complete, Testing Pending**
+
+---
+
+### Phase 0.5: Chainlink Cross-Chain Interoperability Protocol (CCIP) Adapter - ✅ COMPLETED
+
+#### Tasks
+1. **Research & Design** ✅
+   - Reviewed Chainlink CCIP Router interface
+   - Understood CCIP message passing and token transfer mechanisms
+   - Verified chain selector mapping requirements (CCIP uses selectors, not chain IDs)
+   - Designed messagePayload encoding using InvoiceDataLib
+   - Designed automatic callback via ccipReceive()
+
+2. **Implementation** ✅
+   - Created `CcipBridgeAdapter.sol`
+   - Implemented `IAny2EVMMessageReceiver` interface
+   - Implemented `_bridge()` using Router.ccipSend() with messagePayload
+   - Implemented fee estimation logic via router.getFee()
+   - Implemented `ccipReceive()` to extract and store messagePayload
+   - Implemented `_completeBridge()` to pass messagePayload in CompletionParams
+   - Added chain selector mapping and extraArgs configuration
+
+3. **Testing** (Pending)
+   - Test CCIP message flow with fee estimation
+   - Test ccipReceive callback with messagePayload extraction
+   - Test messagePayload preservation through CCIP messages
+   - Test automatic token transfer before callback
+   - Test checksum validation in completion flow
+   - Test with different chains and assets (native tokens, ERC20)
+   - Integration tests with BridgeEscrow
+
+4. **Documentation** ✅
+   - Chain selector mapping requirements documented
+   - Fee token configuration (LINK or native) documented
+   - ExtraArgs per chain (gas limits) documented
+   - messagePayload requirements documented
+
+**Status: Implementation Complete, Testing Pending**
+
+---
+
 ### Phase 1: Stargate Finance Adapter - ✅ COMPLETED
 
 #### Tasks
@@ -550,25 +662,25 @@ The existing bridge system follows a standardized adapter pattern:
 
 ---
 
-### Phase 2: Optimism Canonical Bridge Adapter
+### Phase 2: Superchain (Optimism Canonical Bridge) Adapter - ✅ COMPLETED
 
 #### Tasks
-1. **Research & Design** (2-3 days)
-   - Review L1StandardBridge and L2StandardBridge interfaces
-   - Understand CrossDomainMessenger integration
-   - Verify CrossDomainMessenger message size limits (must support ≥96 bytes)
-   - Design two-step withdrawal process (prove + finalize)
-   - Design messagePayload preservation through deposit/withdrawal flows
+1. **Research & Design** ✅
+   - Reviewed L1StandardBridge and L2StandardBridge interfaces
+   - Understood CrossDomainMessenger integration
+   - Verified CrossDomainMessenger message size limits (supports ≥96 bytes)
+   - Designed two-step withdrawal process (prove + finalize)
+   - Designed messagePayload preservation through deposit/withdrawal flows
 
-2. **Implementation** (4-5 days)
-   - Create `OptimismBridgeAdapter.sol`
-   - Implement L1 → L2 deposit flow with messagePayload
-   - Implement L2 → L1 withdrawal flow (with prove + finalize) preserving messagePayload
-   - Implement CrossDomainMessenger callback handling
-   - Implement `_completeBridge()` to extract and pass messagePayload in CompletionParams
-   - Add chain selector mapping (L1 vs L2)
+2. **Implementation** ✅
+   - Created `SuperchainBridgeAdapter.sol`
+   - Implemented L1 → L2 deposit flow with messagePayload
+   - Implemented L2 → L1 withdrawal flow (with prove + finalize) preserving messagePayload
+   - Implemented CrossDomainMessenger callback handling
+   - Implemented `_completeBridge()` to extract and pass messagePayload in CompletionParams
+   - Added chain selector mapping (L1 vs L2)
 
-3. **Testing** (3-4 days)
+3. **Testing** (Pending)
    - Test L1 → L2 deposits with messagePayload preservation
    - Test L2 → L1 withdrawals (prove + finalize) with messagePayload
    - Test messagePayload extraction from CrossDomainMessenger
@@ -576,12 +688,12 @@ The existing bridge system follows a standardized adapter pattern:
    - Test with different assets (ETH, ERC20)
    - Integration tests with BridgeEscrow
 
-4. **Documentation** (1 day)
-   - Document withdrawal challenge period
-   - Document configuration requirements
-   - Document messagePayload requirements
+4. **Documentation** ✅
+   - Withdrawal challenge period documented
+   - Configuration requirements documented
+   - messagePayload requirements documented
 
-**Estimated Time: 10-13 days**
+**Status: Implementation Complete, Testing Pending**
 
 ---
 
@@ -718,8 +830,10 @@ IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
 ### 3. Chain ID Mapping
 
 Each adapter needs chain ID mapping:
+- CCTP: Domain ID mapping (CCTP uses domain IDs, not chain IDs)
+- CCIP: Chain selector mapping (CCIP uses selectors, not chain IDs)
 - Gnosis: Domain ID mapping
-- Optimism: L1/L2 chain ID mapping
+- Superchain: L1/L2 chain ID mapping
 - Across: Chain ID mapping (same as standard)
 - Stargate: LayerZero chain ID mapping
 
@@ -742,7 +856,7 @@ Each adapter needs chain ID mapping:
 - **CCIP**: ✅ Supports arbitrary payloads (no limit issue)
 - **CCTP**: ⚠️ Limited message passing - verify 96 bytes supported via destinationCaller
 - **Gnosis AMB**: ✅ Verified - supports ≥96 bytes (3 slots: invoiceId + amount + meta)
-- **Optimism CrossDomainMessenger**: ⚠️ Check message size limits (must support ≥96 bytes)
+- **Superchain CrossDomainMessenger**: ✅ Verified - supports ≥96 bytes for message payload
 - **Across SpokePool**: ✅ Verified - supports ≥96 bytes for message payload
 - **Stargate/LayerZero**: ✅ Verified - supports much larger payloads (≥96 bytes confirmed)
 
@@ -797,7 +911,7 @@ If a bridge protocol has size limitations, consider:
 - AMB contract addresses (per chain)
 - Chain ID validation (only Ethereum and Gnosis Chain supported)
 
-### Optimism Bridge - ✅ Integrated
+### Superchain (Optimism Canonical Bridge) - ✅ Integrated
 - L1StandardBridge address (mainnet)
 - L2StandardBridge addresses (per L2)
 - CrossDomainMessenger addresses (L1 and L2)
@@ -854,8 +968,10 @@ If a bridge protocol has size limitations, consider:
 ## Dependencies & External Contracts
 
 ### Required Interfaces
+- CCTP: ITokenMessenger, IMessageTransmitter
+- CCIP: IRouterClient, IAny2EVMMessageReceiver
 - Gnosis: IOmnibridge, IAMB
-- Optimism: IL1StandardBridge, IL2StandardBridge, ICrossDomainMessenger
+- Superchain: IL1StandardBridge, IL2StandardBridge, ICrossDomainMessenger, IOptimismPortal
 - Across: ISpokePool, IAcrossReceiver
 - Stargate: IRouter, ILayerZeroReceiver, ILayerZeroEndpoint
 
@@ -912,8 +1028,9 @@ If a bridge protocol has size limitations, consider:
 
 ## References
 
+- [Circle CCTP Documentation](https://developers.circle.com/stablecoin/docs/cctp-technical-reference)
+- [Chainlink CCIP Documentation](https://docs.chain.link/ccip)
 - [Gnosis Omnibridge Documentation](https://docs.gnosischain.com/bridges/About%20Token%20Bridges/omnibridge)
 - [Optimism Standard Bridge Documentation](https://docs.optimism.io/app-developers/guides/bridging/standard-bridge)
 - [Across Protocol Documentation](https://docs.across.to/)
 - [Stargate Finance Documentation](https://stargateprotocol.gitbook.io/stargate/)
-- [Brid.gg Documentation](https://docs.brid.gg/)

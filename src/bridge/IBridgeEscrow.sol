@@ -161,5 +161,10 @@ interface IBridgeEscrow {
     /// @param symbol The asset symbol (bytes6)
     /// @return The asset address, or address(0) if not registered
     function assetRegistry(bytes6 symbol) external view returns (address);
+
+    /// @notice Checks if an asset symbol has been registered
+    /// @param symbol The asset symbol (bytes6)
+    /// @return True if the symbol has been registered
+    function registeredSymbols(bytes6 symbol) external view returns (bool);
 }
 

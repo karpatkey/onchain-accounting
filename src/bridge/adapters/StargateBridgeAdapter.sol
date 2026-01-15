@@ -139,7 +139,9 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
 
         // Get asset address from escrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        if (asset == address(0)) {
+
+        // Stargate doesn't support native tokens directly - they must be wrapped first
+        if (_isNativeToken(asset)) {
             revert InvalidBridgeData();
         }
 

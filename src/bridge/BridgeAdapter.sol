@@ -24,6 +24,9 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
     /// @notice Role for operators who can complete bridges
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
+    /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
+    address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+
     //
     // State Variables
     //
@@ -64,6 +67,22 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
         bridgeEscrow = bridgeEscrow_;
         bridgeProviderName = providerName_;
         adapterVersion = version_;
+    }
+
+    //
+    // IBridgeAdapter Implementation
+    //
+
+    //
+    // Helper Functions
+    //
+
+    /// @notice Checks if an address represents a native token
+    /// @param token The token address to check
+    /// @return True if the address is address(0) or NATIVE_ADDRESS_ERC7528
+    /// @dev Some L2s use 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE instead of address(0) for native tokens
+    function _isNativeToken(address token) internal pure returns (bool) {
+        return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
     }
 
     //

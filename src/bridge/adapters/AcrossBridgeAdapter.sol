@@ -105,24 +105,24 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
 
         // Get asset address from escrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        if (asset == address(0)) {
-            revert InvalidBridgeData();
-        }
+
+        // Check if asset is native token (address(0) or NATIVE_ADDRESS_ERC7528)
+        bool isNative = _isNativeToken(asset);
 
         // Get recipient address (this adapter on destination chain)
         address recipient = address(this);
 
         // Approve SpokePool to spend tokens (if ERC20)
-        if (asset != address(0)) {
+        if (!isNative) {
             IERC20(asset).forceApprove(address(spokePool), data.amount);
         }
 
         // Call SpokePool.deposit()
-        if (asset == address(0)) {
-            // Native token (ETH)
+        if (isNative) {
+            // Native token (ETH) - use address(0) for SpokePool
             spokePool.deposit{value: data.amount}(
                 recipient, // recipient
-                asset, // originToken (address(0) for native)
+                address(0), // originToken (address(0) for native)
                 data.amount, // amount
                 uint256(data.destinationChainId), // destinationChainId
                 defaultRelayerFeePct, // relayerFeePct

@@ -152,8 +152,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
 
         // Prepare token amounts array
+        // CCIP doesn't bridge native tokens directly - only ERC20 tokens
+        // Native tokens (address(0) or NATIVE_ADDRESS_ERC7528) are not included in tokenAmounts
         Client.EVMTokenAmount[] memory tokenAmounts;
-        if (asset != address(0) && data.amount > 0) {
+        if (!_isNativeToken(asset) && data.amount > 0) {
             tokenAmounts = new Client.EVMTokenAmount[](1);
             tokenAmounts[0] = Client.EVMTokenAmount({token: asset, amount: data.amount});
 

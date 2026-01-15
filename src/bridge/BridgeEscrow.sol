@@ -57,7 +57,12 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
 
     /// @notice Maps asset symbol to asset address on this chain
     /// @dev Format: assetRegistry[symbol] = assetAddress
+    /// @dev address(0) is valid for native tokens (ETH) - must be explicitly registered
     mapping(bytes6 => address) public assetRegistry;
+
+    /// @notice Tracks which asset symbols have been registered (to distinguish unregistered from native ETH)
+    /// @dev registeredSymbols[symbol] = true if symbol has been registered
+    mapping(bytes6 => bool) public registeredSymbols;
 
     //
     // Constructor
@@ -130,7 +135,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
 
         // Look up asset address from symbol
         address asset = assetRegistry[assetSymbol];
-        if (asset == address(0)) revert InvalidArguments(); // Asset not registered
+        // Verify asset is registered (check registeredSymbols to distinguish unregistered from native ETH)
+        if (!registeredSymbols[assetSymbol]) revert InvalidArguments(); // Asset not registered
 
         // Generate invoice ID (32 bytes, excludes amount)
         bytes32 invoiceId = _generateInvoiceId(chainId, destinationChainId, msg.sender, assetSymbol);
@@ -278,7 +284,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
 
         // Look up asset address from symbol
         address asset = assetRegistry[data.assetSymbol];
-        if (asset == address(0)) revert InvalidArguments();
+        // Verify asset is registered (check registeredSymbols to distinguish unregistered from native ETH)
+        if (!registeredSymbols[data.assetSymbol]) revert InvalidArguments(); // Asset not registered
 
         // Mark invoice as completed
         completedInvoices[invoiceHash] = true;
@@ -398,10 +405,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
 
     /// @notice Registers an asset with its symbol on this chain
     /// @param symbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
-    /// @param asset The asset address
+    /// @param asset The asset address (address(0) for native ETH/tokens)
     function registerAsset(bytes6 symbol, address asset) external onlyRole(OPERATOR_ROLE) {
-        if (asset == address(0)) revert InvalidArguments();
+        // Allow address(0) for native tokens (e.g., ETH) - used by Superchain adapter
         assetRegistry[symbol] = asset;
+        registeredSymbols[symbol] = true;
         emit AssetRegistered(symbol, asset);
     }
 
@@ -409,6 +417,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     /// @param symbol The asset symbol to unregister
     function unregisterAsset(bytes6 symbol) external onlyRole(OPERATOR_ROLE) {
         delete assetRegistry[symbol];
+        registeredSymbols[symbol] = false;
         emit AssetUnregistered(symbol);
     }
 

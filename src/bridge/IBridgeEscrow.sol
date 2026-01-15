@@ -72,12 +72,10 @@ interface IBridgeEscrow {
     /// @param amount The amount to bridge
     /// @param adapter The bridge adapter address to use
     /// @return invoiceHash The hashed invoice identifier (checksum: invoiceId + amount + timestampByte)
-    function depositAndBridge(
-        uint64 destinationChainId,
-        bytes6 assetSymbol,
-        uint256 amount,
-        address adapter
-    ) external payable returns (bytes32 invoiceHash);
+    function depositAndBridge(uint64 destinationChainId, bytes6 assetSymbol, uint256 amount, address adapter)
+        external
+        payable
+        returns (bytes32 invoiceHash);
 
     /// @notice Releases funds based on invoice ID extracted from messagePayload
     /// @param messagePayload The message payload containing invoiceId, amount, timestamp, and checksum
@@ -109,12 +107,7 @@ interface IBridgeEscrow {
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (
-            uint24 sourceChainId,
-            uint24 destinationChainId,
-            address portfolioSafe,
-            bytes6 assetSymbol
-        );
+        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol);
 
     /// @notice Validates invoiceId + amount + timestampByte checksum from messagePayload
     /// @param invoiceId The 32-byte invoice ID (excludes amount)

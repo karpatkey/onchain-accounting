@@ -21,22 +21,14 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     /// @param amount The amount being bridged
     /// @param nonce The CCTP message nonce
     event CctpBridgeInitiated(
-        bytes32 indexed invoiceId,
-        uint32 destinationDomain,
-        bytes32 mintRecipient,
-        bytes32 amount,
-        uint64 nonce
+        bytes32 indexed invoiceId, uint32 destinationDomain, bytes32 mintRecipient, bytes32 amount, uint64 nonce
     );
 
     /// @notice Event emitted when a CCTP bridge is completed
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param sourceInvoiceId The source invoice ID (32 bytes) - indexed
     /// @param sourceDomain The CCTP domain ID of source chain
-    event CctpBridgeCompleted(
-        bytes32 indexed invoiceId,
-        bytes32 indexed sourceInvoiceId,
-        uint32 sourceDomain
-    );
+    event CctpBridgeCompleted(bytes32 indexed invoiceId, bytes32 indexed sourceInvoiceId, uint32 sourceDomain);
 
     //
     // Errors

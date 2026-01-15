@@ -34,5 +34,11 @@
       "name": "v0.4.0",
       "rev": "cbce1e00305e943aa1661d43f41e5ac72c662b07"
     }
+  },
+  "lib/optimism": {
+    "tag": {
+      "name": "v1.7.0",
+      "rev": "f707883038d527cbf1e9f8ea513fe33255deadbc"
+    }
   }
 }

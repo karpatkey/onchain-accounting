@@ -71,7 +71,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         bridgeEscrow = bridgeEscrow_;
         bridgeProviderName = "CCTP";
         adapterVersion = version_;
-        
+
         // Initialize CCTP-specific contracts
         tokenMessenger = ITokenMessenger(tokenMessenger_);
         messageTransmitter = IMessageTransmitter(messageTransmitter_);
@@ -104,10 +104,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @inheritdoc BridgeAdapter
     /// @dev Receives decoded invoice data struct and converts it to CCTP-specific format
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
-        
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        
+
         // Convert chain ID to CCTP domain
         uint32 destinationDomain = chainIdToDomain[uint64(data.destinationChainId)];
         if (destinationDomain == 0) {
@@ -144,13 +143,11 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         emit CctpBridgeInitiated(data.invoiceId, destinationDomain, mintRecipient, bytes32(data.amount), nonce);
     }
 
-
     /// @inheritdoc BridgeAdapter
     /// @dev Receives USDC message and mints USDC on destination
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         // Decode protocol data (CCTP message and attestation)
-        (bytes memory usdcMessage, bytes memory usdcAttestation) =
-            abi.decode(protocolData, (bytes, bytes));
+        (bytes memory usdcMessage, bytes memory usdcAttestation) = abi.decode(protocolData, (bytes, bytes));
 
         if (usdcMessage.length == 0 || usdcAttestation.length == 0) {
             revert InvalidCompletionData();
@@ -165,7 +162,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
                 let ptr := add(usdcMessage, 4)
                 sourceDomain := mload(ptr)
                 sourceDomain := shr(224, sourceDomain) // Right shift to get first 4 bytes (uint32)
-                
+
                 // Extract nonce from bytes 12-20 (offset 12, length 8)
                 ptr := add(usdcMessage, 12)
                 nonce := mload(ptr)
@@ -175,25 +172,26 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         // Look up invoiceId using source domain and nonce
         bytes32 invoiceId = messageToInvoiceId[sourceDomain][nonce];
-        
+
         // Extract invoiceId, amount, and meta from messagePayload if available
         if (messagePayload.length > 0) {
             InvoiceDataLib.InvoiceData memory payloadData = InvoiceDataLib.decode(messagePayload);
-            
+
             // Verify invoiceId from mapping matches payload
             if (invoiceId != bytes32(0) && invoiceId != payloadData.invoiceId) {
                 revert InvalidInvoice();
             }
-            
+
             // Use payload invoiceId if mapping lookup failed
             if (invoiceId == bytes32(0)) {
                 invoiceId = payloadData.invoiceId;
             }
-            
+
             // Validate checksum
-            if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
-                invoiceId, payloadData.amount, payloadData.timestampByte, payloadData.checksum24
-            )) {
+            if (!IBridgeEscrow(bridgeEscrow)
+                    .validateInvoiceIdChecksum(
+                        invoiceId, payloadData.amount, payloadData.timestampByte, payloadData.checksum24
+                    )) {
                 revert InvalidInvoice();
             }
         }
@@ -207,7 +205,6 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // Emit CCTP-specific event (sourceInvoiceId is the same as invoiceId)
         emit CctpBridgeCompleted(invoiceId, invoiceId, sourceDomain);
     }
-
 
     /// @inheritdoc ICctpBridgeAdapter
     function getMessagePayload(bytes32 invoiceId) external view returns (bytes memory) {

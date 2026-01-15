@@ -123,10 +123,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     }
 
     /// @inheritdoc ICcipBridgeAdapter
-    function setChainExtraArgs(uint64 chainSelector, bytes calldata extraArgs)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setChainExtraArgs(uint64 chainSelector, bytes calldata extraArgs) external onlyRole(DEFAULT_ADMIN_ROLE) {
         chainExtraArgs[chainSelector] = extraArgs;
     }
 
@@ -139,7 +136,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
         // Encode messagePayload for CCIP message data
         bytes memory messagePayload = InvoiceDataLib.encode(data);
-        
+
         // Convert chain ID to CCIP chain selector
         uint64 destinationChainSelector = chainIdToSelector[uint64(data.destinationChainId)];
         if (destinationChainSelector == 0) {
@@ -204,7 +201,6 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         emit CcipBridgeInitiated(data.invoiceId, destinationChainSelector, messageId, bytes32(data.amount));
     }
 
-
     /// @inheritdoc BridgeAdapter
     /// @dev Receives CCIP message and processes it
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
@@ -220,11 +216,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
 
         // Decode payload using InvoiceDataLib
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(payloadToUse);
-        
+
         // Validate checksum
-        if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
-            data.invoiceId, data.amount, data.timestampByte, data.checksum24
-        )) {
+        if (!IBridgeEscrow(bridgeEscrow)
+                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
             revert InvalidInvoice();
         }
 
@@ -252,8 +247,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
 
         // Extract invoiceId, amount, and meta from message data (exactly 96 bytes = 3 slots)
         if (message.data.length >= 96) {
-            (bytes32 invoiceId, uint256 amount, bytes32 meta) =
-                abi.decode(message.data, (bytes32, uint256, bytes32));
+            (bytes32 invoiceId, uint256 amount, bytes32 meta) = abi.decode(message.data, (bytes32, uint256, bytes32));
 
             // Store invoiceId mapping for correlation
             messageIdToInvoiceId[message.messageId] = invoiceId;
@@ -294,11 +288,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     ) external view returns (uint256) {
         bytes memory receiver = abi.encode(address(this));
         Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
-            receiver: receiver,
-            data: messageData,
-            tokenAmounts: tokenAmounts,
-            feeToken: feeToken,
-            extraArgs: extraArgs
+            receiver: receiver, data: messageData, tokenAmounts: tokenAmounts, feeToken: feeToken, extraArgs: extraArgs
         });
         return router.getFee(destinationChainSelector, message);
     }
@@ -312,7 +302,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     /// @return True if supported
     /// @dev Overrides to include IAny2EVMMessageReceiver interface support
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 }

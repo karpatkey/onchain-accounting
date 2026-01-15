@@ -10,21 +10,12 @@ interface IOmnibridge {
     /// @param _token The token address
     /// @param _receiver The receiver address on the destination chain
     /// @param _value The amount to bridge
-    function relayTokens(
-        address _token,
-        address _receiver,
-        uint256 _value
-    ) external;
+    function relayTokens(address _token, address _receiver, uint256 _value) external;
 
     /// @notice Relays ERC20 tokens to the other side of the bridge with additional data
     /// @param token The token address
     /// @param receiver The receiver address on the destination chain
     /// @param value The amount to bridge
     /// @param data Additional data to send (messagePayload)
-    function relayTokensAndCall(
-        address token,
-        address receiver,
-        uint256 value,
-        bytes memory data
-    ) external;
+    function relayTokensAndCall(address token, address receiver, uint256 value, bytes memory data) external;
 }

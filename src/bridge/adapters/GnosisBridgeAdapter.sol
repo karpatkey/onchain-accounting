@@ -70,7 +70,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
         if (omnibridge_ == address(0)) revert InvalidOmnibridge();
         if (amb_ == address(0)) revert InvalidAMB();
-        
+
         omnibridge = IOmnibridge(omnibridge_);
         amb = IAMB(amb_);
     }
@@ -100,10 +100,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
         // Encode messagePayload for Omnibridge message data
         bytes memory messagePayload = InvoiceDataLib.encode(data);
-        
+
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        
+
         // Validate destination chain is supported (Ethereum or Gnosis Chain)
         // Chain ID 1 = Ethereum, Chain ID 100 = Gnosis Chain
         // Gnosis Omnibridge only supports bridging between these two chains
@@ -122,11 +122,11 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
             // They must be wrapped first (e.g., WETH/WXDAI) before bridging
             revert NativeTokenNotSupported();
         }
-        
+
         // ERC20 token
         // Approve Omnibridge to spend tokens
         IERC20(asset).forceApprove(address(omnibridge), data.amount);
-        
+
         // Call relayTokensAndCall with token address
         omnibridge.relayTokensAndCall(asset, receiver, data.amount, messageData);
 
@@ -135,7 +135,9 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
         // Note: AMB transaction hash is not available immediately, it will be set when message is received
         // We emit event with zero hash for now, will be updated on completion
-        emit GnosisBridgeInitiated(data.invoiceId, uint64(data.destinationChainId), receiver, bytes32(data.amount), bytes32(0));
+        emit GnosisBridgeInitiated(
+            data.invoiceId, uint64(data.destinationChainId), receiver, bytes32(data.amount), bytes32(0)
+        );
     }
 
     /// @inheritdoc BridgeAdapter
@@ -150,17 +152,16 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
         // Decode messagePayload into invoice data struct
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-        
+
         // Validate checksum
-        if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
-            data.invoiceId, data.amount, data.timestampByte, data.checksum24
-        )) {
+        if (!IBridgeEscrow(bridgeEscrow)
+                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
             revert InvalidInvoice();
         }
 
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        
+
         // On Mainnet (chainId == 1), tokens need to be manually claimed from Omnibridge.
         // Verify that tokens are available in the adapter before proceeding.
         // On Gnosis Chain (chainId == 100), tokens are automatically transferred via onTokenTransfer.
@@ -206,17 +207,18 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // Extract messagePayload from data (exactly 96 bytes = 3 slots)
         if (data.length >= 96) {
             InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.decode(data);
-            
+
             // Validate checksum (value is the amount received)
-            if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
-                invoiceData.invoiceId, invoiceData.amount, invoiceData.timestampByte, invoiceData.checksum24
-            )) {
+            if (!IBridgeEscrow(bridgeEscrow)
+                    .validateInvoiceIdChecksum(
+                        invoiceData.invoiceId, invoiceData.amount, invoiceData.timestampByte, invoiceData.checksum24
+                    )) {
                 revert InvalidInvoice();
             }
-            
+
             // Store invoiceId mapping and messagePayload
             messagePayloads[invoiceData.invoiceId] = data;
-            
+
             // Get transaction hash if available
             bytes32 transactionHash = bytes32(0);
             try amb.transactionHash() returns (bytes32 txHash) {
@@ -268,16 +270,16 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         if (asset == address(0)) {
             return false;
         }
-        
+
         // Get the expected amount from the stored messagePayload
         bytes memory payload = messagePayloads[invoiceId];
         if (payload.length == 0) {
             return false;
         }
-        
+
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(payload);
         uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-        
+
         return adapterBalance >= data.amount;
     }
 }

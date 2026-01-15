@@ -81,7 +81,7 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
         // Pass decoded struct to adapter implementation
         _bridge(data);
 
-        emit BridgeInitiated(data.invoiceId, data.amount); 
+        emit BridgeInitiated(data.invoiceId, data.amount);
     }
 
     /// @inheritdoc IBridgeAdapter
@@ -90,28 +90,27 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
         if (!hasRole(OPERATOR_ROLE, msg.sender)) {
             revert NotAuthorized();
         }
-        
+
         // Validate messagePayload is not empty
         if (messagePayload.length == 0) {
             revert InvalidCompletionData();
         }
-        
+
         // Decode messagePayload into struct once using InvoiceDataLib
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-        
+
         // Validate checksum (adapter-level validation before calling escrow)
-        if (!IBridgeEscrow(bridgeEscrow).validateInvoiceIdChecksum(
-            data.invoiceId, data.amount, data.timestampByte, data.checksum24
-        )) {
+        if (!IBridgeEscrow(bridgeEscrow)
+                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
             revert InvalidInvoice();
         }
-        
+
         // Call bridge-specific completion logic
         _completeBridge(messagePayload, protocolData);
-        
+
         // Call BridgeEscrow.releaseByInvoiceId() with messagePayload (mandatory checksum validation)
         IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
-        
+
         emit BridgeCompleted(data.invoiceId);
     }
 
@@ -124,7 +123,6 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
     function version() external view override returns (string memory) {
         return adapterVersion;
     }
-
 
     //
     // Abstract Functions

@@ -21,21 +21,14 @@ interface ICcipBridgeAdapter is IBridgeAdapter, IAny2EVMMessageReceiver {
     /// @param messageId The CCIP message ID
     /// @param amount The amount being bridged
     event CcipBridgeInitiated(
-        bytes32 indexed invoiceId,
-        uint64 destinationChainSelector,
-        bytes32 messageId,
-        bytes32 amount
+        bytes32 indexed invoiceId, uint64 destinationChainSelector, bytes32 messageId, bytes32 amount
     );
 
     /// @notice Event emitted when a CCIP bridge is completed
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param messageId The CCIP message ID - indexed
     /// @param sourceChainSelector The CCIP chain selector of source chain
-    event CcipBridgeCompleted(
-        bytes32 indexed invoiceId,
-        bytes32 indexed messageId,
-        uint64 sourceChainSelector
-    );
+    event CcipBridgeCompleted(bytes32 indexed invoiceId, bytes32 indexed messageId, uint64 sourceChainSelector);
 
     //
     // Errors

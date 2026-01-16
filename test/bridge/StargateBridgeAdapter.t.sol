@@ -172,28 +172,132 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
 
     // ============ Bridge Completion Tests ============
 
-    function test_completeBridge_processesMessage() public {
+    function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Protocol data is source LZ chain ID (optional)
+        // Set up destination chain environment
+        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
+            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+
+        // Set up adapter on destination chain
+        address destAdapterImpl = address(new StargateBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
+                )
+            ));
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
+
+        // Configure adapter on destination chain
+        vm.startPrank(admin);
+        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
+        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        uint64 destChainId = uint64(block.chainid);
+        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
+        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
+
+        // Simulate Stargate delivering tokens and message
+        usdc.mint(address(destAdapter), amount);
+        
+        // Call lzReceive to store the message payload
+        bytes memory srcAddress = abi.encodePacked(address(destAdapter));
+        vm.prank(endpoint);
+        destAdapter.lzReceive(SOURCE_LZ_CHAIN_ID, srcAddress, 123, messagePayload);
+
+        // Verify invoice is not completed before completion
+        // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+        assertFalse(
+            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
+            "Invoice should not be completed before completion"
+        );
+
+        // Note: Tokens arrive at adapter, not BridgeEscrow
+        // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
+        assertEq(
+            usdc.balanceOf(address(destAdapter)),
+            amount,
+            "Adapter should have tokens before completion"
+        );
+        assertEq(
+            usdc.balanceOf(address(destBridgeEscrow)),
+            0,
+            "Escrow should have zero balance before completion (tokens at adapter)"
+        );
+
+        // Get initial balances
+        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialAdapterBalance = usdc.balanceOf(address(destAdapter));
+
+        // Protocol data is source LZ chain ID
         bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
 
-        // Complete bridge (this will call releaseByInvoiceId which expects destination chain)
-        // Note: In unit tests, we're on source chain, so releaseByInvoiceId will revert
-        // This is expected - the full flow is tested in fork tests
+        // Complete bridge
         vm.prank(operator);
-        vm.expectRevert(); // Expect revert from releaseByInvoiceId (destination chain validation)
-        adapter.completeBridge(messagePayload, protocolData);
+        destAdapter.completeBridge(messagePayload, protocolData);
+
+        // Verify tokens were released
+        assertEq(
+            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance,
+            amount,
+            "Portfolio safe should receive tokens"
+        );
+
+        // Verify tokens were transferred from adapter to BridgeEscrow, then released
+        // Adapter should have 0 balance (transferred to escrow)
+        assertEq(
+            usdc.balanceOf(address(destAdapter)),
+            0,
+            "Adapter should have zero balance after transfer to escrow"
+        );
+        // Escrow should have 0 balance (released to portfolio safe)
+        assertEq(
+            usdc.balanceOf(address(destBridgeEscrow)),
+            0,
+            "Escrow should have zero balance after release to portfolio safe"
+        );
+
+        // Verify invoice is marked as completed
+        assertTrue(
+            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
+            "Invoice should be marked as completed"
+        );
+
+        // Note: In-transit balance is only tracked on source chain
+        // On destination chain, there are no invoices, so in-transit balance is always 0
     }
 
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // Set up destination chain environment
+        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
+            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+
+        // Set up adapter on destination chain (simplified setup)
+        address destAdapterImpl = address(new StargateBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
+                )
+            ));
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
 
         // Corrupt messagePayload (invalid checksum)
         bytes memory corruptedPayload = abi.encode(
@@ -206,20 +310,38 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
 
         vm.prank(operator);
         vm.expectRevert(); // Should revert because checksum is invalid
-        adapter.completeBridge(corruptedPayload, protocolData);
+        destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // Set up destination chain environment
+        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
+            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+
+        // Set up adapter on destination chain
+        address destAdapterImpl = address(new StargateBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
+                )
+            ));
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
 
         bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
 
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not operator
-        adapter.completeBridge(messagePayload, protocolData);
+        destAdapter.completeBridge(messagePayload, protocolData);
     }
 
     // ============ LayerZero Receiver Tests ============

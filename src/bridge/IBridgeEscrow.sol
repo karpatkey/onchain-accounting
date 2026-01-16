@@ -125,22 +125,11 @@ interface IBridgeEscrow {
     /// @return Array of active hashed invoice IDs
     function getActiveInvoices(address portfolioSafe) external view returns (bytes32[] memory);
 
-    /// @notice Gets the total in-transit balance for an asset
-    /// @param asset The token address
-    /// @return The total amount in transit
-    function getInTransitBalance(address asset) external view returns (uint256);
-
-    /// @notice Gets the in-transit balance for a specific portfolio safe and asset
-    /// @param portfolioSafe The portfolio safe address
-    /// @param asset The token address
-    /// @return The amount in transit for this safe
-    function getInTransitBalanceFor(address portfolioSafe, address asset) external view returns (uint256);
-
-    /// @notice Gets the in-transit balance by safe and asset
-    /// @param portfolioSafe The portfolio safe address
-    /// @param asset The token address
-    /// @return The amount in transit
-    function inTransitBalancesBySafe(address portfolioSafe, address asset) external view returns (uint256);
+    /// @notice Calculates the total in-transit balance for an asset by summing all active invoice amounts
+    /// @param asset The asset address to calculate balance for
+    /// @param portfolioSafe Optional portfolio safe address to filter by. If address(0), sums across all safes
+    /// @return The total amount in transit for this asset (optionally filtered by portfolio safe)
+    function getInTransitBalanceForAsset(address asset, address portfolioSafe) external view returns (uint256);
 
     /// @notice Checks if a portfolio safe is authorized
     /// @param safe The portfolio safe address

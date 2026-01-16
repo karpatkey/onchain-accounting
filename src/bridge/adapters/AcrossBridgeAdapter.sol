@@ -109,7 +109,10 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         // Check if asset is native token (address(0) or NATIVE_ADDRESS_ERC7528)
         bool isNative = _isNativeToken(asset);
 
-        // Get recipient address (this adapter on destination chain)
+        // Get recipient address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // Note: Across requires recipient to implement handleAcrossMessage callback, so we use adapter address
+        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
         address recipient = address(this);
 
         // Approve SpokePool to spend tokens (if ERC20)
@@ -174,6 +177,27 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         // Store message payload if provided
         if (messagePayload.length > 0) {
             messagePayloads[data.invoiceId] = messagePayload;
+        }
+
+        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
+        // Across sends tokens to recipient (bridgeEscrow), but if callback is required, tokens may be at adapter
+        // Get asset address from escrow
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        bool isNative = _isNativeToken(asset);
+
+        if (isNative) {
+            // Transfer native tokens to BridgeEscrow if adapter has balance
+            uint256 adapterBalance = address(this).balance;
+            if (adapterBalance >= data.amount) {
+                (bool success,) = bridgeEscrow.call{value: data.amount}("");
+                if (!success) revert TransferFailed();
+            }
+        } else {
+            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
+            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
+            if (adapterBalance >= data.amount) {
+                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
+            }
         }
 
         // Get deposit ID from protocol data if available

@@ -26,6 +26,9 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     /// @notice Role for operators who can cancel invoices
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
+    /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
+    address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+
     //
     // State Variables
     //
@@ -36,12 +39,6 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     /// @notice Active invoices per portfolio safe
     mapping(address => bytes32[]) private _activeInvoices;
     mapping(address => mapping(bytes32 => bool)) private _activeInvoicesSet;
-
-    /// @notice Total in-transit balance per asset
-    mapping(address => uint256) public inTransitBalances;
-
-    /// @notice In-transit balance per portfolio safe and asset
-    mapping(address => mapping(address => uint256)) public inTransitBalancesBySafe;
 
     /// @notice Authorized portfolio safes
     EnumerableSet.AddressSet private _authorizedPortfolioSafes;
@@ -189,7 +186,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         _activeInvoicesSet[msg.sender][invoiceHash] = true;
 
         // Transfer assets from portfolio safe
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             // Native token
             if (msg.value != amount) revert InvalidArguments();
             // Contract already holds native tokens via receive()
@@ -198,16 +195,12 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
             IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
         }
 
-        // Update in-transit balances
-        inTransitBalances[asset] += amount;
-        inTransitBalancesBySafe[msg.sender][asset] += amount;
-
         emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
 
         emit AssetsDeposited(invoiceId, asset, amount);
 
         // Immediately transfer assets to adapter
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             // Native token
             (bool success,) = adapter.call{value: amount}("");
             if (!success) revert TransferFailed();
@@ -254,21 +247,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
         bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
 
-        // Check if already completed
+        // Check if already completed (prevents double-spending/replay attacks)
+        // Note: The invoice itself is not stored on destination chain - it only exists on source chain
+        // The checksum validation above ensures the invoice data is valid and authentic
         if (completedInvoices[invoiceHash]) {
             revert InvoiceAlreadyExists();
-        }
-
-        // Fetch invoice by hash
-        Invoice storage invoice = invoices[invoiceHash];
-        if (invoice.invoiceId == bytes32(0)) {
-            revert InvoiceNotFound();
-        }
-
-        // Additional sanity: ensure invoiceId and amount match stored record
-        // Note: timestamp is only checked to be in past, not exact match
-        if (invoice.invoiceId != invoiceId || invoice.amount != amount) {
-            revert InvalidInvoice();
         }
 
         // Use already-decoded data from InvoiceDataLib.decode() instead of decoding again
@@ -290,13 +273,15 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         // Mark invoice as completed
         completedInvoices[invoiceHash] = true;
 
-        // Decrease in-transit balances
-        if (inTransitBalances[asset] < amount) revert InsufficientBalance();
-        inTransitBalances[asset] -= amount;
-        inTransitBalancesBySafe[data.portfolioSafe][asset] -= amount;
+        // Verify sufficient balance (check contract balance)
+        if (_isNativeToken(asset)) {
+            if (address(this).balance < amount) revert InsufficientBalance();
+        } else {
+            if (IERC20(asset).balanceOf(address(this)) < amount) revert InsufficientBalance();
+        }
 
         // Transfer assets to portfolio safe
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             (bool success,) = data.portfolioSafe.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
@@ -322,7 +307,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         uint256 amount = invoice.amount;
 
         // Verify assets are in the contract before allowing cancellation
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             // Native token - check contract balance
             if (address(this).balance < amount) revert InsufficientBalance();
         } else {
@@ -333,12 +318,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         InvoiceStatus oldStatus = invoice.status;
         invoice.status = InvoiceStatus.CANCELLED;
 
-        // Decrease in-transit balances
-        inTransitBalances[asset] -= amount;
-        inTransitBalancesBySafe[invoice.portfolioSafe][asset] -= amount;
-
         // Return assets to portfolio safe
-        if (asset == address(0)) {
+        if (_isNativeToken(asset)) {
             (bool success,) = invoice.portfolioSafe.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
@@ -435,14 +416,47 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
         return _activeInvoices[portfolioSafe];
     }
 
-    /// @inheritdoc IBridgeEscrow
-    function getInTransitBalance(address asset) external view override returns (uint256) {
-        return inTransitBalances[asset];
-    }
-
-    /// @inheritdoc IBridgeEscrow
-    function getInTransitBalanceFor(address portfolioSafe, address asset) external view override returns (uint256) {
-        return inTransitBalancesBySafe[portfolioSafe][asset];
+    /// @notice Calculates the total in-transit balance for an asset by summing all active invoice amounts
+    /// @param asset The asset address to calculate balance for
+    /// @param portfolioSafe Optional portfolio safe address to filter by. If address(0), sums across all safes
+    /// @return The total amount in transit for this asset (optionally filtered by portfolio safe)
+    /// @dev Iterates through active invoices and sums amounts from invoices with BRIDGING status
+    function getInTransitBalanceForAsset(address asset, address portfolioSafe) external view returns (uint256) {
+        uint256 total = 0;
+        
+        if (portfolioSafe == address(0)) {
+            // If no specific safe provided, iterate through all authorized portfolio safes
+            uint256 length = _authorizedPortfolioSafes.length();
+            for (uint256 i = 0; i < length; i++) {
+                address safe = _authorizedPortfolioSafes.at(i);
+                bytes32[] memory activeInvoiceHashes = _activeInvoices[safe];
+                
+                for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
+                    bytes32 invoiceHash = activeInvoiceHashes[j];
+                    Invoice storage inv = invoices[invoiceHash];
+                    
+                    // Only count invoices that are still BRIDGING (not cancelled or completed)
+                    if (inv.status == InvoiceStatus.BRIDGING && inv.asset == asset) {
+                        total += inv.amount;
+                    }
+                }
+            }
+        } else {
+            // If specific safe provided, only check that safe's active invoices
+            bytes32[] memory activeInvoiceHashes = _activeInvoices[portfolioSafe];
+            
+            for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
+                bytes32 invoiceHash = activeInvoiceHashes[j];
+                Invoice storage inv = invoices[invoiceHash];
+                
+                // Only count invoices that are still BRIDGING (not cancelled or completed)
+                if (inv.status == InvoiceStatus.BRIDGING && inv.asset == asset) {
+                    total += inv.amount;
+                }
+            }
+        }
+        
+        return total;
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -531,6 +545,14 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, IBridgeEscrow 
     {
         bytes32 fullHash = keccak256(abi.encodePacked(invoiceId, amount, timestampByte));
         return bytes24(fullHash);
+    }
+
+    /// @notice Checks if an address represents a native token
+    /// @param token The token address to check
+    /// @return True if the address is address(0) or NATIVE_ADDRESS_ERC7528
+    /// @dev Some L2s use 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE instead of address(0) for native tokens
+    function _isNativeToken(address token) internal pure returns (bool) {
+        return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
     }
 
     /// @notice Decodes a 32-byte invoice ID into its components

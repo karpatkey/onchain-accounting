@@ -165,9 +165,11 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
             tokenAmounts = new Client.EVMTokenAmount[](0);
         }
 
-        // Encode receiver address (use portfolioSafe from invoiceId, or this contract as fallback)
-        address receiverAddress = data.portfolioSafe != address(0) ? data.portfolioSafe : address(this);
-        bytes memory receiver = abi.encode(receiverAddress);
+        // Encode receiver address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // Note: CCIP requires receiver to implement ccipReceive callback, so we use adapter address
+        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
+        bytes memory receiver = abi.encode(address(this));
 
         // Get extraArgs for this chain (use configured or empty for default)
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
@@ -230,8 +232,22 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
             messagePayloads[data.invoiceId] = payloadToUse;
         }
 
-        // Tokens are automatically transferred by CCIP router before ccipReceive is called
-        // So we just need to emit the event
+        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
+        // CCIP sends tokens to receiver (adapter) before calling ccipReceive
+        // Get asset address from escrow
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        bool isNative = _isNativeToken(asset);
+
+        if (!isNative) {
+            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
+            // CCIP transfers tokens before ccipReceive, so they should be at adapter
+            // Note: We check adapter balance directly, not message.destTokenAmounts,
+            // because the message may not include token amounts in all cases
+            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
+            if (adapterBalance >= data.amount) {
+                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
+            }
+        }
 
         emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);
     }

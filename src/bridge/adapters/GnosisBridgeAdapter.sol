@@ -110,7 +110,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
             revert UnsupportedChain(uint64(data.destinationChainId));
         }
 
-        // Use adapter address as receiver (Omnibridge will call onTokenTransfer on this contract)
+        // Use bridgeEscrow as receiver - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // Note: Gnosis requires receiver to implement onTokenTransfer callback, so we use adapter address
+        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
         address receiver = address(this);
 
         // messagePayload already contains invoiceId + amount + timestamp + checksum, so we send it as-is
@@ -161,15 +164,17 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        bool isNative = _isNativeToken(asset);
 
-        // On Mainnet (chainId == 1), tokens need to be manually claimed from Omnibridge.
-        // Verify that tokens are available in the adapter before proceeding.
-        // On Gnosis Chain (chainId == 100), tokens are automatically transferred via onTokenTransfer.
-        if (uint64(data.destinationChainId) == 1 && !_isNativeToken(asset)) {
+        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
+        // Gnosis sends tokens to receiver (adapter) via onTokenTransfer callback
+        if (!isNative) {
             uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance < data.amount) {
-                // Tokens not yet available - operator must ensure AMB message is processed
-                // which will call onTokenTransfer and transfer tokens to this adapter
+            if (adapterBalance >= data.amount) {
+                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
+            } else if (uint64(data.destinationChainId) == 1) {
+                // On Mainnet, tokens need to be manually claimed from Omnibridge first
+                // If tokens aren't available, revert (operator must ensure AMB message is processed)
                 revert TokensNotAvailable();
             }
         }

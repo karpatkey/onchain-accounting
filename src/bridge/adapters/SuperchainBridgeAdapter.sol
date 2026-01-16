@@ -216,8 +216,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bool isETH,
         bytes memory messagePayload
     ) internal {
-        // Use adapter address as receiver on L2
-        address receiver = address(this);
+        // Use bridgeEscrow as receiver on L2 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        address receiver = bridgeEscrow;
 
         if (isETH) {
             // Deposit ETH to L2
@@ -257,8 +258,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bool isETH,
         bytes memory messagePayload
     ) internal {
-        // Use adapter address as receiver on L1
-        address receiver = address(this);
+        // Use bridgeEscrow as receiver on L1 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        address receiver = bridgeEscrow;
 
         if (isETH) {
             // Withdraw ETH to L1
@@ -351,17 +353,24 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes calldata /* messagePayload */
     )
         internal
-        view
     {
-        // For L1 → L2 deposits, tokens are automatically transferred to the adapter on L2
-        // We just need to verify they're available
+        // For L1 → L2 deposits, tokens should be at bridgeEscrow (receiver = bridgeEscrow)
+        // But if they arrived at adapter, transfer them to bridgeEscrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        bool isNative = _isNativeToken(asset);
 
-        if (!_isNativeToken(asset)) {
+        if (isNative) {
+            // Transfer native tokens to BridgeEscrow if adapter has balance
+            uint256 adapterBalance = address(this).balance;
+            if (adapterBalance >= data.amount) {
+                (bool success,) = bridgeEscrow.call{value: data.amount}("");
+                if (!success) revert TransferFailed();
+            }
+        } else {
+            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
             uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance < data.amount) {
-                // Tokens not yet available - may need to wait for cross-domain message
-                // This is expected for L1 → L2 deposits which are fast but not instant
+            if (adapterBalance >= data.amount) {
+                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
             }
         }
     }

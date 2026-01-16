@@ -161,7 +161,10 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             dstGasForCall: defaultDstGasForCall, dstNativeAmount: 0, dstNativeAddr: bytes("")
         });
 
-        // Encode destination address (this adapter on destination chain)
+        // Encode destination address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
+        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // Note: Stargate requires recipient to implement lzReceive callback, so we use adapter address
+        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
         bytes memory toAddress = abi.encodePacked(address(this));
 
         // Quote LayerZero fee
@@ -214,6 +217,27 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         // Store message payload if provided
         if (messagePayload.length > 0) {
             messagePayloads[data.invoiceId] = messagePayload;
+        }
+
+        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
+        // Stargate sends tokens to recipient (adapter), so we transfer to BridgeEscrow
+        // Get asset address from escrow
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        bool isNative = _isNativeToken(asset);
+
+        if (isNative) {
+            // Transfer native tokens to BridgeEscrow if adapter has balance
+            uint256 adapterBalance = address(this).balance;
+            if (adapterBalance >= data.amount) {
+                (bool success,) = bridgeEscrow.call{value: data.amount}("");
+                if (!success) revert TransferFailed();
+            }
+        } else {
+            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
+            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
+            if (adapterBalance >= data.amount) {
+                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
+            }
         }
 
         // Get source LayerZero chain ID from protocol data if available

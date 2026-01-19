@@ -227,19 +227,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         accountPositions.nav.block = uint64(block.number);
         accountPositions.nav.timestamp = uint64(block.timestamp);
 
-        uint256 totalAssets = _assetDecimals.length();
-
-        // Check sequencer status once (global issue, affects all assets)
-        bool sequencerDown = _isSequencerDown();
-        accountPositions.nav.sequencerDown = sequencerDown;
-
-        if (totalAssets == 0) {
-            accountPositions.nav.usd = 0;
-            accountPositions.nav.stalePriceAssets = new address[](0);
-            accountPositions.positions = new INAVCalculator.VerbosePosition[](0);
-            return accountPositions;
-        }
-
+        // Validate quote currency first (before early return)
         // Get quote currency info if not USD
         uint256 quoteCurrencyPrice = 0;
         uint8 quoteCurrencyPriceDecimals = 0;
@@ -269,26 +257,35 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             quoteCurrencyDecimals = NAV_DECIMALS;
         }
 
+        // Get assets with positions (gas-efficient pre-filter)
+        address[] memory assetsWithPositions = _getAssetsWithPositions(account);
+        uint256 totalAssetsWithPositions = assetsWithPositions.length;
+
+        // Check sequencer status once (global issue, affects all assets)
+        bool sequencerDown = _isSequencerDown();
+        accountPositions.nav.sequencerDown = sequencerDown;
+
+        if (totalAssetsWithPositions == 0) {
+            accountPositions.nav.usd = 0;
+            accountPositions.nav.stalePriceAssets = new address[](0);
+            accountPositions.positions = new INAVCalculator.VerbosePosition[](0);
+            return accountPositions;
+        }
+
         // Temporary arrays for positions and stale assets
         INAVCalculator.VerbosePosition[] memory tempPositions =
             new INAVCalculator.VerbosePosition[](balanceOracleTotalCount);
-        address[] memory staleAssetsTemp = new address[](totalAssets);
+        address[] memory staleAssetsTemp = new address[](totalAssetsWithPositions);
         uint256 positionCount = 0;
         uint256 staleCount = 0;
         int256 totalUsd = 0;
 
-        // Single pass: collect all positions
-        for (uint256 i = 0; i < totalAssets; i++) {
-            (address assetAddr, uint256 dec) = _assetDecimals.at(i);
+        // Process only assets with positions
+        for (uint256 i = 0; i < totalAssetsWithPositions; i++) {
+            address assetAddr = assetsWithPositions[i];
+            uint8 assetDecimals = _getAssetDecimals(assetAddr);
 
-            // Skip assets without price oracles
-            if (priceOracles[assetAddr].oracle == address(0)) {
-                continue;
-            }
-
-            uint8 assetDecimals = uint8(dec);
-
-            // Fetch price once per asset
+            // Fetch price once per asset (only for assets with positions)
             (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(assetAddr);
 
             if (stale) {
@@ -296,7 +293,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 staleCount++;
             }
 
-            // Get asset symbol
+            // Get asset symbol (only for assets with positions)
             string memory assetSymbol;
             if (assetAddr == NATIVE_ADDRESS) {
                 assetSymbol = _nativeTokenSymbol;
@@ -563,6 +560,60 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         return false;
+    }
+
+    /// @notice Internal function to get assets with non-zero balances for an account
+    /// @param account The address of the account to check
+    /// @return assetsWithPositions Array of asset addresses that have at least one non-zero balance
+    function _getAssetsWithPositions(address account) internal view returns (address[] memory assetsWithPositions) {
+        uint256 totalAssets = _assetDecimals.length();
+        if (totalAssets == 0) {
+            return new address[](0);
+        }
+
+        // Temporary array to collect assets with positions
+        address[] memory tempAssets = new address[](totalAssets);
+        uint256 assetCount = 0;
+
+        for (uint256 i = 0; i < totalAssets; i++) {
+            (address assetAddr,) = _assetDecimals.at(i);
+
+            // Skip assets without price oracles (needed for processing)
+            if (priceOracles[assetAddr].oracle == address(0)) {
+                continue;
+            }
+
+            // Check if asset has any non-zero balance
+            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
+            bool hasNonZeroBalance = false;
+
+            for (uint256 j = 0; j < balanceOracleCount; j++) {
+                if (balanceOf(assetAddr, j, account) != 0) {
+                    hasNonZeroBalance = true;
+                    break; // Early exit once we find a non-zero balance
+                }
+            }
+
+            if (hasNonZeroBalance) {
+                tempAssets[assetCount] = assetAddr;
+                assetCount++;
+            }
+        }
+
+        // Compact array to exact size
+        if (assetCount == 0) {
+            return new address[](0);
+        }
+
+        assetsWithPositions = new address[](assetCount);
+        for (uint256 i = 0; i < assetCount; i++) {
+            assetsWithPositions[i] = tempAssets[i];
+        }
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAssetsWithPositions(address account) external view override returns (address[] memory) {
+        return _getAssetsWithPositions(account);
     }
 
     /// @inheritdoc INAVCalculator

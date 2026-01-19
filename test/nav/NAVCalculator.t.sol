@@ -1132,4 +1132,258 @@ contract NAVCalculatorTest is SuperTest {
         // Should match (allowing for any rounding differences)
         assertEq(calculatedValue, positionsValue);
     }
+
+    // ============================================
+    // I. getAssetsWithPositions Tests
+    // ============================================
+
+    // Test getAssetsWithPositions_emptyAccount
+    function test_getAssetsWithPositions_emptyAccount() public {
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 0);
+    }
+
+    // Test getAssetsWithPositions_singleAsset
+    function test_getAssetsWithPositions_singleAsset() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(usdc));
+    }
+
+    // Test getAssetsWithPositions_multipleAssets
+    function test_getAssetsWithPositions_multipleAssets() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+        weth.mint(safe, 10 ** weth.decimals());
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 3);
+        
+        // Check all expected assets are present
+        bool foundUsdc = false;
+        bool foundDai = false;
+        bool foundWeth = false;
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i] == address(usdc)) foundUsdc = true;
+            if (assets[i] == address(dai)) foundDai = true;
+            if (assets[i] == address(weth)) foundWeth = true;
+        }
+        assertTrue(foundUsdc);
+        assertTrue(foundDai);
+        assertTrue(foundWeth);
+    }
+
+    // Test getAssetsWithPositions_skipsEmptyAssets
+    function test_getAssetsWithPositions_skipsEmptyAssets() public {
+        // Mint only USDC, not DAI
+        usdc.mint(safe, 10 ** usdc.decimals());
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(usdc));
+        
+        // DAI should not be in the list
+        for (uint256 i = 0; i < assets.length; i++) {
+            assertTrue(assets[i] != address(dai));
+        }
+    }
+
+    // Test getAssetsWithPositions_skipsNoPriceOracle
+    function test_getAssetsWithPositions_skipsNoPriceOracle() public {
+        // Create a new token and register it without price oracle
+        Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
+        vm.startPrank(navCalculatorManager);
+        nav.registerAsset(address(newToken));
+        nav.setBalanceOracle(address(newToken), address(newToken), IBalances.BalanceType.ERC20);
+        // Don't set price oracle
+        vm.stopPrank();
+
+        newToken.mint(safe, 10 ** newToken.decimals());
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        // Should not include newToken since it has no price oracle
+        for (uint256 i = 0; i < assets.length; i++) {
+            assertTrue(assets[i] != address(newToken));
+        }
+    }
+
+    // Test getAssetsWithPositions_consistencyWithHasPositions
+    function test_getAssetsWithPositions_consistencyWithHasPositions() public {
+        // Empty account
+        assertFalse(nav.hasPositions(safe));
+        address[] memory emptyAssets = nav.getAssetsWithPositions(safe);
+        assertEq(emptyAssets.length, 0);
+
+        // Account with positions
+        usdc.mint(safe, 10 ** usdc.decimals());
+        assertTrue(nav.hasPositions(safe));
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertTrue(assets.length > 0);
+    }
+
+    // Test getAssetsWithPositions_consistencyWithGetAllPositions
+    function test_getAssetsWithPositions_consistencyWithGetAllPositions() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+
+        // All assets with positions should have corresponding positions in getAllPositions
+        for (uint256 i = 0; i < assets.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < accountPositions.positions.length; j++) {
+                if (accountPositions.positions[j].core.asset == assets[i]) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, "Asset from getAssetsWithPositions not found in getAllPositions");
+        }
+
+        // All positions in getAllPositions should be from assets in getAssetsWithPositions
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            address positionAsset = accountPositions.positions[i].core.asset;
+            bool found = false;
+            for (uint256 j = 0; j < assets.length; j++) {
+                if (assets[j] == positionAsset) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, "Position from getAllPositions not found in getAssetsWithPositions");
+        }
+    }
+
+    // Test getAssetsWithPositions_multipleBalanceOracles
+    function test_getAssetsWithPositions_multipleBalanceOracles() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+
+        // Add a custom balance oracle for USDC
+        Mock_CustomBalanceOracle customOracle = new Mock_CustomBalanceOracle();
+        vm.startPrank(navCalculatorManager);
+        nav.setBalanceOracle(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
+        customOracle.setBalance(address(usdc), safe, int256(5 * 10 ** (usdc.decimals() - 1)));
+        vm.stopPrank();
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        // Should still return USDC (has positions from both oracles)
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(usdc));
+    }
+
+    // Test getAssetsWithPositions_allZeroBalances
+    function test_getAssetsWithPositions_allZeroBalances() public {
+        // Add a custom oracle with zero balance
+        Mock_CustomBalanceOracle zeroOracle = new Mock_CustomBalanceOracle();
+        vm.startPrank(navCalculatorManager);
+        nav.setBalanceOracle(address(usdc), address(zeroOracle), IBalances.BalanceType.Custom);
+        zeroOracle.setBalance(address(usdc), safe, 0);
+        vm.stopPrank();
+
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        // Should not include USDC since all balances are zero
+        for (uint256 i = 0; i < assets.length; i++) {
+            assertTrue(assets[i] != address(usdc));
+        }
+    }
+
+    // ============================================
+    // J. Gas Optimization Benchmarks
+    // ============================================
+
+    // Test gas optimization: getAllPositions with many empty assets
+    function test_getAllPositions_gasOptimization_manyEmptyAssets() public {
+        // Create many assets but only mint to 2
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+        
+        // Register additional assets without minting (they will be empty)
+        Mock_ERC20 token3 = new Mock_ERC20("T3", 18);
+        Mock_ERC20 token4 = new Mock_ERC20("T4", 18);
+        Mock_ERC20 token5 = new Mock_ERC20("T5", 18);
+        
+        // Create price oracles for the new tokens
+        Mock_PriceOracleChainlink token3Oracle = new Mock_PriceOracleChainlink("T3", 1, 8);
+        Mock_PriceOracleChainlink token4Oracle = new Mock_PriceOracleChainlink("T4", 1, 8);
+        Mock_PriceOracleChainlink token5Oracle = new Mock_PriceOracleChainlink("T5", 1, 8);
+        
+        vm.startPrank(navCalculatorManager);
+        nav.registerAsset(address(token3));
+        nav.setPriceOracle(address(token3), address(token3Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.setBalanceOracle(address(token3), address(token3), IBalances.BalanceType.ERC20);
+        
+        nav.registerAsset(address(token4));
+        nav.setPriceOracle(address(token4), address(token4Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.setBalanceOracle(address(token4), address(token4), IBalances.BalanceType.ERC20);
+        
+        nav.registerAsset(address(token5));
+        nav.setPriceOracle(address(token5), address(token5Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.setBalanceOracle(address(token5), address(token5), IBalances.BalanceType.ERC20);
+        vm.stopPrank();
+
+        // Measure gas for getAllPositions (should skip empty assets)
+        uint256 gasBefore = gasleft();
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        uint256 gasUsed = gasBefore - gasleft();
+
+        // Verify correctness
+        assertEq(accountPositions.positions.length, 2); // Only USDC and DAI
+        assertTrue(accountPositions.nav.usd > 0);
+
+        // Verify getAssetsWithPositions returns only assets with positions
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 2);
+        
+        // Gas should be reasonable (optimization should help)
+        // This is a sanity check - actual savings depend on number of empty assets
+        assertTrue(gasUsed < 500000, "Gas usage seems too high");
+    }
+
+    // Test gas optimization: verify getAllPositions still works correctly
+    function test_getAllPositions_optimization_correctness() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+
+        // Get assets with positions
+        address[] memory assets = nav.getAssetsWithPositions(safe);
+        assertEq(assets.length, 2);
+
+        // Get all positions
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+
+        // Verify NAV matches
+        assertTrue(accountPositions.nav.usd > 0);
+        
+        // Verify positions match assets
+        assertEq(accountPositions.positions.length, 2);
+        
+        // Verify each asset from getAssetsWithPositions has a position
+        for (uint256 i = 0; i < assets.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < accountPositions.positions.length; j++) {
+                if (accountPositions.positions[j].core.asset == assets[i]) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found);
+        }
+    }
+
+    // Test gas optimization: empty account should be very cheap
+    function test_getAllPositions_gasOptimization_emptyAccount() public {
+        uint256 gasBefore = gasleft();
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        uint256 gasUsed = gasBefore - gasleft();
+
+        // Should return empty results quickly
+        assertEq(accountPositions.positions.length, 0);
+        assertEq(accountPositions.nav.usd, 0);
+        
+        // Should be very cheap (just helper call + early return)
+        assertTrue(gasUsed < 100000, "Empty account should be very cheap");
+    }
 }

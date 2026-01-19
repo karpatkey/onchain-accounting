@@ -249,6 +249,12 @@ interface INAVCalculator {
     /// @return has Any position present
     function hasPositions(address account) external view returns (bool has);
 
+    /// @notice Returns all assets that have non-zero balances for the given account
+    /// @param account The address of the account to check
+    /// @return assets Array of asset addresses that have at least one non-zero balance
+    /// @dev This is a gas-efficient way to identify which assets need processing
+    function getAssetsWithPositions(address account) external view returns (address[] memory assets);
+
     /// @notice Calculates the total value of provided asset balances in the specified quote currency
     /// @param assets Array of asset addresses
     /// @param balances Array of balances corresponding to each asset (signed to allow debt)

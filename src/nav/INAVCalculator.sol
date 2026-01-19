@@ -99,6 +99,58 @@ interface INAVCalculator {
         bool sequencerDown;
     }
 
+    /// @notice Detailed asset position with all positions for that asset
+    /// @param asset The address of the asset
+    /// @param assetSymbol The symbol of the asset (e.g. "USDC", "ETH")
+    /// @param assetDecimals The number of decimals of the asset
+    /// @param totalBalance The aggregated balance across all positions for this asset (signed to allow debt)
+    /// @param totalUsd The total USD value of all positions for this asset, scaled by NAV_DECIMALS
+    /// @param usdRate The USD price per one full token unit, scaled by `usdRateDecimals`
+    /// @param usdRateDecimals The decimals with which usdRate is represented
+    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific)
+    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices)
+    /// @param positions Array of all positions for this asset across all protocols
+    struct AssetPosition {
+        address asset;
+        string assetSymbol;
+        uint8 assetDecimals;
+        int256 totalBalance;
+        int256 totalUsd;
+        uint256 usdRate;
+        uint256 usdRateDecimals;
+        bool stale;
+        bool sequencerDown;
+        PositionWithMetadata[] positions;
+    }
+
+    /// @notice Detailed protocol position with all positions for that protocol
+    /// @param protocol The protocol name (e.g. "Aave", "Portfolio balance", etc.)
+    /// @param totalUsd The total USD value of all positions for this protocol, scaled by NAV_DECIMALS
+    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices)
+    /// @param positions Array of all positions for this protocol across all assets
+    struct ProtocolPosition {
+        string protocol;
+        int256 totalUsd;
+        bool sequencerDown;
+        PositionWithMetadata[] positions;
+    }
+
+    /// @notice Complete detailed NAV organized by asset
+    /// @param nav The standard NAV struct with aggregated totals
+    /// @param assetPositions Array of asset positions, one per asset with non-zero balances
+    struct DetailedNAV {
+        NAV nav;
+        AssetPosition[] assetPositions;
+    }
+
+    /// @notice Complete detailed positions organized by protocol
+    /// @param nav The standard NAV struct with aggregated totals
+    /// @param protocolPositions Array of protocol positions, one per protocol with positions
+    struct DetailedPositions {
+        NAV nav;
+        ProtocolPosition[] protocolPositions;
+    }
+
     //
     // Events
     //
@@ -349,4 +401,24 @@ interface INAVCalculator {
         uint256 idxBalanceOracle,
         address baseAsset
     ) external view returns (Position memory p, int256 baseAssetValue, bool baseAssetStale);
+
+    /// @notice Returns detailed NAV organized per asset with all positions
+    /// @dev This function reads all known assets and might exhaust gas if there are too many assets.
+    /// It is recommended to use readPositionsRange for large asset sets.
+    /// @param account The address to calculate for
+    /// @return detailedNAV A DetailedNAV struct containing:
+    ///   - nav: Standard NAV struct with aggregated totals
+    ///   - assetPositions: Array of AssetPosition structs, one per asset with non-zero balances,
+    ///     each containing all positions for that asset organized by protocol
+    function readDetailedNAV(address account) external view returns (DetailedNAV memory detailedNAV);
+
+    /// @notice Returns all positions organized by protocol with their amounts and values
+    /// @dev This function reads all known assets and might exhaust gas if there are too many assets.
+    /// It is recommended to use readPositionsRange for large asset sets.
+    /// @param account The address to calculate for
+    /// @return detailedPositions A DetailedPositions struct containing:
+    ///   - nav: Standard NAV struct with aggregated totals
+    ///   - protocolPositions: Array of ProtocolPosition structs, one per protocol with positions,
+    ///     each containing all positions for that protocol across all assets
+    function readDetailedPositions(address account) external view returns (DetailedPositions memory detailedPositions);
 }

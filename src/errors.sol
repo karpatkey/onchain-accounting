@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 error InvalidArguments();
+error InvalidArgumentsWithContext(string context);
 error NotAuthorized();
 error NotChainlinkOracle();
 

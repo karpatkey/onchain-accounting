@@ -223,8 +223,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         view
         returns (int256 usd, address[] memory stalePriceAssets, bool sequencerDown)
     {
-        if (from > to || to >= _assetDecimals.length()) {
-            revert InvalidArguments();
+        uint256 assetCount = _assetDecimals.length();
+        if (from > to) {
+            revert InvalidArgumentsWithContext("from > to");
+        }
+        if (to >= assetCount) {
+            revert InvalidArgumentsWithContext("to >= assetCount");
         }
 
         // Check sequencer status once (global issue, affects all assets)
@@ -562,6 +566,297 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         baseAssetValue = _fromUsd(p.usd, baseAssetPrice, baseAssetPriceDecimals, baseAssetDecimals);
     }
 
+    /// @inheritdoc INAVCalculator
+    function readDetailedNAV(address account) external view returns (INAVCalculator.DetailedNAV memory detailedNAV) {
+        // Build standard NAV first
+        detailedNAV.nav.block = uint64(block.number);
+        detailedNAV.nav.timestamp = uint64(block.timestamp);
+
+        uint256 totalAssets = _assetDecimals.length();
+
+        // Check sequencer status once (global issue, affects all assets)
+        bool sequencerDown = _isSequencerDown();
+        detailedNAV.nav.sequencerDown = sequencerDown;
+
+        if (totalAssets == 0) {
+            detailedNAV.nav.usd = 0;
+            detailedNAV.nav.stalePriceAssets = new address[](0);
+            detailedNAV.assetPositions = new INAVCalculator.AssetPosition[](0);
+            return detailedNAV;
+        }
+
+        // Temporary storage for asset positions
+        INAVCalculator.AssetPosition[] memory tempAssetPositions = new INAVCalculator.AssetPosition[](totalAssets);
+        address[] memory staleAssetsTemp = new address[](totalAssets);
+        uint256 assetPositionCount = 0;
+        uint256 staleCount = 0;
+        int256 totalUsd = 0;
+
+        // Iterate through all assets
+        for (uint256 i = 0; i < totalAssets; i++) {
+            (address assetAddr, uint256 dec) = _assetDecimals.at(i);
+
+            // Skip assets without price oracles
+            if (priceOracles[assetAddr].oracle == address(0)) {
+                continue;
+            }
+
+            uint8 decimals = uint8(dec);
+
+            // Fetch price once per asset
+            (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(assetAddr);
+
+            if (stale) {
+                staleAssetsTemp[staleCount] = assetAddr;
+                staleCount++;
+            }
+
+            // Get asset symbol
+            string memory symbol;
+            if (assetAddr == NATIVE_ADDRESS) {
+                symbol = _nativeTokenSymbol;
+            } else {
+                try IERC20Metadata(assetAddr).symbol() returns (string memory symbol_) {
+                    symbol = symbol_;
+                } catch {
+                    symbol = "";
+                }
+            }
+
+            // Collect all positions for this asset
+            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
+            INAVCalculator.PositionWithMetadata[] memory positions =
+                new INAVCalculator.PositionWithMetadata[](balanceOracleCount);
+            int256 assetTotalBalance = 0;
+            int256 assetTotalUsd = 0;
+            uint256 positionCount = 0;
+
+            for (uint256 balanceIdx = 0; balanceIdx < balanceOracleCount; ++balanceIdx) {
+                int256 balance = balanceOf(assetAddr, balanceIdx, account);
+
+                // Only include non-zero positions
+                if (balance != 0) {
+                    INAVCalculator.PositionWithMetadata memory pos =
+                        this.readPositionWithMetadata(account, assetAddr, balanceIdx);
+                    positions[positionCount] = pos;
+                    positionCount++;
+                    assetTotalBalance += balance;
+                    assetTotalUsd += pos.usd;
+                }
+            }
+
+            // Only include assets with at least one non-zero position
+            if (positionCount > 0) {
+                // Compact positions array to exact size
+                INAVCalculator.PositionWithMetadata[] memory compactPositions =
+                    new INAVCalculator.PositionWithMetadata[](positionCount);
+                for (uint256 j = 0; j < positionCount; j++) {
+                    compactPositions[j] = positions[j];
+                }
+
+                tempAssetPositions[assetPositionCount] = INAVCalculator.AssetPosition({
+                    asset: assetAddr,
+                    assetSymbol: symbol,
+                    assetDecimals: decimals,
+                    totalBalance: assetTotalBalance,
+                    totalUsd: assetTotalUsd,
+                    usdRate: usdRate,
+                    usdRateDecimals: usdRateDecimals,
+                    stale: stale,
+                    sequencerDown: sequencerDown,
+                    positions: compactPositions
+                });
+                assetPositionCount++;
+                totalUsd += assetTotalUsd;
+            }
+        }
+
+        // Compact asset positions array to exact size
+        detailedNAV.assetPositions = new INAVCalculator.AssetPosition[](assetPositionCount);
+        for (uint256 i = 0; i < assetPositionCount; i++) {
+            detailedNAV.assetPositions[i] = tempAssetPositions[i];
+        }
+
+        // Set final NAV values
+        detailedNAV.nav.usd = totalUsd;
+
+        // Compact stale assets array
+        if (staleCount == 0) {
+            detailedNAV.nav.stalePriceAssets = new address[](0);
+        } else {
+            detailedNAV.nav.stalePriceAssets = new address[](staleCount);
+            for (uint256 i = 0; i < staleCount; i++) {
+                detailedNAV.nav.stalePriceAssets[i] = staleAssetsTemp[i];
+            }
+        }
+    }
+
+    /// @inheritdoc INAVCalculator
+    function readDetailedPositions(address account)
+        external
+        view
+        returns (INAVCalculator.DetailedPositions memory detailedPositions)
+    {
+        // Build standard NAV first
+        detailedPositions.nav.block = uint64(block.number);
+        detailedPositions.nav.timestamp = uint64(block.timestamp);
+
+        uint256 totalAssets = _assetDecimals.length();
+
+        // Check sequencer status once (global issue, affects all assets)
+        bool sequencerDown = _isSequencerDown();
+        detailedPositions.nav.sequencerDown = sequencerDown;
+
+        if (totalAssets == 0) {
+            detailedPositions.nav.usd = 0;
+            detailedPositions.nav.stalePriceAssets = new address[](0);
+            detailedPositions.protocolPositions = new INAVCalculator.ProtocolPosition[](0);
+            return detailedPositions;
+        }
+
+        // First pass: collect all positions
+        INAVCalculator.PositionWithMetadata[] memory allPositions =
+            new INAVCalculator.PositionWithMetadata[](balanceOracleTotalCount);
+        uint256 totalPositionCount = 0;
+        address[] memory staleAssetsTemp = new address[](totalAssets);
+        uint256 staleCount = 0;
+        int256 totalUsd = 0;
+
+        for (uint256 i = 0; i < totalAssets; i++) {
+            (address assetAddr,) = _assetDecimals.at(i);
+
+            // Skip assets without price oracles
+            if (priceOracles[assetAddr].oracle == address(0)) {
+                continue;
+            }
+
+            // Check for stale price
+            (,, bool stale) = _latestPrice(assetAddr);
+            if (stale) {
+                staleAssetsTemp[staleCount] = assetAddr;
+                staleCount++;
+            }
+
+            // Collect all positions for this asset
+            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
+            for (uint256 balanceIdx = 0; balanceIdx < balanceOracleCount; ++balanceIdx) {
+                int256 balance = balanceOf(assetAddr, balanceIdx, account);
+
+                // Only include non-zero positions
+                if (balance != 0) {
+                    INAVCalculator.PositionWithMetadata memory pos =
+                        this.readPositionWithMetadata(account, assetAddr, balanceIdx);
+                    allPositions[totalPositionCount] = pos;
+                    totalPositionCount++;
+                    totalUsd += pos.usd;
+                }
+            }
+        }
+
+        if (totalPositionCount == 0) {
+            detailedPositions.nav.usd = 0;
+            if (staleCount == 0) {
+                detailedPositions.nav.stalePriceAssets = new address[](0);
+            } else {
+                detailedPositions.nav.stalePriceAssets = new address[](staleCount);
+                for (uint256 i = 0; i < staleCount; i++) {
+                    detailedPositions.nav.stalePriceAssets[i] = staleAssetsTemp[i];
+                }
+            }
+            detailedPositions.protocolPositions = new INAVCalculator.ProtocolPosition[](0);
+            return detailedPositions;
+        }
+
+        // Compact all positions array
+        INAVCalculator.PositionWithMetadata[] memory compactAllPositions =
+            new INAVCalculator.PositionWithMetadata[](totalPositionCount);
+        for (uint256 i = 0; i < totalPositionCount; i++) {
+            compactAllPositions[i] = allPositions[i];
+        }
+
+        // Second pass: group positions by protocol
+        // Track unique protocols and their positions
+        string[] memory protocolNames = new string[](totalPositionCount);
+        int256[] memory protocolUsdValues = new int256[](totalPositionCount);
+        uint256[] memory protocolIndices = new uint256[](totalPositionCount); // Maps position index to protocol index
+        uint256 uniqueProtocolCount = 0;
+
+        // Group positions by protocol
+        for (uint256 i = 0; i < totalPositionCount; i++) {
+            string memory protocol = compactAllPositions[i].protocol;
+            bool found = false;
+            uint256 protocolIdx = 0;
+
+            // Find if protocol already exists
+            for (uint256 j = 0; j < uniqueProtocolCount; j++) {
+                if (keccak256(bytes(protocolNames[j])) == keccak256(bytes(protocol))) {
+                    found = true;
+                    protocolIdx = j;
+                    break;
+                }
+            }
+
+            if (found) {
+                // Add to existing protocol
+                protocolUsdValues[protocolIdx] += compactAllPositions[i].usd;
+                protocolIndices[i] = protocolIdx;
+            } else {
+                // Create new protocol entry
+                protocolNames[uniqueProtocolCount] = protocol;
+                protocolUsdValues[uniqueProtocolCount] = compactAllPositions[i].usd;
+                protocolIndices[i] = uniqueProtocolCount;
+                uniqueProtocolCount++;
+            }
+        }
+
+        // Third pass: build protocol positions arrays
+        INAVCalculator.ProtocolPosition[] memory protocolPositions =
+            new INAVCalculator.ProtocolPosition[](uniqueProtocolCount);
+
+        for (uint256 protocolIdx = 0; protocolIdx < uniqueProtocolCount; protocolIdx++) {
+            // Count positions for this protocol
+            uint256 protocolPositionCount = 0;
+            for (uint256 i = 0; i < totalPositionCount; i++) {
+                if (protocolIndices[i] == protocolIdx) {
+                    protocolPositionCount++;
+                }
+            }
+
+            // Build positions array for this protocol
+            INAVCalculator.PositionWithMetadata[] memory protocolPositionsArray =
+                new INAVCalculator.PositionWithMetadata[](protocolPositionCount);
+            uint256 posIdx = 0;
+            for (uint256 i = 0; i < totalPositionCount; i++) {
+                if (protocolIndices[i] == protocolIdx) {
+                    protocolPositionsArray[posIdx] = compactAllPositions[i];
+                    posIdx++;
+                }
+            }
+
+            protocolPositions[protocolIdx] = INAVCalculator.ProtocolPosition({
+                protocol: protocolNames[protocolIdx],
+                totalUsd: protocolUsdValues[protocolIdx],
+                sequencerDown: sequencerDown,
+                positions: protocolPositionsArray
+            });
+        }
+
+        detailedPositions.protocolPositions = protocolPositions;
+
+        // Set final NAV values
+        detailedPositions.nav.usd = totalUsd;
+
+        // Compact stale assets array
+        if (staleCount == 0) {
+            detailedPositions.nav.stalePriceAssets = new address[](0);
+        } else {
+            detailedPositions.nav.stalePriceAssets = new address[](staleCount);
+            for (uint256 i = 0; i < staleCount; i++) {
+                detailedPositions.nav.stalePriceAssets[i] = staleAssetsTemp[i];
+            }
+        }
+    }
+
     //
     // UUPSUpgradeable
     //
@@ -684,14 +979,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Ensure we don't underflow the exponent calculation
         // This prevents invalid decimal combinations that would cause exponentiation issues
         if (decimals + usdRateDecimals < NAV_DECIMALS) {
-            revert InvalidArguments();
+            revert InvalidArgumentsWithContext("decimals + usdRateDecimals < NAV_DECIMALS");
         }
 
         uint256 denominator = decimals + usdRateDecimals - NAV_DECIMALS;
         // Prevent exponent that's too large (max uint8 is 255, but we use uint256 for safety)
         // This is extremely unlikely in practice but prevents potential issues
-        if (denominator > 255) {
-            revert InvalidArguments();
+        if (denominator > MAX_DECIMAL_EXPONENT) {
+            revert InvalidArgumentsWithContext("denominator > MAX_DECIMAL_EXPONENT");
         }
 
         usd = (balance * int256(usdRate)) / int256(10 ** denominator);
@@ -709,7 +1004,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (int256 baseAssetValue)
     {
         if (baseAssetPrice == 0) {
-            revert InvalidArguments();
+            revert InvalidArgumentsWithContext("baseAssetPrice == 0");
         }
 
         // Calculate the scaling factor needed
@@ -718,8 +1013,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Check for potential overflow in exponent calculation
         uint256 totalDecimals = uint256(baseAssetDecimals) + uint256(baseAssetPriceDecimals);
-        if (totalDecimals > 255) {
-            revert InvalidArguments();
+        if (totalDecimals > MAX_DECIMAL_EXPONENT) {
+            revert InvalidArgumentsWithContext("totalDecimals > MAX_DECIMAL_EXPONENT");
         }
 
         // Calculate numerator: usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)

@@ -3,6 +3,10 @@ pragma solidity ^0.8;
 
 uint8 constant NAV_DECIMALS = 8;
 
+// Maximum safe exponent for 10^N calculations (max uint8 is 255)
+// Used to prevent overflow in decimal exponentiation operations
+uint256 constant MAX_DECIMAL_EXPONENT = 255;
+
 // Define the NAVCalculator contract MANAGER role ID
 bytes32 constant MANAGER = keccak256("MANAGER"); // 0xaf290d8680820aad922855f39b306097b20e28774d6c1ad35a20325630c3a02c
 

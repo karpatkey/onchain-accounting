@@ -48,7 +48,7 @@ contract NAVCalculatorForkHarness is TestEnvConfigurator {
     uint256 public heartbeat = type(uint256).max;
 
     function fork_read() internal view returns (INAVCalculator.NAV memory) {
-        INAVCalculator.NAV memory reading = nav.read(safe);
+        INAVCalculator.NAV memory reading = nav.getTotalNAV(safe);
 
         return reading;
     }
@@ -120,6 +120,63 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         assertEq(reading.stalePriceAssets.length, 0);
         assertEq(reading.sequencerDown, false);
         assertEq(reading.usd, 12_742_160_647_301);
+    }
+
+    // Test 28: fork_getAllPositions_usd
+    function test_fork_getAllPositions_usd() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        
+        assertEq(accountPositions.nav.stalePriceAssets.length, 0);
+        assertEq(accountPositions.nav.sequencerDown, false);
+        assertEq(accountPositions.nav.usd, 12_742_160_647_301);
+        
+        // Verify NAV consistency invariant
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(accountPositions.nav.usd, sum);
+        
+        // Verify all positions have correct structure
+        assertTrue(accountPositions.positions.length > 0);
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            assertTrue(accountPositions.positions[i].core.asset != address(0));
+            assertTrue(bytes(accountPositions.positions[i].core.assetSymbol).length > 0);
+            assertTrue(bytes(accountPositions.positions[i].core.protocol).length > 0);
+        }
+    }
+
+    // Test 29: fork_getAllPositions_ethQuote
+    function test_fork_getAllPositions_ethQuote() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, eth);
+        
+        assertTrue(accountPositions.positions.length > 0);
+        
+        // Verify all positions have ETH as quote currency
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            assertEq(accountPositions.positions[i].pricing.quoteCurrency, eth);
+            assertTrue(accountPositions.positions[i].pricing.value != 0);
+        }
+    }
+
+    // Test 30: fork_navConsistency
+    function test_fork_navConsistency() public view {
+        INAVCalculator.NAV memory navTotal = nav.getTotalNAV(safe);
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        
+        // Verify NAV consistency invariant
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(navTotal.usd, sum);
+        assertEq(navTotal.usd, accountPositions.nav.usd);
+        
+        // Verify other NAV fields match
+        assertEq(navTotal.block, accountPositions.nav.block);
+        assertEq(navTotal.timestamp, accountPositions.nav.timestamp);
+        assertEq(navTotal.sequencerDown, accountPositions.nav.sequencerDown);
+        assertEq(navTotal.stalePriceAssets.length, accountPositions.nav.stalePriceAssets.length);
     }
 
     function setupPriceOracle() internal override {
@@ -211,6 +268,18 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         assertEq(compoundV3CometWithMultiplier.balanceOf(address(usdc), safe), 0);
     }
 
+    function test_optimismFork_getAllPositions() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        assertEq(accountPositions.nav.usd, 7_596_542_008_105);
+        
+        // Verify NAV consistency
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(accountPositions.nav.usd, sum);
+    }
+
     function setupPriceOracle() internal override {
         // usdc
         nav.registerAsset(address(usdc));
@@ -278,6 +347,18 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         assertEq(compoundV3Comet.balanceOf(address(compound), safe), 860_559_000_000_000_000);
 
         assertEq(reading.usd, 5_047_061_452_128);
+    }
+
+    function test_baseFork_getAllPositions() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        assertEq(accountPositions.nav.usd, 5_047_061_452_128);
+        
+        // Verify NAV consistency
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(accountPositions.nav.usd, sum);
     }
 
     function setupPriceOracle() internal override {
@@ -355,6 +436,18 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
         assertEq(price, 99_985_496);
     }
 
+    function test_arbitrumFork_getAllPositions() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        assertEq(accountPositions.nav.usd, 5_069_577_118_472);
+        
+        // Verify NAV consistency
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(accountPositions.nav.usd, sum);
+    }
+
     function setupPriceOracle() internal override {
         // usdc
         nav.registerAsset(address(usdc));
@@ -414,6 +507,18 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         assertEq(reading.stalePriceAssets.length, 0);
         assertEq(reading.sequencerDown, false);
         assertEq(reading.usd, 15_378_167_317_682);
+    }
+
+    function test_gnosisFork_getAllPositions() public view {
+        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
+        assertEq(accountPositions.nav.usd, 15_378_167_317_682);
+        
+        // Verify NAV consistency
+        int256 sum = 0;
+        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
+            sum += accountPositions.positions[i].pricing.value;
+        }
+        assertEq(accountPositions.nav.usd, sum);
     }
 
     function setupPriceOracle() internal override {

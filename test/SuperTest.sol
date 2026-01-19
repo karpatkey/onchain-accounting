@@ -172,12 +172,12 @@ abstract contract SuperTest is Test {
 
     ///  Returns the current NAV of the fund
     function t_currentNav() public view returns (uint256 currentNav) {
-        INAVCalculator.NAV memory navReading = nav.read(address(safe));
+        INAVCalculator.NAV memory navReading = nav.getTotalNAV(address(safe));
         return uint256(navReading.usd);
     }
 
     function t_readNav() internal view returns (INAVCalculator.NAV memory navReading) {
-        navReading = nav.read(address(safe));
+        navReading = nav.getTotalNAV(address(safe));
     }
 
     // ERC20 transfer events

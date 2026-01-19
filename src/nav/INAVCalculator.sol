@@ -8,51 +8,58 @@ import {IBalances} from "src/balances/Balances.sol";
 /// @notice Interface for NAVCalculator contract
 /// @author kpk
 interface INAVCalculator {
-    /// @notice A holding a specific asset, and its corresponding usd equivalent
-    ///   This can represent a direct ERC20 balance, or a position deposited in a 3rd party contract
-    /// @param underlyingAsset Address of the token
-    /// @param balance The amount of the asset
-    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
-    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
-    /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific, e.g., heartbeat timeout)
-    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices on L2 chains)
-    struct Position {
-        address underlyingAsset;
+    /// @notice Core position data (currency-agnostic)
+    /// @param asset Address of the asset
+    /// @param assetSymbol Asset symbol (e.g., "USDC", "ETH")
+    /// @param assetDecimals Asset decimals
+    /// @param protocol Protocol name (e.g., "Aave", "Portfolio balance")
+    /// @param position Position identifier within protocol
+    /// @param positionType Position type (e.g., "Supplied", "Borrowed", "ERC20")
+    /// @param balance Position balance (signed for debt)
+    struct PositionCore {
+        address asset;
+        string assetSymbol;
+        uint8 assetDecimals;
+        string protocol;
+        string position;
+        string positionType;
         int256 balance;
-        int256 usd;
-        uint256 usdRate;
-        uint256 usdRateDecimals;
+    }
+
+    /// @notice Pricing extension (currency-specific)
+    /// @param quoteCurrency Quote currency address (address(0) for USD)
+    /// @param quoteCurrencySymbol Quote currency symbol
+    /// @param quoteCurrencyDecimals Quote currency decimals
+    /// @param value Position value in quote currency
+    /// @param rate Exchange rate (price per unit)
+    /// @param rateDecimals Rate decimals
+    /// @param stale Whether price is stale
+    /// @param sequencerDown Whether sequencer is down
+    struct PositionPricing {
+        address quoteCurrency;
+        string quoteCurrencySymbol;
+        uint8 quoteCurrencyDecimals;
+        int256 value;
+        uint256 rate;
+        uint8 rateDecimals;
         bool stale;
         bool sequencerDown;
     }
 
-    /// @notice An enriched position record including on‑chain amounts plus human‑readable metadata
-    /// @param protocol The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
-    /// @param position The specified position within the protocol
-    /// @param positionType The type of the position (e.g., "Supplied", "Borrowed", "Native", "ERC20", etc.).
-    /// @param underlyingAsset The address of the underlying token
-    /// @param underlyingAssetSymbol The symbol of the underlying asset (e.g. "USDC", "ETH")
-    /// @param underlyingAssetDecimals Number of decimals of the underlying asset
-    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
-    /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific, e.g., heartbeat timeout)
-    /// @param balance The equivalent balance of this underlyng asset (signed to allow negative/debt positions)
-    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
-    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices on L2 chains)
-    struct PositionWithMetadata {
-        string protocol;
-        string position;
-        string positionType;
-        address underlyingAsset;
-        string underlyingAssetSymbol;
-        uint8 underlyingAssetDecimals;
-        uint256 usdRate;
-        uint256 usdRateDecimals;
-        bool stale;
-        int256 balance;
-        int256 usd;
-        bool sequencerDown;
+    /// @notice Complete position with pricing
+    /// @param core Core position data
+    /// @param pricing Pricing information
+    struct VerbosePosition {
+        PositionCore core;
+        PositionPricing pricing;
+    }
+
+    /// @notice Complete account positions response
+    /// @param nav Standard NAV (USD total)
+    /// @param positions Flat array of all positions
+    struct AccountPositions {
+        NAV nav;
+        VerbosePosition[] positions;
     }
 
     /// @notice The complete NAV snapshot
@@ -99,57 +106,6 @@ interface INAVCalculator {
         bool sequencerDown;
     }
 
-    /// @notice Detailed asset position with all positions for that asset
-    /// @param asset The address of the asset
-    /// @param assetSymbol The symbol of the asset (e.g. "USDC", "ETH")
-    /// @param assetDecimals The number of decimals of the asset
-    /// @param totalBalance The aggregated balance across all positions for this asset (signed to allow debt)
-    /// @param totalUsd The total USD value of all positions for this asset, scaled by NAV_DECIMALS
-    /// @param usdRate The USD price per one full token unit, scaled by `usdRateDecimals`
-    /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param stale Whether this asset's USD price is currently considered stale (asset-specific)
-    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices)
-    /// @param positions Array of all positions for this asset across all protocols
-    struct AssetPosition {
-        address asset;
-        string assetSymbol;
-        uint8 assetDecimals;
-        int256 totalBalance;
-        int256 totalUsd;
-        uint256 usdRate;
-        uint256 usdRateDecimals;
-        bool stale;
-        bool sequencerDown;
-        PositionWithMetadata[] positions;
-    }
-
-    /// @notice Detailed protocol position with all positions for that protocol
-    /// @param protocol The protocol name (e.g. "Aave", "Portfolio balance", etc.)
-    /// @param totalUsd The total USD value of all positions for this protocol, scaled by NAV_DECIMALS
-    /// @param sequencerDown Whether the L2 sequencer is down (global issue, affects all prices)
-    /// @param positions Array of all positions for this protocol across all assets
-    struct ProtocolPosition {
-        string protocol;
-        int256 totalUsd;
-        bool sequencerDown;
-        PositionWithMetadata[] positions;
-    }
-
-    /// @notice Complete detailed NAV organized by asset
-    /// @param nav The standard NAV struct with aggregated totals
-    /// @param assetPositions Array of asset positions, one per asset with non-zero balances
-    struct DetailedNAV {
-        NAV nav;
-        AssetPosition[] assetPositions;
-    }
-
-    /// @notice Complete detailed positions organized by protocol
-    /// @param nav The standard NAV struct with aggregated totals
-    /// @param protocolPositions Array of protocol positions, one per protocol with positions
-    struct DetailedPositions {
-        NAV nav;
-        ProtocolPosition[] protocolPositions;
-    }
 
     //
     // Events
@@ -246,93 +202,23 @@ interface INAVCalculator {
     /// @notice Returns the current initialization version as tracked by OpenZeppelin's Initializable storage
     function version() external view returns (uint64);
 
-    /// @notice Reads the current NAV of a given account.
-    /// @param account The address of the account to calculate for.
+    /// @notice Gets the total NAV value in USD for a given account
+    /// @param account The address of the account to calculate for
     /// @dev This function reads all known assets, and might exhaust gas if there are too many
     /// assets known by the calculator contract at the time of calling.
-    /// It is recommended to use the readPositionsRange function instead, with an appropriate range of assets and call
-    /// it multiple times if necessary.
-    /// @return The NAV of the account.
-    function read(address account) external view returns (NAV memory);
+    /// @return nav The NAV of the account in USD
+    function getTotalNAV(address account) external view returns (NAV memory nav);
 
-    /// @notice Reads the holdings of a given account, for a limited range of assets
-    ///   Also includes the corresponding usd total, and the amount of issues found long the way
-    ///
-    /// Important :
-    /// - The ordering of oracles in the underlying data structure is not guaranteed. Entries may change order as
-    ///    oracles are added or removed . It is not safe to assume a fixed order or that the same
-    ///    query will yield a consistent oracle order.
-    ///
-    /// - Ensure that any external integrations using
-    ///    the oracle data accounts for potential reordering, and calls `balanceOracleAt` directly for
-    ///    verification if needed.
-    ///
-    /// @param account The address to calculate for
-    /// @param underlyingAsset The address of the token to calculate
-    /// @param idx The index of the balance oracle
-    /// @return p A `Position` struct containing:
-    ///              • `underlyingAsset` – the token address
-    ///              • `balance` – the on‑chain asset amount (signed to allow negative/debt)
-    ///              • `usdRate` – USD price per full token unit (scaled by `usdRateDecimals`)
-    ///              • `usdRateDecimals` – decimals used in `usdRate`
-    ///              • `usd` – amount of USD equivalent represented with NAV_DECIMALS decimals
-    ///              • `stale` – whether this asset's USD price is currently considered stale (asset-specific)
-    ///              • `sequencerDown` – whether the L2 sequencer is down (global issue, affects all prices)
-    function readPosition(address account, address underlyingAsset, uint256 idx)
+    /// @notice Gets all positions for a given account with pricing in the specified currency
+    /// @param account The address of the account to calculate for
+    /// @param quoteCurrency The address of the quote currency (address(0) for USD)
+    /// @dev If quoteCurrency is address(0), returns USD pricing. Otherwise, converts from USD to the specified currency.
+    /// @return accountPositions AccountPositions struct containing NAV and flat array of all positions
+    function getAllPositions(address account, address quoteCurrency)
         external
         view
-        returns (Position memory p);
+        returns (AccountPositions memory accountPositions);
 
-    /// @notice Reads a single enriched position record—including human‑readable metadata for a given account and
-    /// balance oracle.
-    /// @param account The address to calculate for
-    /// @param underlyingAsset The address of the token to calculate
-    /// @param idx The index of the balance oracle
-    /// @return p A `PositionWithMetadata` struct containing:
-    ///               • `protocol` — The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
-    ///               • `position` — The specified position within the protocol
-    ///               • `positionType` — The type of the position (e.g., "Supplied", "Borrowed", "ERC20", etc.)
-    ///               • `underlyingAsset`— The address of the underlying token
-    ///               • `underlyingAssetSymbol` — The symbol of the underlying asset (e.g. "USDC", "ETH")
-    ///               • `underlyingAssetDecimals` — Number of decimals of the underlying asset
-    ///               • `usdRate` — The USD price per one full token unit, scaled by `usdRateDecimals`
-    ///               • `usdRateDecimals` — How many decimals are used in `usdRate`
-    ///               • `stale` — Whether this asset's USD price is currently considered stale (asset-specific)
-    ///               • `balance` — The equivalent balance of this underlying asset (signed to allow negative/debt
-    /// positions)
-    ///               • `usd` — Amount of USD equivalent represented with `NAV_DECIMALS` decimals
-    ///               • `sequencerDown` — Whether the L2 sequencer is down (global issue, affects all prices)
-    function readPositionWithMetadata(address account, address underlyingAsset, uint256 idx)
-        external
-        view
-        returns (PositionWithMetadata memory p);
-
-    /// @notice Reads the holdings of a given account, for a limited range of assets.
-    /// Also includes the corresponding usd total, assets with stale prices, and sequencer status.
-    ///
-    /// Important:
-    /// - The ordering of balances in the returned array is not guaranteed. Entries may change order as oracles
-    ///    are added or removed from the nav calculator. It is not safe to assume a fixed order or that the same
-    ///    query will yield a consistent oracle order.
-    ///
-    /// - To ensure complete and consistent data, it is recommended to retrieve the full range in a single query.
-    ///
-    /// - If a caller splits their query range into smaller parts (e.g., retrieving assets 0 to 20 in two
-    ///    separate calls: 0-10 and 11-20), there is a risk of duplicating or missing assets if a oracle for that asset
-    /// was added or removed. Ensure that any external integrations using
-    ///    the oracle data account for potential reordering, and calls `balanceOracleAt` directly for
-    ///    verification if needed.
-    ///
-    /// @param account The address to calculate for
-    /// @param from The index of the first balance oracle
-    /// @param to The index of the last balance oracle
-    /// @return usd The total USD value of the positions
-    /// @return stalePriceAssets Array of assets that have stale prices (asset-specific issues)
-    /// @return sequencerDown Whether the L2 sequencer is down (global issue affecting all prices)
-    function readPositionsRange(address account, uint256 from, uint256 to)
-        external
-        view
-        returns (int256 usd, address[] memory stalePriceAssets, bool sequencerDown);
 
     /// @notice The amount of decimals returned with each USD value
     /// @return The amount of decimals
@@ -352,15 +238,6 @@ interface INAVCalculator {
     /// @return priceData The complete price information including oracle details, price, staleness, and sequencer status
     function getPriceData(address underlyingAsset) external view returns (PriceData memory priceData);
 
-    /// @notice Returns, for a single account, correlated arrays of assets, balances and USD values (one entry per asset)
-    /// @param account The address to calculate for
-    /// @return assets The list of assets with non‑zero aggregated balances for the account
-    /// @return balances The aggregated balances per asset (signed to allow debt)
-    /// @return usdValues The USD values per asset, scaled by `NAV_DECIMALS`
-    function readAccountPositions(address account)
-        external
-        view
-        returns (address[] memory assets, int256[] memory balances, int256[] memory usdValues);
 
     /// @notice Returns overall health status
     /// @return sequencerDown Whether the L2 sequencer is down (false on L1)
@@ -372,53 +249,17 @@ interface INAVCalculator {
     /// @return has Any position present
     function hasPositions(address account) external view returns (bool has);
 
-    /// @notice Reads the current NAV of a given account, converted to a base asset.
-    /// @param account The address of the account to calculate for.
-    /// @param baseAsset The address of the asset to convert NAV to (e.g., ETH address).
-    /// @dev This function reads all known assets, and might exhaust gas if there are too many
-    /// assets known by the calculator contract at the time of calling.
-    /// It is recommended to use the readPositionsRangeInBaseAsset function instead, with an appropriate range of assets and call
-    /// it multiple times if necessary.
-    /// @return nav The NAV of the account in the base asset, with the same structure as read() but with baseAssetValue instead of usd.
-    /// @return baseAssetValue The NAV value in the base asset, represented with the base asset's decimals.
-    /// @return baseAssetStale Whether the base asset's price is stale.
-    function readInBaseAsset(address account, address baseAsset)
-        external
-        view
-        returns (NAV memory nav, int256 baseAssetValue, bool baseAssetStale);
+    /// @notice Calculates the total value of provided asset balances in the specified quote currency
+    /// @param assets Array of asset addresses
+    /// @param balances Array of balances corresponding to each asset (signed to allow debt)
+    /// @param quoteCurrency The address of the quote currency (address(0) for USD)
+    /// @return value The total value of all balances in the quote currency
+    /// @dev Arrays must be the same length. Each asset must be registered and have a price oracle.
+    /// @dev If quoteCurrency is address(0), returns USD value. Otherwise, converts from USD to quoteCurrency.
+    function calculateValue(
+        address[] memory assets,
+        int256[] memory balances,
+        address quoteCurrency
+    ) external view returns (int256 value);
 
-    /// @notice Reads a single position, with its value converted to a base asset.
-    /// @param account The address to calculate for
-    /// @param underlyingAsset The address of the token to calculate
-    /// @param idxBalanceOracle The index of the balance oracle
-    /// @param baseAsset The address of the asset to convert the position value to (e.g., ETH address).
-    /// @return p The position struct with baseAssetValue field populated.
-    /// @return baseAssetValue The position value in the base asset, represented with the base asset's decimals.
-    /// @return baseAssetStale Whether the base asset's price is stale.
-    function readPositionInBaseAsset(
-        address account,
-        address underlyingAsset,
-        uint256 idxBalanceOracle,
-        address baseAsset
-    ) external view returns (Position memory p, int256 baseAssetValue, bool baseAssetStale);
-
-    /// @notice Returns detailed NAV organized per asset with all positions
-    /// @dev This function reads all known assets and might exhaust gas if there are too many assets.
-    /// It is recommended to use readPositionsRange for large asset sets.
-    /// @param account The address to calculate for
-    /// @return detailedNAV A DetailedNAV struct containing:
-    ///   - nav: Standard NAV struct with aggregated totals
-    ///   - assetPositions: Array of AssetPosition structs, one per asset with non-zero balances,
-    ///     each containing all positions for that asset organized by protocol
-    function readDetailedNAV(address account) external view returns (DetailedNAV memory detailedNAV);
-
-    /// @notice Returns all positions organized by protocol with their amounts and values
-    /// @dev This function reads all known assets and might exhaust gas if there are too many assets.
-    /// It is recommended to use readPositionsRange for large asset sets.
-    /// @param account The address to calculate for
-    /// @return detailedPositions A DetailedPositions struct containing:
-    ///   - nav: Standard NAV struct with aggregated totals
-    ///   - protocolPositions: Array of ProtocolPosition structs, one per protocol with positions,
-    ///     each containing all positions for that protocol across all assets
-    function readDetailedPositions(address account) external view returns (DetailedPositions memory detailedPositions);
 }

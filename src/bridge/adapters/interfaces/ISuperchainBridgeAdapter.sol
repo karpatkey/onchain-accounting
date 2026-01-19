@@ -78,9 +78,6 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when withdrawal challenge period has not elapsed
     error WithdrawalChallengePeriodNotElapsed();
 
-    /// @notice Thrown when completion data is invalid
-    error InvalidCompletionData();
-
     //
     // State Variables (Public)
     //

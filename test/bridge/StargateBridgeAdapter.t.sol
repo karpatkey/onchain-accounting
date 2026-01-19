@@ -81,17 +81,18 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to BridgeEscrow, then to adapter
+        // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         // Fund adapter with ETH for LayerZero fee
         vm.deal(address(adapter), 0.01 ether);
 
-        // Initiate bridge
+        // Initiate bridge (adapter will pull tokens in _bridge())
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -115,8 +116,9 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         vm.deal(address(adapter), 0.01 ether);
 
@@ -144,8 +146,9 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         vm.prank(portfolioSafe);
         newToken.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        newToken.transfer(address(adapter), amount);
+        newToken.approve(address(adapter), amount);
 
         vm.deal(address(adapter), 0.01 ether);
 
@@ -205,7 +208,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
 
         // Simulate Stargate delivering tokens and message
         usdc.mint(address(destAdapter), amount);
-        
+
         // Call lzReceive to store the message payload
         bytes memory srcAddress = abi.encodePacked(address(destAdapter));
         vm.prank(endpoint);
@@ -215,17 +218,12 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should not be completed before completion"
+            destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
         // Note: Tokens arrive at adapter, not BridgeEscrow
         // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
-        assertEq(
-            usdc.balanceOf(address(destAdapter)),
-            amount,
-            "Adapter should have tokens before completion"
-        );
+        assertEq(usdc.balanceOf(address(destAdapter)), amount, "Adapter should have tokens before completion");
         assertEq(
             usdc.balanceOf(address(destBridgeEscrow)),
             0,
@@ -245,18 +243,12 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
 
         // Verify tokens were released
         assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance,
-            amount,
-            "Portfolio safe should receive tokens"
+            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
         );
 
         // Verify tokens were transferred from adapter to BridgeEscrow, then released
         // Adapter should have 0 balance (transferred to escrow)
-        assertEq(
-            usdc.balanceOf(address(destAdapter)),
-            0,
-            "Adapter should have zero balance after transfer to escrow"
-        );
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after transfer to escrow");
         // Escrow should have 0 balance (released to portfolio safe)
         assertEq(
             usdc.balanceOf(address(destBridgeEscrow)),
@@ -265,10 +257,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         );
 
         // Verify invoice is marked as completed
-        assertTrue(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should be marked as completed"
-        );
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
 
         // Note: In-transit balance is only tracked on source chain
         // On destination chain, there are no invoices, so in-transit balance is always 0
@@ -303,7 +292,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,
-            bytes32(uint256(invoiceData.timestampByte) << 248 | uint256(uint192(invoiceData.checksum24)) ^ 1)
+            bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
         bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);

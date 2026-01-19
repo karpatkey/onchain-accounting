@@ -51,9 +51,6 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
-    /// @notice Thrown when completion data is invalid
-    error InvalidCompletionData();
-
     /// @notice Thrown when attempting to bridge to an unsupported chain
     /// @param chainId The unsupported chain ID
     error UnsupportedChain(uint64 chainId);

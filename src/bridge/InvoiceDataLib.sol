@@ -14,7 +14,7 @@ library InvoiceDataLib {
         address portfolioSafe; // Portfolio safe address
         bytes6 assetSymbol; // Asset symbol
         uint256 amount; // Amount being bridged
-        uint8 timestampByte; // Timestamp truncated to uint8
+        uint64 timestamp; // Timestamp (uint64, 8 bytes)
         bytes24 checksum24; // 24-byte checksum
     }
 
@@ -26,8 +26,10 @@ library InvoiceDataLib {
         bytes32 meta;
         (data.invoiceId, data.amount, meta) = abi.decode(messagePayload, (bytes32, uint256, bytes32));
 
-        // Decode meta: timestampByte (uint8) + checksum24 (bytes24)
-        data.timestampByte = uint8(uint256(meta) >> 248);
+        // Decode meta: timestamp (uint64, 8 bytes) + checksum24 (bytes24, 24 bytes) = 32 bytes total
+        // timestamp is in the first 8 bytes (bits 0-63, shifted right by 192 to get first 8 bytes)
+        data.timestamp = uint64(uint256(meta) >> 192);
+        // checksum24 is in the last 24 bytes (bits 0-191)
         data.checksum24 = bytes24(uint192(uint256(meta)));
 
         // Decode invoiceId into its components
@@ -42,8 +44,9 @@ library InvoiceDataLib {
     /// @param data The invoice data struct to encode
     /// @return messagePayload The encoded message payload
     function encode(InvoiceData memory data) internal pure returns (bytes memory messagePayload) {
-        // Encode meta from timestampByte and checksum24
-        bytes32 meta = bytes32(uint256(uint256(data.timestampByte) << 248 | uint256(uint192(data.checksum24))));
+        // Encode meta from timestamp (uint64, 8 bytes) and checksum24 (bytes24, 24 bytes)
+        // timestamp goes in bits 192-255 (leftmost 8 bytes), checksum24 goes in bits 0-191 (rightmost 24 bytes)
+        bytes32 meta = bytes32(uint256(uint256(data.timestamp) << 192 | uint256(uint192(data.checksum24))));
 
         // Encode messagePayload
         return abi.encode(data.invoiceId, data.amount, meta);

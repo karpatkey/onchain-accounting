@@ -151,6 +151,12 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // Get asset address from escrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
 
+        // Pull ERC20 tokens from escrow if not native (escrow approved us in depositAndBridge)
+        // CCIP doesn't bridge native tokens directly - only ERC20 tokens
+        if (!_isNativeToken(asset) && data.amount > 0) {
+            IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
+        }
+
         // Prepare token amounts array
         // CCIP doesn't bridge native tokens directly - only ERC20 tokens
         // Native tokens (address(0) or NATIVE_ADDRESS_ERC7528) are not included in tokenAmounts
@@ -221,11 +227,8 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // Decode payload using InvoiceDataLib
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(payloadToUse);
 
-        // Validate checksum
-        if (!IBridgeEscrow(bridgeEscrow)
-                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
-            revert InvalidInvoice();
-        }
+        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
+        // No need to validate here to avoid redundant gas costs
 
         // Store message payload if provided
         if (payloadToUse.length > 0) {
@@ -236,17 +239,12 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // CCIP sends tokens to receiver (adapter) before calling ccipReceive
         // Get asset address from escrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        bool isNative = _isNativeToken(asset);
 
-        if (!isNative) {
-            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
-            // CCIP transfers tokens before ccipReceive, so they should be at adapter
-            // Note: We check adapter balance directly, not message.destTokenAmounts,
-            // because the message may not include token amounts in all cases
-            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance >= data.amount) {
-                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
-            }
+        // CCIP only supports ERC20 tokens (not native)
+        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
+        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
+        if (!_isNativeToken(asset)) {
+            _transferTokensToEscrow(data.invoiceId, asset, data.amount);
         }
 
         emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);

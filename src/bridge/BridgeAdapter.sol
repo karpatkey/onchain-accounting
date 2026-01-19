@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {InvoiceDataLib} from "./InvoiceDataLib.sol";
@@ -14,7 +15,7 @@ import "src/constants.sol";
 /// @title BridgeAdapter
 /// @notice Abstract base contract for bridge adapter implementations
 /// @author kpk
-abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBridgeAdapter {
+abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
 
     //
@@ -118,11 +119,8 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
         // Decode messagePayload into struct once using InvoiceDataLib
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Validate checksum (adapter-level validation before calling escrow)
-        if (!IBridgeEscrow(bridgeEscrow)
-                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
-            revert InvalidInvoice();
-        }
+        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
+        // No need to validate here to avoid redundant gas costs
 
         // Call bridge-specific completion logic
         _completeBridge(messagePayload, protocolData);
@@ -153,12 +151,72 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, IBri
     ///      Adapter should encode data back to messagePayload if needed for the bridge protocol
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal virtual;
 
+    /// @notice Transfers tokens from adapter to BridgeEscrow
+    /// @param invoiceId The invoice ID
+    /// @param asset The asset address (address(0) for native tokens)
+    /// @param amount The amount to transfer
+    /// @dev Handles both native and ERC20 tokens
+    /// @dev Requires exact amount - reverts if insufficient balance
+    /// @dev Emits TokensTransferredToEscrow event
+    function _transferTokensToEscrow(bytes32 invoiceId, address asset, uint256 amount) internal {
+        bool isNative = _isNativeToken(asset);
+
+        if (isNative) {
+            // Native token - check balance and transfer
+            uint256 adapterBalance = address(this).balance;
+            if (adapterBalance < amount) {
+                revert InsufficientBalance(asset, amount, adapterBalance);
+            }
+            (bool success,) = bridgeEscrow.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            // ERC20 token - check balance and transfer
+            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
+            if (adapterBalance < amount) {
+                revert InsufficientBalance(asset, amount, adapterBalance);
+            }
+            IERC20(asset).safeTransfer(bridgeEscrow, amount);
+        }
+
+        // Emit event directly from adapter
+        emit TokensTransferredToEscrow(invoiceId, asset, amount);
+    }
+
     /// @notice Abstract function - implement bridge-specific completion logic
     /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
     /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
     /// @dev All information (invoiceId, sourceChainId, portfolioSafe, asset, amount) can be derived
     ///      from messagePayload via decodeInvoiceId() if needed by the adapter
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal virtual;
+
+    /// @inheritdoc IBridgeAdapter
+    function recoverStuckAssets(address asset, uint256 amount, address to)
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        nonReentrant
+    {
+        if (to == address(0)) revert InvalidArguments();
+        if (amount == 0) revert InvalidArguments();
+
+        // Default implementation: transfer assets directly
+        if (_isNativeToken(asset)) {
+            uint256 balance = address(this).balance;
+            if (balance < amount) {
+                revert InsufficientBalance(asset, amount, balance);
+            }
+            (bool success,) = to.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            uint256 balance = IERC20(asset).balanceOf(address(this));
+            if (balance < amount) {
+                revert InsufficientBalance(asset, amount, balance);
+            }
+            IERC20(asset).safeTransfer(to, amount);
+        }
+
+        emit AssetsRecovered(asset, amount, to);
+    }
 
     //
     // ERC165 Support

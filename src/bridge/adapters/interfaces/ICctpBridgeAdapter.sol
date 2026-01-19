@@ -46,9 +46,6 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
-    /// @notice Thrown when completion data is invalid
-    error InvalidCompletionData();
-
     //
     // State Variables (Public)
     //

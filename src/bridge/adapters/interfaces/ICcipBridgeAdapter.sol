@@ -46,9 +46,6 @@ interface ICcipBridgeAdapter is IBridgeAdapter, IAny2EVMMessageReceiver {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
-    /// @notice Thrown when completion data is invalid
-    error InvalidCompletionData();
-
     /// @notice Thrown when attempting to bridge to an unsupported chain
     /// @param chainSelector The unsupported chain selector
     error UnsupportedChain(uint64 chainSelector);

@@ -224,6 +224,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Deposit ETH to L2
             l1Bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
         } else {
+            // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
+            IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
+
             // Deposit ERC20 token to L2
             // Get L2 token address from mapping
             address l2Token = l1ToL2Token[asset];
@@ -271,6 +274,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
                 LEGACY_ERC20_ETH, receiver, data.amount, defaultL1GasLimit, messagePayload
             );
         } else {
+            // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
+            IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
+
             // Withdraw ERC20 token to L1
             // Approve L2 bridge to spend tokens
             IERC20(asset).forceApprove(address(l2Bridge), data.amount);
@@ -310,11 +316,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // Decode messagePayload into invoice data struct
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Validate checksum
-        if (!IBridgeEscrow(bridgeEscrow)
-                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
-            revert InvalidInvoice();
-        }
+        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
+        // No need to validate here to avoid redundant gas costs
 
         // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
         // If we're on L1 (mainnet), it's L1 → L2 deposit
@@ -357,22 +360,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // For L1 → L2 deposits, tokens should be at bridgeEscrow (receiver = bridgeEscrow)
         // But if they arrived at adapter, transfer them to bridgeEscrow
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        bool isNative = _isNativeToken(asset);
 
-        if (isNative) {
-            // Transfer native tokens to BridgeEscrow if adapter has balance
-            uint256 adapterBalance = address(this).balance;
-            if (adapterBalance >= data.amount) {
-                (bool success,) = bridgeEscrow.call{value: data.amount}("");
-                if (!success) revert TransferFailed();
-            }
-        } else {
-            // Transfer ERC20 tokens to BridgeEscrow if adapter has balance
-            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance >= data.amount) {
-                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
-            }
-        }
+        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
+        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
+        _transferTokensToEscrow(data.invoiceId, asset, data.amount);
     }
 
     /// @notice Finalizes a withdrawal (L2 → L1)

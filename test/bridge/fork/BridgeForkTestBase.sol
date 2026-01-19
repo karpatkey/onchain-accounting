@@ -210,8 +210,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         uint256 amount
     ) internal view returns (InvoiceDataLib.InvoiceData memory) {
         bytes32 invoiceId = _generateInvoiceId(sourceChainId, destChainId, safe, assetSymbol);
-        uint8 timestampByte = uint8(block.timestamp);
-        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestampByte);
+        uint64 timestamp = uint64(block.timestamp);
+        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
 
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
@@ -220,7 +220,7 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
             amount: amount,
-            timestampByte: timestampByte,
+            timestamp: timestamp,
             checksum24: checksum24
         });
     }
@@ -239,12 +239,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
     }
 
     /// @notice Helper to calculate checksum (matches BridgeEscrow logic)
-    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint8 timestampByte)
-        internal
-        pure
-        returns (bytes24)
-    {
-        bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestampByte));
+    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp) internal pure returns (bytes24) {
+        bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
         return bytes24(hash); // First 24 bytes
     }
 

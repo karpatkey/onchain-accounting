@@ -126,6 +126,9 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
             revert NativeTokenNotSupported();
         }
 
+        // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
+        IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
+
         // ERC20 token
         // Approve Omnibridge to spend tokens
         IERC20(asset).forceApprove(address(omnibridge), data.amount);
@@ -156,27 +159,21 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // Decode messagePayload into invoice data struct
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Validate checksum
-        if (!IBridgeEscrow(bridgeEscrow)
-                .validateInvoiceIdChecksum(data.invoiceId, data.amount, data.timestampByte, data.checksum24)) {
-            revert InvalidInvoice();
-        }
+        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
+        // No need to validate here to avoid redundant gas costs
 
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        bool isNative = _isNativeToken(asset);
 
         // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
         // Gnosis sends tokens to receiver (adapter) via onTokenTransfer callback
-        if (!isNative) {
-            uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance >= data.amount) {
-                IERC20(asset).safeTransfer(bridgeEscrow, data.amount);
-            } else if (uint64(data.destinationChainId) == 1) {
-                // On Mainnet, tokens need to be manually claimed from Omnibridge first
-                // If tokens aren't available, revert (operator must ensure AMB message is processed)
-                revert TokensNotAvailable();
-            }
+        // Gnosis only supports ERC20 tokens (not native)
+        if (!_isNativeToken(asset)) {
+            // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
+            // On Mainnet, if tokens aren't available, this will revert
+            // Operator must ensure AMB message is processed before calling completeBridge
+            // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
+            _transferTokensToEscrow(data.invoiceId, asset, data.amount);
         }
 
         // Get AMB transaction hash if available
@@ -216,7 +213,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
             // Validate checksum (value is the amount received)
             if (!IBridgeEscrow(bridgeEscrow)
                     .validateInvoiceIdChecksum(
-                        invoiceData.invoiceId, invoiceData.amount, invoiceData.timestampByte, invoiceData.checksum24
+                        invoiceData.invoiceId, invoiceData.amount, invoiceData.timestamp, invoiceData.checksum24
                     )) {
                 revert InvalidInvoice();
             }

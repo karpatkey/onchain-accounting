@@ -6,6 +6,28 @@ pragma solidity ^0.8;
 /// @author kpk
 interface IBridgeAdapter {
     //
+    // Errors
+    //
+
+    /// @notice Thrown when invalid arguments are provided
+    error InvalidArguments();
+
+    /// @notice Thrown when caller is not authorized
+    error NotAuthorized();
+
+    /// @notice Thrown when transfer operation fails
+    error TransferFailed();
+
+    /// @notice Thrown when contract has insufficient balance
+    /// @param asset The asset address
+    /// @param required The required amount
+    /// @param available The available amount
+    error InsufficientBalance(address asset, uint256 required, uint256 available);
+
+    /// @notice Thrown when completion data is invalid
+    error InvalidCompletionData();
+
+    //
     // Events
     //
 
@@ -14,6 +36,12 @@ interface IBridgeAdapter {
 
     /// @notice Event emitted when a bridge is completed
     event BridgeCompleted(bytes32 indexed invoiceId);
+
+    /// @notice Event emitted when assets are recovered from an adapter
+    event AssetsRecovered(address indexed asset, uint256 amount, address indexed to);
+
+    /// @notice Event emitted when tokens are transferred from adapter to escrow
+    event TokensTransferredToEscrow(bytes32 indexed invoiceId, address indexed asset, uint256 amount);
 
     //
     // Functions
@@ -37,5 +65,12 @@ interface IBridgeAdapter {
     /// @notice Returns the bridge adapter version
     /// @return The adapter version
     function version() external view returns (string memory);
+
+    /// @notice Recovers stuck assets from the adapter
+    /// @param asset The asset address to recover (address(0) for native tokens)
+    /// @param amount The amount to recover
+    /// @param to The address to send recovered assets to
+    /// @dev Only operators can call this. Adapter-specific recovery logic.
+    function recoverStuckAssets(address asset, uint256 amount, address to) external;
 }
 

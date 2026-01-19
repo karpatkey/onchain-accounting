@@ -71,14 +71,15 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to BridgeEscrow, then to adapter
+        // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
-        // Initiate bridge
+        // Initiate bridge (adapter will pull tokens in _bridge())
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -106,8 +107,9 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         vm.prank(address(bridgeEscrow));
         vm.expectRevert(); // Should revert because chain selector mapping doesn't exist
@@ -131,8 +133,9 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         vm.prank(address(bridgeEscrow));
         vm.expectRevert(); // Should revert because chain is not supported
@@ -162,12 +165,13 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to BridgeEscrow, then to adapter
+        // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         // Set fee token to native (address(0)) to test native fee payment
         vm.startPrank(admin);
@@ -177,7 +181,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         // Fund adapter with ETH for fee payment
         vm.deal(address(adapter), 0.02 ether);
 
-        // Initiate bridge (CCIP will use native token for fee payment)
+        // Initiate bridge (adapter will pull tokens in _bridge(), CCIP will use native token for fee payment)
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -203,7 +207,8 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
-                CcipBridgeAdapter.initialize, (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
+                CcipBridgeAdapter.initialize,
+                (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
@@ -236,17 +241,12 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should not be completed before completion"
+            destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
         // Note: Tokens arrive at adapter, not BridgeEscrow
         // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
-        assertEq(
-            usdc.balanceOf(address(destAdapter)),
-            amount,
-            "Adapter should have tokens before completion"
-        );
+        assertEq(usdc.balanceOf(address(destAdapter)), amount, "Adapter should have tokens before completion");
         assertEq(
             usdc.balanceOf(address(destBridgeEscrow)),
             0,
@@ -265,18 +265,12 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
 
         // Verify tokens were released
         assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance,
-            amount,
-            "Portfolio safe should receive tokens"
+            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
         );
 
         // Verify tokens were transferred from adapter to BridgeEscrow, then released
         // Adapter should have 0 balance (transferred to escrow)
-        assertEq(
-            usdc.balanceOf(address(destAdapter)),
-            0,
-            "Adapter should have zero balance after transfer to escrow"
-        );
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after transfer to escrow");
         // Escrow should have 0 balance (released to portfolio safe)
         assertEq(
             usdc.balanceOf(address(destBridgeEscrow)),
@@ -285,10 +279,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         );
 
         // Verify invoice is marked as completed
-        assertTrue(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should be marked as completed"
-        );
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
 
         // Note: In-transit balance is only tracked on source chain
         // On destination chain, there are no invoices, so in-transit balance is always 0
@@ -308,7 +299,8 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
-                CcipBridgeAdapter.initialize, (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
+                CcipBridgeAdapter.initialize,
+                (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
@@ -322,7 +314,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,
-            bytes32(uint256(invoiceData.timestampByte) << 248 | uint256(uint192(invoiceData.checksum24)) ^ 1)
+            bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
         Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
@@ -354,7 +346,8 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
-                CcipBridgeAdapter.initialize, (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
+                CcipBridgeAdapter.initialize,
+                (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);

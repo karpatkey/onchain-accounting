@@ -107,6 +107,14 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
 
+        // Validate asset is not native (CCTP only supports USDC)
+        if (_isNativeToken(asset)) {
+            revert InvalidArguments();
+        }
+
+        // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
+        IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
+
         // Convert chain ID to CCTP domain
         uint32 destinationDomain = chainIdToDomain[uint64(data.destinationChainId)];
         if (destinationDomain == 0) {
@@ -117,11 +125,6 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // Use bridgeEscrow as the recipient - all BridgeEscrows have the same address across chains
         // BridgeEscrow will then release to portfolioSafe via releaseByInvoiceId()
         bytes32 mintRecipient = bytes32(uint256(uint160(bridgeEscrow)));
-
-        // Validate asset is not native (CCTP only supports USDC)
-        if (_isNativeToken(asset)) {
-            revert InvalidArguments();
-        }
 
         // Approve TokenMessenger to spend tokens
         // Use forceApprove if available, otherwise use approve after resetting
@@ -191,7 +194,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
             // Validate checksum
             if (!IBridgeEscrow(bridgeEscrow)
                     .validateInvoiceIdChecksum(
-                        invoiceId, payloadData.amount, payloadData.timestampByte, payloadData.checksum24
+                        invoiceId, payloadData.amount, payloadData.timestamp, payloadData.checksum24
                     )) {
                 revert InvalidInvoice();
             }

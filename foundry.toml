@@ -24,7 +24,3 @@ no_match_coverage = "^script/"
 
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
-
-[profile.fork]
-# Fork test profile with longer timeout for RPC calls
-test_timeout = 300

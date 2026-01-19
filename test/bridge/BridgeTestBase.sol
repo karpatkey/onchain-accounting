@@ -110,8 +110,8 @@ abstract contract BridgeTestBase is Test {
         uint256 amount
     ) internal view returns (InvoiceDataLib.InvoiceData memory) {
         bytes32 invoiceId = _generateInvoiceId(sourceChainId, destChainId, safe, assetSymbol);
-        uint8 timestampByte = uint8(block.timestamp);
-        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestampByte);
+        uint64 timestamp = uint64(block.timestamp);
+        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
 
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
@@ -120,7 +120,7 @@ abstract contract BridgeTestBase is Test {
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
             amount: amount,
-            timestampByte: timestampByte,
+            timestamp: timestamp,
             checksum24: checksum24
         });
     }
@@ -139,12 +139,8 @@ abstract contract BridgeTestBase is Test {
     }
 
     /// @notice Helper to calculate checksum (matches BridgeEscrow logic)
-    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint8 timestampByte)
-        internal
-        pure
-        returns (bytes24)
-    {
-        bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestampByte));
+    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp) internal pure returns (bytes24) {
+        bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
         return bytes24(hash); // First 24 bytes
     }
 
@@ -219,24 +215,25 @@ abstract contract BridgeTestBase is Test {
             asset: assetAddress,
             amount: invoiceData.amount,
             timestamp: block.timestamp - 1, // Set in past
-            status: IBridgeEscrow.InvoiceStatus.BRIDGING
+            status: IBridgeEscrow.InvoiceStatus.BRIDGING,
+            adapter: address(0) // Not tracked on destination chain (invoices don't exist there)
         });
 
         // Use storage manipulation to create invoice
         // We need to set: invoices[invoiceHash] = invoice
         // And add to active invoices
         vm.startPrank(admin);
-        
+
         // We'll use a helper contract or direct storage manipulation
         // For now, we'll use the fact that we can call internal functions via storage slots
         // Actually, we need to use a different approach - we can't directly manipulate storage
-        
+
         // Alternative: Use a test helper that calls internal functions
         // Or: Create invoice via a mock depositAndBridge that we control
-        
+
         // Best approach: Create a minimal invoice creation helper
         // We'll need to use assembly or a helper contract
-        
+
         vm.stopPrank();
     }
 
@@ -245,11 +242,9 @@ abstract contract BridgeTestBase is Test {
     /// @param assetAddress The asset address
     /// @param amount The amount that arrived
     /// @dev Transfers tokens to BridgeEscrow and updates in-transit balances
-    function _simulateTokensArrivedOnDestination(
-        BridgeEscrow destBridgeEscrow,
-        address assetAddress,
-        uint256 amount
-    ) internal {
+    function _simulateTokensArrivedOnDestination(BridgeEscrow destBridgeEscrow, address assetAddress, uint256 amount)
+        internal
+    {
         if (assetAddress == address(0)) {
             // Native token - send ETH to BridgeEscrow
             vm.deal(address(destBridgeEscrow), amount);
@@ -262,16 +257,16 @@ abstract contract BridgeTestBase is Test {
     }
 
     /// @notice Complete helper to set up destination chain for completion testing
-    /// @param invoiceData The invoice data from source chain  
+    /// @param invoiceData The invoice data from source chain
     /// @param assetAddress The asset address on destination chain
     /// @return destBridgeEscrow The BridgeEscrow on destination chain
     /// @return messagePayload The encoded message payload
     /// @dev This sets up the full destination chain environment for testing completion
     ///      Creates invoice state on destination chain using storage manipulation
-    function _setupDestinationChainForCompletion(
-        InvoiceDataLib.InvoiceData memory invoiceData,
-        address assetAddress
-    ) internal returns (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) {
+    function _setupDestinationChainForCompletion(InvoiceDataLib.InvoiceData memory invoiceData, address assetAddress)
+        internal
+        returns (BridgeEscrow destBridgeEscrow, bytes memory messagePayload)
+    {
         // Switch to destination chain
         vm.chainId(uint256(invoiceData.destinationChainId));
 
@@ -286,7 +281,7 @@ abstract contract BridgeTestBase is Test {
         // 1. Checksum validation (done in releaseByInvoiceId)
         // 2. completedInvoices check (prevents double-spending)
         // 3. Sufficient contract balance to release assets
-        
+
         // Note: Tokens are NOT automatically transferred to BridgeEscrow here
         // Each bridge adapter test should set up tokens according to how that bridge delivers tokens:
         // - For bridges with callbacks (Across, Stargate, Gnosis, CCIP): tokens arrive at adapter

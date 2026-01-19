@@ -66,15 +66,15 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to BridgeEscrow first (simulating depositAndBridge flow)
+        // Transfer tokens to BridgeEscrow (simulating depositAndBridge flow)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
-        // BridgeEscrow transfers tokens to adapter (as it does in depositAndBridge)
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
-        // Initiate bridge
+        // Initiate bridge (adapter will pull tokens in _bridge())
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -108,12 +108,13 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Simulate bridge initiation (transfer tokens to BridgeEscrow, then to adapter)
+        // Simulate bridge initiation (transfer tokens to BridgeEscrow, then approve adapter)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         vm.prank(address(bridgeEscrow));
         vm.expectRevert(); // Should revert because domain mapping doesn't exist
@@ -126,12 +127,13 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Simulate bridge initiation (transfer tokens to BridgeEscrow, then to adapter)
+        // Simulate bridge initiation (transfer tokens to BridgeEscrow, then approve adapter)
         vm.prank(portfolioSafe);
         usdc.transfer(address(bridgeEscrow), amount);
 
+        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
-        usdc.transfer(address(adapter), amount);
+        usdc.approve(address(adapter), amount);
 
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not BridgeEscrow
@@ -160,7 +162,13 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
             destAdapterImpl,
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
-                (admin, address(destBridgeEscrow), address(destTokenMessenger), address(destMessageTransmitter), "1.0.0")
+                (
+                    admin,
+                    address(destBridgeEscrow),
+                    address(destTokenMessenger),
+                    address(destMessageTransmitter),
+                    "1.0.0"
+                )
             )
         );
         CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
@@ -179,8 +187,9 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
 
         // Create mock CCTP message
         // Note: CCTP mints to BridgeEscrow, not directly to portfolio safe
-        bytes memory cctpMessage =
-            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, address(destBridgeEscrow), address(destAdapter));
+        bytes memory cctpMessage = _createMockCctpMessage(
+            SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, address(destBridgeEscrow), address(destAdapter)
+        );
         bytes memory attestation = "mock_attestation";
 
         // Prepare protocol data
@@ -190,8 +199,7 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
         // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should not be completed before completion"
+            destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
         // Get initial balances
@@ -206,9 +214,7 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
 
         // Verify USDC was minted to BridgeEscrow and then released to portfolio safe
         assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance,
-            amount,
-            "Portfolio safe should receive minted USDC"
+            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive minted USDC"
         );
         // CCTP mints to BridgeEscrow, then BridgeEscrow releases to portfolio safe
         // So escrow balance should return to 0 after release
@@ -219,10 +225,7 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
         );
 
         // Verify invoice is marked as completed
-        assertTrue(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash),
-            "Invoice should be marked as completed"
-        );
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
 
         // Note: In-transit balance is only tracked on source chain
         // On destination chain, there are no invoices, so in-transit balance is always 0
@@ -245,7 +248,13 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
             destAdapterImpl,
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
-                (admin, address(destBridgeEscrow), address(destTokenMessenger), address(destMessageTransmitter), "1.0.0")
+                (
+                    admin,
+                    address(destBridgeEscrow),
+                    address(destTokenMessenger),
+                    address(destMessageTransmitter),
+                    "1.0.0"
+                )
             )
         );
         CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
@@ -264,7 +273,7 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,
-            bytes32(uint256(invoiceData.timestampByte) << 248 | uint256(uint192(invoiceData.checksum24)) ^ 1)
+            bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
         bytes memory protocolData = abi.encode(cctpMessage, attestation);
@@ -291,7 +300,13 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
             destAdapterImpl,
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
-                (admin, address(destBridgeEscrow), address(destTokenMessenger), address(destMessageTransmitter), "1.0.0")
+                (
+                    admin,
+                    address(destBridgeEscrow),
+                    address(destTokenMessenger),
+                    address(destMessageTransmitter),
+                    "1.0.0"
+                )
             )
         );
         CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);

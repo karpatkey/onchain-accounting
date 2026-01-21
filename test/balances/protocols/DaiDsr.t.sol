@@ -7,6 +7,7 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {DaiDsrBalanceOracle, PotLike, DsrManager} from "src/balances/protocols/DaiDsr.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract DaiDsrBalanceOracleTest is TestEnvConfigurator {
     uint256 fork;
@@ -18,8 +19,11 @@ contract DaiDsrBalanceOracleTest is TestEnvConfigurator {
     DsrManager public dsrManager;
 
     DaiDsrBalanceOracle oracle;
-    IBalanceOracleCustom.PositionMetadata dsrMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Maker", position: "DSR", positionType: "Supplied"});
+    MockBalances mockBalances;
+
+    function setUp() public {
+        mockBalances = new MockBalances();
+    }
 
     // Use an existing user that already has DAI in DSR
     // This avoids the complexity of setting up a new DSR position which requires Vat authorization
@@ -34,8 +38,8 @@ contract DaiDsrBalanceOracleTest is TestEnvConfigurator {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
 
         // Initialize contracts
-        oracle = new DaiDsrBalanceOracle(dai, dsr, dsrMetadata);
-        pot = oracle.pot();
+        oracle = new DaiDsrBalanceOracle(dai, dsr, "Maker", "DSR", address(mockBalances));
+        pot = oracle.POT();
 
         // Manually call drip() to update rho to current block timestamp
         // This ensures rho == block.timestamp for our test
@@ -58,8 +62,8 @@ contract DaiDsrBalanceOracleTest is TestEnvConfigurator {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
 
         // Initialize contracts
-        oracle = new DaiDsrBalanceOracle(dai, dsr, dsrMetadata);
-        pot = oracle.pot();
+        oracle = new DaiDsrBalanceOracle(dai, dsr, "Maker", "DSR", address(mockBalances));
+        pot = oracle.POT();
 
         // Get initial rho value
         uint256 initialRho = pot.rho();

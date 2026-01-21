@@ -77,13 +77,13 @@ contract MockTokenMessenger is ITokenMessenger {
 contract MockMessageTransmitter is IMessageTransmitter {
     using SafeERC20 for IERC20;
 
-    uint32 private immutable _localDomain;
+    uint32 private immutable _LOCAL_DOMAIN;
     uint32 public constant VERSION = 0;
     IERC20 public usdc;
     mapping(bytes32 => bool) public receivedMessages;
 
     constructor(uint32 _domain, address _usdc) {
-        _localDomain = _domain;
+        _LOCAL_DOMAIN = _domain;
         usdc = IERC20(_usdc);
     }
 
@@ -119,7 +119,7 @@ contract MockMessageTransmitter is IMessageTransmitter {
     }
 
     function localDomain() external view override returns (uint32) {
-        return _localDomain;
+        return _LOCAL_DOMAIN;
     }
 
     function version() external pure override returns (uint32) {
@@ -229,8 +229,8 @@ contract MockStargateRouter is IStargateRouter {
         uint256 srcPoolId;
         uint256 dstPoolId;
         address refundTo;
-        uint256 amountLD;
-        uint256 minAmountLD;
+        uint256 amountLd;
+        uint256 minAmountLd;
         bytes payload;
     }
 
@@ -250,8 +250,8 @@ contract MockStargateRouter is IStargateRouter {
         uint256 _srcPoolId,
         uint256 _dstPoolId,
         address payable _refundAddress,
-        uint256 _amountLD,
-        uint256 _minAmountLD,
+        uint256 _amountLd,
+        uint256 _minAmountLd,
         IStargateRouter.LzTxObj memory _lzTxParams,
         bytes calldata _to,
         bytes calldata _payload
@@ -262,8 +262,8 @@ contract MockStargateRouter is IStargateRouter {
             srcPoolId: _srcPoolId,
             dstPoolId: _dstPoolId,
             refundTo: _refundAddress,
-            amountLD: _amountLD,
-            minAmountLD: _minAmountLD,
+            amountLd: _amountLd,
+            minAmountLd: _minAmountLd,
             payload: _payload
         });
 
@@ -368,6 +368,8 @@ contract MockSpokePool {
             inputAmount: amount,
             outputAmount: amount, // For testing, output equals input
             destinationChainId: destinationChainId,
+            // casting to 'uint256' is safe because relayerFeePct is expected to be non-negative in tests
+            // forge-lint: disable-next-line(unsafe-typecast)
             relayerFeePct: uint256(int256(relayerFeePct)),
             quoteTimestamp: quoteTimestamp,
             message: message
@@ -418,7 +420,7 @@ contract MockL1StandardBridge {
         address indexed l1Token, address indexed l2Token, address indexed from, address to, uint256 amount, bytes data
     );
 
-    function depositETHTo(address to, uint32 l2Gas, bytes calldata data) external payable {
+    function depositEthTo(address to, uint32 l2Gas, bytes calldata data) external payable {
         emit ETHDepositInitiated(msg.sender, to, msg.value, data);
     }
 

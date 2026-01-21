@@ -2,91 +2,53 @@
 pragma solidity ^0.8.13;
 
 import {IPrices} from "src/prices/Prices.sol";
-import {IBalances} from "src/balances/Balances.sol";
+import {IBalances} from "src/balances/IBalances.sol";
 
 /// @title INAVCalculator Interface
 /// @notice Interface for NAVCalculator contract
 /// @author kpk
 interface INAVCalculator {
-    /// @notice Core position data (currency-agnostic)
-    /// @param asset Address of the asset
-    /// @param assetSymbol Asset symbol (e.g., "USDC", "ETH")
-    /// @param assetDecimals Asset decimals
-    /// @param protocol Protocol name (e.g., "Aave", "Portfolio balance")
-    /// @param position Position identifier within protocol
-    /// @param positionType Position type (e.g., "Supplied", "Borrowed", "ERC20")
-    /// @param balance Position balance (signed for debt)
-    struct PositionCore {
-        address asset;
-        string assetSymbol;
-        uint8 assetDecimals;
-        string protocol;
-        string position;
-        string positionType;
+    struct Position {
+        Asset underlyingAsset;
+        address balanceOracle;
         int256 balance;
-    }
-
-    /// @notice Pricing extension (currency-specific)
-    /// @param quoteCurrency Quote currency address (address(0) for USD)
-    /// @param quoteCurrencySymbol Quote currency symbol
-    /// @param quoteCurrencyDecimals Quote currency decimals
-    /// @param value Position value in quote currency
-    /// @param rate Exchange rate (price per unit)
-    /// @param rateDecimals Rate decimals
-    /// @param stale Whether price is stale
-    /// @param sequencerDown Whether sequencer is down
-    struct PositionPricing {
-        address quoteCurrency;
-        string quoteCurrencySymbol;
-        uint8 quoteCurrencyDecimals;
+        Asset quoteAsset;
         int256 value;
-        uint256 rate;
-        uint8 rateDecimals;
+        uint256 price;
+        uint8 priceDecimals;
         bool stale;
+        string protocol;
+        string positionDetail;
+    }
+
+    /// @notice Health check information for NAV calculations
+    /// @param stalePriceAssets Array of assets with stale prices
+    /// @param sequencerDown Whether the L2 sequencer is down
+    struct HealthCheck {
+        Asset[] stalePriceAssets;
         bool sequencerDown;
-    }
-
-    /// @notice Complete position with pricing
-    /// @param core Core position data
-    /// @param pricing Pricing information
-    struct VerbosePosition {
-        PositionCore core;
-        PositionPricing pricing;
-    }
-
-    /// @notice Complete account positions response
-    /// @param nav Standard NAV (USD total)
-    /// @param positions Flat array of all positions
-    struct AccountPositions {
-        NAV nav;
-        VerbosePosition[] positions;
     }
 
     /// @notice The complete NAV snapshot
-    /// @param block Block number this reading refers to
+    /// @param value Total value in quoteAsset
+    /// @param quoteAsset The quote currency (must have PriceFeedConfig configured)
     /// @param timestamp Block timestamp this reading refers to
-    /// @param usd Total USD calculated
-    /// @param stalePriceAssets Array of assets that have stale prices (asset-specific issues)
-    /// @param sequencerDown Whether the L2 sequencer is down (global issue affecting all prices)
-    /// @notice   If sequencerDown is true or stalePriceAssets.length > 0, this reading should not be used to
-    /// @notice   compute deposits/withdrawals, but may still be kept for notifications & historical purposes
+    /// @param issues Health check information
+    // forge-lint: disable-next-line(pascal-case-struct)
     struct NAV {
-        uint64 block;
+        int256 value;
+        Asset quoteAsset;
         uint64 timestamp;
-        int256 usd;
-        address[] stalePriceAssets;
-        bool sequencerDown;
+        HealthCheck issues;
     }
 
-    /// @notice A known ERC20 asset
-    /// @param addr The address of the asset
-    /// @param decimals The number of decimals the asset uses
     struct Asset {
-        address addr;
+        address asset;
+        string symbol;
         uint8 decimals;
     }
 
-    /// @notice Comprehensive price data for a token
+    /// @notice Comprehensive price feed query result for a token
     /// @param oracle The address of the price oracle
     /// @param priceType The type of oracle (Chainlink or Custom)
     /// @param price The current price
@@ -95,7 +57,7 @@ interface INAVCalculator {
     /// @param updatedAt The timestamp when price was last updated (Chainlink only, 0 for custom)
     /// @param stale Whether the price is stale (asset-specific, e.g., heartbeat timeout)
     /// @param sequencerDown Whether L2 sequencer is down (L2 only, false on L1)
-    struct PriceData {
+    struct PriceFeed {
         address oracle;
         IPrices.PriceType priceType;
         uint256 price;
@@ -105,7 +67,6 @@ interface INAVCalculator {
         bool stale;
         bool sequencerDown;
     }
-
 
     //
     // Events
@@ -139,43 +100,35 @@ interface INAVCalculator {
     //
 
     /// @notice Emitted when an asset is not found
-    error AssetNotFound();
 
     /// @notice Emitted when 'setSequencerGracePeriod' is called and 'chainlinkUptimeFeed' is the zero address
     error UptimeFeedNotSet();
 
-    /// @notice Registers a new asset in the calculator without any oracles.
+    /// @notice Registers an asset with its price feed.
+    /// @dev The asset must be registered with a price feed. Cannot register an asset without a price feed.
     /// @param asset The address of the asset to register
-    /// @dev Trying to read anything related to such asset would fail until oracles are set.
-    function registerAsset(address asset) external;
-
-    /// @notice Sets the price oracle for an existing asset.
-    /// @param asset The address of the asset
-    /// @param oracle The address of the price oracle to use
+    /// @param oracle The address of the price oracle
     /// @param priceType The type of the price oracle
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
-    /// oracles.
-    /// @dev Cannot be called before registering the asset. Replaces any existing price oracle.
-    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    /// @param chainlinkHeartbeat The heartbeat interval for Chainlink oracles (ignored for custom oracles)
+    function registerAsset(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Sets a balance oracle for an existing asset.
-    /// @param underlyingAsset The address of the token to set a balance oracle for.
-    /// @param oracle The address of the balance oracle to use.
-    /// @param balanceType The type of the balance.
+    /// @notice Sets the price feed for an existing asset.
+    /// @dev Cannot be called before registering the asset. Replaces any existing price oracle.
+    function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
+
+    /// @notice Adds a balance oracle for an existing asset.
     /// @dev Cannot be called before registering the asset. Replaces any existing balance oracle with the same address.
-    function setBalanceOracle(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external;
+    function addBalanceOracle(address underlyingAsset, address oracle, IBalances.OracleType balanceType) external;
 
-    /// @notice Unsets the price oracle for a given asset.
-    /// @param underlyingAsset The address of the asset.
+    /// @notice Unsets the price feed for a given asset.
     /// @dev The asset remains registered after this operation.
-    function unsetPriceOracle(address underlyingAsset) external;
+    function unsetPriceFeed(address underlyingAsset) external;
 
-    /// @notice Unsets a balance oracle for a given asset.
-    /// @param underlyingAsset The address of the asset.
-    /// @param oracle The address of the balance oracle to unset.
+    /// @notice Removes a balance oracle for a given asset.
     /// @dev The asset remains registered after this operation.
-    function unsetBalanceOracle(address underlyingAsset, address oracle) external;
+    function removeBalanceOracle(address underlyingAsset, address oracle) external;
 
     /// @notice Unregisters an asset, removing all oracles and the asset itself.
     /// @param underlyingAsset The address of the asset to unregister.
@@ -202,23 +155,43 @@ interface INAVCalculator {
     /// @notice Returns the current initialization version as tracked by OpenZeppelin's Initializable storage
     function version() external view returns (uint64);
 
-    /// @notice Gets the total NAV value in USD for a given account
+    /// @notice Gets NAV for an account in the specified baseAsset (quote currency)
     /// @param account The address of the account to calculate for
-    /// @dev This function reads all known assets, and might exhaust gas if there are too many
-    /// assets known by the calculator contract at the time of calling.
-    /// @return nav The NAV of the account in USD
-    function getTotalNAV(address account) external view returns (NAV memory nav);
+    /// @param baseAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @return nav The NAV of the account in the specified quote currency
+    function getAccountNav(address account, address baseAsset) external view returns (NAV memory nav);
 
-    /// @notice Gets all positions for a given account with pricing in the specified currency
+    /// @notice Gets NAV for a range of assets (chunked query)
     /// @param account The address of the account to calculate for
-    /// @param quoteCurrency The address of the quote currency (address(0) for USD)
-    /// @dev If quoteCurrency is address(0), returns USD pricing. Otherwise, converts from USD to the specified currency.
-    /// @return accountPositions AccountPositions struct containing NAV and flat array of all positions
-    function getAllPositions(address account, address quoteCurrency)
+    /// @param from Starting asset index (inclusive, from asset enumeration)
+    /// @param to Ending asset index (inclusive, from asset enumeration)
+    /// @param baseAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @dev Validates that from <= to and both indices are within asset count bounds
+    /// @dev Reverts with InvalidArguments if indices are out of range or from > to
+    /// @return nav The NAV of the account for the specified asset range in the quote currency
+    function getAccountNavForRange(address account, uint256 from, uint256 to, address baseAsset)
         external
         view
-        returns (AccountPositions memory accountPositions);
+        returns (NAV memory nav);
 
+    /// @notice Gets all positions for a given account with pricing in the specified quote currency
+    /// @param account The address of the account to calculate for
+    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @return positions Array of Position structs for all positions
+    function getAccountPositions(address account, address quoteAsset)
+        external
+        view
+        returns (Position[] memory positions);
+
+    /// @notice Gets positions for a specific asset for a given account
+    /// @param account The address of the account to calculate for
+    /// @param asset The specific asset to filter by (must be registered)
+    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @return positions Array of Position structs for the specified asset
+    function getAccountPositionsForAsset(address account, address asset, address quoteAsset)
+        external
+        view
+        returns (Position[] memory positions);
 
     /// @notice The amount of decimals returned with each USD value
     /// @return The amount of decimals
@@ -233,11 +206,10 @@ interface INAVCalculator {
     /// @return The assets known by this calculator
     function assets() external view returns (address[] memory);
 
-    /// @notice Returns comprehensive price data for a given token
+    /// @notice Returns comprehensive price feed query result for a given token
     /// @param underlyingAsset The address of the token
-    /// @return priceData The complete price information including oracle details, price, staleness, and sequencer status
-    function getPriceData(address underlyingAsset) external view returns (PriceData memory priceData);
-
+    /// @return priceFeed The complete price information including oracle details, price, staleness, and sequencer status
+    function getPriceData(address underlyingAsset) external view returns (PriceFeed memory priceFeed);
 
     /// @notice Returns overall health status
     /// @return sequencerDown Whether the L2 sequencer is down (false on L1)
@@ -262,10 +234,8 @@ interface INAVCalculator {
     /// @return value The total value of all balances in the quote currency
     /// @dev Arrays must be the same length. Each asset must be registered and have a price oracle.
     /// @dev If quoteCurrency is address(0), returns USD value. Otherwise, converts from USD to quoteCurrency.
-    function calculateValue(
-        address[] memory assets,
-        int256[] memory balances,
-        address quoteCurrency
-    ) external view returns (int256 value);
-
+    function calculateValue(address[] memory assets, int256[] memory balances, address quoteCurrency)
+        external
+        view
+        returns (int256 value);
 }

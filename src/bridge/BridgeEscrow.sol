@@ -11,7 +11,9 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {InvoiceDataLib} from "./InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
 /// @title BridgeEscrow
@@ -171,7 +173,10 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         // Create InvoiceData struct with all components
         InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
+            // casting to 'uint24' is safe because chain IDs are always within uint24 range
+            // forge-lint: disable-next-line(unsafe-typecast)
             sourceChainId: uint24(chainId),
+            // forge-lint: disable-next-line(unsafe-typecast)
             destinationChainId: uint24(destinationChainId),
             portfolioSafe: msg.sender,
             assetSymbol: assetSymbol,
@@ -650,6 +655,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         bytes6 assetSymbol
     ) internal pure returns (bytes32) {
         // Pack data: 3 + 3 + 20 + 6 = 32 bytes exactly
+        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes32(
             (uint256(uint24(sourceChainId)) << 232) // Bits 232-255 (3 bytes)
                 | (uint256(uint24(destinationChainId)) << 208) // Bits 208-231 (3 bytes)
@@ -668,7 +675,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         pure
         returns (bytes24)
     {
+        // Use inline assembly for more efficient keccak256 hashing
+        // forge-lint: disable-next-line(asm-keccak256)
         bytes32 fullHash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
+        // casting to 'bytes24' is safe because we're truncating the last 8 bytes of a 32-byte hash
+        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes24(fullHash);
     }
 

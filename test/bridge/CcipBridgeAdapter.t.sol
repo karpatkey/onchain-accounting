@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
 
-import "src/bridge/adapters/CcipBridgeAdapter.sol";
+import {CcipBridgeAdapter} from "src/bridge/adapters/CcipBridgeAdapter.sol";
+import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import "src/bridge/IBridgeEscrow.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import "test/bridge/BridgeTestBase.sol";
+import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title CcipBridgeAdapterTest
@@ -73,6 +74,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -105,6 +107,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -131,6 +134,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -167,6 +171,7 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)

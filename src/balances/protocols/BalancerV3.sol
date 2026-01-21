@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -14,7 +17,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Balancer V3 pools and gauges
 /// @dev Supports both direct pool tokens and staked gauge positions
-contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
+contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
     using SafeCast for uint256;
     using SafeCast for int256;
     using SafeCast for int128;
@@ -32,16 +35,19 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
     /// @notice Balancer Minter contract that mints the BAL token
     IBalancerMinter public immutable BALANCER_MINTER;
 
-    /// @notice Position tags associated with the balance oracle.
-    PositionMetadata internal _positionMetadata;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Reference to Balances contract for asset registry access
+    IBalances public immutable BALANCES;
 
     /// @notice Initializes the oracle with pool and gauge addresses
     /// @param pool_ Address of the Balancer V3 pool
     /// @param gauge_ Address of the corresponding gauge contract
     /// @param balancerMinter_ Address of the Balancer Minter contract
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
+    /// @param protocol_ Protocol identifier (e.g., "Balancer v3").
+    /// @param balances_ The address of the Balances contract for asset registry access.
     /// @dev Validates that the gauge's LP token matches the pool address
-    constructor(address pool_, address gauge_, address balancerMinter_, PositionMetadata memory positionMetadata_) {
+    constructor(address pool_, address gauge_, address balancerMinter_, string memory protocol_, address balances_) {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
         }
@@ -49,6 +55,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
         POOL = IStablePool(pool_);
         GAUGE = IGaugeV3(gauge_);
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
+        BALANCES = IBalances(balances_);
 
         try GAUGE.lp_token() returns (address lpToken) {
             if (lpToken != pool_) {
@@ -58,7 +65,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
             revert InvalidArguments();
         }
 
-        _positionMetadata = positionMetadata_;
+        _protocol = protocol_;
     }
 
     /// @inheritdoc IBalanceOracleCustom
@@ -188,6 +195,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
     /// @return The new checkpoint
     function calculateIntegrateFraction(address user, IGaugeV3 gauge) public view returns (uint256) {
         uint256 period = gauge.period().toUint256();
+        // casting to 'uint128' is safe because period is a small value that fits in uint128
+        // forge-lint: disable-next-line(unsafe-typecast)
         uint256 periodTime = gauge.period_timestamp(uint256(uint128(period)));
         uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(uint128(period)));
         uint256 rate = gauge.inflation_rate();
@@ -208,11 +217,15 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
         if (block.timestamp > periodTime) {
             uint256 ws = gauge.working_supply();
             uint256 prevWeek = periodTime;
+            // Intentional: round down to nearest week boundary (divide before multiply is correct here)
+            // forge-lint: disable-next-line(divide-before-multiply)
             uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
             if (weekTime > block.timestamp) weekTime = block.timestamp;
 
             for (uint256 i = 0; i < 500; i++) {
                 uint256 dt = weekTime - prevWeek;
+                // Intentional: round down to nearest week boundary (divide before multiply is correct here)
+                // forge-lint: disable-next-line(divide-before-multiply)
                 uint256 w = gauge.getCappedRelativeWeight((prevWeek / WEEK) * WEEK);
 
                 if (ws > 0) {
@@ -241,21 +254,155 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
 
     /// @inheritdoc IBalanceOracleCustom
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = address(0); // FIXME
+        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
+        address[] memory assets = new address[](immutableData.tokens.length);
+        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
+            assets[i] = address(immutableData.tokens[i]);
+        }
         return assets;
-    }
-
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
     }
 
     /// @notice Implementation of IERC165 interface detection
     /// @param interfaceId The interface id to check
     /// @return True if this contract implements the interface
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleCustom).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        return this.balanceOf(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account, address assetFilter)
+        external
+        view
+        returns (address[] memory assets, int256[] memory amounts)
+    {
+        if (assetFilter != address(0)) {
+            // Return empty arrays when asset filter is specified
+            return (new address[](0), new int256[](0));
+        }
+
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        // Pre-allocate arrays
+        address[] memory tempAssets = new address[](assetCount);
+        int256[] memory tempAmounts = new int256[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = balance;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        assets = new address[](count);
+        amounts = new int256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param account The account to query
+    /// @param assetFilter Optional asset filter (address(0) for all assets)
+    /// @return positions Array of Position structs from this oracle
+    function _buildPositions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        if (assetCount == 0) {
+            return new INAVCalculator.Position[](0);
+        }
+
+        // Pre-allocate array (estimate max size)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+
+            // Apply asset filter if specified
+            if (assetFilter != address(0) && asset != assetFilter) {
+                continue;
+            }
+
+            // Get balance for this asset
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                // Get asset info from registry (if registered)
+                uint8 decimals;
+                string memory symbol;
+                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                    decimals = dec;
+                } catch {
+                    // Asset not registered, skip it (NAVCalculator will filter anyway)
+                    continue;
+                }
+                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    symbol = sym;
+                } catch {
+                    symbol = "";
+                }
+
+                // Build underlying asset struct
+                INAVCalculator.Asset memory underlyingAsset =
+                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+
+                // Build position (pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.Position({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: balance,
+                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
+                    value: 0, // Will be calculated by NAVCalculator
+                    price: 0, // Will be set by NAVCalculator
+                    priceDecimals: 0, // Will be set by NAVCalculator
+                    stale: false, // Will be set by NAVCalculator
+                    protocol: _protocol,
+                    positionDetail: symbol
+                });
+
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        return _buildPositions(account, assetFilter);
     }
 }
 
@@ -264,18 +411,21 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom {
 interface IGaugeV3 is IERC20 {
     /// @notice Returns the address of the LP token that can be staked in this gauge
     /// @return The address of the LP token
+    // forge-lint: disable-next-line(mixed-case-function)
     function lp_token() external view returns (address);
 
     /// @notice Returns the amount of reward tokens claimable by a user
     /// @param user Address of the user to check rewards for
     /// @param token Address of the reward token to check
     /// @return The amount of reward tokens claimable
+    // forge-lint: disable-next-line(mixed-case-function)
     function claimable_reward(address user, address token) external view returns (uint256);
 
     /// @notice # ∫(balance * rate(t) / totalSupply(t) dt) from 0 till checkpoint
     /// Units: rate * t = already number of coins per address to issue
     /// @param user Address of the user to check
     /// @return The amount of reward tokens claimable
+    // forge-lint: disable-next-line(mixed-case-function)
     function integrate_fraction(address user) external view returns (uint256);
     /// @notice  The goal is to be able to calculate ∫(rate * balance / totalSupply dt) from 0 till checkpoint
     /// All values are kept in units of being multiplied by 1e18
@@ -284,16 +434,20 @@ interface IGaugeV3 is IERC20 {
     /// @notice The timestamp of the period
     /// @param period The period to get timestamp for
     /// @return Returns the timestamp of the period
+    // forge-lint: disable-next-line(mixed-case-function)
     function period_timestamp(uint256 period) external view returns (uint256);
     /// @notice Calculates the integrate inverse supply
     /// @param period The period to calculate for
     /// @return 1e18 * ∫(rate(t) / totalSupply(t) dt) from 0 till checkpoint
+    // forge-lint: disable-next-line(mixed-case-function)
     function integrate_inv_supply(uint256 period) external view returns (uint256);
     /// @notice Get the locally stored BAL inflation rate
     /// @return self.inflation_params % 2 ** 216
+    // forge-lint: disable-next-line(mixed-case-function)
     function inflation_rate() external view returns (uint256);
     /// @notice Get if the gauge is killed
     /// @return True if the gauge is killed
+    // forge-lint: disable-next-line(mixed-case-function)
     function is_killed() external view returns (bool);
     /// @notice the current working supply
     /// @return The current working supply

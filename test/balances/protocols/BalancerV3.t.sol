@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {console2, Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments, NotAuthorized} from "src/errors.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract Balancerv3Test is TestEnvConfigurator {
     BalancerV3PoolBalanceOracle public oracle;
@@ -25,15 +23,14 @@ contract Balancerv3Test is TestEnvConfigurator {
     address public constant BALANCER_RELAYER = 0x35Cea9e57A393ac66Aaa7E25C391D52C74B5648f;
     address public constant BALANCER_MINTER = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b;
     uint256 fork;
-    IBalanceOracleCustom.PositionMetadata balancerMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Balancer v3", position: "Some pool", positionType: "Supplied"
-    });
+    MockBalances mockBalances;
 
     function setUp() public {
         fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_087_430);
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, balancerMetadata);
+        mockBalances = new MockBalances();
+        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(mockBalances));
     }
 
     function testConstructor() public view {
@@ -43,12 +40,12 @@ contract Balancerv3Test is TestEnvConfigurator {
 
     function testConstructorRevertZeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(address(0), GAUGE, BALANCER_MINTER, balancerMetadata);
+        new BalancerV3PoolBalanceOracle(address(0), GAUGE, BALANCER_MINTER, "Balancer v3", address(mockBalances));
     }
 
     function testConstructorRevertZeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(POOL, address(0), BALANCER_MINTER, balancerMetadata);
+        new BalancerV3PoolBalanceOracle(POOL, address(0), BALANCER_MINTER, "Balancer v3", address(mockBalances));
     }
 
     function test_balanceOf_unstaked_bpt() public {
@@ -61,7 +58,7 @@ contract Balancerv3Test is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(22_131_971);
 
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, balancerMetadata);
+        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(mockBalances));
 
         address user = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
         assertOracleBalancesMatchRedemption(user);
@@ -75,7 +72,7 @@ contract Balancerv3Test is TestEnvConfigurator {
     function test_balanceOf_oracle_mainnet_staked_gauge_AfterRedeem() public {
         vm.selectFork(fork);
         vm.rollFork(22_131_954);
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, balancerMetadata);
+        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(mockBalances));
         address user = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
 
         //console2.log("oracle balance before", oracle.balanceOf(USDC, user));
@@ -242,16 +239,16 @@ contract Balancerv3Test is TestEnvConfigurator {
 
     function assertOracleBalancesMatchRedemption(address user) internal {
         // Get oracle balances before redemption
-        int256 oracleBalanceUSDT = oracle.balanceOf(USDT, user);
-        int256 oracleBalanceUSDC = oracle.balanceOf(USDC, user);
-        int256 oracleBalanceGHO = oracle.balanceOf(GHO, user);
-        int256 oracleBalanceBAL = oracle.balanceOf(BAL, user);
+        int256 oracleBalanceUsdt = oracle.balanceOf(USDT, user);
+        int256 oracleBalanceUsdc = oracle.balanceOf(USDC, user);
+        int256 oracleBalanceGho = oracle.balanceOf(GHO, user);
+        int256 oracleBalanceBal = oracle.balanceOf(BAL, user);
 
         // Get token balances before redemption
-        uint256 beforeUSDT = IERC20(USDT).balanceOf(user);
-        uint256 beforeUSDC = IERC20(USDC).balanceOf(user);
-        uint256 beforeGHO = IERC20(GHO).balanceOf(user);
-        uint256 beforeBAL = IERC20(BAL).balanceOf(user);
+        uint256 beforeUsdt = IERC20(USDT).balanceOf(user);
+        uint256 beforeUsdc = IERC20(USDC).balanceOf(user);
+        uint256 beforeGho = IERC20(GHO).balanceOf(user);
+        uint256 beforeBal = IERC20(BAL).balanceOf(user);
 
         // Redeem tokens
         redeemGaugeAndRewards(user);
@@ -259,15 +256,21 @@ contract Balancerv3Test is TestEnvConfigurator {
         redeemLiquidity(user);
 
         // Calculate actual received amounts (after - before)
-        uint256 receivedUSDT = IERC20(USDT).balanceOf(user) - beforeUSDT;
-        uint256 receivedUSDC = IERC20(USDC).balanceOf(user) - beforeUSDC;
-        uint256 receivedGHO = IERC20(GHO).balanceOf(user) - beforeGHO;
-        uint256 receivedBAL = IERC20(BAL).balanceOf(user) - beforeBAL;
+        uint256 receivedUsdt = IERC20(USDT).balanceOf(user) - beforeUsdt;
+        uint256 receivedUsdc = IERC20(USDC).balanceOf(user) - beforeUsdc;
+        uint256 receivedGho = IERC20(GHO).balanceOf(user) - beforeGho;
+        uint256 receivedBal = IERC20(BAL).balanceOf(user) - beforeBal;
 
-        assertEq(uint256(oracleBalanceUSDT), receivedUSDT, "USDT amount mismatch");
-        assertEq(uint256(oracleBalanceUSDC), receivedUSDC, "USDC amount mismatch");
-        assertEq(uint256(oracleBalanceGHO), receivedGHO, "GHO amount mismatch");
-        assertEq(uint256(oracleBalanceBAL), receivedBAL, "BAL amount mismatch");
+        // Compare int256 oracle balances with uint256 received amounts (both are positive)
+        // casting to 'int256' is safe because received amounts are token balances which are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(oracleBalanceUsdt, int256(receivedUsdt), "USDT amount mismatch");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(oracleBalanceUsdc, int256(receivedUsdc), "USDC amount mismatch");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(oracleBalanceGho, int256(receivedGho), "GHO amount mismatch");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(oracleBalanceBal, int256(receivedBal), "BAL amount mismatch");
     }
 }
 

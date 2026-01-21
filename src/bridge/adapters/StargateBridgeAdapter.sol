@@ -8,6 +8,7 @@ import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {ILayerZeroReceiver, ILayerZeroEndpoint, IStargateRouter} from "./interfaces/IStargateInterfaces.sol";
 import {IStargateBridgeAdapter} from "./interfaces/IStargateBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title StargateBridgeAdapter

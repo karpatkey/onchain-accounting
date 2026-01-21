@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "src/bridge/adapters/GnosisBridgeAdapter.sol";
+import {GnosisBridgeAdapter} from "src/bridge/adapters/GnosisBridgeAdapter.sol";
+import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import "src/bridge/IBridgeEscrow.sol";
-import "test/bridge/BridgeTestBase.sol";
+import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title GnosisBridgeAdapterTest
@@ -67,6 +71,7 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -95,6 +100,7 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -358,10 +364,10 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
     }
 
     function test_setAMB_updatesAMB() public {
-        MockAMB newAMB = new MockAMB();
+        MockAMB newAmb = new MockAMB();
 
         vm.prank(admin);
-        adapter.setAMB(address(newAMB));
+        adapter.setAmb(address(newAmb));
 
         // Verify AMB was updated (indirectly)
         assertTrue(true, "AMB should be updated");
@@ -370,7 +376,7 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
     function test_setAMB_revertsIfNotAdmin() public {
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setAMB(address(0));
+        adapter.setAmb(address(0));
     }
 
     // ============ View Function Tests ============
@@ -400,6 +406,7 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
 
         // Store payload via bridge
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -426,6 +433,7 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
 
         // Store payload via bridge
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)

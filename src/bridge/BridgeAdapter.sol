@@ -9,7 +9,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {InvoiceDataLib} from "./InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
 /// @title BridgeAdapter

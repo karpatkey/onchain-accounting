@@ -85,7 +85,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @inheritdoc IGnosisBridgeAdapter
-    function setAMB(address amb_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAmb(address amb_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (amb_ == address(0)) revert InvalidAMB();
         amb = IAMB(amb_);
     }

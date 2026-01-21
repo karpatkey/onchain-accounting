@@ -114,7 +114,7 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @notice Sets the AMB contract address
     /// @param amb_ The AMB contract address
     /// @dev Only callable by admin role
-    function setAMB(address amb_) external;
+    function setAmb(address amb_) external;
 
     //
     // View Functions

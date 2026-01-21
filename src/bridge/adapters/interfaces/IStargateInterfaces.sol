@@ -62,8 +62,8 @@ interface IStargateRouter {
         uint16 dstChainId; // Stargate/LayerZero chain ID
         uint256 srcPoolId; // Source pool ID
         uint256 dstPoolId; // Destination pool ID
-        uint256 amountLD; // Amount in local decimals
-        uint256 minAmountLD; // Minimum amount to receive (slippage protection)
+        uint256 amountLd; // Amount in local decimals
+        uint256 minAmountLd; // Minimum amount to receive (slippage protection)
         LzTxObj lzTxParams; // LayerZero transaction parameters
         bytes to; // Destination address (bytes format)
         bytes payload; // Message payload
@@ -90,8 +90,8 @@ interface IStargateRouter {
     /// @param _srcPoolId The source pool ID
     /// @param _dstPoolId The destination pool ID
     /// @param _refundAddress The address to refund excess fees
-    /// @param _amountLD The amount in local decimals
-    /// @param _minAmountLD The minimum amount to receive (slippage protection)
+    /// @param _amountLd The amount in local decimals
+    /// @param _minAmountLd The minimum amount to receive (slippage protection)
     /// @param _lzTxParams The LayerZero transaction parameters
     /// @param _to The destination address (bytes format)
     /// @param _payload The message payload
@@ -100,8 +100,8 @@ interface IStargateRouter {
         uint256 _srcPoolId,
         uint256 _dstPoolId,
         address payable _refundAddress,
-        uint256 _amountLD,
-        uint256 _minAmountLD,
+        uint256 _amountLd,
+        uint256 _minAmountLd,
         IStargateRouter.LzTxObj memory _lzTxParams,
         bytes calldata _to,
         bytes calldata _payload

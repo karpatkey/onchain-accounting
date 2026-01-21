@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import "src/errors.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 interface CometRewardsAux {
     function getRewardOwed(address comet, address account) external returns (address token, uint256 owed);
@@ -30,22 +31,23 @@ contract CompoundV3CometTest is TestEnvConfigurator {
     mapping(address => int256) balances;
 
     CompoundV3Comet oracle;
-    IBalanceOracleCustom.PositionMetadata compoundMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
-    });
+    MockBalances mockBalances;
 
     function setUp() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_570_307);
+        mockBalances = new MockBalances();
 
-        oracle = new CompoundV3Comet(compoundRewards, address(usdcv3), rewardToken, compoundMetadata);
+        oracle = new CompoundV3Comet(
+            compoundRewards, address(usdcv3), rewardToken, "Compound v3", "USDC Comet", address(mockBalances)
+        );
 
         comet = CometExtInterface(address(usdcv3));
     }
 
     function test_initialization() public view {
-        assertEq(oracle.baseToken(), address(usdc));
-        assertEq(address(oracle.rewardToken()), address(rewardToken));
-        assertEq(oracle.comet(), address(usdcv3));
+        assertEq(oracle.BASE_TOKEN(), address(usdc));
+        assertEq(address(oracle.REWARD_TOKEN()), address(rewardToken));
+        assertEq(oracle.COMET(), address(usdcv3));
 
         uint8 numAssets = comet.numAssets();
         for (uint8 i = 0; i < numAssets; i++) {
@@ -57,25 +59,31 @@ contract CompoundV3CometTest is TestEnvConfigurator {
     function test_mainnet_balanceOf_lend() public {
         address user = address(0x2b2E894f08F1BF8C93a82297c347EbdC8717d99a);
 
-        int256 balanceUSDC = oracle.balanceOf(address(usdc), user);
-        assertEq(balanceUSDC, 4_897_852_126_376);
+        int256 balanceUsdc = oracle.balanceOf(address(usdc), user);
+        assertEq(balanceUsdc, 4_897_852_126_376);
 
-        int256 balanceCOMP = oracle.balanceOf(address(rewardToken), user);
-        assertEq(uint256(balanceCOMP), 43_291_868_000_000_000_000);
+        int256 balanceComp = oracle.balanceOf(address(rewardToken), user);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(43_291_868_000_000_000_000));
 
         //  update the rewards check if it is the same as the balance
         (, uint256 owed) = CometRewardsAux(compoundRewards).getRewardOwed(address(usdcv3), user);
-        assertEq(uint256(balanceCOMP), owed);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(owed));
     }
 
     function test_mainnet_balanceOf_borrow() public {
         address user = address(0xe84A061897afc2e7fF5FB7e3686717C528617487);
 
-        int256 balanceUSDC = oracle.balanceOf(address(usdc), user);
-        assertEq(balanceUSDC, -36_049_048_499_829);
+        int256 balanceUsdc = oracle.balanceOf(address(usdc), user);
+        assertEq(balanceUsdc, -36_049_048_499_829);
 
-        int256 balanceCOMP = oracle.balanceOf(address(rewardToken), user);
-        assertEq(uint256(balanceCOMP), 657_197_641_000_000_000_000);
+        int256 balanceComp = oracle.balanceOf(address(rewardToken), user);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(657_197_641_000_000_000_000));
 
         int256 balance = oracle.balanceOf(address(0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599), user);
 
@@ -83,7 +91,9 @@ contract CompoundV3CometTest is TestEnvConfigurator {
 
         // update the rewards on the rewards contract to the latest value check if it is the same as the balance
         (, uint256 owed) = CometRewardsAux(compoundRewards).getRewardOwed(address(usdcv3), user);
-        assertEq(uint256(balanceCOMP), owed);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(owed));
     }
 
     function test_mainnet_balanceOf_singleCollaterals() public view {
@@ -122,23 +132,27 @@ contract CompoundV3CometTest is TestEnvConfigurator {
 
         // Update the rewards, check that the latest value equal to total collateral + unclaimed rewards
         (, uint256 owed) = CometRewardsAux(compoundRewards).getRewardOwed(address(usdcv3), user);
-        int256 totalRewardToken = int256(collateral + owed);
+        uint256 totalRewardToken = collateral + owed;
 
-        assertEq(balance, totalRewardToken);
+        assertEq(balance, int256(totalRewardToken));
     }
 
     function test_mainnet_balanceOf_comp() public {
         address user = address(0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B);
 
-        int256 balanceUSDC = oracle.balanceOf(address(usdc), user);
-        assertEq(balanceUSDC, 0);
+        int256 balanceUsdc = oracle.balanceOf(address(usdc), user);
+        assertEq(balanceUsdc, 0);
 
-        int256 balanceCOMP = oracle.balanceOf(address(rewardToken), user);
-        assertEq(uint256(balanceCOMP), 334_673_000_000_000_000);
+        int256 balanceComp = oracle.balanceOf(address(rewardToken), user);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(334_673_000_000_000_000));
 
         // update the rewards check if it is the same as the balance
         (, uint256 owed) = CometRewardsAux(compoundRewards).getRewardOwed(address(usdcv3), user);
-        assertEq(uint256(balanceCOMP), owed);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(owed));
     }
 
     function test_mainnet_balanceOf_only_comp_in_given_comet() public {
@@ -146,15 +160,19 @@ contract CompoundV3CometTest is TestEnvConfigurator {
 
         deal(address(rewardToken), user, 1 ether);
 
-        int256 balanceUSDC = oracle.balanceOf(address(usdc), user);
-        assertEq(balanceUSDC, 0);
+        int256 balanceUsdc = oracle.balanceOf(address(usdc), user);
+        assertEq(balanceUsdc, 0);
 
-        int256 balanceCOMP = oracle.balanceOf(address(rewardToken), user);
-        assertEq(uint256(balanceCOMP), 334_673_000_000_000_000);
+        int256 balanceComp = oracle.balanceOf(address(rewardToken), user);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(334_673_000_000_000_000));
 
         // update the rewards check if it is the same as the balance
         (, uint256 owed) = CometRewardsAux(compoundRewards).getRewardOwed(address(usdcv3), user);
-        assertEq(uint256(balanceCOMP), owed);
+        // casting to 'int256' is safe because reward amounts are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(balanceComp, int256(owed));
     }
 
     function test_balanceOf_unsupportedToken() public {
@@ -166,8 +184,8 @@ contract CompoundV3CometTest is TestEnvConfigurator {
 
     function test_positionOf_userWithoutPosition() public view {
         address user = address(1);
-        int256 balanceUSDC = oracle.balanceOf(address(usdc), user);
-        assertEq(balanceUSDC, 0);
+        int256 balanceUsdc = oracle.balanceOf(address(usdc), user);
+        assertEq(balanceUsdc, 0);
     }
 
     function test_getUnderlying_edgeCases_MaxPrincipal() public {

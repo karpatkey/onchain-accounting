@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {SkySavingsUsdsBalanceOracle} from "src/balances/protocols/SkySavingsUsds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 contract SavingsUSDSTest is TestEnvConfigurator {
@@ -18,15 +19,15 @@ contract SavingsUSDSTest is TestEnvConfigurator {
 
     uint256 public fork;
     SkySavingsUsdsBalanceOracle public oracle;
-    IBalanceOracleCustom.PositionMetadata positionMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Sky", position: "SavingsUSDS", positionType: "Supplied"});
+    MockBalances mockBalances;
 
     function setUp() public {
         fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        mockBalances = new MockBalances();
 
-        oracle = new SkySavingsUsdsBalanceOracle(address(SAVINGS_USDS), positionMetadata);
+        oracle = new SkySavingsUsdsBalanceOracle(address(SAVINGS_USDS), "Sky", "SavingsUSDS", address(mockBalances));
     }
 
     function test_MAINNET_balanceOf_TEST_USER() public {
@@ -38,6 +39,8 @@ contract SavingsUSDSTest is TestEnvConfigurator {
         uint256 newBalance = USDS.balanceOf(TEST_USER);
         vm.stopPrank();
 
+        // casting to 'int256' is safe because newBalance >= previousBalance (balance increased)
+        // forge-lint: disable-next-line(unsafe-typecast)
         int256 expected = int256(newBalance - previousBalance);
 
         assertEq(balance, expected);
@@ -62,7 +65,7 @@ contract SavingsUSDSTest is TestEnvConfigurator {
 
     function test_constructorRevertsOnZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
-        new SkySavingsUsdsBalanceOracle(address(0), positionMetadata);
+        new SkySavingsUsdsBalanceOracle(address(0), "Sky", "SavingsUSDS", address(mockBalances));
     }
 
     function test_supportsInterface() public view {

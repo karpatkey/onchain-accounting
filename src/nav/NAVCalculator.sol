@@ -2,16 +2,21 @@
 pragma solidity ^0.8;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {IBalances, Balances} from "src/balances/Balances.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {ERC20DefaultOracle} from "src/balances/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
-import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
 /// @title NAV Calculator
@@ -21,14 +26,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     //
     // Libraries
     //
-    using EnumerableMap for EnumerableMap.AddressToUintMap;
+    using ERC165Checker for address;
 
     //
     // State
     //
-
-    /// @notice Set of known assets to track
-    EnumerableMap.AddressToUintMap private _assetDecimals;
 
     /// @notice Asset recoverer. useful solely for recovery of wrongly sent funds to this contract.
     /// @dev This is the recipient address that will receive the assets recovered by a call to the `recoverAssets`
@@ -55,6 +57,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         __AccessControl_init();
         __Prices_init(chainlinkL2SequencerUptimeFeed_);
         __Balances_init();
+
+        // Deploy and register ERC20Default oracle
+        ERC20DefaultOracle defaultOracle = new ERC20DefaultOracle(address(this));
+        _setErc20DefaultOracle(address(defaultOracle));
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
         assetRecoverer = assetRecoverer_;
     }
@@ -64,27 +71,48 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     //
 
     /// @inheritdoc INAVCalculator
-    function registerAsset(address asset) external {
+    function registerAsset(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external
+    {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         if (asset == address(0)) {
             revert InvalidArguments();
         }
+        if (oracle == address(0)) {
+            revert InvalidArguments();
+        }
 
         // Check if asset already exists
-        if (_assetDecimals.contains(asset)) {
+        if (isAssetRegistered(asset)) {
             revert InvalidArguments(); // Asset already registered
         }
 
         // Assumption: All native assets use 18 decimals (EVM standard)
         // If deploying on a chain with different native decimals, this must be made configurable
         uint8 decimals = asset == NATIVE_ADDRESS ? 18 : IERC20Metadata(asset).decimals();
-        _assetDecimals.set(asset, decimals);
+        _registerAsset(asset, decimals);
+
+        // Try to fetch and cache symbol
+        string memory symbol;
+        if (asset == NATIVE_ADDRESS) {
+            symbol = _nativeTokenSymbol;
+        } else {
+            try IERC20Metadata(asset).symbol() returns (string memory symbol_) {
+                symbol = symbol_;
+            } catch {
+                symbol = "";
+            }
+        }
+        _setAssetSymbol(asset, symbol);
+
+        // Set price feed as part of registration
+        _setPriceFeed(asset, oracle, chainlinkHeartbeat, priceType);
 
         emit AssetRegistered(asset, decimals);
     }
 
     /// @inheritdoc INAVCalculator
-    function setPriceOracle(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external
     {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
@@ -94,11 +122,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(asset);
 
-        _setPriceOracle(asset, oracle, chainlinkHeartbeat, priceType);
+        _setPriceFeed(asset, oracle, chainlinkHeartbeat, priceType);
     }
 
     /// @inheritdoc INAVCalculator
-    function setBalanceOracle(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external {
+    function addBalanceOracle(address underlyingAsset, address oracle, IBalances.OracleType balanceType) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         if (oracle == address(0)) {
             revert InvalidArguments();
@@ -106,26 +134,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(underlyingAsset);
 
-        _setBalanceOracle(underlyingAsset, oracle, balanceType);
+        _addBalanceOracle(underlyingAsset, oracle, balanceType);
     }
 
     /// @inheritdoc INAVCalculator
-    function unsetPriceOracle(address underlyingAsset) external {
+    function unsetPriceFeed(address underlyingAsset) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
         _requireAssetExists(underlyingAsset);
-        _requirePriceOracleExists(underlyingAsset);
+        _requirePriceFeedExists(underlyingAsset);
 
-        _unsetPriceOracle(underlyingAsset);
+        _unsetPriceFeed(underlyingAsset);
     }
 
     /// @inheritdoc INAVCalculator
-    function unsetBalanceOracle(address underlyingAsset, address oracle) external {
+    function removeBalanceOracle(address underlyingAsset, address oracle) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
         _requireAssetExists(underlyingAsset);
 
-        _unsetBalanceOracle(underlyingAsset, oracle);
+        _removeBalanceOracle(underlyingAsset, oracle);
     }
 
     /// @inheritdoc INAVCalculator
@@ -134,9 +162,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(underlyingAsset);
 
-        // Unset price oracle if it exists
+        // Unset price feed if it exists
         if (priceOracles[underlyingAsset].oracle != address(0)) {
-            _unsetPriceOracle(underlyingAsset);
+            _unsetPriceFeed(underlyingAsset);
         }
 
         // Unset all balance oracles
@@ -148,14 +176,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             if (underlyingAsset == NATIVE_ADDRESS && oraclesToRemove[i] == NATIVE_ADDRESS) {
                 continue;
             }
-            _unsetBalanceOracle(underlyingAsset, oraclesToRemove[i]);
+            _removeBalanceOracle(underlyingAsset, oraclesToRemove[i]);
         }
 
         // Remove the asset itself
-        bool success = _assetDecimals.remove(underlyingAsset);
-        if (!success) {
-            revert AssetNotFound();
-        }
+        _unregisterAsset(underlyingAsset);
 
         emit AssetUnregistered(underlyingAsset);
     }
@@ -196,224 +221,67 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     function assetCount() external view returns (uint256) {
-        return _assetDecimals.length();
+        return getAssetCount();
     }
 
     /// @inheritdoc INAVCalculator
-    function getTotalNAV(address account) external view returns (INAVCalculator.NAV memory nav) {
-        nav.block = uint64(block.number);
+    function getAccountNav(address account, address baseAsset) external view returns (INAVCalculator.NAV memory nav) {
+        // Validate quoteAsset has PriceFeedConfig (early validation)
+        // Skip validation for address(0) which represents USD (no price feed needed)
+        if (baseAsset != address(0)) {
+            _requirePriceFeedConfig(baseAsset);
+        }
+
         nav.timestamp = uint64(block.timestamp);
 
-        uint256 length = _assetDecimals.length();
+        // Build quoteAsset
+        INAVCalculator.Asset memory quoteAsset;
+        if (baseAsset != address(0)) {
+            uint8 quoteDecimals = _getAssetDecimals(baseAsset);
+            string memory quoteSymbol;
+            if (baseAsset == NATIVE_ADDRESS) {
+                quoteSymbol = _nativeTokenSymbol;
+            } else {
+                try IERC20Metadata(baseAsset).symbol() returns (string memory symbol_) {
+                    quoteSymbol = symbol_;
+                } catch {
+                    quoteSymbol = "";
+                }
+            }
+            quoteAsset = INAVCalculator.Asset({asset: baseAsset, symbol: quoteSymbol, decimals: quoteDecimals});
+        } else {
+            quoteAsset = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
+        }
+        nav.quoteAsset = quoteAsset;
+
+        uint256 length = getAssetCount();
 
         if (length != 0) {
             // read all of the account's positions
             // NOTE: this can exceed gas limit
-            (nav.usd, nav.stalePriceAssets, nav.sequencerDown) = _readPositionsRange(account, 0, length - 1);
+            (int256 totalValue, INAVCalculator.Asset[] memory staleAssets, bool sequencerDown) =
+                _readPositionsRangeWithQuote(account, 0, length - 1, baseAsset);
+            nav.value = totalValue;
+            nav.issues = INAVCalculator.HealthCheck({stalePriceAssets: staleAssets, sequencerDown: sequencerDown});
         } else {
             // Initialize empty arrays when no assets
-            nav.stalePriceAssets = new address[](0);
-            nav.sequencerDown = false;
+            nav.value = 0;
+            nav.issues =
+                INAVCalculator.HealthCheck({stalePriceAssets: new INAVCalculator.Asset[](0), sequencerDown: false});
         }
     }
 
     /// @inheritdoc INAVCalculator
-    function getAllPositions(address account, address quoteCurrency)
-        external
-        view
-        returns (INAVCalculator.AccountPositions memory accountPositions)
-    {
-        // Build NAV first
-        accountPositions.nav.block = uint64(block.number);
-        accountPositions.nav.timestamp = uint64(block.timestamp);
 
-        // Validate quote currency first (before early return)
-        // Get quote currency info if not USD
-        uint256 quoteCurrencyPrice = 0;
-        uint8 quoteCurrencyPriceDecimals = 0;
-        uint8 quoteCurrencyDecimals = 0;
-        string memory quoteCurrencySymbol = "";
-        bool quoteCurrencyStale = false;
-
-        if (quoteCurrency != address(0)) {
-            _requireAssetExists(quoteCurrency);
-            _requirePriceOracleExists(quoteCurrency);
-            (quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyStale) = _latestPrice(quoteCurrency);
-            quoteCurrencyDecimals = _getAssetDecimals(quoteCurrency);
-
-            // Get quote currency symbol
-            if (quoteCurrency == NATIVE_ADDRESS) {
-                quoteCurrencySymbol = _nativeTokenSymbol;
-            } else {
-                try IERC20Metadata(quoteCurrency).symbol() returns (string memory symbol_) {
-                    quoteCurrencySymbol = symbol_;
-                } catch {
-                    quoteCurrencySymbol = "";
-                }
-            }
-        } else {
-            // USD defaults
-            quoteCurrencySymbol = "USD";
-            quoteCurrencyDecimals = NAV_DECIMALS;
-        }
-
-        // Get assets with positions (gas-efficient pre-filter)
-        address[] memory assetsWithPositions = _getAssetsWithPositions(account);
-        uint256 totalAssetsWithPositions = assetsWithPositions.length;
-
-        // Check sequencer status once (global issue, affects all assets)
-        bool sequencerDown = _isSequencerDown();
-        accountPositions.nav.sequencerDown = sequencerDown;
-
-        if (totalAssetsWithPositions == 0) {
-            accountPositions.nav.usd = 0;
-            accountPositions.nav.stalePriceAssets = new address[](0);
-            accountPositions.positions = new INAVCalculator.VerbosePosition[](0);
-            return accountPositions;
-        }
-
-        // Temporary arrays for positions and stale assets
-        INAVCalculator.VerbosePosition[] memory tempPositions =
-            new INAVCalculator.VerbosePosition[](balanceOracleTotalCount);
-        address[] memory staleAssetsTemp = new address[](totalAssetsWithPositions);
-        uint256 positionCount = 0;
-        uint256 staleCount = 0;
-        int256 totalUsd = 0;
-
-        // Process only assets with positions
-        for (uint256 i = 0; i < totalAssetsWithPositions; i++) {
-            address assetAddr = assetsWithPositions[i];
-            uint8 assetDecimals = _getAssetDecimals(assetAddr);
-
-            // Fetch price once per asset (only for assets with positions)
-            (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(assetAddr);
-
-            if (stale) {
-                staleAssetsTemp[staleCount] = assetAddr;
-                staleCount++;
-            }
-
-            // Get asset symbol (only for assets with positions)
-            string memory assetSymbol;
-            if (assetAddr == NATIVE_ADDRESS) {
-                assetSymbol = _nativeTokenSymbol;
-            } else {
-                try IERC20Metadata(assetAddr).symbol() returns (string memory symbol_) {
-                    assetSymbol = symbol_;
-                } catch {
-                    assetSymbol = "";
-                }
-            }
-
-            // Collect all positions for this asset
-            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
-            for (uint256 balanceIdx = 0; balanceIdx < balanceOracleCount; ++balanceIdx) {
-                int256 balance = balanceOf(assetAddr, balanceIdx, account);
-
-                // Only include non-zero positions
-                if (balance != 0) {
-                    // Get balance oracle metadata
-                    BalanceOracleWithMetadata memory oracleWithMetadata =
-                        _balanceOracleWithMetadata(assetAddr, balanceIdx);
-
-                    // Calculate USD value
-                    int256 usdValue = _toUsd(balance, assetDecimals, usdRate, usdRateDecimals);
-                    totalUsd += usdValue;
-
-                    // Convert to quote currency if needed
-                    int256 quoteValue = usdValue;
-                    uint256 quoteRate = usdRate;
-                    uint8 quoteRateDecimals = uint8(usdRateDecimals);
-                    bool quoteStale = stale;
-
-                    if (quoteCurrency != address(0)) {
-                        // Convert from USD to quote currency
-                        quoteValue = _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
-                        // Calculate rate: asset price in quote currency = (usdRate / quoteCurrencyPrice)
-                        // Scale: (usdRate * 10^(quoteCurrencyPriceDecimals + quoteCurrencyDecimals)) / (quoteCurrencyPrice * 10^usdRateDecimals)
-                        if (quoteCurrencyPrice > 0) {
-                            // Check for potential overflow in exponent calculation
-                            uint256 totalDecimals = uint256(quoteCurrencyPriceDecimals) + uint256(quoteCurrencyDecimals);
-                            if (totalDecimals <= MAX_DECIMAL_EXPONENT && usdRateDecimals <= MAX_DECIMAL_EXPONENT) {
-                                uint256 numerator = usdRate * (10 ** totalDecimals);
-                                uint256 denominator = quoteCurrencyPrice * (10 ** usdRateDecimals);
-                                if (denominator > 0) {
-                                    quoteRate = numerator / denominator;
-                                    quoteRateDecimals = quoteCurrencyDecimals;
-                                }
-                            }
-                        }
-                        quoteStale = quoteCurrencyStale || stale;
-                    }
-
-                    // Build PositionCore
-                    INAVCalculator.PositionCore memory core = INAVCalculator.PositionCore({
-                        asset: assetAddr,
-                        assetSymbol: assetSymbol,
-                        assetDecimals: assetDecimals,
-                        protocol: oracleWithMetadata.protocol,
-                        position: oracleWithMetadata.position,
-                        positionType: oracleWithMetadata.positionType,
-                        balance: balance
-                    });
-
-                    // Build PositionPricing
-                    INAVCalculator.PositionPricing memory pricing = INAVCalculator.PositionPricing({
-                        quoteCurrency: quoteCurrency,
-                        quoteCurrencySymbol: quoteCurrencySymbol,
-                        quoteCurrencyDecimals: quoteCurrencyDecimals,
-                        value: quoteValue,
-                        rate: quoteRate,
-                        rateDecimals: quoteRateDecimals,
-                        stale: quoteStale,
-                        sequencerDown: sequencerDown
-                    });
-
-                    // Build VerbosePosition
-                    tempPositions[positionCount] = INAVCalculator.VerbosePosition({
-                        core: core,
-                        pricing: pricing
-                    });
-
-                    positionCount++;
-                }
-            }
-        }
-
-        // Compact positions array to exact size
-        accountPositions.positions = new INAVCalculator.VerbosePosition[](positionCount);
-        for (uint256 i = 0; i < positionCount; i++) {
-            accountPositions.positions[i] = tempPositions[i];
-        }
-
-        // Set final NAV values
-        accountPositions.nav.usd = totalUsd;
-
-        // Compact stale assets array
-        if (staleCount == 0) {
-            accountPositions.nav.stalePriceAssets = new address[](0);
-        } else {
-            accountPositions.nav.stalePriceAssets = new address[](staleCount);
-            for (uint256 i = 0; i < staleCount; i++) {
-                accountPositions.nav.stalePriceAssets[i] = staleAssetsTemp[i];
-            }
-        }
-    }
-
-    /// @notice Reads the holdings of a given account, for a limited range of assets.
-    /// Also includes the corresponding usd total, assets with stale prices, and sequencer status.
-    /// @param account The address to calculate for
-    /// @param from The index of the first asset
-    /// @param to The index of the last asset
-    /// @return usd The total USD value of the positions
-    /// @return stalePriceAssets Array of assets that have stale prices (asset-specific issues)
-    /// @return sequencerDown Whether the L2 sequencer is down (global issue affecting all prices)
-    function _readPositionsRange(address account, uint256 from, uint256 to)
+    /// @notice Reads the holdings of a given account, for a limited range of assets, with quote currency conversion.
+    /// @dev Range is expressed in terms of the current asset enumeration (from `assets()`).
+    ///      Implementation is oracle‑centric: iterate over all oracles, aggregate positions, then filter by asset range.
+    function _readPositionsRangeWithQuote(address account, uint256 from, uint256 to, address quoteAsset)
         internal
         view
-        returns (int256 usd, address[] memory stalePriceAssets, bool sequencerDown)
+        returns (int256 totalValue, INAVCalculator.Asset[] memory stalePriceAssets, bool sequencerDown)
     {
-        uint256 totalAssets = _assetDecimals.length();
+        uint256 totalAssets = getAssetCount();
         if (from > to) {
             revert InvalidArgumentsWithContext("from > to");
         }
@@ -424,43 +292,492 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Check sequencer status once (global issue, affects all assets)
         sequencerDown = _isSequencerDown();
 
-        // Allocate array the size of the range (max possible stale assets)
+        // Build the slice of assets that this range refers to
+        address[] memory allAssets = getAssets();
         uint256 rangeSize = to - from + 1;
-        address[] memory staleAssetsTemp = new address[](rangeSize);
-        uint256 staleCount = 0;
+        address[] memory rangeAssets = new address[](rangeSize);
+        for (uint256 i = 0; i < rangeSize; i++) {
+            rangeAssets[i] = allAssets[from + i];
+        }
 
-        // Single pass: collect stale assets and calculate USD
-        for (uint256 i = from; i <= to; i++) {
-            (address assetAddr,) = _assetDecimals.at(i);
+        // Get all registered oracles from global registry
+        address[] memory allOracles = getAllOracles();
+        uint256 totalOracles = allOracles.length;
 
-            _requirePriceOracleExists(assetAddr);
+        // First pass: collect all positions from all oracles, then filter to the rangeAssets set
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles * rangeSize); // upper bound estimate
+        uint256 positionCount = 0;
 
-            // fetches the current price for this asset
-            (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(assetAddr);
+        for (uint256 i = 0; i < totalOracles; i++) {
+            address oracle = allOracles[i];
 
-            if (stale) {
-                staleAssetsTemp[staleCount] = assetAddr;
-                staleCount++;
+            // Skip oracles that don't implement IBalanceOracleAdapter
+            // ERC20 tokens added as balance oracles don't implement this interface
+            // They are handled by ERC20DefaultOracle instead
+            // Use try-catch since some contracts don't implement IERC165 and will revert
+            bool supportsAdapter;
+            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
+                supportsAdapter = result;
+            } catch {
+                supportsAdapter = false;
+            }
+            if (!supportsAdapter) {
+                continue;
             }
 
-            // for each asset, iterate over its known balance oracles
-            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
-            for (uint256 balanceIdx = 0; balanceIdx < balanceOracleCount; ++balanceIdx) {
-                usd += _calculatePositionUsdValue(account, assetAddr, balanceIdx, usdRate, usdRateDecimals);
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
+
+            // assetFilter = address(0) → oracle returns all assets it knows for this account
+            INAVCalculator.Position[] memory oraclePositions = adapter.getOraclePositions(account, address(0));
+
+            for (uint256 j = 0; j < oraclePositions.length; j++) {
+                address assetAddr = oraclePositions[j].underlyingAsset.asset;
+
+                // Skip unregistered assets
+                if (!isAssetRegistered(assetAddr)) {
+                    continue;
+                }
+
+                // Keep only assets inside [from, to] range
+                bool inRange = false;
+                for (uint256 k = 0; k < rangeSize; k++) {
+                    if (rangeAssets[k] == assetAddr) {
+                        inRange = true;
+                        break;
+                    }
+                }
+                if (!inRange) {
+                    continue;
+                }
+
+                tempPositions[positionCount] = oraclePositions[j];
+                positionCount++;
             }
         }
 
-        // Create final array of exact size (optimize when empty)
-        if (staleCount == 0) {
-            stalePriceAssets = new address[](0);
-        } else {
-            stalePriceAssets = new address[](staleCount);
-            for (uint256 i = 0; i < staleCount; i++) {
-                stalePriceAssets[i] = staleAssetsTemp[i];
+        // If no positions in this range, return early
+        if (positionCount == 0) {
+            totalValue = 0;
+            stalePriceAssets = new INAVCalculator.Asset[](0);
+            return (totalValue, stalePriceAssets, sequencerDown);
+        }
+
+        // Resize to actual count
+        INAVCalculator.Position[] memory positionsInRange = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positionsInRange[i] = tempPositions[i];
+        }
+
+        // Collect unique assets from positions for price lookups
+        address[] memory assetsWithPositions = _extractUniqueAssets(positionsInRange);
+
+        // Fetch prices for each asset once, track staleness
+        PriceFeedCache[] memory priceFeeds = new PriceFeedCache[](assetsWithPositions.length);
+        for (uint256 i = 0; i < assetsWithPositions.length; i++) {
+            address asset = assetsWithPositions[i];
+            (uint256 price, uint8 priceDecimals, bool stale) = _latestPrice(asset);
+            priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: priceDecimals, stale: stale});
+        }
+
+        // Build stalePriceAssets (deduplicated)
+        uint256 staleCount = 0;
+        address[] memory staleAssetAddrs = new address[](assetsWithPositions.length);
+        for (uint256 i = 0; i < priceFeeds.length; i++) {
+            if (!priceFeeds[i].stale) continue;
+
+            // Deduplicate
+            bool alreadyAdded = false;
+            for (uint256 j = 0; j < staleCount; j++) {
+                if (staleAssetAddrs[j] == priceFeeds[i].asset) {
+                    alreadyAdded = true;
+                    break;
+                }
             }
+            if (!alreadyAdded) {
+                staleAssetAddrs[staleCount] = priceFeeds[i].asset;
+                staleCount++;
+            }
+        }
+
+        stalePriceAssets = new INAVCalculator.Asset[](staleCount);
+        for (uint256 i = 0; i < staleCount; i++) {
+            uint8 decimals = _getAssetDecimals(staleAssetAddrs[i]);
+            stalePriceAssets[i] = INAVCalculator.Asset({
+                asset: staleAssetAddrs[i],
+                symbol: "", // Symbol resolution kept simple here
+                decimals: decimals
+            });
+        }
+
+        // Get quote currency price info if not USD
+        uint256 quoteCurrencyPrice = 0;
+        uint8 quoteCurrencyPriceDecimals = 0;
+        uint8 quoteCurrencyDecimals = 0;
+        if (quoteAsset != address(0)) {
+            _requirePriceFeedConfig(quoteAsset);
+            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+        } else {
+            quoteCurrencyDecimals = NAV_DECIMALS;
+        }
+
+        // Sum USD value of all positions in range
+        int256 totalUsd = 0;
+        for (uint256 i = 0; i < positionsInRange.length; i++) {
+            INAVCalculator.Position memory pos = positionsInRange[i];
+            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, pos.underlyingAsset.asset);
+
+            int256 usdValue = _toUsd(pos.balance, pos.underlyingAsset.decimals, feed.price, feed.decimals);
+            totalUsd += usdValue;
+        }
+
+        // Convert USD total to quote currency if needed
+        if (quoteAsset != address(0)) {
+            totalValue = _fromUsd(totalUsd, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+        } else {
+            totalValue = totalUsd;
         }
     }
 
+    /// @inheritdoc INAVCalculator
+    function getAccountNavForRange(address account, uint256 from, uint256 to, address baseAsset)
+        external
+        view
+        returns (INAVCalculator.NAV memory nav)
+    {
+        // Validate quoteAsset has PriceFeedConfig (early validation)
+        // Skip validation for address(0) which represents USD (no price feed needed)
+        if (baseAsset != address(0)) {
+            _requirePriceFeedConfig(baseAsset);
+        }
+
+        nav.timestamp = uint64(block.timestamp);
+
+        // Build quoteAsset
+        INAVCalculator.Asset memory quoteAsset;
+        if (baseAsset != address(0)) {
+            uint8 quoteDecimals = _getAssetDecimals(baseAsset);
+            string memory quoteSymbol;
+            if (baseAsset == NATIVE_ADDRESS) {
+                quoteSymbol = _nativeTokenSymbol;
+            } else {
+                try IERC20Metadata(baseAsset).symbol() returns (string memory symbol_) {
+                    quoteSymbol = symbol_;
+                } catch {
+                    quoteSymbol = "";
+                }
+            }
+            quoteAsset = INAVCalculator.Asset({asset: baseAsset, symbol: quoteSymbol, decimals: quoteDecimals});
+        } else {
+            quoteAsset = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
+        }
+        nav.quoteAsset = quoteAsset;
+
+        (int256 totalValue, INAVCalculator.Asset[] memory staleAssets, bool sequencerDown) =
+            _readPositionsRangeWithQuote(account, from, to, baseAsset);
+        nav.value = totalValue;
+        nav.issues = INAVCalculator.HealthCheck({stalePriceAssets: staleAssets, sequencerDown: sequencerDown});
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositions(address account, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        // Validate quoteAsset has PriceFeedConfig (early validation)
+        // Skip validation for address(0) which represents USD (no price feed needed)
+        if (quoteAsset != address(0)) {
+            _requirePriceFeedConfig(quoteAsset);
+        }
+
+        // Get all registered oracles from global registry
+        address[] memory allOracles = getAllOracles();
+        uint256 totalOracles = allOracles.length;
+
+        // Pre-allocate arrays for positions (estimate based on oracle count)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles * 10); // Estimate
+        uint256 positionCount = 0;
+
+        // Loop through all oracles (oracle-centric aggregation)
+        for (uint256 i = 0; i < totalOracles; i++) {
+            address oracle = allOracles[i];
+
+            // Skip oracles that don't implement IBalanceOracleAdapter
+            // ERC20 tokens added as balance oracles don't implement this interface
+            // They are handled by ERC20DefaultOracle instead
+            if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
+                continue;
+            }
+
+            // Call getOraclePositions() on each oracle adapter
+            // Each oracle returns all positions it knows about for this account
+            // assetFilter = address(0) means "return all assets"
+            IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
+            INAVCalculator.Position[] memory oraclePositions = oracleAdapter.getOraclePositions(account, address(0));
+
+            // Filter positions: only include those with registered assets
+            for (uint256 j = 0; j < oraclePositions.length; j++) {
+                address asset = oraclePositions[j].underlyingAsset.asset;
+
+                // Skip positions for unregistered assets
+                if (!isAssetRegistered(asset)) {
+                    continue;
+                }
+
+                // Copy position to temp array
+                tempPositions[positionCount] = oraclePositions[j];
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        INAVCalculator.Position[] memory allPositions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            allPositions[i] = tempPositions[i];
+        }
+
+        // Collect unique assets from all positions for price fetching
+        address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
+
+        // Fetch prices once per asset (optimized) - store in struct array
+        // Note: All assets here are registered (filtered earlier), so if they don't have price feeds, _latestPrice will revert
+        PriceFeedCache[] memory priceFeeds = new PriceFeedCache[](assetsWithPositions.length);
+        for (uint256 i = 0; i < assetsWithPositions.length; i++) {
+            address asset = assetsWithPositions[i];
+            (uint256 price, uint8 priceDecimals, bool stale) = _latestPrice(asset);
+            priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: priceDecimals, stale: stale});
+        }
+
+        // Get quote currency info
+        // Note: Quote asset price is fetched separately as it may not be in the positions
+        uint256 quoteCurrencyPrice = 0;
+        uint8 quoteCurrencyPriceDecimals = 0;
+        uint8 quoteCurrencyDecimals = 0;
+        string memory quoteCurrencySymbol = "";
+
+        if (quoteAsset != address(0)) {
+            // Quote asset price feed is validated earlier, so we can safely fetch it
+            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+            if (quoteAsset == NATIVE_ADDRESS) {
+                quoteCurrencySymbol = _nativeTokenSymbol;
+            } else {
+                try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
+                    quoteCurrencySymbol = symbol_;
+                } catch {
+                    quoteCurrencySymbol = "";
+                }
+            }
+        } else {
+            quoteCurrencyDecimals = NAV_DECIMALS;
+            quoteCurrencySymbol = "USD";
+        }
+
+        INAVCalculator.Asset memory quoteAssetStruct =
+            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
+
+        // Attach pricing to positions and calculate values
+        // Note: All positions here are for registered assets (filtered earlier at line 516)
+        // If a registered asset doesn't have a price feed, _latestPrice will revert above
+        for (uint256 i = 0; i < allPositions.length; i++) {
+            address asset = allPositions[i].underlyingAsset.asset;
+            PriceFeedCache memory priceFeed = _findPriceFeed(priceFeeds, asset);
+
+            // Update position with pricing
+            allPositions[i].price = priceFeed.price;
+            allPositions[i].priceDecimals = priceFeed.decimals;
+            allPositions[i].stale = priceFeed.stale;
+            allPositions[i].quoteAsset = quoteAssetStruct;
+
+            // Calculate value: Convert balance (in underlying asset) to value (in quote asset)
+            int256 usdValue = _toUsd(
+                allPositions[i].balance, allPositions[i].underlyingAsset.decimals, priceFeed.price, priceFeed.decimals
+            );
+
+            if (quoteAsset == address(0)) {
+                // USD quote: direct conversion
+                allPositions[i].value = usdValue;
+            } else {
+                // Non-USD quote: convert via USD
+                allPositions[i].value =
+                    _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+            }
+        }
+
+        return allPositions;
+    }
+
+    /// @notice Helper struct for price feed caching
+    struct PriceFeedCache {
+        address asset;
+        uint256 price;
+        uint8 decimals;
+        bool stale;
+    }
+
+    /// @notice Finds price feed for an asset in the cache array
+    /// @param priceFeeds Array of cached price feeds
+    /// @param asset The asset to find
+    /// @return priceFeed The cached price feed for the asset
+    function _findPriceFeed(PriceFeedCache[] memory priceFeeds, address asset)
+        internal
+        pure
+        returns (PriceFeedCache memory priceFeed)
+    {
+        for (uint256 i = 0; i < priceFeeds.length; i++) {
+            if (priceFeeds[i].asset == asset) {
+                return priceFeeds[i];
+            }
+        }
+        // Should not happen if assetsWithPositions was built correctly
+        revert AssetNotFound();
+    }
+
+    /// @notice Extracts unique assets from positions array
+    /// @param positions Array of positions
+    /// @return uniqueAssets Array of unique asset addresses
+    function _extractUniqueAssets(INAVCalculator.Position[] memory positions)
+        internal
+        pure
+        returns (address[] memory uniqueAssets)
+    {
+        // Use a simple approach: collect all assets, then deduplicate
+        // For gas efficiency, we could use a mapping, but that's not possible in memory
+        address[] memory tempAssets = new address[](positions.length);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < positions.length; i++) {
+            address asset = positions[i].underlyingAsset.asset;
+            bool found = false;
+
+            // Check if already in temp array
+            for (uint256 j = 0; j < count; j++) {
+                if (tempAssets[j] == asset) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                tempAssets[count] = asset;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        uniqueAssets = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uniqueAssets[i] = tempAssets[i];
+        }
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositionsForAsset(address account, address asset, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        // Validate quoteAsset has PriceFeedConfig (early validation)
+        // Skip validation for address(0) which represents USD (no price feed needed)
+        if (quoteAsset != address(0)) {
+            _requirePriceFeedConfig(quoteAsset);
+        }
+
+        // Validate asset is registered
+        _requireAssetExists(asset);
+
+        // Get all registered oracles from global registry
+        address[] memory allOracles = getAllOracles();
+        uint256 totalOracles = allOracles.length;
+
+        // Pre-allocate array for positions
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles);
+        uint256 positionCount = 0;
+
+        // Loop through all oracles (oracle-centric aggregation)
+        for (uint256 i = 0; i < totalOracles; i++) {
+            address oracle = allOracles[i];
+
+            // Skip oracles that don't implement IBalanceOracleAdapter
+            // ERC20 tokens added as balance oracles don't implement this interface
+            // They are handled by ERC20DefaultOracle instead
+            if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
+                continue;
+            }
+
+            // Call getOraclePositions with asset filter
+            IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
+            INAVCalculator.Position[] memory oraclePositions = oracleAdapter.getOraclePositions(account, asset);
+
+            // Copy positions to temp array (all should be for the requested asset)
+            for (uint256 j = 0; j < oraclePositions.length; j++) {
+                // Double-check asset matches (safety check)
+                if (oraclePositions[j].underlyingAsset.asset == asset) {
+                    tempPositions[positionCount] = oraclePositions[j];
+                    positionCount++;
+                }
+            }
+        }
+
+        // Resize to actual count
+        INAVCalculator.Position[] memory assetPositions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            assetPositions[i] = tempPositions[i];
+        }
+
+        // Fetch price for this asset (optimized - single fetch)
+        (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(asset);
+
+        // Get quote currency price if needed
+        uint256 quoteCurrencyPrice = 0;
+        uint8 quoteCurrencyPriceDecimals = 0;
+        uint8 quoteCurrencyDecimals = 0;
+        string memory quoteCurrencySymbol = "";
+
+        if (quoteAsset != address(0)) {
+            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+            if (quoteAsset == NATIVE_ADDRESS) {
+                quoteCurrencySymbol = _nativeTokenSymbol;
+            } else {
+                try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
+                    quoteCurrencySymbol = symbol_;
+                } catch {
+                    quoteCurrencySymbol = "";
+                }
+            }
+        } else {
+            quoteCurrencyDecimals = NAV_DECIMALS;
+            quoteCurrencySymbol = "USD";
+        }
+
+        INAVCalculator.Asset memory quoteAssetStruct =
+            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
+
+        // Attach pricing to positions and calculate values
+        for (uint256 i = 0; i < assetPositions.length; i++) {
+            assetPositions[i].price = usdRate;
+            // casting to 'uint8' is safe because price decimals are always in range 0-255
+            // forge-lint: disable-next-line(unsafe-typecast)
+            assetPositions[i].priceDecimals = uint8(usdRateDecimals);
+            assetPositions[i].stale = stale;
+            assetPositions[i].quoteAsset = quoteAssetStruct;
+
+            // Calculate value
+            int256 usdValue =
+                _toUsd(assetPositions[i].balance, assetPositions[i].underlyingAsset.decimals, usdRate, usdRateDecimals);
+
+            if (quoteAsset == address(0)) {
+                assetPositions[i].value = usdValue;
+            } else {
+                assetPositions[i].value =
+                    _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+            }
+        }
+
+        return assetPositions;
+    }
 
     /// @inheritdoc INAVCalculator
     function usdDecimals() external pure returns (uint8) {
@@ -469,47 +786,52 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory a) {
-        (address asset, uint256 decimals) = _assetDecimals.at(idx);
-        a.addr = asset;
-        a.decimals = uint8(decimals);
+        address[] memory allAssets = getAssets();
+        if (idx >= allAssets.length) {
+            revert AssetNotFound();
+        }
+        address asset = allAssets[idx];
+        a.asset = asset;
+        a.decimals = getAssetDecimals(asset);
+        // Get symbol from registry
+        a.symbol = getAssetSymbol(asset);
     }
 
     /// @inheritdoc INAVCalculator
     function assets() external view returns (address[] memory) {
-        return _assetDecimals.keys();
+        return getAssets();
     }
 
     /// @inheritdoc INAVCalculator
-    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceData memory priceData) {
+    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceFeed memory priceFeed) {
         _requireAssetExists(underlyingAsset);
 
-        PriceOracle storage oracle = priceOracles[underlyingAsset];
-        _requirePriceOracleExists(underlyingAsset);
+        IPrices.PriceFeedConfig storage oracle = priceOracles[underlyingAsset];
+        _requirePriceFeedExists(underlyingAsset);
 
         (uint256 price, uint8 decimals, bool stale) = _latestPrice(underlyingAsset);
 
-        priceData.oracle = oracle.oracle;
-        priceData.priceType = oracle.priceType;
-        priceData.price = price;
-        priceData.decimals = decimals;
-        priceData.chainlinkHeartbeat = oracle.chainlinkHeartbeat;
-        priceData.stale = stale;
+        priceFeed.oracle = oracle.oracle;
+        priceFeed.priceType = oracle.priceType;
+        priceFeed.price = price;
+        priceFeed.decimals = decimals;
+        priceFeed.chainlinkHeartbeat = oracle.chainlinkHeartbeat;
+        priceFeed.stale = stale;
 
         // Get Chainlink-specific data
         if (oracle.priceType == IPrices.PriceType.Chainlink) {
             AggregatorV3Interface chainlinkOracle = AggregatorV3Interface(oracle.oracle);
             (,,, uint256 roundUpdatedAt,) = chainlinkOracle.latestRoundData();
-            priceData.updatedAt = roundUpdatedAt;
+            priceFeed.updatedAt = roundUpdatedAt;
         }
 
         // Check L2 sequencer uptime (conditional on L2)
-        priceData.sequencerDown = _isSequencerDown();
+        priceFeed.sequencerDown = _isSequencerDown();
     }
-
 
     /// @inheritdoc INAVCalculator
     function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets) {
-        uint256 totalAssets = _assetDecimals.length();
+        uint256 totalAssets = getAssetCount();
 
         // Check sequencer status once
         sequencerDown = _isSequencerDown();
@@ -519,13 +841,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             return (sequencerDown, stalePriceAssets);
         }
 
+        address[] memory allAssets = getAssets();
         address[] memory staleAssetsTemp = new address[](totalAssets);
         uint256 staleCount = 0;
 
         for (uint256 i = 0; i < totalAssets; i++) {
-            (address assetAddr,) = _assetDecimals.at(i);
+            address assetAddr = allAssets[i];
 
-            _requirePriceOracleExists(assetAddr);
+            _requirePriceFeedExists(assetAddr);
 
             (,, bool stale) = _latestPrice(assetAddr);
             if (stale) {
@@ -546,14 +869,37 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     function hasPositions(address account) external view override returns (bool has) {
-        uint256 totalAssets = _assetDecimals.length();
-        if (totalAssets == 0) return false;
+        address[] memory allOracles = getAllOracles();
+        uint256 totalOracles = allOracles.length;
+        // Oracle‑centric scan: any non‑zero balance from any oracle on a registered asset counts as "has positions"
+        for (uint256 i = 0; i < totalOracles; i++) {
+            address oracle = allOracles[i];
 
-        for (uint256 i = 0; i < totalAssets; i++) {
-            (address assetAddr,) = _assetDecimals.at(i);
-            uint256 countOracles = balanceOracleCountFor(assetAddr);
-            for (uint256 j = 0; j < countOracles; j++) {
-                if (balanceOf(assetAddr, j, account) != 0) {
+            // Skip oracles that don't implement IBalanceOracleAdapter
+            // ERC20 tokens added as balance oracles don't implement this interface
+            // They are handled by ERC20DefaultOracle instead
+            // Use try-catch since some contracts don't implement IERC165 and will revert
+            bool supportsAdapter;
+            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
+                supportsAdapter = result;
+            } catch {
+                supportsAdapter = false;
+            }
+            if (!supportsAdapter) {
+                continue;
+            }
+
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
+
+            (address[] memory assetsList, int256[] memory amounts) = adapter.getOracleBalance(account, address(0));
+
+            for (uint256 j = 0; j < assetsList.length; j++) {
+                // Skip unregistered assets
+                if (!isAssetRegistered(assetsList[j])) {
+                    continue;
+                }
+
+                if (amounts[j] != 0) {
                     return true;
                 }
             }
@@ -566,41 +912,77 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @param account The address of the account to check
     /// @return assetsWithPositions Array of asset addresses that have at least one non-zero balance
     function _getAssetsWithPositions(address account) internal view returns (address[] memory assetsWithPositions) {
-        uint256 totalAssets = _assetDecimals.length();
+        uint256 totalAssets = getAssetCount();
         if (totalAssets == 0) {
             return new address[](0);
         }
 
-        // Temporary array to collect assets with positions
+        address[] memory allOracles = getAllOracles();
+        uint256 totalOracles = allOracles.length;
+        if (totalOracles == 0) {
+            return new address[](0);
+        }
+
+        // Temporary array to collect unique assets with positions.
+        // Upper bound for distinct registered assets with positions is totalAssets.
         address[] memory tempAssets = new address[](totalAssets);
         uint256 assetCount = 0;
 
-        for (uint256 i = 0; i < totalAssets; i++) {
-            (address assetAddr,) = _assetDecimals.at(i);
+        for (uint256 i = 0; i < totalOracles; i++) {
+            address oracle = allOracles[i];
 
-            // Skip assets without price oracles (needed for processing)
-            if (priceOracles[assetAddr].oracle == address(0)) {
+            // Skip oracles that don't implement IBalanceOracleAdapter
+            // ERC20 tokens added as balance oracles don't implement this interface
+            // They are handled by ERC20DefaultOracle instead
+            // Use try-catch since some contracts don't implement IERC165 and will revert
+            bool supportsAdapter;
+            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
+                supportsAdapter = result;
+            } catch {
+                supportsAdapter = false;
+            }
+            if (!supportsAdapter) {
                 continue;
             }
 
-            // Check if asset has any non-zero balance
-            uint256 balanceOracleCount = balanceOracleCountFor(assetAddr);
-            bool hasNonZeroBalance = false;
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
 
-            for (uint256 j = 0; j < balanceOracleCount; j++) {
-                if (balanceOf(assetAddr, j, account) != 0) {
-                    hasNonZeroBalance = true;
-                    break; // Early exit once we find a non-zero balance
+            (address[] memory assetsList, int256[] memory amounts) = adapter.getOracleBalance(account, address(0));
+
+            for (uint256 j = 0; j < assetsList.length; j++) {
+                address assetAddr = assetsList[j];
+
+                // Skip unregistered assets
+                if (!isAssetRegistered(assetAddr)) {
+                    continue;
                 }
-            }
 
-            if (hasNonZeroBalance) {
-                tempAssets[assetCount] = assetAddr;
-                assetCount++;
+                // Skip zero balances
+                if (amounts[j] == 0) {
+                    continue;
+                }
+
+                // Deduplicate: only add asset once
+                bool alreadyAdded = false;
+                for (uint256 k = 0; k < assetCount; k++) {
+                    if (tempAssets[k] == assetAddr) {
+                        alreadyAdded = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyAdded) {
+                    tempAssets[assetCount] = assetAddr;
+                    assetCount++;
+
+                    // If we've reached the maximum possible distinct assets, we can stop early
+                    if (assetCount == totalAssets) {
+                        break;
+                    }
+                }
             }
         }
 
-        // Compact array to exact size
         if (assetCount == 0) {
             return new address[](0);
         }
@@ -617,11 +999,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function calculateValue(
-        address[] memory assets,
-        int256[] memory balances,
-        address quoteCurrency
-    ) external view returns (int256 value) {
+    function calculateValue(address[] memory assets, int256[] memory balances, address quoteCurrency)
+        external
+        view
+        returns (int256 value)
+    {
         if (assets.length != balances.length) {
             revert InvalidArgumentsWithContext("assets.length != balances.length");
         }
@@ -633,7 +1015,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         if (quoteCurrency != address(0)) {
             _requireAssetExists(quoteCurrency);
-            _requirePriceOracleExists(quoteCurrency);
+            _requirePriceFeedExists(quoteCurrency);
             (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteCurrency);
             quoteCurrencyDecimals = _getAssetDecimals(quoteCurrency);
         } else {
@@ -654,7 +1036,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
             // Validate asset exists and has price oracle
             _requireAssetExists(asset);
-            _requirePriceOracleExists(asset);
+            _requirePriceFeedExists(asset);
 
             // Get asset decimals
             uint8 assetDecimals = _getAssetDecimals(asset);
@@ -678,7 +1060,6 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
     }
 
-
     //
     // UUPSUpgradeable
     //
@@ -701,28 +1082,25 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @notice Validates that an asset exists, reverts if not
     /// @param underlyingAsset The asset to validate
     function _requireAssetExists(address underlyingAsset) internal view {
-        if (!_assetDecimals.contains(underlyingAsset)) {
+        if (!isAssetRegistered(underlyingAsset)) {
             revert AssetNotFound();
         }
     }
 
-    /// @notice Validates that a price oracle exists for an asset, reverts if not
+    /// @notice Validates that a price feed exists for an asset, reverts if not
     /// @param underlyingAsset The asset to validate
-    function _requirePriceOracleExists(address underlyingAsset) internal view {
+    function _requirePriceFeedExists(address underlyingAsset) internal view {
         if (priceOracles[underlyingAsset].oracle == address(0)) {
-            revert PriceOracleNotSet();
+            revert PriceFeedNotSet(underlyingAsset);
         }
     }
 
-    /// @notice Gets asset decimals, reverts if asset doesn't exist
-    /// @param underlyingAsset The asset address
-    /// @return decimals The number of decimals for the asset
-    function _getAssetDecimals(address underlyingAsset) internal view returns (uint8) {
-        (bool contains, uint256 decimals) = _assetDecimals.tryGet(underlyingAsset);
-        if (!contains) {
-            revert AssetNotFound();
+    /// @notice Validates that a price feed is configured for an asset (quoteAsset validation)
+    /// @param quoteAsset The quote asset to validate
+    function _requirePriceFeedConfig(address quoteAsset) internal view {
+        if (priceOracles[quoteAsset].oracle == address(0)) {
+            revert PriceFeedNotSet(quoteAsset);
         }
-        return uint8(decimals);
     }
 
     /// @notice Checks if the L2 sequencer is down
@@ -736,26 +1114,6 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             return checkL2SequencerUptime();
         }
         return false;
-    }
-
-
-    /// @notice Calculates the USD value of a given position
-    /// @param account The address of the account
-    /// @param underlyingAsset The address of the asset
-    /// @param idxBalanceOracle The index of the balance oracle
-    /// @param usdRate The USD rate of the asset
-    /// @param usdRateDecimals The number of decimals of the USD rate
-    /// @return usd The computed USD value of the position
-    function _calculatePositionUsdValue(
-        address account,
-        address underlyingAsset,
-        uint256 idxBalanceOracle,
-        uint256 usdRate,
-        uint256 usdRateDecimals
-    ) internal view returns (int256 usd) {
-        uint8 decimals = _getAssetDecimals(underlyingAsset);
-        int256 balance = balanceOf(underlyingAsset, idxBalanceOracle, account);
-        return _toUsd(balance, decimals, usdRate, usdRateDecimals);
     }
 
     /// @notice Converts an asset's balance to USD
@@ -782,6 +1140,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             revert InvalidArgumentsWithContext("denominator > MAX_DECIMAL_EXPONENT");
         }
 
+        // casting to 'int256' is safe because usdRate is uint256 and the result fits in int256 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         usd = (balance * int256(usdRate)) / int256(10 ** denominator);
     }
 
@@ -811,9 +1171,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         // Calculate numerator: usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)
+        // casting to 'int256' is safe because 10^totalDecimals fits in int256 range (totalDecimals <= 255)
+        // forge-lint: disable-next-line(unsafe-typecast)
         int256 numerator = usdValue * int256(10 ** totalDecimals);
 
         // Calculate denominator: baseAssetPrice * 10^NAV_DECIMALS
+        // casting to 'int256' is safe because baseAssetPrice and 10^NAV_DECIMALS fit in int256 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         int256 denominator = int256(baseAssetPrice) * int256(10 ** NAV_DECIMALS);
 
         baseAssetValue = numerator / denominator;

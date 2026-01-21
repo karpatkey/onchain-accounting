@@ -1,24 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {Test, console2} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {StakeWiseV3VaultBalanceOracle, IStakeWiseVault} from "src/balances/protocols/StakeWiseV3Vault.sol";
-import "src/errors.sol";
+import {InvalidArguments} from "src/errors.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract StakewiseVaultTest is TestEnvConfigurator {
-    address public GNO = address(0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb);
-    address public osGNO = address(0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0);
-    address public vault = address(0x4b4406Ed8659D03423490D8b62a1639206dA0A7a);
-    IBalanceOracleCustom.PositionMetadata positionMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Stakewise v3", position: "Some vault", positionType: "Staked"
-    });
+    address public gno = address(0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb);
+    address public osGno = address(0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0);
+    address public stakeWiseVault = address(0x4b4406Ed8659D03423490D8b62a1639206dA0A7a);
 
     StakeWiseV3VaultBalanceOracle public oracle;
     IEthGenesisVault public vaultContract;
+    MockBalances mockBalances;
 
     address constant TEST_USER = 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f;
     address constant TEST_USER2 = 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669;
@@ -26,53 +23,62 @@ contract StakewiseVaultTest is TestEnvConfigurator {
     //
     // Tests
     //
+    function setUp() public {
+        mockBalances = new MockBalances();
+    }
+
     function test_constructor_reverts_on_zero_address() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3VaultBalanceOracle(address(0), address(0), positionMetadata);
+        new StakeWiseV3VaultBalanceOracle(address(0), address(0), "Stakewise v3", "Some vault", address(mockBalances));
     }
 
     function test_balanceOf_reverts_on_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
 
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
         vm.expectRevert(InvalidArguments.selector);
         oracle.balanceOf(invalidToken, 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
     }
 
     function test_underlyingAssetsSupported() public {
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 1);
-        assertEq(assets[0], GNO);
+        assertEq(assets[0], gno);
     }
 
     function test_gnosis_osGNO_TEST_USER1() public {
         vm.createSelectFork(getAlchemyUrl("gnosis-mainnet"), 38_449_644);
 
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
-        vaultContract = IEthGenesisVault(vault);
-        int256 balance = oracle.balanceOf(GNO, 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
+        vaultContract = IEthGenesisVault(stakeWiseVault);
+        int256 balance = oracle.balanceOf(gno, 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
         assertEq(balance, 5_843_147_630_175_728_415_438);
     }
 
     function test_gnosis_osGNO_TEST_USER2() public {
         vm.createSelectFork(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
-        vaultContract = IEthGenesisVault(vault);
-        int256 balance = oracle.balanceOf(GNO, 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
+        vaultContract = IEthGenesisVault(stakeWiseVault);
+        int256 balance = oracle.balanceOf(gno, 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669);
         assertEq(balance, 1_294_742_347_492_745_268_851);
     }
 
     function test_gnosis_staked() public {
         uint256 fork = vm.createSelectFork(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
-        vaultContract = IEthGenesisVault(vault);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
+        vaultContract = IEthGenesisVault(stakeWiseVault);
 
-        int256 balance = oracle.balanceOf(GNO, TEST_USER2);
+        int256 balance = oracle.balanceOf(gno, TEST_USER2);
 
-        uint256 balanceBefore = IERC20(GNO).balanceOf(TEST_USER2);
+        uint256 balanceBefore = IERC20(gno).balanceOf(TEST_USER2);
 
         vm.startPrank(TEST_USER2);
         uint256 shares = vaultContract.getShares(TEST_USER2);
@@ -87,18 +93,19 @@ contract StakewiseVaultTest is TestEnvConfigurator {
         // After entering exit queue, the balance should be 0 (shares are in exit queue)
         // Note: We can't test claimExitedAssets in a fork because it requires actual
         // validator exits from the beacon chain, which can't be simulated
-        balance = oracle.balanceOf(GNO, TEST_USER2);
+        balance = oracle.balanceOf(gno, TEST_USER2);
         assertEq(balance, 0, "Balance should be 0 after entering exit queue");
     }
 
     function test_gnosis_osGNO_stake_and_osToken() public {
         uint256 fork = vm.createSelectFork(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
-        vaultContract = IEthGenesisVault(vault);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
+        vaultContract = IEthGenesisVault(stakeWiseVault);
 
-        int256 initialBalance = oracle.balanceOf(GNO, TEST_USER);
-        uint256 gnoBalanceBefore = IERC20(GNO).balanceOf(TEST_USER);
+        int256 initialBalance = oracle.balanceOf(gno, TEST_USER);
+        uint256 gnoBalanceBefore = IERC20(gno).balanceOf(TEST_USER);
         uint256 osTokenShares = vaultContract.osTokenPositions(TEST_USER);
         uint256 osTokenGnoValue = vaultContract.convertToAssets(osTokenShares);
 
@@ -108,11 +115,11 @@ contract StakewiseVaultTest is TestEnvConfigurator {
         // Need to burn osTokens first to maintain LTV ratio
         if (osTokenShares > 0) {
             // Deal exact amount of osGNO tokens to test user so he can burn its whole position
-            deal(osGNO, TEST_USER, osTokenShares);
+            deal(osGno, TEST_USER, osTokenShares);
             vaultContract.burnOsToken(uint128(osTokenShares));
         }
 
-        int256 afterBurnBalance = oracle.balanceOf(GNO, TEST_USER);
+        int256 afterBurnBalance = oracle.balanceOf(gno, TEST_USER);
         // After burning osTokens, balance should increase by the osToken value
         assertEq(initialBalance, afterBurnBalance - int256(osTokenGnoValue));
 
@@ -125,16 +132,17 @@ contract StakewiseVaultTest is TestEnvConfigurator {
         // After entering exit queue, balance should be 0
         // Note: We can't test claimExitedAssets in a fork because it requires actual
         // validator exits from the beacon chain, which can't be simulated
-        int256 currentBalance = oracle.balanceOf(GNO, TEST_USER);
+        int256 currentBalance = oracle.balanceOf(gno, TEST_USER);
         assertEq(currentBalance, 0, "Balance should be 0 after entering exit queue");
     }
 
     function test_gnosis_osGNO_holds_osToken_butDidNotLendTheTokens() public {
         vm.createSelectFork(getAlchemyUrl("gnosis-mainnet"), 38_916_922);
-        oracle = new StakeWiseV3VaultBalanceOracle(GNO, vault, positionMetadata);
-        int256 balance = oracle.balanceOf(GNO, 0x564E604edA8c878021126C06084a4dA4E1A960Cb);
+        oracle =
+            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(mockBalances));
+        int256 balance = oracle.balanceOf(gno, 0x564E604edA8c878021126C06084a4dA4E1A960Cb);
 
-        uint256 balanceOsGNO = IERC20(osGNO).balanceOf(0x564E604edA8c878021126C06084a4dA4E1A960Cb);
+        uint256 balanceOsGNO = IERC20(osGno).balanceOf(0x564E604edA8c878021126C06084a4dA4E1A960Cb);
 
         assertEq(balance, 0);
         assertEq(balanceOsGNO, 392_839_159_609_003_939_803);

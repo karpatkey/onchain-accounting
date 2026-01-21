@@ -16,9 +16,123 @@ This document details all changes in the refactor to simplify the balance oracle
 
 ## Proposed Architectural Changes
 
+### Oracle Architecture Redesign: Default Oracle and Global Registry
+
+#### Core Principle: Oracles Independent of Assets
+
+**Key Architectural Shift**: Oracles are no longer tied to specific assets. Instead, oracles are added globally to the system, and they independently report positions for any assets they support. Only positions built by oracles link to specific assets.
+
+**Benefits**:
+- **No per-asset oracle configuration**: ERC20 and Native balances are handled automatically by a default oracle
+- **Protocol oracles fetch multiple assets at once**: Aave, Aura, Balancer oracles can return all positions in a single call
+- **Reduced external calls**: One oracle call can return positions for multiple assets
+- **Standardized interface**: All oracles (default and custom) use the same adapter interface
+- **Simplified management**: Add protocol oracles once, not per-asset
+
+#### Oracle Types: Default vs Custom
+
+**OracleType Enum** (simplified):
+```solidity
+enum OracleType {
+    Default,  // ERC20Default oracle - handles all registered ERC20 and Native balances
+    Custom    // Protocol-specific oracles (Aave, Aura, Balancer, etc.)
+}
+```
+
+**Default Oracle (ERC20Default)**:
+- **Automatically included**: No need to explicitly add ERC20 or Native oracles per asset
+- **Uses asset registry**: Reads the canonical asset list from `Balances` contract
+- **Fetches all balances at once**: For each registered asset:
+  - If `asset == NATIVE_ADDRESS` → returns `account.balance`
+  - Otherwise → returns `IERC20(asset).balanceOf(account)`
+- **Returns positions**: Builds `Position[]` for all assets with non-zero balances
+- **Protocol identifier**: Uses `"ERC20Default"` or `"Portfolio balance"` as protocol name
+
+**Custom Oracles**:
+- **Explicitly added**: Each protocol oracle (Aave, Aura, Balancer, etc.) must be added to the global registry
+- **Protocol-specific configuration**: Each oracle stores its own configuration (pool IDs, gauges, etc.)
+- **Multi-asset support**: Can return positions for multiple assets in a single call
+- **Examples**:
+  - **Aave Oracle**: Fetches all supply/borrow positions for an account across all pools
+  - **Aura Oracle**: Fetches all staked positions across configured pools/gauges
+  - **Balancer Oracle**: Fetches all LP positions across configured pools
+
+#### Global Oracle Registry
+
+**Storage Location**: `Balances.sol` maintains a global list of all oracles
+
+**Structure**:
+```solidity
+// In Balances.sol
+address[] private _globalOracles;  // All oracles in the system
+mapping(address => OracleType) private _oracleTypes;  // Type of each oracle
+mapping(address => bool) private _isOracleRegistered;  // Quick lookup
+
+// ERC20Default oracle is always included (singleton)
+address public immutable ERC20_DEFAULT_ORACLE;
+```
+
+**Oracle Registration**:
+- **Default Oracle**: Automatically registered during `Balances` initialization
+- **Custom Oracles**: Added via `addBalanceOracle(oracle, OracleType.Custom)`
+- **No per-asset mapping**: The old `mapping(address => EnumerableMap.AddressToUintMap) _balanceOracles` is removed
+
+#### Asset Registry: Shared Between Balances and Prices
+
+**Storage Location**: Asset list is maintained in a shared location accessible to both `Balances` and `Prices`
+
+**Rationale**: Both balance oracles and price feeds need to know which assets are registered:
+- **Balance oracles**: Need asset list to fetch balances (especially ERC20Default)
+- **Price feeds**: Need asset list to validate price feed configuration
+
+**Implementation Options**:
+1. **Option A**: Keep asset registry in `NAVCalculator`, expose via interface to `Balances` and `Prices`
+2. **Option B**: Move asset registry to `Balances`, expose via interface to `Prices` and `NAVCalculator`
+3. **Option C**: Create separate `AssetRegistry` contract, used by all three
+
+**Recommended**: Option B - Asset registry in `Balances.sol` since:
+- Balances need it for ERC20Default oracle
+- Prices can query it via interface
+- NAVCalculator can query it via interface
+- Maintains clear ownership of asset lifecycle
+
+#### Position Filtering: Ignore Unregistered Assets
+
+**Critical Rule**: If a position's `underlyingAsset.asset` is not in the registered asset list, it is **ignored** for NAV calculation.
+
+**Implementation**:
+- When aggregating positions from oracles, NAVCalculator validates each position's asset
+- Only positions with registered assets are included in NAV calculations
+- This allows oracles to report positions for assets that haven't been registered yet (they're simply ignored)
+
+#### Processing Flow: Oracle-Centric Aggregation
+
+**New Aggregation Pattern** (replaces asset-centric loops):
+
+```solidity
+// OLD (asset-centric): Loop through assets, then oracles per asset
+for each asset {
+    for each oracle for asset {
+        get balance/position
+    }
+}
+
+// NEW (oracle-centric): Loop through oracles, each returns all positions
+for each oracle in global registry {
+    positions = oracle.getOraclePositions(account, assetFilter);
+    // Filter out positions with unregistered assets
+    // Add to aggregated results
+}
+```
+
+**Benefits**:
+- **Single call per oracle**: Each oracle can return all its positions at once
+- **Better batching**: Protocol oracles can optimize their internal queries
+- **Simpler logic**: No need to track which oracles support which assets
+
 ### Function Organization and Balance Oracle Processing
 
-The BalanceOracle can still be useful to identify positions and populate that information, but it should be processed differently with a clearer separation of concerns.
+The BalanceOracle adapters provide a standardized interface for querying balances and positions, with clear separation between oracle-specific views and system-wide aggregation.
 
 #### Proposed Function Structure
 
@@ -179,8 +293,9 @@ function getAssetBalanceOracles(
 
 **Key Distinction**:
 - **BalanceOracle functions** (with "Oracle" prefix): Operate on a **specific balance oracle/adapter** (oracle-specific view)
-  - `getOracleBalance()`: Balances from one oracle
-  - `getOraclePositions()`: Positions from one oracle
+  - `getOracleBalance()`: Balances from one oracle (can return multiple assets)
+  - `getOracleBalanceForAsset()`: Single asset balance from one oracle (gas-optimized)
+  - `getOraclePositions()`: Positions from one oracle (can return multiple assets)
 - **NAVCalculator functions** (no prefix): Aggregate from **all balance oracles** in the system (system-wide view)
   - `getBalances()`: Aggregates balances from all oracles (no pricing)
   - `getAccountPositions()`: Aggregates positions from all oracles, adds pricing (returns Position[] array) - **renamed from `getPositions()`/`getAllPositions()`**
@@ -189,8 +304,8 @@ function getAssetBalanceOracles(
   - `getAccountNavForRange()`: Returns NAV for a range of assets (chunked query)
   - `getAssets()`: Returns all assets at once (Asset[] array)
   - `getAssetsCount()`: Returns total asset count (for chunking)
-  - `getAssetBalanceOracles()`: Returns all balance oracles configured for a specific asset
-- NAVCalculator loops through all assets and their balance oracles, calling oracle-specific functions to collect data
+- **Oracle-Centric Aggregation**: NAVCalculator loops through all oracles in the global registry, calling oracle-specific functions to collect data. Each oracle can return positions for multiple assets in a single call.
+- **Asset Filtering**: Positions with unregistered assets are automatically ignored during aggregation.
 
 **Internal Functions** (Processing Pipeline):
 ```solidity
@@ -249,41 +364,35 @@ function getAccountPositions(address account, address quoteAsset) external view 
         revert PriceFeedNotSet(quoteAsset);
     }
     
-    // 2. Pre-allocate arrays for positions (use balanceOracleTotalCount as max size)
-    Position[] memory tempPositions = new Position[](balanceOracleTotalCount);
+    // 2. Get all registered oracles from global registry (includes ERC20Default + all custom oracles)
+    address[] memory allOracles = balances.getAllOracles();
+    uint256 totalOracles = allOracles.length;
+    
+    // 3. Pre-allocate arrays for positions (estimate based on oracle count)
+    Position[] memory tempPositions = new Position[](totalOracles * 10); // Estimate, will resize
     uint256 positionCount = 0;
     
-    // 3. Loop through all assets with balance oracles
-    address[] memory assets = _getAllAssets();
-    
-    // 4. For each asset, loop through all its balance oracles
-    for (uint i = 0; i < assets.length; i++) {
-        address asset = assets[i];
-        uint256 oracleCount = balanceOracleCountFor(asset);
+    // 4. Loop through all oracles (oracle-centric aggregation)
+    for (uint i = 0; i < totalOracles; i++) {
+        address oracle = allOracles[i];
         
-        for (uint j = 0; j < oracleCount; j++) {
-            // 5. Get oracle address
-            (address oracle, OracleType oracleType) = balanceOracleAt(asset, j);
+        // 5. Call getOraclePositions() on each oracle adapter
+        // Each oracle returns all positions it knows about for this account
+        // assetFilter = address(0) means "return all assets"
+        Position[] memory oraclePositions = IBalanceOracleAdapter(oracle).getOraclePositions(account, address(0));
+        
+        // 6. Filter positions: only include those with registered assets
+        for (uint j = 0; j < oraclePositions.length; j++) {
+            address asset = oraclePositions[j].underlyingAsset.asset;
             
-            // 6. Call getOraclePositions() on the oracle adapter (BalanceOracle context)
-            // Each oracle adapter implements getOraclePositions() which uses its internal functions
-            if (oracleType == OracleType.Custom) {
-                Position[] memory oraclePositions = IBalanceOracleCustom(oracle).getOraclePositions(account, asset);
-                // Copy positions to temp array
-                for (uint k = 0; k < oraclePositions.length; k++) {
-                    tempPositions[positionCount] = oraclePositions[k];
-                    positionCount++;
-                }
-            } else {
-                // For ERC20/Native, build position directly
-                int256 balance = balanceOf(asset, j, account);
-                if (balance != 0) {
-                    // Build Position and add to temp array
-                    Position memory pos = _buildSimplePosition(asset, oracle, balance, account);
-                    tempPositions[positionCount] = pos;
-                    positionCount++;
-                }
+            // Skip positions for unregistered assets
+            if (!balances.isAssetRegistered(asset)) {
+                continue;
             }
+            
+            // Copy position to temp array
+            tempPositions[positionCount] = oraclePositions[j];
+            positionCount++;
         }
     }
     
@@ -352,6 +461,8 @@ function getAccountPositions(address account, address quoteAsset) external view 
 }
 ```
 
+> **Note**: In the actual implementation, asset symbols/decimals used when constructing `quoteAsset` and `underlyingAsset` are resolved via the shared asset registry in `Balances` (or a dedicated `AssetRegistry`), not via private mappings inside `NAVCalculator`.
+
 **Processing Flow** for `getAccountPositionsForAsset()` in NAVCalculator:
 ```solidity
 function getAccountPositionsForAsset(
@@ -366,31 +477,31 @@ function getAccountPositionsForAsset(
         revert PriceFeedNotSet(quoteAsset);
     }
     
-    // 2. Get all balance oracles for this asset
-    uint256 oracleCount = balanceOracleCountFor(asset);
+    // 2. Validate asset is registered
+    if (!balances.isAssetRegistered(asset)) {
+        revert AssetNotFound();
+    }
     
-    // 3. Pre-allocate array for positions
-    Position[] memory tempPositions = new Position[](oracleCount);
+    // 3. Get all registered oracles from global registry
+    address[] memory allOracles = balances.getAllOracles();
+    uint256 totalOracles = allOracles.length;
+    
+    // 4. Pre-allocate array for positions
+    Position[] memory tempPositions = new Position[](totalOracles);
     uint256 positionCount = 0;
     
-    // 4. For each oracle, get positions for this asset
-    for (uint j = 0; j < oracleCount; j++) {
-        (address oracle, OracleType oracleType) = balanceOracleAt(asset, j);
+    // 5. For each oracle, get positions for this specific asset
+    for (uint i = 0; i < totalOracles; i++) {
+        address oracle = allOracles[i];
         
-        if (oracleType == OracleType.Custom) {
-            Position[] memory oraclePositions = IBalanceOracleCustom(oracle).getOraclePositions(account, asset);
-            // Copy positions to temp array
-            for (uint k = 0; k < oraclePositions.length; k++) {
-                tempPositions[positionCount] = oraclePositions[k];
-                positionCount++;
-            }
-        } else {
-            // For ERC20/Native, build position directly
-            int256 balance = balanceOf(asset, j, account);
-            if (balance != 0) {
-                // Build Position and add to temp array
-                Position memory pos = _buildSimplePosition(asset, oracle, balance, account);
-                tempPositions[positionCount] = pos;
+        // Call getOraclePositions with asset filter (oracle returns only positions for this asset)
+        Position[] memory oraclePositions = IBalanceOracleAdapter(oracle).getOraclePositions(account, asset);
+        
+        // Copy positions to temp array (all should be for the requested asset)
+        for (uint j = 0; j < oraclePositions.length; j++) {
+            // Double-check asset matches (safety check)
+            if (oraclePositions[j].underlyingAsset.asset == asset) {
+                tempPositions[positionCount] = oraclePositions[j];
                 positionCount++;
             }
         }
@@ -490,36 +601,37 @@ function getBalances(address account, address asset) external view returns (
 ) {
     // This function aggregates balances from ALL balance oracles in the system
     
-    // 1. Determine which assets to process
-    address[] memory assetsToProcess = asset == address(0) ? _getAllAssets() : [asset];
+    // 1. Get all registered oracles from global registry
+    address[] memory allOracles = balances.getAllOracles();
+    uint256 totalOracles = allOracles.length;
     
-    // 2. Pre-allocate arrays with maximum possible size (all assets)
-    // Use two-pass approach: first count, then populate
-    uint256 maxSize = assetsToProcess.length;
-    address[] memory tempAssets = new address[](maxSize);
-    int256[] memory tempAmounts = new int256[](maxSize);
+    // 2. Use two-pass approach: collect all unique assets, then aggregate balances
+    // First pass: collect all assets from all oracles
+    address[] memory allAssets = asset == address(0) ? balances.getAssets() : [asset];
+    
+    // 3. Pre-allocate arrays with maximum possible size
+    address[] memory tempAssets = new address[](allAssets.length);
+    int256[] memory tempAmounts = new int256[](allAssets.length);
     uint256 count = 0;
     
-    // 3. For each asset, loop through all its balance oracles
-    for (uint i = 0; i < assetsToProcess.length; i++) {
-        address assetAddr = assetsToProcess[i];
-        uint256 oracleCount = balanceOracleCountFor(assetAddr);
+    // 4. For each asset, aggregate balances from all oracles
+    for (uint i = 0; i < allAssets.length; i++) {
+        address assetAddr = allAssets[i];
+        
+        // Skip unregistered assets
+        if (!balances.isAssetRegistered(assetAddr)) {
+            continue;
+        }
+        
         int256 totalBalance = 0;
         
-        for (uint j = 0; j < oracleCount; j++) {
-            // 4. Get oracle address
-            (address oracle, OracleType oracleType) = balanceOracleAt(assetAddr, j);
+        // 5. Loop through all oracles to get balance for this asset
+        for (uint j = 0; j < totalOracles; j++) {
+            address oracle = allOracles[j];
             
-            // 5. Get balance from this oracle
-            if (oracleType == OracleType.Custom) {
-                // Use optimized function for single asset query
-                int256 balance = IBalanceOracleCustom(oracle).getOracleBalanceForAsset(account, assetAddr);
-                totalBalance += balance;
-            } else {
-                // For ERC20/Native, get balance directly
-                int256 balance = balanceOf(assetAddr, j, account);
-                totalBalance += balance;  // Sum all balances (can be negative)
-            }
+            // Get balance from this oracle for this asset
+            int256 balance = IBalanceOracleAdapter(oracle).getOracleBalanceForAsset(account, assetAddr);
+            totalBalance += balance;  // Sum all balances (can be negative)
         }
         
         // Include asset if it has any balance (positive or negative)
@@ -530,7 +642,7 @@ function getBalances(address account, address asset) external view returns (
         }
     }
     
-    // 4. Resize arrays to actual count
+    // 6. Resize arrays to actual count
     address[] memory resultAssets = new address[](count);
     int256[] memory resultAmounts = new int256[](count);
     
@@ -611,7 +723,7 @@ function getBalances(address account, address asset) external view returns (
 - System-wide view of all positions/balances for an account
 - `getBalances()`: Aggregates balances from all oracles (no pricing)
 - `getAccountPositions()`: Aggregates positions from all oracles, adds pricing (returns Position[] array) - **renamed from `getPositions()`/`getAllPositions()`**
-- Loops through all assets and their balance oracles
+- Uses **oracle-centric aggregation**: loops through the global oracle registry
 - For each oracle, calls `getOraclePositions()` or `getOracleBalance()` to get oracle-specific data
 - Aggregates all results
 
@@ -648,7 +760,7 @@ struct Asset {
 ```
 **Changes**: Added `symbol` field for human-readable asset identification.
 
-**Storage**: Asset symbols are stored in a mapping `mapping(address => string) _assetSymbols` in NAVCalculator. Symbols are:
+**Storage**: Asset symbols are stored in a mapping `mapping(address => string) _assetSymbols` in `Balances` (the shared asset registry). Symbols are:
 - For ERC20 tokens: Fetched from `IERC20Metadata(asset).symbol()` and cached in storage
 - For native tokens: Stored in `_nativeTokenSymbol` (set via `setNativeTokenSymbol()`)
 - Symbols are stored when assets are registered or when first accessed
@@ -682,12 +794,15 @@ struct NAV {
 #### 4. OracleType Enum
 ```solidity
 enum OracleType {
-    ERC20,
-    Native,
-    Custom
+    Default,  // ERC20Default oracle - automatically handles all ERC20 and Native balances
+    Custom     // Protocol-specific oracles (Aave, Aura, Balancer, etc.)
 }
 ```
-**Changes**: Renamed from `BalanceType` to `OracleType` for simplicity and clarity.
+**Changes**: 
+- Renamed from `BalanceType` to `OracleType` for simplicity and clarity
+- **Simplified to two types**: `Default` (replaces ERC20/Native) and `Custom`
+- **No per-asset oracle configuration needed**: Default oracle automatically handles all registered assets
+- **ERC20 and Native are no longer separate types**: Both handled by the Default oracle
 
 #### 5. BalanceOracle Struct
 ```solidity
@@ -817,22 +932,55 @@ Prices are fetched once per asset (not per position) and cached in memory, then 
 **Removed**:
 - `BalanceOracleWithMetadata` struct
 - `balanceOraclesWithMetadata()` function
+- Per-asset oracle mapping functions: `balanceOracleCountFor()`, `balanceOracleAt()`, `balanceOracles()`
+
+**Added**:
+- Global oracle registry functions:
+  - `getAllOracles()`: Returns all registered oracles
+  - `getOracleCount()`: Returns total number of oracles
+  - `isOracleRegistered(address oracle)`: Checks if oracle is registered
+  - `getOracleType(address oracle)`: Returns oracle type (Default or Custom)
+- Asset registry functions (shared with Prices):
+  - `isAssetRegistered(address asset)`: Checks if asset is registered
+  - `getAssets()`: Returns all registered assets
+  - `getAssetCount()`: Returns total asset count
+  - `getAssetDecimals(address asset)`: Returns asset decimals
 
 **Updated**:
 - Event names: `BalanceOracleSet` → `BalanceOracleAdded`, `BalanceOracleUnset` → `BalanceOracleRemoved`
+- `OracleType` enum: `{ Default, Custom }` (replaces `{ ERC20, Native, Custom }`)
 
 #### 2. `src/balances/Balances.sol`
 
 **Removed**:
 - `balanceOraclesWithMetadata()` public function
-- `_balanceOracleWithMetadata()` internal function (or refactored to return `PositionMetadata` directly)
+- `_balanceOracleWithMetadata()` internal function
+- Per-asset oracle storage: `mapping(address => EnumerableMap.AddressToUintMap) _balanceOracles`
+- `balanceOf(address, uint256, address)` function (replaced by oracle adapter interface)
+
+**Added**:
+- Global oracle registry:
+  - `address[] private _globalOracles`: List of all registered oracles
+  - `mapping(address => OracleType) private _oracleTypes`: Type of each oracle
+  - `mapping(address => bool) private _isOracleRegistered`: Quick lookup
+  - `address public immutable ERC20_DEFAULT_ORACLE`: Default oracle singleton
+- Asset registry (shared with Prices):
+  - `EnumerableMap.AddressToUintMap private _assetDecimals`: Asset decimals mapping
+  - `mapping(address => string) private _assetSymbols`: Asset symbols
+  - Asset registration functions: `registerAsset()`, `unregisterAsset()`
+- ERC20Default oracle implementation:
+  - `ERC20DefaultOracle` contract that implements `IBalanceOracleAdapter`
+  - Automatically fetches balances for all registered assets
+  - Handles both ERC20 and Native balances
 
 **Renamed**:
-- `_setBalanceOracle()` → `_addBalanceOracle()`
-- `_unsetBalanceOracle()` → `_removeBalanceOracle()`
+- `_setBalanceOracle()` → `_addBalanceOracle()` (now adds to global registry, not per-asset)
+- `_unsetBalanceOracle()` → `_removeBalanceOracle()` (now removes from global registry)
 
 **Updated**:
 - Event emissions to use new event names
+- Oracle registration: Oracles are added globally, not per-asset
+- Initialization: ERC20Default oracle is automatically registered during initialization
 
 #### 3. `src/prices/IPrices.sol` and `src/prices/Prices.sol`
 
@@ -859,6 +1007,12 @@ Prices are fetched once per asset (not per position) and cached in memory, then 
 
 #### 5. `src/nav/NAVCalculator.sol`
 
+**Removed**:
+- Asset registry storage: `EnumerableMap.AddressToUintMap private _assetDecimals` (moved to Balances)
+- Asset symbol storage: `mapping(address => string) private _assetSymbols` (moved to Balances)
+- Per-asset oracle queries: `balanceOracleCountFor()`, `balanceOracleAt()` usage
+- Direct `balanceOf()` calls (replaced by oracle adapter interface)
+
 **Renamed**:
 - Function implementations to match interface changes
 
@@ -869,24 +1023,31 @@ Prices are fetched once per asset (not per position) and cached in memory, then 
 - `getAccountPositions()` (formerly `getPositions()`/`getAllPositions()`):
   - Renamed from `getPositions()`/`getAllPositions()` to `getAccountPositions()`
   - Returns `Position[]` array directly (no AccountPositions wrapper)
-  - Removed usage of `BalanceOracleWithMetadata`
+  - **Oracle-centric aggregation**: Loops through global oracle registry, not per-asset
   - Calls `getOraclePositions()` on each adapter to get oracle-specific positions
+  - Filters out positions with unregistered assets
   - Aggregates positions from all oracles
   - Direct metadata extraction from oracle when building `Position`
   - Removed `positionType` from `Position` construction
   - **Optimized pricing**: Fetch prices once per asset, cache in memory, reuse for all positions
 - `getBalances()` (new):
   - Aggregates balances from all oracles
-  - Calls `getOracleBalance()` on each adapter
+  - **Oracle-centric aggregation**: Loops through global oracle registry
+  - Calls `getOracleBalance()` or `getOracleBalanceForAsset()` on each adapter
+  - Filters out unregistered assets
   - Returns simple balance arrays (no pricing)
+- `getAccountPositionsForAsset()`:
+  - **Oracle-centric aggregation**: Loops through global oracle registry
+  - Calls `getOraclePositions(account, asset)` on each oracle with asset filter
+  - Filters out positions with unregistered assets
+- Asset registry access: Now queries `Balances` contract for asset information
 
 **Added**:
 - `getAccountNav()`: Returns NAV for account in specified baseAsset (replaces `getTotalNAV()`)
 - `getAccountPositionsForAsset()`: Returns Position[] array for a specific asset (filters by asset)
-- `getAssets()`: Returns Asset[] array of all configured assets
-- `getAssetsCount()`: Returns total asset count (for chunking)
+- `getAssets()`: Returns Asset[] array of all configured assets (delegates to Balances)
+- `getAssetsCount()`: Returns total asset count (delegates to Balances)
 - `getAccountNavForRange()`: Returns NAV for a range of assets (chunked query, replaces `_readPositionsRange()`)
-- `getAssetBalanceOracles()`: Returns BalanceOracle[] array for a specific asset
 
 #### 6. `src/balances/IBalanceOracleCustom.sol`
 
@@ -1007,9 +1168,8 @@ erDiagram
     
     NAVCalculator {
         address assetRecoverer
-        EnumerableMap_AddressToUintMap _assetDecimals
-        mapping_address_string _assetSymbols "Asset symbol storage"
-        string _nativeTokenSymbol
+        // Asset registry (decimals, symbols) is now owned by Balances/AssetRegistry
+        // NAVCalculator queries asset data via external interfaces
     }
 ```
 
@@ -1022,11 +1182,12 @@ erDiagram
 - **Function**: `setPriceFeed()` / `unsetPriceFeed()`
 - **Rationale**: Price is asset-level, not position-level
 
-#### 2. Asset → BalanceOracle: **1:N** (One-to-Many)
-- Each Asset can have **multiple** Balance Oracles
-- Multiple oracles allow tracking different positions (e.g., Aave supply, Aave borrow, Compound supply)
-- **Functions**: `addBalanceOracle()` / `removeBalanceOracle()`
-- **Rationale**: Different protocols/positions need separate balance sources
+#### 2. Asset ↔ BalanceOracle: **N:M** (Many-to-Many, Conceptual)
+- Each Asset can be referenced by **multiple** Balance Oracles (e.g., Aave, Aura, Balancer oracles may all report positions in WETH)
+- Each Balance Oracle can report positions for **multiple** Assets
+- **Storage**: Oracles are registered globally in `Balances` (global oracle registry), not per-asset
+- **Discovery**: The Asset ↔ BalanceOracle relationship is inferred at query time from oracle responses (and/or an `underlyingAssetsSupported()` hook), not from a per-asset mapping
+- **Rationale**: Oracles are protocol views; they are not statically attached to single assets
 
 #### 3. Asset → Position: **1:N** (One-to-Many, as underlyingAsset)
 - Each Asset can have **multiple** Position instances (as underlying asset)
@@ -1216,15 +1377,23 @@ navCalculator.removeBalanceOracle(asset, oracle);
 #### 2. Removed Functions
 
 ```solidity
-// OLD - NO LONGER EXISTS
-IBalances.BalanceOracleWithMetadata[] memory oracles = 
+// OLD - NO LONGER EXISTS (per-asset oracle APIs)
+IBalances.BalanceOracleWithMetadata[] memory oraclesWithMetadata = 
     balances.balanceOraclesWithMetadata(asset);
 
-// NEW - Use these instead
-address[] memory oracles = balances.balanceOracles(asset);
-// Or get individual oracle with type:
-(address oracle, IBalances.OracleType oracleType) = 
+address[] memory assetOracles = balances.balanceOracles(asset);
+(address oracle, IBalances.BalanceType balanceType) = 
     balances.balanceOracleAt(asset, idx);
+
+// NEW - Global oracle registry APIs
+address[] memory allOracles = balances.getAllOracles();
+uint256 oracleCount = balances.getOracleCount();
+bool registered = balances.isOracleRegistered(oracle);
+IBalances.OracleType oracleType = balances.getOracleType(oracle);
+
+// Asset-level relationships are now inferred from positions:
+// - Call oracle.getOraclePositions(account, assetFilter)
+// - Filter by underlyingAsset.asset == asset
 ```
 
 #### 3. Function Renames and New Functions
@@ -1362,7 +1531,7 @@ struct Asset {
 }
 ```
 
-**BalanceOracle** - Added protocol field, renamed enum:
+**BalanceOracle** - Added protocol field, renamed/simplified enum:
 ```solidity
 // OLD (deprecated enum and field names)
 enum BalanceType { ERC20, Native, Custom }  // OLD: Renamed to OracleType
@@ -1372,10 +1541,10 @@ struct BalanceOracle {
 }
 
 // NEW
-enum OracleType { ERC20, Native, Custom }  // NEW: Simpler name
+enum OracleType { Default, Custom }  // Default replaces ERC20/Native types
 struct BalanceOracle {
     address oracle;
-    OracleType oracleType;  // NEW: Field renamed from balanceType to oracleType
+    OracleType oracleType;  // Field renamed from balanceType to oracleType
     string protocol;
 }
 ```

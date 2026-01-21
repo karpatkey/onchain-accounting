@@ -158,7 +158,7 @@ interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroReceiver {
     /// @param destinationChainId The destination LayerZero chain ID
     /// @param srcPoolId The source pool ID
     /// @param dstPoolId The destination pool ID
-    /// @param amountLD The amount in local decimals
+    /// @param amountLd The amount in local decimals
     /// @param payload The message payload
     /// @param dstGasForCall The destination gas for call
     /// @return nativeFee The native token fee
@@ -167,7 +167,7 @@ interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroReceiver {
         uint16 destinationChainId,
         uint256 srcPoolId,
         uint256 dstPoolId,
-        uint256 amountLD,
+        uint256 amountLd,
         bytes calldata payload,
         uint256 dstGasForCall
     ) external view returns (uint256 nativeFee, uint256 zroFee);

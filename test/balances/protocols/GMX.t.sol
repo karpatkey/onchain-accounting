@@ -4,15 +4,12 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {GmxBalanceOracle} from "src/balances/protocols/GMX.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import "src/errors.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IPrices} from "src/prices/Prices.sol";
-import {IBalances} from "src/balances/Balances.sol";
-import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 import "test/SuperTest.sol";
 
 contract GMXTest is TestEnvConfigurator {
@@ -42,6 +39,7 @@ contract GMXTest is TestEnvConfigurator {
     address public admin;
     address public ops;
     address public safe;
+    MockBalances mockBalances;
     IBalanceOracleCustom.PositionMetadata gmxMetadata = IBalanceOracleCustom.PositionMetadata({
         protocol: "GMX", position: "ETH/USDC-WETH/USDC Long", positionType: "Perpetual"
     });
@@ -49,6 +47,7 @@ contract GMXTest is TestEnvConfigurator {
     function setUp() public {
         // Fork will be created per-test with specific block numbers to reduce RPC calls
         // Oracle creation is moved to individual tests to avoid calling non-contract addresses
+        mockBalances = new MockBalances();
     }
 
     function test_WETH_WETH_Short_firstBlock_Oracle() public {
@@ -68,14 +67,16 @@ contract GMXTest is TestEnvConfigurator {
             address(WETH),
             false,
             feeds,
-            gmxMetadata
+            "GMX",
+            "WETH/USDC Short",
+            address(mockBalances)
         );
 
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
-        int256 balanceWETH = oracle.balanceOf(address(WETH), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), user);
 
-        assertEq(balanceUSDC, 74_908_975);
-        assertEq(balanceWETH, -19_314_468_244_805_026);
+        assertEq(balanceUsdc, 74_908_975);
+        assertEq(balanceWeth, -19_314_468_244_805_026);
     }
 
     function test_WETH_WETH_Short_WithFees_Oracle() public {
@@ -95,14 +96,16 @@ contract GMXTest is TestEnvConfigurator {
             address(WETH),
             false,
             feeds,
-            gmxMetadata
+            "GMX",
+            "WETH/USDC Short",
+            address(mockBalances)
         );
 
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
-        int256 balanceWETH = oracle.balanceOf(address(WETH), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), user);
 
-        assertEq(balanceUSDC, 74_905_535);
-        assertEq(balanceWETH, -19_314_047_102_943_041);
+        assertEq(balanceUsdc, 74_905_535);
+        assertEq(balanceWeth, -19_314_047_102_943_041);
     }
 
     function test_WETH_USDC_Long_Oracle() public {
@@ -122,14 +125,16 @@ contract GMXTest is TestEnvConfigurator {
             address(USDC),
             true,
             feeds,
-            gmxMetadata
+            "GMX",
+            "WETH/USDC Long",
+            address(mockBalances)
         );
 
-        int256 balanceWETH = oracle.balanceOf(address(WETH), user);
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
 
-        assertEq(balanceUSDC, -654_241_853);
-        assertEq(balanceWETH, 223_334_473_924_202_656);
+        assertEq(balanceUsdc, -654_241_853);
+        assertEq(balanceWeth, 223_334_473_924_202_656);
     }
 
     function test_BTC_USDC_Long_Oracle() public {
@@ -151,13 +156,15 @@ contract GMXTest is TestEnvConfigurator {
             address(USDC),
             true,
             feeds,
-            gmxMetadata
+            "GMX",
+            "BTC/USDC Long",
+            address(mockBalances)
         );
 
         int256 balanceBTC = oracle.balanceOf(address(BTC), user);
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
 
-        assertEq(balanceUSDC, -17_778_578_381_862);
+        assertEq(balanceUsdc, -17_778_578_381_862);
         assertEq(balanceBTC, 19_590_279_063);
     }
 
@@ -178,14 +185,16 @@ contract GMXTest is TestEnvConfigurator {
             address(USDC),
             true,
             feeds,
-            gmxMetadata
+            "GMX",
+            "WETH/USDC Long",
+            address(mockBalances)
         );
 
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
-        int256 balanceWETH = oracle.balanceOf(address(WETH), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), user);
 
-        assertLt(balanceUSDC, -4_148_308_901_095);
-        assertEq(balanceWETH, 3_263_145_687_143_886_967_869);
+        assertLt(balanceUsdc, -4_148_308_901_095);
+        assertEq(balanceWeth, 3_263_145_687_143_886_967_869);
     }
 
     function test_WETH_USDC_Long_Whale2_Oracle() public {
@@ -205,14 +214,16 @@ contract GMXTest is TestEnvConfigurator {
             address(USDC),
             true,
             feeds,
-            gmxMetadata
+            "GMX",
+            "WETH/USDC Long",
+            address(mockBalances)
         );
 
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), user);
-        int256 balanceWETH = oracle.balanceOf(address(WETH), user);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), user);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), user);
 
-        assertLt(balanceUSDC, -1_393_558_062_500);
-        assertEq(balanceWETH, 775_713_648_496_240_752_489);
+        assertLt(balanceUsdc, -1_393_558_062_500);
+        assertEq(balanceWeth, 775_713_648_496_240_752_489);
     }
 
     function test_balanceOfZeroAddress() public {
@@ -229,14 +240,16 @@ contract GMXTest is TestEnvConfigurator {
             address(WETH),
             false,
             feeds,
-            gmxMetadata
+            "GMX",
+            "BTC/USDC Short",
+            address(mockBalances)
         );
 
-        int256 balanceWETH = oracle.balanceOf(address(WETH), address(0));
-        assertEq(balanceWETH, 0);
+        int256 balanceWeth = oracle.balanceOf(address(WETH), address(0));
+        assertEq(balanceWeth, 0);
 
-        int256 balanceUSDC = oracle.balanceOf(address(USDC), address(0));
-        assertEq(balanceUSDC, 0);
+        int256 balanceUsdc = oracle.balanceOf(address(USDC), address(0));
+        assertEq(balanceUsdc, 0);
     }
 
     // NAV Tests
@@ -424,12 +437,9 @@ contract GMXTest is TestEnvConfigurator {
 
         // Setup price oracles
         vm.startPrank(ops);
-        nav.registerAsset(address(WETH));
-        nav.setPriceOracle(address(WETH), ETH_USD, IPrices.PriceType.Chainlink, 3600);
-        nav.registerAsset(address(USDC));
-        nav.setPriceOracle(address(USDC), USDC_USD, IPrices.PriceType.Chainlink, 3600);
-        nav.registerAsset(address(BTC));
-        nav.setPriceOracle(address(BTC), BTC_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(WETH), ETH_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(USDC), USDC_USD, IPrices.PriceType.Chainlink, 3600);
+        nav.registerAsset(address(BTC), BTC_USD, IPrices.PriceType.Chainlink, 3600);
 
         vm.stopPrank();
     }

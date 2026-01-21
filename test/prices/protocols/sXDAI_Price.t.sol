@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 
 contract sXDAI_PriceOracleTest is TestEnvConfigurator {
-    sXDAI_PriceOracle sXDAI_priceOracle;
+    sXDAI_PriceOracle sXdaiPriceOracle;
     address savingsXDaiAddress;
     address xdaiToUsdChainlink;
     uint256 heartbeat;
@@ -22,7 +22,7 @@ contract sXDAI_PriceOracleTest is TestEnvConfigurator {
         xdaiToUsdChainlink = address(0x678df3415fc31947dA4324eC63212874be5a82f8);
         heartbeat = 86_400;
 
-        sXDAI_priceOracle = new sXDAI_PriceOracle(savingsXDaiAddress, xdaiToUsdChainlink, heartbeat);
+        sXdaiPriceOracle = new sXDAI_PriceOracle(savingsXDaiAddress, xdaiToUsdChainlink, heartbeat);
     }
 
     function test_invalidConstructorArgs() public {
@@ -40,27 +40,25 @@ contract sXDAI_PriceOracleTest is TestEnvConfigurator {
     }
 
     function test_getLatestPrice() public view {
-        (uint256 price, bool stale) = sXDAI_priceOracle.getLatestPrice();
+        (uint256 price, bool stale) = sXdaiPriceOracle.getLatestPrice();
         assertEq(price, 112_016_996);
         assertEq(stale, false);
     }
 
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + heartbeat);
-        (uint256 price, bool stale) = sXDAI_priceOracle.getLatestPrice();
+        (uint256 price, bool stale) = sXdaiPriceOracle.getLatestPrice();
         assertEq(price, 112_016_996);
         assertEq(stale, true);
     }
 
     function test_decimals() public view {
-        assertEq(sXDAI_priceOracle.decimals(), 8, "Decimals should match xDAI/USD oracle");
+        assertEq(sXdaiPriceOracle.decimals(), 8, "Decimals should match xDAI/USD oracle");
     }
 
     function test_underlyingAssetSupported() public view {
         assertEq(
-            sXDAI_priceOracle.underlyingAssetSupported(),
-            savingsXDaiAddress,
-            "Underlying asset should match sXDAI token"
+            sXdaiPriceOracle.underlyingAssetSupported(), savingsXDaiAddress, "Underlying asset should match sXDAI token"
         );
     }
 }

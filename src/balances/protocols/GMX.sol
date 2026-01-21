@@ -2,17 +2,21 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title GMX
 /// @notice Balance oracle for GMX synthetic positions
-contract GmxBalanceOracle is IBalanceOracleCustom {
+contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -59,8 +63,12 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
     /// @notice Whether the position is long
     bool public immutable IS_LONG;
 
-    /// @notice Position tags associated with the balance oracle.
-    PositionMetadata internal _positionMetadata;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Position detail identifier for this oracle
+    string private _positionDetail;
+    /// @notice Reference to Balances contract for asset registry access
+    IBalances public immutable BALANCES;
 
     /// @notice Mapping of token addresses to their price feeds
     mapping(address => AggregatorV3Interface) public priceFeeds;
@@ -78,7 +86,9 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
     /// @param collateralToken_ Address of the collateral token
     /// @param isLong_ Whether the position is long
     /// @param tokenFeeds_ Array of token and price feed pairs
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
+    /// @param protocol_ Protocol identifier (e.g., "GMX").
+    /// @param positionDetail_ Position detail identifier (e.g., "Long/Short Position").
+    /// @param balances_ The address of the Balances contract for asset registry access.
     constructor(
         address market_,
         address reader_,
@@ -87,7 +97,9 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
         address collateralToken_,
         bool isLong_,
         TokenFeed[] memory tokenFeeds_,
-        PositionMetadata memory positionMetadata_
+        string memory protocol_,
+        string memory positionDetail_,
+        address balances_
     ) {
         GMX_MARKET = market_;
         READER = IGMXReader(reader_);
@@ -102,7 +114,9 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
             priceFeeds[tokenFeeds_[i].token] = AggregatorV3Interface(tokenFeeds_[i].feed);
         }
 
-        _positionMetadata = positionMetadata_;
+        _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        BALANCES = IBalances(balances_);
     }
 
     //
@@ -154,12 +168,12 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
             uint256 usdPriceScaled =
                 positionInfo.position.numbers.sizeInUsd / (10 ** (FLOAT_PRECISION_DECIMALS - oracleDecimals));
 
-            int256 sizeInUSDC = usdPriceScaled.mulDiv(10 ** USDC.decimals(), usdcPrice, Math.Rounding.Floor).toInt256();
+            int256 sizeInUsdc = usdPriceScaled.mulDiv(10 ** USDC.decimals(), usdcPrice, Math.Rounding.Floor).toInt256();
 
             if (IS_LONG) {
-                total -= sizeInUSDC;
+                total -= sizeInUsdc;
             } else {
-                total += sizeInUSDC;
+                total += sizeInUsdc;
             }
         }
 
@@ -222,6 +236,8 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
         }
 
         (, int256 price,,,) = tokenPricefeed.latestRoundData();
+        // casting to 'uint256' is safe because Chainlink prices are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
         return (uint256(price), tokenPricefeed.decimals());
     }
 
@@ -278,19 +294,152 @@ contract GmxBalanceOracle is IBalanceOracleCustom {
 
     /// @inheritdoc IBalanceOracleCustom
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = address(0); // FIXME
+        // Return USDC + (longToken or shortToken based on IS_LONG) + COLLATERAL_TOKEN
+        address[] memory assets = new address[](3);
+        assets[0] = address(USDC);
+        assets[1] = IS_LONG ? marketProps.longToken : marketProps.shortToken;
+        assets[2] = COLLATERAL_TOKEN;
         return assets;
-    }
-
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleCustom).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        return this.balanceOf(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account, address assetFilter)
+        external
+        view
+        returns (address[] memory assets, int256[] memory amounts)
+    {
+        if (assetFilter != address(0)) {
+            return (new address[](0), new int256[](0));
+        }
+
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        // Pre-allocate arrays
+        address[] memory tempAssets = new address[](assetCount);
+        int256[] memory tempAmounts = new int256[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = balance;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        assets = new address[](count);
+        amounts = new int256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param account The account to query
+    /// @param assetFilter Optional asset filter (address(0) for all assets)
+    /// @return positions Array of Position structs from this oracle
+    function _buildPositions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        if (assetCount == 0) {
+            return new INAVCalculator.Position[](0);
+        }
+
+        // Pre-allocate array (estimate max size)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+
+            // Apply asset filter if specified
+            if (assetFilter != address(0) && asset != assetFilter) {
+                continue;
+            }
+
+            // Get balance for this asset
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                // Get asset info from registry (if registered)
+                uint8 decimals;
+                string memory symbol;
+                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                    decimals = dec;
+                } catch {
+                    // Asset not registered, skip it (NAVCalculator will filter anyway)
+                    continue;
+                }
+                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    symbol = sym;
+                } catch {
+                    symbol = "";
+                }
+
+                // Build underlying asset struct
+                INAVCalculator.Asset memory underlyingAsset =
+                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+
+                // Build position (pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.Position({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: balance,
+                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
+                    value: 0, // Will be calculated by NAVCalculator
+                    price: 0, // Will be set by NAVCalculator
+                    priceDecimals: 0, // Will be set by NAVCalculator
+                    stale: false, // Will be set by NAVCalculator
+                    protocol: _protocol,
+                    positionDetail: _positionDetail
+                });
+
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        return _buildPositions(account, assetFilter);
     }
 }
 

@@ -2,6 +2,9 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalances} from "src/balances/IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -11,7 +14,7 @@ import "src/errors.sol";
 /// @notice This contract provides an implementation of a balance oracle for a Compound V3 Comet.
 ///   This balance oracle can return the base token, collateral assets, and owed rewards for a user on a given Comet
 /// contract.
-contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
+contract CompoundV3CometWithMultiplier is IBalanceOracleCustom, IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -24,17 +27,17 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
 
     /// @notice Scale factor used to normalize the balance values.
     /// Derived from the CometCore contract
-    /// https://github.com/compound-finance/comet/blob/f41fec9858ae7e53be6cde96c74c3fa16782fa2a/contracts/CometCore.sol#L51
+    /// https://github.com/compound-finance/COMET/blob/f41fec9858ae7e53be6cde96c74c3fa16782fa2a/contracts/CometCore.sol#L51
     int64 public constant BASE_INDEX_SCALE = 1e15;
 
     /// @dev The scale for factors
     /// Derived from CometCore contract
-    /// https://github.com/compound-finance/comet/blob/1d30582704b16930275806337f2efe4984f5ed32/contracts/CometCore.sol#L56C5-L57
+    /// https://github.com/compound-finance/COMET/blob/1d30582704b16930275806337f2efe4984f5ed32/contracts/CometCore.sol#L56C5-L57
     uint64 public constant FACTOR_SCALE = 1e18;
 
     /// @dev The scale for base tracking accrual
     /// Derived from CometCore contract
-    /// https://github.com/compound-finance/comet/blob/1d30582704b16930275806337f2efe4984f5ed32/contracts/CometCore.sol#L47C1-L48C55
+    /// https://github.com/compound-finance/COMET/blob/1d30582704b16930275806337f2efe4984f5ed32/contracts/CometCore.sol#L47C1-L48C55
     uint64 public constant BASE_ACCRUAL_SCALE = 1e6;
 
     //
@@ -42,30 +45,34 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
     //
 
     /// @notice The Compound rewards contract.
-    ICompoundRewards public immutable compoundRewards;
+    ICompoundRewards public immutable COMPOUND_REWARDS;
 
     /// @notice The Compound reward token.
-    IERC20 public immutable rewardToken;
+    IERC20 public immutable REWARD_TOKEN;
 
     /// @notice The Comet base token.
-    address public immutable baseToken;
+    address public immutable BASE_TOKEN;
 
     /// @notice The Comet contract address.
-    address public immutable comet;
+    address public immutable COMET;
 
     /// @notice The CometExtInterface contract address.
-    CometExtInterface public immutable cometExtInterface;
+    CometExtInterface public immutable COMET_EXT_INTERFACE;
 
     /// @notice The descale factor for the accrual.
-    uint256 public immutable accrualDescaleFactor;
+    uint256 public immutable ACCRUAL_DESCALE_FACTOR;
 
-    /// @notice List of collateral asset addresses for this comet.
+    /// @notice List of collateral asset addresses for this COMET.
     address[] public collaterals;
     /// @notice Mapping to check if an asset is collateral.
     mapping(address asset => bool collateral) public isCollateral;
 
-    /// @notice Position metadata tags describing the DeFi position this oracle is associated to.
-    PositionMetadata private _positionMetadata;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Position detail identifier for this oracle
+    string private _positionDetail;
+    /// @notice Reference to Balances contract for asset registry access
+    IBalances public immutable BALANCES;
 
     //
     // Errors
@@ -77,35 +84,41 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
     /// @param compoundRewards_ The address of the Compound rewards contract.
     /// @param comet_ The address of the Comet contract we want to get the balance of.
     /// @param rewardToken_ The address of the compound reward token contract.
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
+    /// @param protocol_ Protocol identifier (e.g., "Compound v3").
+    /// @param positionDetail_ Position detail identifier (e.g., "Comet with Multiplier").
+    /// @param balances_ The address of the Balances contract for asset registry access.
     constructor(
         address compoundRewards_,
         address comet_,
         address rewardToken_,
-        PositionMetadata memory positionMetadata_
+        string memory protocol_,
+        string memory positionDetail_,
+        address balances_
     ) {
         if (compoundRewards_ == address(0) || comet_ == address(0) || rewardToken_ == address(0)) {
             revert InvalidArguments();
         }
-        compoundRewards = ICompoundRewards(compoundRewards_);
-        rewardToken = IERC20(rewardToken_);
+        COMPOUND_REWARDS = ICompoundRewards(compoundRewards_);
+        REWARD_TOKEN = IERC20(rewardToken_);
 
-        baseToken = CometInterface(comet_).baseToken();
-        comet = comet_;
-        cometExtInterface = CometExtInterface(comet_);
+        BASE_TOKEN = CometInterface(comet_).BASE_TOKEN();
+        COMET = comet_;
+        COMET_EXT_INTERFACE = CometExtInterface(comet_);
 
         // https://etherscan.io/address/0x1B0e765F6224C21223AeA2af16c1C46E38885a40#code
-        accrualDescaleFactor = cometExtInterface.baseScale() / BASE_ACCRUAL_SCALE;
+        ACCRUAL_DESCALE_FACTOR = COMET_EXT_INTERFACE.baseScale() / BASE_ACCRUAL_SCALE;
 
         uint8 assetCount = CometExtInterface(comet_).numAssets();
 
         for (uint8 i = 0; i < assetCount; i++) {
-            (, address asset,,,,,,) = CometExtInterface(comet).getAssetInfo(i);
+            (, address asset,,,,,,) = CometExtInterface(COMET).getAssetInfo(i);
             isCollateral[asset] = true;
             collaterals.push(asset);
         }
 
-        _positionMetadata = positionMetadata_;
+        _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        BALANCES = IBalances(balances_);
     }
 
     /// @notice Returns the number of collateral assets for the Comet contract.
@@ -120,20 +133,21 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
 
     /// @inheritdoc IBalanceOracleCustom
     function balanceOf(address underlyingAsset, address safe) external view returns (int256 balance) {
-        if (underlyingAsset != address(rewardToken) && underlyingAsset != baseToken && !isCollateral[underlyingAsset]) {
+        if (underlyingAsset != address(REWARD_TOKEN) && underlyingAsset != BASE_TOKEN && !isCollateral[underlyingAsset])
+        {
             revert InvalidArguments();
         }
 
-        if (underlyingAsset == address(rewardToken)) {
+        if (underlyingAsset == address(REWARD_TOKEN)) {
             balance += _getRewardOwed(safe).toInt256();
         }
 
-        if (underlyingAsset == baseToken) {
-            balance += getUnderlying(comet, safe);
+        if (underlyingAsset == BASE_TOKEN) {
+            balance += getUnderlying(COMET, safe);
         }
 
         if (isCollateral[underlyingAsset]) {
-            balance += CometExtInterface(comet).collateralBalanceOf(safe, underlyingAsset).toInt256();
+            balance += CometExtInterface(COMET).collateralBalanceOf(safe, underlyingAsset).toInt256();
         }
 
         return balance;
@@ -153,7 +167,7 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
 
         int256 total;
 
-        // https://github.com/compound-finance/comet/blob/f41fec9858ae7e53be6cde96c74c3fa16782fa2a/contracts/CometCore.sol#L90
+        // https://github.com/compound-finance/COMET/blob/f41fec9858ae7e53be6cde96c74c3fa16782fa2a/contracts/CometCore.sol#L90
         if (principal >= 0) {
             total = int256(principal) * uint256(baseSupplyIndex).toInt256().toInt64();
         } else {
@@ -172,11 +186,11 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
     /// @return The amount of rewards owed to the user.
     function _getRewardOwed(address src) internal view returns (uint256) {
         (address token, uint64 rescaleFactor, bool shouldUpscale, uint256 multiplier) =
-            compoundRewards.rewardConfig(comet);
+            COMPOUND_REWARDS.rewardConfig(COMET);
         if (token == address(0)) return 0;
 
-        uint256 claimed = compoundRewards.rewardsClaimed(comet, src);
-        uint256 accrued = _getRewardAccrued(comet, src, shouldUpscale, rescaleFactor, multiplier);
+        uint256 claimed = COMPOUND_REWARDS.rewardsClaimed(COMET, src);
+        uint256 accrued = _getRewardAccrued(COMET, src, shouldUpscale, rescaleFactor, multiplier);
 
         if (accrued > claimed) {
             unchecked {
@@ -207,7 +221,7 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
     /// @param baseWei The base to divide by
     /// @return The result of the division
     function _divBaseWei(uint256 n, uint256 baseWei) internal view returns (uint256) {
-        return n * cometExtInterface.baseScale() / baseWei;
+        return n * COMET_EXT_INTERFACE.baseScale() / baseWei;
     }
 
     /// @notice Calculate the accrued interest indices
@@ -225,9 +239,9 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
         baseBorrowIndex_ = baseBorrowIndex;
 
         if (timeElapsed > 0) {
-            uint256 utilization = cometExtInterface.getUtilization();
-            uint256 supplyRate = cometExtInterface.getSupplyRate(utilization);
-            uint256 borrowRate = cometExtInterface.getBorrowRate(utilization);
+            uint256 utilization = COMET_EXT_INTERFACE.getUtilization();
+            uint256 supplyRate = COMET_EXT_INTERFACE.getSupplyRate(utilization);
+            uint256 borrowRate = COMET_EXT_INTERFACE.getBorrowRate(utilization);
             baseSupplyIndex_ += _mulFactor(baseSupplyIndex_, supplyRate * timeElapsed).toUint64();
             baseBorrowIndex_ += _mulFactor(baseBorrowIndex_, borrowRate * timeElapsed).toUint64();
         }
@@ -247,22 +261,22 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
             uint104 totalSupplyBase,
             uint104 totalBorrowBase,
             uint40 lastAccrualTime,
-        ) = cometExtInterface.totalsBasic();
+        ) = COMET_EXT_INTERFACE.totalsBasic();
 
         uint40 now_ = _getNowInternal();
         uint256 timeElapsed = uint256(now_ - lastAccrualTime);
         if (timeElapsed > 0) {
             (baseSupplyIndex, baseBorrowIndex) = _accruedInterestIndices(timeElapsed, baseSupplyIndex, baseBorrowIndex);
-            uint256 baseMinForRewards = cometExtInterface.baseMinForRewards();
+            uint256 baseMinForRewards = COMET_EXT_INTERFACE.baseMinForRewards();
 
             if (totalSupplyBase >= baseMinForRewards) {
                 trackingSupplyIndex += _divBaseWei(
-                        cometExtInterface.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase
+                        COMET_EXT_INTERFACE.baseTrackingSupplySpeed() * timeElapsed, totalSupplyBase
                     ).toUint64();
             }
             if (totalBorrowBase >= baseMinForRewards) {
                 trackingBorrowIndex += _divBaseWei(
-                        cometExtInterface.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase
+                        COMET_EXT_INTERFACE.baseTrackingBorrowSpeed() * timeElapsed, totalBorrowBase
                     ).toUint64();
             }
         }
@@ -289,17 +303,21 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
         if (principal >= 0) {
             uint256 indexDelta = uint256(trackingSupplyIndex - baseTrackingIndex);
 
+            // casting to 'uint104' is safe because principal is int104 and we've checked it's >= 0
+            // forge-lint: disable-next-line(unsafe-typecast)
             baseTrackingAccrued += (uint104(principal)
                 * indexDelta
-                / cometExtInterface.trackingIndexScale()
-                / accrualDescaleFactor)
+                / COMET_EXT_INTERFACE.trackingIndexScale()
+                / ACCRUAL_DESCALE_FACTOR)
             .toUint64();
         } else {
             uint256 indexDelta = uint256(trackingBorrowIndex - baseTrackingIndex);
+            // casting to 'uint104' is safe because -principal is positive when principal < 0, and principal is int104
+            // forge-lint: disable-next-line(unsafe-typecast)
             baseTrackingAccrued += (uint104(-principal)
                 * indexDelta
-                / cometExtInterface.trackingIndexScale()
-                / accrualDescaleFactor)
+                / COMET_EXT_INTERFACE.trackingIndexScale()
+                / ACCRUAL_DESCALE_FACTOR)
             .toUint64();
         }
     }
@@ -337,19 +355,160 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
 
     /// @inheritdoc IBalanceOracleCustom
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = address(0); // FIXME
+        // Return BASE_TOKEN + collaterals + REWARD_TOKEN
+        uint256 totalAssets = 1 + collaterals.length + 1; // BASE_TOKEN + collaterals + REWARD_TOKEN
+        address[] memory assets = new address[](totalAssets);
+        uint256 idx = 0;
+
+        assets[idx++] = BASE_TOKEN;
+
+        for (uint256 i = 0; i < collaterals.length; i++) {
+            assets[idx++] = collaterals[i];
+        }
+
+        assets[idx] = address(REWARD_TOKEN);
+
         return assets;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
+        return interfaceId == type(IBalanceOracleCustom).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        return this.balanceOf(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account, address assetFilter)
+        external
+        view
+        returns (address[] memory assets, int256[] memory amounts)
+    {
+        if (assetFilter != address(0)) {
+            return (new address[](0), new int256[](0));
+        }
+
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        // Pre-allocate arrays
+        address[] memory tempAssets = new address[](assetCount);
+        int256[] memory tempAmounts = new int256[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero BALANCES
+            if (balance != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = balance;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        assets = new address[](count);
+        amounts = new int256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param account The account to query
+    /// @param assetFilter Optional asset filter (address(0) for all assets)
+    /// @return positions Array of Position structs from this oracle
+    function _buildPositions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        if (assetCount == 0) {
+            return new INAVCalculator.Position[](0);
+        }
+
+        // Pre-allocate array (estimate max size)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+
+            // Apply asset filter if specified
+            if (assetFilter != address(0) && asset != assetFilter) {
+                continue;
+            }
+
+            // Get balance for this asset
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero BALANCES
+            if (balance != 0) {
+                // Get asset info from registry (if registered)
+                uint8 decimals;
+                string memory symbol;
+                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                    decimals = dec;
+                } catch {
+                    // Asset not registered, skip it (NAVCalculator will filter anyway)
+                    continue;
+                }
+                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    symbol = sym;
+                } catch {
+                    symbol = "";
+                }
+
+                // Build underlying asset struct
+                INAVCalculator.Asset memory underlyingAsset =
+                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+
+                // Build position (pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.Position({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: balance,
+                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
+                    value: 0, // Will be calculated by NAVCalculator
+                    price: 0, // Will be set by NAVCalculator
+                    priceDecimals: 0, // Will be set by NAVCalculator
+                    stale: false, // Will be set by NAVCalculator
+                    protocol: _protocol,
+                    positionDetail: _positionDetail
+                });
+
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        return _buildPositions(account, assetFilter);
     }
 }
 
@@ -357,21 +516,23 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleCustom {
 /// @notice This interface defines the functions for interacting with Compound's rewards system.
 interface ICompoundRewards {
     /// @notice Retrieves the reward configuration for a specific Comet contract (Compound's money market).
-    /// @param comet The address of the Comet contract for which the reward configuration is requested.
+    /// @param COMET The address of the Comet contract for which the reward configuration is requested.
     /// @return token The address of the reward token associated with the Comet contract.
     /// @return rescaleFactor A scaling factor to adjust the reward token's value.
     /// @return shouldUpscale A boolean indicating whether the reward token should be upscaled.
     /// @return multiplier A multiplier used to calculate the rewards
-    function rewardConfig(address comet)
+    // forge-lint: disable-next-line(mixed-case-variable)
+    function rewardConfig(address COMET)
         external
         view
         returns (address token, uint64 rescaleFactor, bool shouldUpscale, uint256 multiplier);
 
     /// @notice Returns the amount of rewards that have been claimed by a specific user for a given Comet contract.
-    /// @param comet The address of the Comet contract.
+    /// @param COMET The address of the Comet contract.
     /// @param src The address of the user whose claimed rewards are being queried.
     /// @return The total amount of rewards claimed by the user for the specified Comet contract.
-    function rewardsClaimed(address comet, address src) external view returns (uint256);
+    // forge-lint: disable-next-line(mixed-case-variable)
+    function rewardsClaimed(address COMET, address src) external view returns (uint256);
 }
 
 /// @title CometExtInterface
@@ -495,5 +656,5 @@ interface CometExtInterface {
 interface CometInterface {
     /// @notice Returns the address of the base token used by the Comet protocol.
     /// @return The address of the base token.
-    function baseToken() external view returns (address);
+    function BASE_TOKEN() external view returns (address);
 }

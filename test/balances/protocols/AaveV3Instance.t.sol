@@ -7,6 +7,7 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     uint256 fork;
@@ -20,14 +21,13 @@ contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     address public rewardsDistributor = address(0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb);
 
     AaveV3InstanceBalanceOracle oracle;
-    IBalanceOracleCustom.PositionMetadata aaveMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
-    });
+    MockBalances mockBalances;
 
     function setUp() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_576_908);
 
-        oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, aaveMetadata);
+        mockBalances = new MockBalances();
+        oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, "Aave v3", address(mockBalances));
     }
 
     function test_balanceOf_reverts_on_invalid_token() public {
@@ -118,7 +118,7 @@ contract AavePoolBalanceOracleTest is TestEnvConfigurator {
     function test_mainnet_balanceOf_lend_usdt() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 21_379_222);
 
-        oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, aaveMetadata);
+        oracle = new AaveV3InstanceBalanceOracle(aaveDataProvider, rewardsDistributor, "Aave v3", address(mockBalances));
         address user = address(0x18709E89BD403F470088aBDAcEbE86CC60dda12e);
 
         int256 balance = oracle.balanceOf(usdt, user);

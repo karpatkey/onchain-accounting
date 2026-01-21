@@ -9,7 +9,7 @@ import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 import {ICctpBridgeAdapter} from "./interfaces/ICctpBridgeAdapter.sol";
-import "src/errors.sol";
+import {InvalidArguments, NotAuthorized, TransferFailed, InvalidInvoice} from "src/errors.sol";
 
 /// @title CctpBridgeAdapter
 /// @notice Bridge adapter for Circle's Cross-Chain Transfer Protocol (CCTP)

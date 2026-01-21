@@ -7,6 +7,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title LDO Custom Price Oracle
@@ -31,16 +32,16 @@ contract LDO_PriceOracle is IPriceOracleCustom {
     address public immutable LDO;
 
     /// @notice Chainlink oracle for LDO to ETH
-    AggregatorV3Interface public immutable LDO_to_ETH_chainlinkOracle;
+    AggregatorV3Interface public immutable LDO_TO_ETH_CHAINLINK_ORACLE;
 
     /// @notice Chainlink oracle for ETH to USD
-    AggregatorV3Interface public immutable ETH_to_USD_chainlinkOracle;
+    AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
 
     /// @notice The heartbeat interval for the LDO/ETH Chainlink oracle.
-    uint256 public immutable LDO_to_ETH_chainlinkHeartbeat;
+    uint256 public immutable LDO_TO_ETH_CHAINLINK_HEARTBEAT;
 
     /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
-    uint256 public immutable ETH_to_USD_chainlinkHeartbeat;
+    uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
     uint8 internal _decimals;
@@ -49,29 +50,29 @@ contract LDO_PriceOracle is IPriceOracleCustom {
     // Constructor
     //
 
-    /// @param LDO_ The address of the LDO token.
-    /// @param LDO_to_ETH_ChainlinkAddress_ The address of the LDO to ETH Chainlink aggregator.
-    /// @param ETH_to_USD_ChainlinkAddress_ The address of the ETH to USD Chainlink aggregator.
-    /// @param LDO_to_ETH_chainlinkHeartbeat_ The time in seconds after which the LDO/ETH price is considered stale if
+    /// @param ldo_ The address of the LDO token.
+    /// @param ldoToEthChainlinkAddress_ The address of the LDO to ETH Chainlink aggregator.
+    /// @param ethToUsdChainlinkAddress_ The address of the ETH to USD Chainlink aggregator.
+    /// @param ldoToEthChainlinkHeartbeat_ The time in seconds after which the LDO/ETH price is considered stale if
     /// not updated.
-    /// @param ETH_to_USD_chainlinkHeartbeat_ The time in seconds after which the ETH/USD price is considered stale if
+    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the ETH/USD price is considered stale if
     /// not updated.
     constructor(
-        address LDO_,
-        address LDO_to_ETH_ChainlinkAddress_,
-        address ETH_to_USD_ChainlinkAddress_,
-        uint256 LDO_to_ETH_chainlinkHeartbeat_,
-        uint256 ETH_to_USD_chainlinkHeartbeat_
+        address ldo_,
+        address ldoToEthChainlinkAddress_,
+        address ethToUsdChainlinkAddress_,
+        uint256 ldoToEthChainlinkHeartbeat_,
+        uint256 ethToUsdChainlinkHeartbeat_
     ) {
-        LDO = OracleArgumentChecks.assertERC20Address(LDO_);
+        LDO = OracleArgumentChecks.assertERC20Address(ldo_);
 
-        LDO_to_ETH_chainlinkOracle = OracleArgumentChecks.assertChainlinkOracle(LDO_to_ETH_ChainlinkAddress_);
-        ETH_to_USD_chainlinkOracle = OracleArgumentChecks.assertChainlinkOracle(ETH_to_USD_ChainlinkAddress_);
+        LDO_TO_ETH_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ldoToEthChainlinkAddress_);
+        ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkAddress_);
 
-        LDO_to_ETH_chainlinkHeartbeat = OracleArgumentChecks.assertNotZeroNumber(LDO_to_ETH_chainlinkHeartbeat_);
-        ETH_to_USD_chainlinkHeartbeat = OracleArgumentChecks.assertNotZeroNumber(ETH_to_USD_chainlinkHeartbeat_);
+        LDO_TO_ETH_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ldoToEthChainlinkHeartbeat_);
+        ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
 
-        _decimals = ETH_to_USD_chainlinkOracle.decimals();
+        _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
     //
@@ -80,17 +81,17 @@ contract LDO_PriceOracle is IPriceOracleCustom {
 
     /// @inheritdoc IPriceOracleCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 LDO_to_ETH_price,, uint256 LDO_to_USD_updatedAt,) = LDO_to_ETH_chainlinkOracle.latestRoundData();
-        (, int256 ETH_to_USD_price,, uint256 ETH_to_USD_updatedAt,) = ETH_to_USD_chainlinkOracle.latestRoundData();
+        (, int256 ldoToEthPrice,, uint256 ldoToUsdUpdatedAt,) = LDO_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
+        (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (LDO_to_ETH_price <= 0 || ETH_to_USD_price <= 0) {
+        if (ldoToEthPrice <= 0 || ethToUsdPrice <= 0) {
             return (0, true);
         }
 
         // Check if either price is stale based on their respective heartbeats
         if (
-            block.timestamp - LDO_to_USD_updatedAt > LDO_to_ETH_chainlinkHeartbeat
-                || block.timestamp - ETH_to_USD_updatedAt > ETH_to_USD_chainlinkHeartbeat
+            block.timestamp - ldoToUsdUpdatedAt > LDO_TO_ETH_CHAINLINK_HEARTBEAT
+                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
             stale = true;
         }
@@ -98,8 +99,8 @@ contract LDO_PriceOracle is IPriceOracleCustom {
         // LDO/ETH price is in 8 decimals, ETH/USD price is in 8 decimals
         // First multiply the prices together (this will have 8 + 8 = 16 decimals)
         // Then divide by 10^8 to get back to 8 decimals (matching ETH/USD)
-        price = LDO_to_ETH_price.toUint256()
-            .mulDiv(ETH_to_USD_price.toUint256(), 10 ** LDO_to_ETH_chainlinkOracle.decimals(), Math.Rounding.Floor);
+        price = ldoToEthPrice.toUint256()
+            .mulDiv(ethToUsdPrice.toUint256(), 10 ** LDO_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceOracleCustom

@@ -6,9 +6,9 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 
-import "src/errors.sol";
+import {InvalidArguments} from "src/errors.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract SparkTest is TestEnvConfigurator {
     uint256 public fork;
@@ -25,14 +25,16 @@ contract SparkTest is TestEnvConfigurator {
     address public rewardsDistributor = address(0x4370D3b6C9588E02ce9D22e684387859c7Ff5b34);
 
     SparkLendBalanceOracle public oracle;
-    IBalanceOracleCustom.PositionMetadata sparkPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-        protocol: "Spark", position: "Spark Pool", positionType: "Supplied/Borrowed"
-    });
+    MockBalances mockBalances;
+
+    function setUp() public {
+        mockBalances = new MockBalances();
+    }
 
     function test_mainnet_balanceOf_supply_dai() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
 
         address user = address(0xB6875EC94bE06d159A28d627422b7c9388cc8861);
 
@@ -43,7 +45,7 @@ contract SparkTest is TestEnvConfigurator {
     function test_mainnet_balanceOf_supply_wbtc() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
         address user = address(0xB6875EC94bE06d159A28d627422b7c9388cc8861);
 
         int256 balance = oracle.balanceOf(wbtc, user);
@@ -53,7 +55,7 @@ contract SparkTest is TestEnvConfigurator {
     function test_mainnet_balanceOf_borrow_weth() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_734_274);
 
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
         address user = address(0xB6875EC94bE06d159A28d627422b7c9388cc8861);
 
         int256 balance = oracle.balanceOf(weth, user);
@@ -62,7 +64,7 @@ contract SparkTest is TestEnvConfigurator {
 
     function test_mainnet_balanceOf_supply_gnosis() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
         address user = address(0x849D52316331967b6fF1198e5E32A0eB168D039d);
         int256 balance = oracle.balanceOf(gno, user);
         assertEq(balance, 88_000_000_000_000_000_000_000);
@@ -70,7 +72,7 @@ contract SparkTest is TestEnvConfigurator {
 
     function test_mainnet_balanceOf_debt_dai() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
         address user = address(0x849D52316331967b6fF1198e5E32A0eB168D039d);
         int256 balance = oracle.balanceOf(dai, user);
         assertEq(balance, -1_000_035_715_961_244_421_526_907);
@@ -78,7 +80,7 @@ contract SparkTest is TestEnvConfigurator {
 
     function test_mainnet_balanceOf_reward_steth() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 19_685_985);
-        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, sparkPositionMetadata);
+        oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(mockBalances));
         address user = address(0x4F2083f5fBede34C2714aFfb3105539775f7FE64);
 
         int256 balance = oracle.balanceOf(steth, user);

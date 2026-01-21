@@ -8,6 +8,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title sUSDS Custom Price Oracle
@@ -35,13 +36,13 @@ contract sUSDS_PriceOracle is IPriceOracleCustom {
     //
 
     /// @notice The Savings USDS (sUSDS) vault contract address.
-    address public immutable sUSDS;
+    address public immutable S_USDS;
 
     /// @notice Chainlink oracle for ETH to USD
-    AggregatorV3Interface public immutable USDS_to_USD_chainlinkOracle;
+    AggregatorV3Interface public immutable USDS_TO_USD_CHAINLINK_ORACLE;
 
     /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
-    uint256 public immutable USDS_to_USD_chainlinkHeartbeat;
+    uint256 public immutable USDS_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
     uint8 internal _decimals;
@@ -51,18 +52,18 @@ contract sUSDS_PriceOracle is IPriceOracleCustom {
     //
 
     /// @notice Initialises the balance oracle for Savings USDS.
-    /// @param sUSDS_ Address of the Savings USDS (sUSDS) vault contract.
-    /// @param USDS_to_USD_ChainlinkAddress_ Address of the USDS to USD Chainlink oracle.
-    /// @param USDS_to_USD_chainlinkHeartbeat_ The time in seconds after which the USDS/USD price is considered stale if
+    /// @param sUsds_ Address of the Savings USDS (sUSDS) vault contract.
+    /// @param usdsToUsdChainlinkAddress_ Address of the USDS to USD Chainlink oracle.
+    /// @param usdsToUsdChainlinkHeartbeat_ The time in seconds after which the USDS/USD price is considered stale if
     /// not updated.
-    constructor(address sUSDS_, address USDS_to_USD_ChainlinkAddress_, uint256 USDS_to_USD_chainlinkHeartbeat_) {
-        sUSDS = OracleArgumentChecks.assertERC20Address(sUSDS_);
+    constructor(address sUsds_, address usdsToUsdChainlinkAddress_, uint256 usdsToUsdChainlinkHeartbeat_) {
+        S_USDS = OracleArgumentChecks.assertERC20Address(sUsds_);
 
-        USDS_to_USD_chainlinkOracle = OracleArgumentChecks.assertChainlinkOracle(USDS_to_USD_ChainlinkAddress_);
+        USDS_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(usdsToUsdChainlinkAddress_);
 
-        USDS_to_USD_chainlinkHeartbeat = OracleArgumentChecks.assertNotZeroNumber(USDS_to_USD_chainlinkHeartbeat_);
+        USDS_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(usdsToUsdChainlinkHeartbeat_);
 
-        _decimals = USDS_to_USD_chainlinkOracle.decimals();
+        _decimals = USDS_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
     //
@@ -71,31 +72,30 @@ contract sUSDS_PriceOracle is IPriceOracleCustom {
 
     /// @inheritdoc IPriceOracleCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 USDS_to_USD_price,, uint256 USDS_to_USD_updatedAt,) = USDS_to_USD_chainlinkOracle.latestRoundData();
+        (, int256 usdsToUsdPrice,, uint256 usdsToUsdUpdatedAt,) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (USDS_to_USD_price <= 0) {
+        if (usdsToUsdPrice <= 0) {
             return (0, true);
         }
 
         // Check if the price is stale based on its heartbeat
-        if (block.timestamp - USDS_to_USD_updatedAt > USDS_to_USD_chainlinkHeartbeat) {
+        if (block.timestamp - usdsToUsdUpdatedAt > USDS_TO_USD_CHAINLINK_HEARTBEAT) {
             stale = true;
         }
 
         // Get user
-        uint256 sUSDS_to_USDS_price = IERC4626(sUSDS).convertToAssets(10 ** IERC4626(sUSDS).decimals());
+        uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** IERC4626(S_USDS).decimals());
 
         // sUSDS/USDS price is in 18 decimals, USDS/USD price is in 8 decimals
         // First multiply the prices together (this will have 18 + 8 = 26 decimals)
         // Then divide by 10^18 to get back to 8 decimals (matching USDS/USD)
-        price = sUSDS_to_USDS_price.mulDiv(
-            USDS_to_USD_price.toUint256(), 10 ** IERC4626(sUSDS).decimals(), Math.Rounding.Floor
-        );
+        price =
+            sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** IERC4626(S_USDS).decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceOracleCustom
     function underlyingAssetSupported() external view override returns (address) {
-        return sUSDS;
+        return S_USDS;
     }
 
     /// @inheritdoc IPriceOracleCustom

@@ -18,8 +18,8 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param destinationChainId The destination chain ID (L2)
     /// @param amount The amount being bridged
-    /// @param isETH Whether the asset is native ETH
-    event SuperchainBridgeInitiated(bytes32 indexed invoiceId, uint64 destinationChainId, bytes32 amount, bool isETH);
+    /// @param isEth Whether the asset is native ETH
+    event SuperchainBridgeInitiated(bytes32 indexed invoiceId, uint64 destinationChainId, bytes32 amount, bool isEth);
 
     /// @notice Event emitted when a Superchain bridge is initiated (L2 → L1 withdrawal)
     /// @param invoiceId The invoice ID (32 bytes) - indexed

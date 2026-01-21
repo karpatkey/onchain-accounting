@@ -9,15 +9,14 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import "src/errors.sol";
 
 /// @title sDAI (Savings xDAI) Custom Price Oracle
 /// @notice Returns the USD price of sDAI by combining Chainlink’s xDAI/USD feed with the sDAI ERC-4626 exchange rate.
 /// @dev sDAI is an ERC-4626 share token representing claims on an xDAI-denominated vault. The price is computed as:
 ///      `price = (xDAI/USD) * (assetsPerShare)`, where
 ///      `assetsPerShare = IERC4626(sDAI).convertToAssets(10**shareDecimals) / 10**shareDecimals`.
-///      - The xDAI/USD quote comes from `xDAI_to_USD_chainlinkOracle` and the returned price uses `_decimals`.
-///      - Freshness of the Chainlink feed is checked against `xDAI_to_USD_chainlinkHertbeat`; if exceeded,
+///      - The xDAI/USD quote comes from `X_DAI_TO_USD_CHAINLINK_ORACLE` and the returned price uses `_decimals`.
+///      - Freshness of the Chainlink feed is checked against `X_DAI_TO_USD_CHAINLINK_HEARTBEAT`; if exceeded,
 ///        the function sets `stale = true` but still returns the computed price.
 ///      - Multiplication/division is performed via `Math.mulDiv(..., Math.Rounding.Floor)` so the result is
 ///        scaled back to `_decimals` and rounded down.
@@ -36,13 +35,13 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
     //
 
     /// @notice savingsXDai contract interface
-    address public immutable sDAI;
+    address public immutable S_DAI;
 
     /// @notice Chainlink oracle for xDAI to USD
-    AggregatorV3Interface public immutable xDAI_to_USD_chainlinkOracle;
+    AggregatorV3Interface public immutable X_DAI_TO_USD_CHAINLINK_ORACLE;
 
     /// @notice The heartbeat interval for the Chainlink oracle.
-    uint256 public immutable xDAI_to_USD_chainlinkHertbeat;
+    uint256 public immutable X_DAI_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
     uint8 internal _decimals;
@@ -51,18 +50,18 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
     // Constructor
     //
 
-    /// @param sDAI_ The address of the Savings xDai contract.
-    /// @param xDAI_to_USD_chainlinkOracle_ The address of the xDAI to USD Chainlink oracle.
-    /// @param xDAI_to_USD_chainlinkHertbeat_ The time in seconds after which the price is considered stale if not
+    /// @param sDai_ The address of the Savings xDai contract.
+    /// @param xDaiToUsdChainlinkOracle_ The address of the xDAI to USD Chainlink oracle.
+    /// @param xDaiToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not
     /// updated.
-    constructor(address sDAI_, address xDAI_to_USD_chainlinkOracle_, uint256 xDAI_to_USD_chainlinkHertbeat_) {
-        sDAI = OracleArgumentChecks.assertERC20Address(sDAI_);
+    constructor(address sDai_, address xDaiToUsdChainlinkOracle_, uint256 xDaiToUsdChainlinkHeartbeat_) {
+        S_DAI = OracleArgumentChecks.assertERC20Address(sDai_);
 
-        xDAI_to_USD_chainlinkOracle = OracleArgumentChecks.assertChainlinkOracle(xDAI_to_USD_chainlinkOracle_);
+        X_DAI_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(xDaiToUsdChainlinkOracle_);
 
-        xDAI_to_USD_chainlinkHertbeat = OracleArgumentChecks.assertNotZeroNumber(xDAI_to_USD_chainlinkHertbeat_);
+        X_DAI_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(xDaiToUsdChainlinkHeartbeat_);
 
-        _decimals = xDAI_to_USD_chainlinkOracle.decimals();
+        _decimals = X_DAI_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
     //
@@ -71,19 +70,19 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
 
     /// @inheritdoc IPriceOracleCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 xDAI_to_USD_price,, uint256 xDAI_to_USD_updatedAt,) = xDAI_to_USD_chainlinkOracle.latestRoundData();
+        (, int256 xDaiToUsdPrice,, uint256 xDaiToUsdUpdatedAt,) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (xDAI_to_USD_price <= 0) {
+        if (xDaiToUsdPrice <= 0) {
             return (0, true);
         }
 
-        IERC4626 sDAI_vault = IERC4626(sDAI);
+        IERC4626 sDaiVault = IERC4626(S_DAI);
 
-        if (block.timestamp - xDAI_to_USD_updatedAt > xDAI_to_USD_chainlinkHertbeat) stale = true;
+        if (block.timestamp - xDaiToUsdUpdatedAt > X_DAI_TO_USD_CHAINLINK_HEARTBEAT) stale = true;
 
-        uint256 underlyingValue = sDAI_vault.convertToAssets(10 ** sDAI_vault.decimals());
+        uint256 underlyingValue = sDaiVault.convertToAssets(10 ** sDaiVault.decimals());
 
-        price = xDAI_to_USD_price.toUint256().mulDiv(underlyingValue, 10 ** sDAI_vault.decimals(), Math.Rounding.Floor);
+        price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** sDaiVault.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceOracleCustom
@@ -93,7 +92,7 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
 
     /// @inheritdoc IPriceOracleCustom
     function underlyingAssetSupported() external view override returns (address) {
-        return address(sDAI);
+        return address(S_DAI);
     }
 
     /// @inheritdoc IERC165

@@ -8,6 +8,7 @@ import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {IAcrossReceiver, ISpokePool} from "./interfaces/IAcrossInterfaces.sol";
 import {IAcrossBridgeAdapter} from "./interfaces/IAcrossBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title AcrossBridgeAdapter

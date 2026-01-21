@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
-import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 
-import "src/bridge/adapters/CctpBridgeAdapter.sol";
+import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
+import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import "src/bridge/IBridgeEscrow.sol";
-import "test/bridge/fork/BridgeForkTestBase.sol";
+import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {BridgeForkTestBase} from "test/bridge/fork/BridgeForkTestBase.sol";
 
 /// @title CctpBridgeAdapterForkTest
 /// @notice Fork tests for CCTP Bridge Adapter using real mainnet contracts

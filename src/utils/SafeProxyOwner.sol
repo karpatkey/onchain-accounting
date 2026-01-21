@@ -2,6 +2,7 @@
 // solhint-disable one-contract-per-file
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @dev Tuple describing a call to batch through `MultiSend` and `MultiSendCallOnly`

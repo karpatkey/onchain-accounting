@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -10,7 +13,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
-contract Aura is IBalanceOracleCustom {
+contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -39,8 +42,12 @@ contract Aura is IBalanceOracleCustom {
     /// @notice Aura rewards pool contract that distributes rewards to stakers
     IBaseRewardPool4626 public immutable AURA_REWARDS;
 
-    /// @notice Position tags associated with the balance oracle.
-    PositionMetadata internal _positionMetadata;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Position detail identifier for this oracle
+    string private _positionDetail;
+    /// @notice Reference to Balances contract for asset registry access
+    IBalances public immutable BALANCES;
 
     //
     // Constructor
@@ -52,7 +59,9 @@ contract Aura is IBalanceOracleCustom {
     /// @param booster_ Address of the Aura Booster contract
     /// @param pid_ Pool ID in the Aura Booster contract
     /// @param auraToken_ Address of the Aura token contract
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
+    /// @param protocol_ Protocol identifier (e.g., "Aura").
+    /// @param positionDetail_ Position detail identifier (e.g., "Some Aura Pool").
+    /// @param balances_ The address of the Balances contract for asset registry access.
     /// @dev Validates that the gauge's LP token matches the pool address
     constructor(
         address pool_,
@@ -60,7 +69,9 @@ contract Aura is IBalanceOracleCustom {
         address booster_,
         uint256 pid_,
         address auraToken_,
-        PositionMetadata memory positionMetadata_
+        string memory protocol_,
+        string memory positionDetail_,
+        address balances_
     ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
@@ -93,7 +104,9 @@ contract Aura is IBalanceOracleCustom {
             revert InvalidArguments();
         }
 
-        _positionMetadata = positionMetadata_;
+        _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        BALANCES = IBalances(balances_);
     }
 
     //
@@ -131,6 +144,8 @@ contract Aura is IBalanceOracleCustom {
             uint256 earned = previewEarned(AURA_REWARDS, safe);
             uint256 claimed = auraMintAmountConversion(rewardClaimed(address(AURA_REWARDS), earned));
 
+            // casting to 'int256' is safe because claimed is a reward amount that will never exceed int256 max
+            // forge-lint: disable-next-line(unsafe-typecast)
             total += int256(claimed);
         }
         // getRewards()
@@ -145,6 +160,8 @@ contract Aura is IBalanceOracleCustom {
                 uint256 earned = previewEarned(pool, safe);
                 uint256 claimed = auraMintAmountConversion(rewardClaimed(address(pool), earned));
 
+                // casting to 'int256' is safe because claimed is a reward amount that will never exceed int256 max
+                // forge-lint: disable-next-line(unsafe-typecast)
                 total += int256(claimed);
             }
         }
@@ -160,6 +177,8 @@ contract Aura is IBalanceOracleCustom {
 
         uint256 earned = previewEarned(pool, safe);
 
+        // casting to 'int256' is safe because earned is a reward amount that will never exceed int256 max
+        // forge-lint: disable-next-line(unsafe-typecast)
         return int256(earned);
     }
 
@@ -331,21 +350,155 @@ contract Aura is IBalanceOracleCustom {
 
     /// @inheritdoc IBalanceOracleCustom
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = address(0); // FIXME
+        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
+        address[] memory assets = new address[](immutableData.tokens.length);
+        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
+            assets[i] = address(immutableData.tokens[i]);
+        }
         return assets;
-    }
-
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
     }
 
     /// @notice Implementation of IERC165 interface detection
     /// @param interfaceId The interface id to check
     /// @return True if this contract implements the interface
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleCustom).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        return this.balanceOf(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account, address assetFilter)
+        external
+        view
+        returns (address[] memory assets, int256[] memory amounts)
+    {
+        if (assetFilter != address(0)) {
+            // Return empty arrays when asset filter is specified
+            return (new address[](0), new int256[](0));
+        }
+
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        // Pre-allocate arrays
+        address[] memory tempAssets = new address[](assetCount);
+        int256[] memory tempAmounts = new int256[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = balance;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        assets = new address[](count);
+        amounts = new int256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param account The account to query
+    /// @param assetFilter Optional asset filter (address(0) for all assets)
+    /// @return positions Array of Position structs from this oracle
+    function _buildPositions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        if (assetCount == 0) {
+            return new INAVCalculator.Position[](0);
+        }
+
+        // Pre-allocate array (estimate max size)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+
+            // Apply asset filter if specified
+            if (assetFilter != address(0) && asset != assetFilter) {
+                continue;
+            }
+
+            // Get balance for this asset
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                // Get asset info from registry (if registered)
+                uint8 decimals;
+                string memory symbol;
+                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                    decimals = dec;
+                } catch {
+                    // Asset not registered, skip it (NAVCalculator will filter anyway)
+                    continue;
+                }
+                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    symbol = sym;
+                } catch {
+                    symbol = "";
+                }
+
+                // Build underlying asset struct
+                INAVCalculator.Asset memory underlyingAsset =
+                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+
+                // Build position (pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.Position({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: balance,
+                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
+                    value: 0, // Will be calculated by NAVCalculator
+                    price: 0, // Will be set by NAVCalculator
+                    priceDecimals: 0, // Will be set by NAVCalculator
+                    stale: false, // Will be set by NAVCalculator
+                    protocol: _protocol,
+                    positionDetail: _positionDetail
+                });
+
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        return _buildPositions(account, assetFilter);
     }
 }
 
@@ -355,6 +508,7 @@ interface IGaugeV3 is IERC20 {
     /// @notice Returns the address of the LP token that can be staked in this gauge
     /// @return The address of the LP token
     //solhint-disable-next-line func-name-mixedcase
+    // forge-lint: disable-next-line(mixed-case-function)
     function lp_token() external view returns (address);
 
     /// @notice Returns the amount of reward tokens claimable by a user
@@ -362,6 +516,7 @@ interface IGaugeV3 is IERC20 {
     /// @param token Address of the reward token to check
     /// @return The amount of reward tokens claimable
     //solhint-disable-next-line func-name-mixedcase
+    // forge-lint: disable-next-line(mixed-case-function)
     function claimable_reward(address user, address token) external view returns (uint256);
 }
 

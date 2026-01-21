@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 contract MorphoMarketTest is TestEnvConfigurator {
@@ -20,8 +19,11 @@ contract MorphoMarketTest is TestEnvConfigurator {
     address mkr = address(0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2);
 
     MorphoMarketBalanceOracle public oracle;
-    IBalanceOracleCustom.PositionMetadata morphoMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Morpho", position: "Some market", positionType: "Supplied"});
+    MockBalances mockBalances;
+
+    function setUp() public {
+        mockBalances = new MockBalances();
+    }
 
     function test_mainnet_balanceOf_supply_usdc() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
@@ -30,7 +32,8 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
+        oracle =
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
         int256 balance = oracle.balanceOf(usdc, user);
         assertEq(balance, 25_066_203_870);
     }
@@ -42,10 +45,10 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
 
-        int256 balanceUSDC = oracle.balanceOf(usdc, user);
-        assertEq(balanceUSDC, -9_478_607_678_615);
+        int256 balanceUsdc = oracle.balanceOf(usdc, user);
+        assertEq(balanceUsdc, -9_478_607_678_615);
     }
 
     function test_mainnet_balanceOf_collateralMKR() public {
@@ -55,10 +58,10 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
 
-        int256 balanceMKR = oracle.balanceOf(mkr, user);
-        assertEq(balanceMKR, 15_235_145_753_614_569_323_332);
+        int256 balanceMkr = oracle.balanceOf(mkr, user);
+        assertEq(balanceMkr, 15_235_145_753_614_569_323_332);
     }
 
     function test_mainnet_balanceOf_unsupportedToken() public {
@@ -68,7 +71,7 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
 
         vm.expectRevert(InvalidArguments.selector);
         oracle.balanceOf(address(0), user);
@@ -80,7 +83,8 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
+        oracle =
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
         assertEq(assets[0], wsteth);
@@ -93,8 +97,9 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
-        assertEq(oracle.collateralToken(), wsteth);
-        assertEq(oracle.loanToken(), usdc);
+        oracle =
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
+        assertEq(oracle.COLLATERAL_TOKEN(), wsteth);
+        assertEq(oracle.LOAN_TOKEN(), usdc);
     }
 }

@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {Aura, IBaseRewardPool4626} from "src/balances/protocols/Aura.sol";
+import {Aura} from "src/balances/protocols/Aura.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {InvalidArguments, NotAuthorized} from "src/errors.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 
 contract AuraTest is TestEnvConfigurator {
     Aura public oracle;
@@ -25,14 +22,14 @@ contract AuraTest is TestEnvConfigurator {
     address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address public constant GAUGE = 0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f;
     uint256 public constant AURA_PID = 246;
-    IBalanceOracleCustom.PositionMetadata auraMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Aura", position: "Some Aura Pool", positionType: "Staked"});
+    MockBalances mockBalances;
 
     function setUp() public {
         uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_131_922);
-        oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, AURA, auraMetadata);
+        mockBalances = new MockBalances();
+        oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, AURA, "Aura", "Some Aura Pool", address(mockBalances));
     }
 
     function test_balanceOf_single_user() public {
@@ -176,32 +173,38 @@ contract AuraTest is TestEnvConfigurator {
         tokens[4] = BAL;
 
         // Declare arrays to store oracle balances and before balances
-        uint256[5] memory oracleBalances;
+        int256[5] memory oracleBalances;
         uint256[5] memory beforeBalances;
 
         // Get oracle balances and token balances before redemption
         for (uint256 i = 0; i < tokens.length; i++) {
-            oracleBalances[i] = uint256(oracle.balanceOf(tokens[i], user));
+            oracleBalances[i] = oracle.balanceOf(tokens[i], user);
             beforeBalances[i] = IERC20(tokens[i]).balanceOf(user);
         }
 
         // Redeem tokens (will handle both gauge and regular redemption)
         redeemAllTokens(user);
 
+        // casting to 'int256' is safe because token balances are always positive
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(
-            uint256(oracleBalances[0]), IERC20(tokens[0]).balanceOf(user) - beforeBalances[0], "USDT amount mismatch"
+            oracleBalances[0], int256(IERC20(tokens[0]).balanceOf(user) - beforeBalances[0]), "USDT amount mismatch"
         );
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(
-            uint256(oracleBalances[1]), IERC20(tokens[1]).balanceOf(user) - beforeBalances[1], "USDC amount mismatch"
+            oracleBalances[1], int256(IERC20(tokens[1]).balanceOf(user) - beforeBalances[1]), "USDC amount mismatch"
         );
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(
-            uint256(oracleBalances[2]), IERC20(tokens[2]).balanceOf(user) - beforeBalances[2], "GHO amount mismatch"
+            oracleBalances[2], int256(IERC20(tokens[2]).balanceOf(user) - beforeBalances[2]), "GHO amount mismatch"
         );
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(
-            uint256(oracleBalances[3]), IERC20(tokens[3]).balanceOf(user) - beforeBalances[3], "AURA amount mismatch"
+            oracleBalances[3], int256(IERC20(tokens[3]).balanceOf(user) - beforeBalances[3]), "AURA amount mismatch"
         );
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(
-            uint256(oracleBalances[4]), IERC20(tokens[4]).balanceOf(user) - beforeBalances[4], "BAL amount mismatch"
+            oracleBalances[4], int256(IERC20(tokens[4]).balanceOf(user) - beforeBalances[4]), "BAL amount mismatch"
         );
     }
 }
@@ -276,7 +279,7 @@ interface IBalancerGauge {
 
 interface Booster {
     function FEE_DENOMINATOR() external view returns (uint256);
-    function MaxFees() external view returns (uint256);
+    function maxFees() external view returns (uint256);
     function REWARD_MULTIPLIER_DENOMINATOR() external view returns (uint256);
     function addPool(address _lptoken, address _gauge, uint256 _stashVersion) external returns (bool);
     function bridgeDelegate() external view returns (address);

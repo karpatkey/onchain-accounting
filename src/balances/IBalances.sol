@@ -6,50 +6,32 @@ interface IBalances {
     // Type definitions
     //
 
-    /// @notice Enum representing the types of balance oracles.
-    /// @param ERC20 The oracle is an ERC20 token.
-    /// @param Native The native token of the underlying chain.
-    /// @param Custom The balance oracle is a custom oracle.
-    enum BalanceType {
+    enum OracleType {
         ERC20,
         Native,
         Custom
     }
 
-    /// @notice Struct representing a balance oracle.
-    /// @param oracle The address of the oracle.
-    /// @param balanceType The type of the oracle (ERC20, Native or Custom).
     struct BalanceOracle {
         address oracle;
-        BalanceType balanceType;
-    }
-
-    /// @notice Struct representing a balance oracle with metadata.
-    /// @param oracle The address of the oracle.
-    /// @param protocol The protocol name.
-    /// @param position The specified position within the protocol.
-    /// @param positionType The type of the position (e.g., "Supplied", "Borrowed", "Staked").
-    struct BalanceOracleWithMetadata {
-        address oracle;
+        OracleType oracleType;
         string protocol;
-        string position;
-        string positionType;
     }
 
     //
     // Events
     //
 
-    /// @notice Event emitted when a balance oracle is set for an underlying asset.
+    /// @notice Event emitted when a balance oracle is added for an underlying asset.
     /// @param underlyingAsset The address of the token for which the oracle is set.
     /// @param oracle The address of the oracle being set.
-    /// @param oracleType The type of the oracle (ERC20 or Custom).
-    event BalanceOracleSet(address indexed underlyingAsset, address indexed oracle, BalanceType oracleType);
+    /// @param oracleType The type of the oracle.
+    event BalanceOracleAdded(address indexed underlyingAsset, address indexed oracle, OracleType oracleType);
 
-    /// @notice Event emitted when a balance oracle is unset for an underlying asset.
+    /// @notice Event emitted when a balance oracle is removed for an underlying asset.
     /// @param underlyingAsset The address of the token for which the oracle is unset.
     /// @param oracle The address of the balance oracle being unset.
-    event BalanceOracleUnset(address indexed underlyingAsset, address oracle);
+    event BalanceOracleRemoved(address indexed underlyingAsset, address oracle);
 
     //
     // Errors
@@ -94,38 +76,65 @@ interface IBalances {
     /// @param idx The index of the balance oracle.
     /// @return oracle The address of the balance oracle.
     /// @return balanceType The type of the balance oracle.
-    function balanceOracleAt(address underlyingAsset, uint256 idx) external view returns (address, BalanceType);
+    function balanceOracleAt(address underlyingAsset, uint256 idx) external view returns (address, OracleType);
 
     /// @notice Returns all the balance oracles addresses for a given underlying asset
     /// @param underlyingAsset The address of the token.
     /// @return oracles The address of the balance oracle.
     function balanceOracles(address underlyingAsset) external view returns (address[] memory oracles);
 
-    /// @notice Retrieve all configured balance oracles for a given underlying asset, including human‑readable metadata.
-    /// @dev
-    ///   - Custom oracles (BalanceType.Custom) provide metadata via their own `positionMetadata()` hook.
-    ///   - Native oracles (BalanceType.Native) return a default metadata struct with:
-    ///       protocol = "Portfolio balance",
-    ///       position  = _nativeTokenSymbol,
-    ///       positionType = "Native"
-    ///   - ERC20 oracles (BalanceType.ERC20) attempt to read the underlying asset token’s `symbol()`. On failure,
-    ///       the `position` field is left empty.
-    ///   - The returned array order corresponds to the internal oracle set’s iteration; callers should not
-    ///     assume any particular order across invocations.
-    /// @param underlyingAsset The token address whose oracles you wish to query.
-    /// @return list An array of `BalanceOracleWithMetadata` structs, each containing:
-    ///   - oracle        The oracle contract’s address.
-    ///   - protocol      The name of the protocol or system supplying the balance.
-    ///   - position      A position identifier (e.g. token symbol or custom string).
-    ///   - positionType  A tag describing the position (“Native”, “ERC20”, or custom type).
-    function balanceOraclesWithMetadata(address underlyingAsset)
-        external
-        view
-        returns (BalanceOracleWithMetadata[] memory);
-
     /// @notice Checks if the oracle supports the given oracle type.
     /// @param underlyingAsset The address of the token.
     /// @param oracle The address of the oracle.
     /// @param oracleType The type of the oracle.
-    function checkBalanceOracleSupport(address underlyingAsset, address oracle, BalanceType oracleType) external view;
+    function checkBalanceOracleSupport(address underlyingAsset, address oracle, OracleType oracleType) external view;
+
+    //
+    // Global Oracle Registry
+    //
+
+    /// @notice Returns all registered oracles in the global registry
+    /// @return oracles Array of all oracle addresses
+    function getAllOracles() external view returns (address[] memory oracles);
+
+    /// @notice Returns the total number of registered oracles
+    /// @return count Total number of oracles
+    function getOracleCount() external view returns (uint256 count);
+
+    /// @notice Checks if an oracle is registered in the global registry
+    /// @param oracle The oracle address to check
+    /// @return registered True if the oracle is registered
+    function isOracleRegistered(address oracle) external view returns (bool registered);
+
+    /// @notice Returns the type of a registered oracle
+    /// @param oracle The oracle address
+    /// @return oracleType The type of the oracle
+    function getOracleType(address oracle) external view returns (OracleType oracleType);
+
+    //
+    // Asset Registry (shared with Prices and NAVCalculator)
+    //
+
+    /// @notice Checks if an asset is registered
+    /// @param asset The asset address to check
+    /// @return registered True if the asset is registered
+    function isAssetRegistered(address asset) external view returns (bool registered);
+
+    /// @notice Returns all registered assets
+    /// @return assets Array of all registered asset addresses
+    function getAssets() external view returns (address[] memory assets);
+
+    /// @notice Returns the total number of registered assets
+    /// @return count Total number of assets
+    function getAssetCount() external view returns (uint256 count);
+
+    /// @notice Returns the decimals for a registered asset
+    /// @param asset The asset address
+    /// @return decimals The number of decimals for the asset
+    function getAssetDecimals(address asset) external view returns (uint8 decimals);
+
+    /// @notice Returns the symbol for a registered asset
+    /// @param asset The asset address
+    /// @return symbol The asset symbol
+    function getAssetSymbol(address asset) external view returns (string memory symbol);
 }

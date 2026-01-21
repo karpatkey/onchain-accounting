@@ -1,25 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
-
-import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
-import "src/nav/NAVCalculator.sol";
-import "src/prices/Prices.sol";
-import "src/balances/Balances.sol";
+import {NAVCalculator} from "src/nav/NAVCalculator.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Prices} from "src/prices/Prices.sol";
+import {IPrices} from "src/prices/IPrices.sol";
+import {Balances} from "src/balances/Balances.sol";
+import {IBalances} from "src/balances/IBalances.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/price_oracles.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/balance_oracles.sol";
 
 /// A test setup that includes a lot of boilerplate used by various tests,
 /// such as setting up various accounts, contracts, tokens and price oracles
 abstract contract SuperTest is Test {
-    uint256 constant zeroPercent = 0;
-    uint256 constant fivePercent = 5 ether;
+    uint256 constant ZERO_PERCENT = 0;
+    uint256 constant FIVE_PERCENT = 5 ether;
     uint256 usdPrice = 1e8;
 
     // generic account declarations
@@ -109,24 +116,22 @@ abstract contract SuperTest is Test {
 
         vm.startPrank(navCalculatorManager);
 
-        // This price oracle could be added here, but then it couldn't be removed later because by default its' balance
-        // oracle is added in the Balances.sol constructor and that triggers a sanity check of the removePrice()
-        // function, affecting the test_read_noAssets_doesNotRevert test
-        // nav.addPrice(address(nav.NATIVE_ADDRESS()), address(ethOracle),
-        // IPrices.PriceType.Chainlink,type(uint256).max);
-        // No need to add the balance oracle for the native token, as it is added in the constructor
+        // Register native address with price feed
+        nav.registerAsset(
+            address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+        );
+        // Note: The native address balance oracle is handled by ERC20DefaultOracle which is set up in initialize()
+        // The ERC20DefaultOracle automatically handles native balances, so we don't need to add it explicitly
+        // However, if tests need it, they can access it via nav.erc20DefaultOracle()
 
-        nav.registerAsset(address(usdc));
-        nav.setPriceOracle(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
 
-        nav.registerAsset(address(dai));
-        nav.setPriceOracle(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
-        nav.setBalanceOracle(address(dai), address(dai), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
+        nav.addBalanceOracle(address(dai), address(dai), IBalances.OracleType.ERC20);
 
-        nav.registerAsset(address(weth));
-        nav.setPriceOracle(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.setBalanceOracle(address(weth), address(weth), IBalances.BalanceType.ERC20);
+        nav.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addBalanceOracle(address(weth), address(weth), IBalances.OracleType.ERC20);
 
         vm.stopPrank();
     }
@@ -141,7 +146,7 @@ abstract contract SuperTest is Test {
     }
 
     function setupFund() internal {
-        setupFund(zeroPercent, 100, 50, 1000); // 1% management, 0.5% redemption, 10% performance
+        setupFund(ZERO_PERCENT, 100, 50, 1000); // 1% management, 0.5% redemption, 10% performance
     }
 
     function setupNAVCalculatorWithParams(address admin_, address safe_, address chainlinkUptimeFeed_)
@@ -172,12 +177,12 @@ abstract contract SuperTest is Test {
 
     ///  Returns the current NAV of the fund
     function t_currentNav() public view returns (uint256 currentNav) {
-        INAVCalculator.NAV memory navReading = nav.getTotalNAV(address(safe));
-        return uint256(navReading.usd);
+        INAVCalculator.NAV memory navReading = nav.getAccountNav(address(safe), address(0));
+        return uint256(navReading.value);
     }
 
     function t_readNav() internal view returns (INAVCalculator.NAV memory navReading) {
-        navReading = nav.getTotalNAV(address(safe));
+        navReading = nav.getAccountNav(address(safe), address(0));
     }
 
     // ERC20 transfer events

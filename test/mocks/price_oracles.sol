@@ -70,6 +70,8 @@ contract Mock_PriceOracleChainlink is AggregatorV3Interface {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
+        // casting to 'int256' is safe because price is uint256 and fits in int256 range for Chainlink prices
+        // forge-lint: disable-next-line(unsafe-typecast)
         return (0, int256(price), 0, block.timestamp, 0);
     }
 
@@ -79,6 +81,8 @@ contract Mock_PriceOracleChainlink is AggregatorV3Interface {
         virtual
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
+        // casting to 'int256' is safe because price is a positive value representing a price
+        // forge-lint: disable-next-line(unsafe-typecast)
         return (0, int256(price), 0, _updatedAt, 0);
     }
 }

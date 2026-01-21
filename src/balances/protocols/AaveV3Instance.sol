@@ -2,6 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -16,7 +19,7 @@ import "src/errors.sol";
 /// 3. Fetching the user's accrued rewards for the asset via the Rewards Distributor
 /// 4. Returning the sum of net balance and unclaimed rewards
 /// The final balance is denominated in the underlying asset of the reserve.
-contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
+contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -28,11 +31,13 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
     //
 
     /// @notice The address of the data provider
-    IProtocolDataProvider public immutable dataProvider;
+    IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice The address of the incentives controller
-    IRewardsDistributor public immutable rewardsDistributor;
-    /// @notice Position metadata tags describing the DeFi position this oracle is associated to.
-    PositionMetadata private _positionMetadata;
+    IRewardsDistributor public immutable REWARDS_DISTRIBUTOR;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Reference to Balances contract for asset registry access
+    IBalances public immutable BALANCES;
 
     //
     // Constructor
@@ -40,11 +45,13 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
 
     /// @param dataProvider_ The address of the Aave v3 Pool Data Provider contract.
     /// @param rewardsDistributor_ The address of the Aave v3 Rewards Distributor contract.
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
-    constructor(address dataProvider_, address rewardsDistributor_, PositionMetadata memory positionMetadata_) {
-        dataProvider = IProtocolDataProvider(dataProvider_);
-        rewardsDistributor = IRewardsDistributor(rewardsDistributor_);
-        _positionMetadata = positionMetadata_;
+    /// @param protocol_ Protocol identifier (e.g., "Aave v3").
+    /// @param balances_ The address of the Balances contract for asset registry access.
+    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address balances_) {
+        DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
+        REWARDS_DISTRIBUTOR = IRewardsDistributor(rewardsDistributor_);
+        _protocol = protocol_;
+        BALANCES = IBalances(balances_);
     }
 
     //
@@ -76,7 +83,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
         view
         returns (int256 suppliedAmount, int256 borrowedAmount, int256 totalRewards)
     {
-        try dataProvider.getUserReserveData(token, user) returns (
+        try DATA_PROVIDER.getUserReserveData(token, user) returns (
             uint256 currentATokenBalance,
             uint256 currentStableDebt,
             uint256 currentVariableDebt,
@@ -94,7 +101,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
             borrowedAmount = 0;
         }
 
-        totalRewards = int256(rewardsDistributor.getUserAccruedRewards(user, token));
+        totalRewards = int256(REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, token));
     }
 
     /// @inheritdoc IBalanceOracleCustom
@@ -106,7 +113,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
     /// @dev The returned list may be empty if the oracle cannot determine or provide the supported assets.
     /// @return underlyingAssets The list of underlying asset addresses supported by this oracle (may be empty).
     function _underlyingAssetsSupported() internal view returns (address[] memory) {
-        IProtocolDataProvider.TokenData[] memory reserves = dataProvider.getAllReservesTokens();
+        IProtocolDataProvider.TokenData[] memory reserves = DATA_PROVIDER.getAllReservesTokens();
 
         address[] memory assets = new address[](reserves.length);
 
@@ -117,14 +124,145 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom {
         return assets;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
-    }
-
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleCustom).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        return this.balanceOf(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account, address assetFilter)
+        external
+        view
+        returns (address[] memory assets, int256[] memory amounts)
+    {
+        if (assetFilter != address(0)) {
+            // Return empty arrays when asset filter is specified
+            return (new address[](0), new int256[](0));
+        }
+
+        address[] memory supportedAssets = _underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        // Pre-allocate arrays
+        address[] memory tempAssets = new address[](assetCount);
+        int256[] memory tempAmounts = new int256[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = balance;
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        assets = new address[](count);
+        amounts = new int256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param account The account to query
+    /// @param assetFilter Optional asset filter (address(0) for all assets)
+    /// @return positions Array of Position structs from this oracle
+    function _buildPositions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        address[] memory supportedAssets = _underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        if (assetCount == 0) {
+            return new INAVCalculator.Position[](0);
+        }
+
+        // Pre-allocate array (estimate max size)
+        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+
+            // Apply asset filter if specified
+            if (assetFilter != address(0) && asset != assetFilter) {
+                continue;
+            }
+
+            // Get balance for this asset
+            int256 balance = this.balanceOf(asset, account);
+
+            // Only include non-zero balances
+            if (balance != 0) {
+                // Get asset info from registry (if registered)
+                uint8 decimals;
+                string memory symbol;
+                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                    decimals = dec;
+                } catch {
+                    // Asset not registered, skip it (NAVCalculator will filter anyway)
+                    continue;
+                }
+                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    symbol = sym;
+                } catch {
+                    symbol = "";
+                }
+
+                // Build underlying asset struct
+                INAVCalculator.Asset memory underlyingAsset =
+                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+
+                // Build position (pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.Position({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: balance,
+                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
+                    value: 0, // Will be calculated by NAVCalculator
+                    price: 0, // Will be set by NAVCalculator
+                    priceDecimals: 0, // Will be set by NAVCalculator
+                    stale: false, // Will be set by NAVCalculator
+                    protocol: _protocol,
+                    positionDetail: symbol
+                });
+
+                positionCount++;
+            }
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.Position[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.Position[] memory positions)
+    {
+        return _buildPositions(account, assetFilter);
     }
 }
 

@@ -11,52 +11,46 @@ interface IPrices {
         Custom
     }
 
-    /// @notice Struct representing an oracle and its type.
+    /// @notice Struct representing a price feed configuration (stored oracle configuration).
     /// @param oracle The address of the oracle contract.
     /// @param decimals The number of decimal places the oracle uses.
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
     /// oracles.
     /// @param priceType The type of the oracle (Chainlink or Custom).
-    struct PriceOracle {
+    struct PriceFeedConfig {
         address oracle;
         uint8 decimals;
         uint256 chainlinkHeartbeat;
         PriceType priceType;
     }
 
-    /// @notice Emitted when an oracle is set for a token.
+    /// @notice Emitted when a price feed is set for a token.
     /// @param underlyingAsset The address of the token.
     /// @param oracle The address of the oracle.
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
     /// oracles.
     /// @param priceType The type of the oracle.
-    event PriceOracleSet(
+    event PriceFeedSet(
         address indexed underlyingAsset, address indexed oracle, uint256 chainlinkHeartbeat, PriceType priceType
     );
 
-    /// @notice Emitted when an oracle is removed for a token.
+    /// @notice Emitted when a price feed is removed for a token.
     /// @param underlyingAsset The address of the token.
-    event PriceOracleRemoved(address indexed underlyingAsset);
-
-    /// @notice Emitted when an oracle is unset for a token.
-    /// @param underlyingAsset The address of the token.
-    event PriceOracleUnset(address indexed underlyingAsset);
+    event PriceFeedUnset(address indexed underlyingAsset);
 
     //
     // Errors
     //
 
-    /// @notice Error when the price oracle is
-    error PriceOracleNotSet();
+    /// @notice Error when the price feed is not set for an asset
+    /// @param asset The address of the asset
+    error PriceFeedNotSet(address asset);
 
     /// @notice Error when the price oracle is invalid
     error InvalidPriceOracle();
 
     /// @notice Error when the price oracle type is not valid
     error InvalidPriceOracleType();
-
-    /// @notice Error when the price oracle is already set
-    error PriceOracleAlreadySet();
 
     /// @notice Returns the latest price for a given token while checking if the price is stale.
     /// @param underlyingAsset The address of the token.

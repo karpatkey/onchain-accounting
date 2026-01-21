@@ -9,6 +9,7 @@ import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./interfaces/ISuperchainInterfaces.sol";
 import {Types} from "@optimism/libraries/Types.sol";
 import {ISuperchainBridgeAdapter} from "./interfaces/ISuperchainBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title SuperchainBridgeAdapter
@@ -187,7 +188,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-        bool isETH = _isNativeToken(asset);
+        bool isEth = _isNativeToken(asset);
 
         // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
         // If we're on L1 (mainnet), it's L1 → L2 deposit
@@ -197,30 +198,30 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         if (isL1ToL2) {
             // L1 → L2 Deposit (fast, can be completed immediately)
             if (address(l1Bridge) == address(0)) revert InvalidL1Bridge();
-            _depositToL2(data, asset, isETH, messagePayload);
+            _depositToL2(data, asset, isEth, messagePayload);
         } else {
             // L2 → L1 Withdrawal (requires two-step process: prove + finalize)
             if (address(l2Bridge) == address(0)) revert InvalidL2Bridge();
-            _withdrawToL1(data, asset, isETH, messagePayload);
+            _withdrawToL1(data, asset, isEth, messagePayload);
         }
     }
 
     /// @notice Handles L1 → L2 deposit
     /// @param data The invoice data
     /// @param asset The asset address (address(0) for ETH)
-    /// @param isETH Whether the asset is native ETH
+    /// @param isEth Whether the asset is native ETH
     /// @param messagePayload The encoded message payload
     function _depositToL2(
         InvoiceDataLib.InvoiceData memory data,
         address asset,
-        bool isETH,
+        bool isEth,
         bytes memory messagePayload
     ) internal {
         // Use bridgeEscrow as receiver on L2 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
         // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
         address receiver = bridgeEscrow;
 
-        if (isETH) {
+        if (isEth) {
             // Deposit ETH to L2
             l1Bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
         } else {
@@ -247,25 +248,25 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // Store messagePayload for later retrieval
         messagePayloads[data.invoiceId] = messagePayload;
 
-        emit SuperchainBridgeInitiated(data.invoiceId, uint64(data.destinationChainId), bytes32(data.amount), isETH);
+        emit SuperchainBridgeInitiated(data.invoiceId, uint64(data.destinationChainId), bytes32(data.amount), isEth);
     }
 
     /// @notice Handles L2 → L1 withdrawal
     /// @param data The invoice data
     /// @param asset The asset address (address(0) for ETH)
-    /// @param isETH Whether the asset is native ETH
+    /// @param isEth Whether the asset is native ETH
     /// @param messagePayload The encoded message payload
     function _withdrawToL1(
         InvoiceDataLib.InvoiceData memory data,
         address asset,
-        bool isETH,
+        bool isEth,
         bytes memory messagePayload
     ) internal {
         // Use bridgeEscrow as receiver on L1 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
         // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
         address receiver = bridgeEscrow;
 
-        if (isETH) {
+        if (isEth) {
             // Withdraw ETH to L1
             // L2StandardBridge.withdrawTo signature: withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _minGasLimit, bytes calldata _extraData)
             // For ETH, _l2Token should be Predeploys.LEGACY_ERC20_ETH (0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000)
@@ -289,6 +290,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // The withdrawal hash is calculated from the withdrawal transaction
         // For now, we'll use a hash of the invoiceId and amount as a placeholder
         // In practice, this should be extracted from the withdrawal transaction
+        // forge-lint: disable-next-line(asm-keccak256)
         bytes32 withdrawalHash = keccak256(abi.encodePacked(data.invoiceId, data.amount, block.timestamp));
 
         // Store mappings for correlation
@@ -373,6 +375,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
 
         // Calculate withdrawal hash (matches Optimism's calculation)
+        // forge-lint: disable-next-line(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
             abi.encodePacked(
                 withdrawalTx.nonce,
@@ -438,6 +441,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev This function should be called by an operator after the withdrawal is proven and challenge period has elapsed
     function finalizeWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external onlyRole(OPERATOR_ROLE) {
         // Calculate withdrawal hash
+        // forge-lint: disable-next-line(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
             abi.encodePacked(
                 withdrawalTx.nonce,

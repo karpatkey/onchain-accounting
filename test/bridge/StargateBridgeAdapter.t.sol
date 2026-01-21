@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "src/bridge/adapters/StargateBridgeAdapter.sol";
+import {StargateBridgeAdapter} from "src/bridge/adapters/StargateBridgeAdapter.sol";
+import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import "src/bridge/IBridgeEscrow.sol";
-import "test/bridge/BridgeTestBase.sol";
+import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title StargateBridgeAdapterTest
@@ -83,6 +88,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -114,6 +120,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -144,6 +151,7 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         vm.stopPrank();
 
         vm.prank(portfolioSafe);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         newToken.transfer(address(bridgeEscrow), amount);
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)

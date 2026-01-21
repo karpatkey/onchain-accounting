@@ -1,19 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-
-import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-
 import {Options as UUPSDeployOptions} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {Upgrades, Options} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import "forge-std/Test.sol";
 import "test/SuperTest.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
@@ -35,7 +28,7 @@ contract NAVCalculatorForkHarness is TestEnvConfigurator {
     CompoundV3CometWithMultiplier public compoundV3CometWithMultiplier;
     MorphoMarketBalanceOracle public morphoBlueOracle;
     DaiDsrBalanceOracle public daiDsr;
-    sXDAI_PriceOracle public savingsXDAIPrice;
+    sXDAI_PriceOracle public savingsXdaiPrice;
 
     sDAI_PriceOracle public sdaiPriceOracle;
 
@@ -47,13 +40,13 @@ contract NAVCalculatorForkHarness is TestEnvConfigurator {
 
     uint256 public heartbeat = type(uint256).max;
 
-    function fork_read() internal view returns (INAVCalculator.NAV memory) {
-        INAVCalculator.NAV memory reading = nav.getTotalNAV(safe);
+    function forkRead() internal view returns (INAVCalculator.NAV memory) {
+        INAVCalculator.NAV memory reading = nav.getAccountNav(safe, address(0));
 
         return reading;
     }
 
-    function setup_NAVCalculator() internal {
+    function setupNavCalculator() internal {
         vm.selectFork(fork);
 
         vm.startPrank(admin);
@@ -93,7 +86,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public aaveV3DataProvider = address(0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3);
     address public aaveV3rewardsDistributor = address(0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb);
 
-    IERC20 public cUSDCv3 = IERC20(0xc3d688B66703497DAA19211EEdff47f25384cdc3);
+    IERC20 public cUsdCv3 = IERC20(0xc3d688B66703497DAA19211EEdff47f25384cdc3);
     address public compoundRewardContract = address(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
@@ -111,129 +104,115 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(20_993_780);
-        setup_NAVCalculator();
+        setupNavCalculator();
     }
 
     function test_mainnetFork_read() public view {
-        INAVCalculator.NAV memory reading = super.fork_read();
+        INAVCalculator.NAV memory reading = super.forkRead();
 
-        assertEq(reading.stalePriceAssets.length, 0);
-        assertEq(reading.sequencerDown, false);
-        assertEq(reading.usd, 12_742_160_647_301);
+        assertEq(reading.issues.stalePriceAssets.length, 0);
+        assertEq(reading.issues.sequencerDown, false);
+        assertEq(reading.value, 12_742_160_647_301);
     }
 
     // Test 28: fork_getAllPositions_usd
     function test_fork_getAllPositions_usd() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        
-        assertEq(accountPositions.nav.stalePriceAssets.length, 0);
-        assertEq(accountPositions.nav.sequencerDown, false);
-        assertEq(accountPositions.nav.usd, 12_742_160_647_301);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+
+        assertEq(navTotal.issues.stalePriceAssets.length, 0);
+        assertEq(navTotal.issues.sequencerDown, false);
+        assertEq(navTotal.value, 12_742_160_647_301);
+
         // Verify NAV consistency invariant
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(accountPositions.nav.usd, sum);
-        
+        assertEq(navTotal.value, sum);
+
         // Verify all positions have correct structure
-        assertTrue(accountPositions.positions.length > 0);
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            assertTrue(accountPositions.positions[i].core.asset != address(0));
-            assertTrue(bytes(accountPositions.positions[i].core.assetSymbol).length > 0);
-            assertTrue(bytes(accountPositions.positions[i].core.protocol).length > 0);
+        assertTrue(positions.length > 0);
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertTrue(positions[i].underlyingAsset.asset != address(0));
+            assertTrue(bytes(positions[i].underlyingAsset.symbol).length > 0);
+            assertTrue(bytes(positions[i].protocol).length > 0);
         }
     }
 
     // Test 29: fork_getAllPositions_ethQuote
     function test_fork_getAllPositions_ethQuote() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, eth);
-        
-        assertTrue(accountPositions.positions.length > 0);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, eth);
+
+        assertTrue(positions.length > 0);
+
         // Verify all positions have ETH as quote currency
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            assertEq(accountPositions.positions[i].pricing.quoteCurrency, eth);
-            assertTrue(accountPositions.positions[i].pricing.value != 0);
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].quoteAsset.asset, eth);
+            assertTrue(positions[i].value != 0);
         }
     }
 
     // Test 30: fork_navConsistency
     function test_fork_navConsistency() public view {
-        INAVCalculator.NAV memory navTotal = nav.getTotalNAV(safe);
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+
         // Verify NAV consistency invariant
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(navTotal.usd, sum);
-        assertEq(navTotal.usd, accountPositions.nav.usd);
-        
-        // Verify other NAV fields match
-        assertEq(navTotal.block, accountPositions.nav.block);
-        assertEq(navTotal.timestamp, accountPositions.nav.timestamp);
-        assertEq(navTotal.sequencerDown, accountPositions.nav.sequencerDown);
-        assertEq(navTotal.stalePriceAssets.length, accountPositions.nav.stalePriceAssets.length);
+        assertEq(navTotal.value, sum);
+
+        // Verify NAV timestamp
+        assertEq(navTotal.timestamp, navTotal.timestamp);
+        assertEq(navTotal.issues.sequencerDown, navTotal.issues.sequencerDown);
+        assertEq(navTotal.issues.stalePriceAssets.length, navTotal.issues.stalePriceAssets.length);
     }
 
     function setupPriceOracle() internal override {
         sdaiPriceOracle = new sDAI_PriceOracle(address(sdai), dsrManager, daiToUsdChainlink, heartbeat);
 
-        nav.registerAsset(address(usdc));
-        nav.setPriceOracle(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(address(dai));
-        nav.setPriceOracle(address(dai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(address(sdai));
-        nav.setPriceOracle(address(sdai), address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
-        nav.registerAsset(address(compound));
-        nav.setPriceOracle(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(address(eth));
-        nav.setPriceOracle(address(eth), ethToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(dai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(sdai), address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
+        nav.registerAsset(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(eth), ethToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
-        IBalanceOracleCustom.PositionMetadata memory aaveMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
-        });
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aaveMetadata);
+        aaveOracle =
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, "Aave v3", address(nav));
 
-        IBalanceOracleCustom.PositionMetadata memory compoundMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
-        });
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundMetadata);
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract, address(cUsdCv3), address(compound), "Compound v3", "USDC Comet", address(nav)
+        );
 
-        IBalanceOracleCustom.PositionMetadata memory morphoMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Morpho", position: "Some market", positionType: "Supplied"
-        });
-        morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, morphoMetadata);
+        morphoBlueOracle =
+            new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, "Morpho", "Some market", address(nav));
 
-        IBalanceOracleCustom.PositionMetadata memory dsrMetadata =
-            IBalanceOracleCustom.PositionMetadata({protocol: "Maker", position: "DSR", positionType: "Supplied"});
-        daiDsr = new DaiDsrBalanceOracle(address(dai), dsr, dsrMetadata);
+        daiDsr = new DaiDsrBalanceOracle(address(dai), dsr, "Maker", "DSR", address(nav));
 
         // usdc
-        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(usdc), address(aaveOracle), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.OracleType.Custom);
 
         // dai
-        nav.setBalanceOracle(address(dai), address(dai), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(dai), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(dai), address(daiDsr), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(dai), address(dai), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(dai), address(aaveOracle), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(dai), address(daiDsr), IBalances.OracleType.Custom);
 
         // sDai
-        nav.setBalanceOracle(address(sdai), address(sdai), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(sdai), address(aaveOracle), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(sdai), address(sdai), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(sdai), address(aaveOracle), IBalances.OracleType.Custom);
 
         // Compound
 
-        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.addBalanceOracle(address(compound), address(compoundV3Comet), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(compound), address(compound), IBalances.OracleType.ERC20);
     }
 }
 
@@ -245,7 +224,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     address public aaveV3DataProvider = address(0x7F23D86Ee20D869112572136221e173428DD740B);
     address public aaveV3rewardsDistributor = address(0x929EC64c34a17401F460460D4B9390518E5B473e);
 
-    IERC20 public cUSDCv3 = IERC20(0x2e44e174f7D53F0212823acC11C01A11d58c5bCB);
+    IERC20 public cUsdCv3 = IERC20(0x2e44e174f7D53F0212823acC11C01A11d58c5bCB);
     address public compoundRewardContract = address(0x443EA0340cb75a160F31A440722dec7b5bc3C2E9);
 
     address public usdcToUsdChainlink = address(0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3);
@@ -255,63 +234,62 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         fork = vm.createFork(getAlchemyUrl("opt-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(126_963_147);
-        setup_NAVCalculator();
+        setupNavCalculator();
     }
 
     function test_optimismFork_read() public view {
-        INAVCalculator.NAV memory reading = super.fork_read();
-        assertEq(reading.usd, 7_596_542_008_105);
+        INAVCalculator.NAV memory reading = super.forkRead();
+        assertEq(reading.value, 7_596_542_008_105);
 
-        int256 aave_usdc_balance = aaveOracle.balanceOf(address(usdc), safe);
-        assertEq(aave_usdc_balance, 75_976_056_729);
+        int256 aaveUsdcBalance = aaveOracle.balanceOf(address(usdc), safe);
+        assertEq(aaveUsdcBalance, 75_976_056_729);
         assertEq(compoundV3CometWithMultiplier.balanceOf(address(compound), safe), 0);
         assertEq(compoundV3CometWithMultiplier.balanceOf(address(usdc), safe), 0);
     }
 
     function test_optimismFork_getAllPositions() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        assertEq(accountPositions.nav.usd, 7_596_542_008_105);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        assertEq(navTotal.value, 7_596_542_008_105);
+
         // Verify NAV consistency
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(accountPositions.nav.usd, sum);
+        assertEq(navTotal.value, sum);
     }
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.registerAsset(address(usdc));
-        nav.setPriceOracle(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(usdc), usdcToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
 
         // Compound
-        nav.registerAsset(address(compound));
-        nav.setPriceOracle(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(compound), compoundToUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
+
+        // ETH (for quote currency support)
+        nav.registerAsset(
+            address(eth), address(0x13e3Ee699d1909E8897221329E6FC2b0B7C1c4D0), IPrices.PriceType.Chainlink, heartbeat
+        );
     }
 
     function setupBalanceOracle() internal override {
-        IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
-        });
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
+        aaveOracle =
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, "Aave v3", address(nav));
 
-        IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
-        });
         compoundV3CometWithMultiplier = new CompoundV3CometWithMultiplier(
-            compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata
+            compoundRewardContract, address(cUsdCv3), address(compound), "Compound v3", "USDC Comet", address(nav)
         );
 
         // usdc
-        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(usdc), address(aaveOracle), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(compoundV3CometWithMultiplier), IBalances.OracleType.Custom);
 
         // Compound
 
-        nav.setBalanceOracle(address(compound), address(compoundV3CometWithMultiplier), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.addBalanceOracle(address(compound), address(compoundV3CometWithMultiplier), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(compound), address(compound), IBalances.OracleType.ERC20);
     }
 }
 
@@ -319,7 +297,7 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     IERC20 public usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     address public eth = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
-    IERC20 public cUSDCv3 = IERC20(0xb125E6687d4313864e53df431d5425969c15Eb2F);
+    IERC20 public cUsdCv3 = IERC20(0xb125E6687d4313864e53df431d5425969c15Eb2F);
     IERC20 public compound = IERC20(0x9e1028F5F1D5eDE59748FFceE5532509976840E0);
 
     address public aaveV3DataProvider = address(0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad);
@@ -334,77 +312,74 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         fork = vm.createFork(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(21_360_710);
-        setup_NAVCalculator();
+        setupNavCalculator();
     }
 
     function test_baseFork_read() public view {
-        INAVCalculator.NAV memory reading = super.fork_read();
+        INAVCalculator.NAV memory reading = super.forkRead();
 
-        assertEq(reading.stalePriceAssets.length, 0);
-        assertEq(reading.sequencerDown, false);
+        assertEq(reading.issues.stalePriceAssets.length, 0);
+        assertEq(reading.issues.sequencerDown, false);
         assertEq(morphoBlueOracle.balanceOf(address(usdc), safe), 25_277_122_725);
         assertEq(aaveOracle.balanceOf(address(usdc), safe), 25_162_172_577);
         assertEq(compoundV3Comet.balanceOf(address(compound), safe), 860_559_000_000_000_000);
 
-        assertEq(reading.usd, 5_047_061_452_128);
+        assertEq(reading.value, 5_047_061_452_128);
     }
 
     function test_baseFork_getAllPositions() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        assertEq(accountPositions.nav.usd, 5_047_061_452_128);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        assertEq(navTotal.value, 5_047_061_452_128);
+
         // Verify NAV consistency
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(accountPositions.nav.usd, sum);
+        assertEq(navTotal.value, sum);
     }
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.registerAsset(address(usdc));
-        nav.setPriceOracle(
+        nav.registerAsset(
             address(usdc), address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B), IPrices.PriceType.Chainlink, heartbeat
         );
 
         // Compound
-
-        nav.registerAsset(address(compound));
-        nav.setPriceOracle(
+        nav.registerAsset(
             address(compound),
             address(0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428),
             IPrices.PriceType.Chainlink,
             heartbeat
         );
+
+        // ETH (for quote currency support)
+        nav.registerAsset(
+            address(eth), address(0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70), IPrices.PriceType.Chainlink, heartbeat
+        );
     }
 
     function setupBalanceOracle() internal override {
-        IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
-        });
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
+        aaveOracle =
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, "Aave v3", address(nav));
 
-        IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
-        });
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata);
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract, address(cUsdCv3), address(compound), "Compound v3", "USDC Comet", address(nav)
+        );
 
-        IBalanceOracleCustom.PositionMetadata memory morphoPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Morpho", position: "Some Market", positionType: "Supplied"
-        });
-        morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, morphoPositionMetadata);
+        morphoBlueOracle =
+            new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, "Morpho", "Some Market", address(nav));
 
         // usdc
-        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(usdc), address(aaveOracle), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(morphoBlueOracle), IBalances.OracleType.Custom);
 
         // Compound
-        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
+        nav.addBalanceOracle(address(compound), address(compoundV3Comet), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(compound), address(compound), IBalances.OracleType.ERC20);
     }
 }
 
@@ -412,7 +387,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     IERC20 public usdc = IERC20(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
     address public eth = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
-    IERC20 public cUSDCv3 = IERC20(0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf);
+    IERC20 public cUsdCv3 = IERC20(0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf);
     IERC20 public compound = IERC20(0x354A6dA3fcde098F8389cad84b0182725c6C91dE);
 
     address public aaveV3DataProvider = address(0x7F23D86Ee20D869112572136221e173428DD740B);
@@ -425,65 +400,64 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
         vm.selectFork(fork);
         vm.rollFork(266_194_155);
-        setup_NAVCalculator();
+        setupNavCalculator();
     }
 
     function test_arbitrumFork_read() public view {
-        INAVCalculator.NAV memory reading = super.fork_read();
-        assertEq(reading.usd, 5_069_577_118_472);
+        INAVCalculator.NAV memory reading = super.forkRead();
+        assertEq(reading.value, 5_069_577_118_472);
         assertEq(aaveOracle.balanceOf(address(usdc), safe), 50_703_125_166);
         (uint256 price,,) = nav.latestPrice(address(usdc));
         assertEq(price, 99_985_496);
     }
 
     function test_arbitrumFork_getAllPositions() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        assertEq(accountPositions.nav.usd, 5_069_577_118_472);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        assertEq(navTotal.value, 5_069_577_118_472);
+
         // Verify NAV consistency
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(accountPositions.nav.usd, sum);
+        assertEq(navTotal.value, sum);
     }
 
     function setupPriceOracle() internal override {
         // usdc
-        nav.registerAsset(address(usdc));
-        nav.setPriceOracle(
+        nav.registerAsset(
             address(usdc), address(0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3), IPrices.PriceType.Chainlink, heartbeat
         );
 
         // Compound
-
-        nav.registerAsset(address(compound));
-        nav.setPriceOracle(
+        nav.registerAsset(
             address(compound),
             address(0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884),
             IPrices.PriceType.Chainlink,
             heartbeat
         );
+
+        // ETH (for quote currency support)
+        nav.registerAsset(
+            address(eth), address(0x3169789c1C5Ba77242B3bc1e5D48Cc1D2b7fc419), IPrices.PriceType.Chainlink, heartbeat
+        );
     }
 
     function setupBalanceOracle() internal override {
-        IBalanceOracleCustom.PositionMetadata memory aavePositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Aave v3", position: "Core Instance", positionType: "Supplied/Borrowed"
-        });
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, aavePositionMetadata);
+        aaveOracle =
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, "Aave v3", address(nav));
 
-        IBalanceOracleCustom.PositionMetadata memory compoundPositionMetadata = IBalanceOracleCustom.PositionMetadata({
-            protocol: "Compound v3", position: "USDC Comet", positionType: "Supplied/Borrowed"
-        });
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, address(cUSDCv3), address(compound), compoundPositionMetadata);
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract, address(cUsdCv3), address(compound), "Compound v3", "USDC Comet", address(nav)
+        );
 
-        nav.setBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(usdc), address(aaveOracle), IBalances.BalanceType.Custom);
-        nav.setBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(usdc), address(aaveOracle), IBalances.OracleType.Custom);
+        nav.addBalanceOracle(address(usdc), address(compoundV3Comet), IBalances.OracleType.Custom);
 
-        nav.setBalanceOracle(address(compound), address(compound), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(compound), address(compoundV3Comet), IBalances.BalanceType.Custom);
+        nav.addBalanceOracle(address(compound), address(compound), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(compound), address(compoundV3Comet), IBalances.OracleType.Custom);
     }
 }
 
@@ -498,43 +472,41 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         fork = vm.createFork(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(36_738_104);
-        setup_NAVCalculator();
+        setupNavCalculator();
     }
 
     function test_gnosisFork_read() public view {
-        INAVCalculator.NAV memory reading = super.fork_read();
+        INAVCalculator.NAV memory reading = super.forkRead();
 
-        assertEq(reading.stalePriceAssets.length, 0);
-        assertEq(reading.sequencerDown, false);
-        assertEq(reading.usd, 15_378_167_317_682);
+        assertEq(reading.issues.stalePriceAssets.length, 0);
+        assertEq(reading.issues.sequencerDown, false);
+        assertEq(reading.value, 15_378_167_317_682);
     }
 
     function test_gnosisFork_getAllPositions() public view {
-        INAVCalculator.AccountPositions memory accountPositions = nav.getAllPositions(safe, address(0));
-        assertEq(accountPositions.nav.usd, 15_378_167_317_682);
-        
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        assertEq(navTotal.value, 15_378_167_317_682);
+
         // Verify NAV consistency
         int256 sum = 0;
-        for (uint256 i = 0; i < accountPositions.positions.length; i++) {
-            sum += accountPositions.positions[i].pricing.value;
+        for (uint256 i = 0; i < positions.length; i++) {
+            sum += positions[i].value;
         }
-        assertEq(accountPositions.nav.usd, sum);
+        assertEq(navTotal.value, sum);
     }
 
     function setupPriceOracle() internal override {
-        savingsXDAIPrice = new sXDAI_PriceOracle(savingsXDaiContract, daiToUsdChainlink, heartbeat);
+        savingsXdaiPrice = new sXDAI_PriceOracle(savingsXDaiContract, daiToUsdChainlink, heartbeat);
 
-        nav.registerAsset(address(xdai));
-        nav.setPriceOracle(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(address(wxdai));
-        nav.setPriceOracle(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(address(savingsXDaiContract));
-        nav.setPriceOracle(address(savingsXDaiContract), address(savingsXDAIPrice), IPrices.PriceType.Custom, heartbeat);
+        nav.registerAsset(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(address(savingsXDaiContract), address(savingsXdaiPrice), IPrices.PriceType.Custom, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
         // wxdai
-        nav.setBalanceOracle(address(wxdai), address(wxdai), IBalances.BalanceType.ERC20);
-        nav.setBalanceOracle(address(savingsXDaiContract), address(savingsXDaiContract), IBalances.BalanceType.ERC20);
+        nav.addBalanceOracle(address(wxdai), address(wxdai), IBalances.OracleType.ERC20);
+        nav.addBalanceOracle(address(savingsXDaiContract), address(savingsXDaiContract), IBalances.OracleType.ERC20);
     }
 }

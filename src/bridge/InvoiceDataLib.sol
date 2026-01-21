@@ -34,9 +34,17 @@ library InvoiceDataLib {
 
         // Decode invoiceId into its components
         uint256 id = uint256(data.invoiceId);
+        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         data.sourceChainId = uint24(id >> 232); // Bits 232-255 (3 bytes)
+        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         data.destinationChainId = uint24(id >> 208); // Bits 208-231 (3 bytes)
+        // casting to 'address' (uint160) is safe because addresses are 20 bytes
+        // forge-lint: disable-next-line(unsafe-typecast)
         data.portfolioSafe = address(uint160(id >> 48)); // Bits 48-207 (20 bytes)
+        // casting to 'bytes6' (uint48) is safe because asset symbols are 6 bytes
+        // forge-lint: disable-next-line(unsafe-typecast)
         data.assetSymbol = bytes6(uint48(id)); // Bits 0-47 (6 bytes)
     }
 

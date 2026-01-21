@@ -2,8 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "test/SuperTest.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Upgrades, Options} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 /// @custom:oz-upgrades-from NAVCalculator
 contract NAVCalculatorV2 is NAVCalculator {

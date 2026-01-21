@@ -8,6 +8,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {IPrices} from "./IPrices.sol";
 import {IPriceOracleCustom} from "./IPriceOracleCustom.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title Prices
@@ -25,8 +26,8 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Uptime feed for L2 sequencer
     AggregatorV3Interface public chainlinkL2SequencerUptimeFeed;
 
-    /// @notice Price oracles by address
-    mapping(address asset => PriceOracle oracle) public priceOracles;
+    /// @notice Price feed configurations by address (mapping name kept for backward compatibility)
+    mapping(address asset => PriceFeedConfig oracle) public priceOracles;
 
     /// @notice Initializer for UUPS proxy
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the Chainlink feed for the L2 sequencer
@@ -51,11 +52,11 @@ abstract contract Prices is IPrices, Initializable {
     /// @return decimals The amount of decimal places the price is represented with
     /// @return stale COMPLETE ME
     function _latestPrice(address token) internal view returns (uint256 price, uint8 decimals, bool stale) {
-        PriceOracle storage oracle = priceOracles[token];
+        PriceFeedConfig storage oracle = priceOracles[token];
         stale = false;
 
         if (oracle.oracle == address(0)) {
-            revert PriceOracleNotSet();
+            revert PriceFeedNotSet(token);
         }
 
         if (oracle.priceType == PriceType.Chainlink) {
@@ -116,13 +117,13 @@ abstract contract Prices is IPrices, Initializable {
         // Allow replacing existing price oracle (no revert)
     }
 
-    /// @notice Sets the oracle for a given token.
+    /// @notice Sets the price feed for a given token.
     /// @param token The address of the token.
     /// @param oracle The address of the oracle.
     /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This parameter is ignored for
     /// non-Chainlink oracles.
     /// @param priceType The type of the oracle.
-    function _setPriceOracle(address token, address oracle, uint256 chainlinkHeartbeat, PriceType priceType) internal {
+    function _setPriceFeed(address token, address oracle, uint256 chainlinkHeartbeat, PriceType priceType) internal {
         checkPriceOracleSupport(token, oracle, priceType);
 
         uint8 decimals;
@@ -133,25 +134,18 @@ abstract contract Prices is IPrices, Initializable {
             decimals = IPriceOracleCustom(oracle).decimals();
         }
 
-        priceOracles[token] = PriceOracle({
+        priceOracles[token] = PriceFeedConfig({
             oracle: oracle, priceType: priceType, decimals: decimals, chainlinkHeartbeat: chainlinkHeartbeat
         });
 
-        emit PriceOracleSet(token, oracle, chainlinkHeartbeat, priceType);
+        emit PriceFeedSet(token, oracle, chainlinkHeartbeat, priceType);
     }
 
-    /// @notice Removes the oracle for a given token.
+    /// @notice Unsets the price feed for a given token.
     /// @param token The address of the token.
-    function _removePriceOracle(address token) internal {
+    function _unsetPriceFeed(address token) internal {
         delete priceOracles[token];
-        emit PriceOracleRemoved(token);
-    }
-
-    /// @notice Unsets the oracle for a given token.
-    /// @param token The address of the token.
-    function _unsetPriceOracle(address token) internal {
-        delete priceOracles[token];
-        emit PriceOracleUnset(token);
+        emit PriceFeedUnset(token);
     }
 
     /// @notice Gap for upgradeability

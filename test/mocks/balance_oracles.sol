@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -32,7 +31,8 @@ contract Mock_CustomBalanceOracle is IBalanceOracleCustom {
         _positionMetadata = positionMetadata_;
     }
 
-    function positionMetadata() external view override returns (PositionMetadata memory) {
+    // Optional helper for tests; not part of IBalanceOracleCustom
+    function positionMetadata() external view returns (PositionMetadata memory) {
         return _positionMetadata;
     }
 

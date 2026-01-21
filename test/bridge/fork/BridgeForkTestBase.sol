@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "src/bridge/BridgeEscrow.sol";
+import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import "test/TestEnvConfigurator.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 /// @title BridgeForkTestBase
 /// @notice Base test contract for fork-based bridge adapter tests
@@ -213,9 +214,12 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         uint64 timestamp = uint64(block.timestamp);
         bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
 
+        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
             sourceChainId: uint24(sourceChainId),
+            // forge-lint: disable-next-line(unsafe-typecast)
             destinationChainId: uint24(destChainId),
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
@@ -232,6 +236,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         returns (bytes32)
     {
         // Pack: sourceChainId (3 bytes) + destChainId (3 bytes) + safe (20 bytes) + assetSymbol (6 bytes) = 32 bytes
+        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes32(
             (uint256(uint24(sourceChainId)) << 232) | (uint256(uint24(destChainId)) << 208)
                 | (uint256(uint160(safe)) << 48) | uint256(uint48(assetSymbol))
@@ -241,6 +247,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
     /// @notice Helper to calculate checksum (matches BridgeEscrow logic)
     function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp) internal pure returns (bytes24) {
         bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
+        // casting to 'bytes24' is safe because we're taking the first 24 bytes of a 32-byte hash
+        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes24(hash); // First 24 bytes
     }
 

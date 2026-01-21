@@ -19,6 +19,7 @@ interface IL1StandardBridge {
     /// @param _to Address on L2 to receive the ETH
     /// @param _l2Gas Gas limit for the L2 execution
     /// @param _data Optional data to forward to L2
+    // forge-lint: disable-next-line(mixed-case-function)
     function depositETHTo(address _to, uint32 _l2Gas, bytes calldata _data) external payable;
 
     /// @notice Deposits an amount of ERC20 tokens to a recipient's balance on L2

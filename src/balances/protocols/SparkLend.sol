@@ -14,8 +14,9 @@ import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance
 contract SparkLendBalanceOracle is AaveV3InstanceBalanceOracle {
     /// @param dataProvider_ The address of the Spark Pool Data Provider contract.
     /// @param rewardsDistributor_ The address of the Spark Rewards Distributor contract.
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
-    constructor(address dataProvider_, address rewardsDistributor_, PositionMetadata memory positionMetadata_)
-        AaveV3InstanceBalanceOracle(dataProvider_, rewardsDistributor_, positionMetadata_)
+    /// @param protocol_ Protocol identifier (e.g., "Spark").
+    /// @param balances_ The address of the Balances contract for asset registry access.
+    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address balances_)
+        AaveV3InstanceBalanceOracle(dataProvider_, rewardsDistributor_, protocol_, balances_)
     {}
 }

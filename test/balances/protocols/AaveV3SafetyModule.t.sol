@@ -7,6 +7,7 @@ import {AaveV3SafetyModuleBalanceOracle, IStakeToken} from "src/balances/protoco
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
+import {MockBalances} from "test/mocks/MockBalances.sol";
 import "src/errors.sol";
 
 interface IStakeTokenExtended is IStakeToken {
@@ -26,30 +27,32 @@ contract AaveV3SafetyModule is TestEnvConfigurator {
     uint256 public fork;
     AaveV3SafetyModuleBalanceOracle public ghoOracle;
     AaveV3SafetyModuleBalanceOracle public aaveOracle;
-    IBalanceOracleCustom.PositionMetadata safetyModuleMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Aave v3", position: "Safety Module", positionType: "Staked"});
+    MockBalances mockBalances;
 
     function setUp() public {
         fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
-        ghoOracle = new AaveV3SafetyModuleBalanceOracle(address(STK_GHO), safetyModuleMetadata);
-        aaveOracle = new AaveV3SafetyModuleBalanceOracle(address(STK_AAVE), safetyModuleMetadata);
+        mockBalances = new MockBalances();
+        ghoOracle =
+            new AaveV3SafetyModuleBalanceOracle(address(STK_GHO), "Aave v3", "Safety Module", address(mockBalances));
+        aaveOracle =
+            new AaveV3SafetyModuleBalanceOracle(address(STK_AAVE), "Aave v3", "Safety Module", address(mockBalances));
     }
 
     function test_constructor_gho() public view {
-        assertEq(address(ghoOracle.stakedToken()), GHO);
-        assertEq(ghoOracle.rewardToken(), AAVE);
+        assertEq(address(ghoOracle.STAKED_TOKEN()), GHO);
+        assertEq(ghoOracle.REWARD_TOKEN(), AAVE);
     }
 
     function test_constructor_aave() public view {
-        assertEq(address(aaveOracle.stakedToken()), AAVE);
-        assertEq(aaveOracle.rewardToken(), AAVE);
+        assertEq(address(aaveOracle.STAKED_TOKEN()), AAVE);
+        assertEq(aaveOracle.REWARD_TOKEN(), AAVE);
     }
 
     function test_constructor_RevertsOnZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveV3SafetyModuleBalanceOracle(address(0), safetyModuleMetadata);
+        new AaveV3SafetyModuleBalanceOracle(address(0), "Aave v3", "Safety Module", address(mockBalances));
     }
 
     function test_stk_gho_stakedTokenBalance() public {

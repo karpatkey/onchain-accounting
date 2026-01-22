@@ -75,8 +75,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
 
     /// @notice Sets up mainnet fork
     function _setupForks() internal {
-        mainnetFork = vm.createFork(getAlchemyUrl("eth-mainnet"), MAINNET_FORK_BLOCK);
-        optimismFork = vm.createFork(getAlchemyUrl("opt-mainnet"), OPTIMISM_FORK_BLOCK);
+        mainnetFork = createForkWithCadence(getAlchemyUrl("eth-mainnet"), MAINNET_FORK_BLOCK);
+        optimismFork = createForkWithCadence(getAlchemyUrl("opt-mainnet"), OPTIMISM_FORK_BLOCK);
 
         // Select mainnet fork by default
         vm.selectFork(mainnetFork);

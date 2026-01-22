@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -13,7 +12,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
-contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract Aura is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -109,16 +108,14 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
         BALANCES = IBalances(balances_);
     }
 
-    //
-    // IBalanceOracleCustom
-    //
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param token The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    function _calculateBalance(address token, address account) internal view returns (int256) {
+        uint256 userGaugeBalance = AURA_REWARDS.balanceOf(account);
 
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address token, address safe) external view override returns (int256) {
-        uint256 userGaugeBalance = AURA_REWARDS.balanceOf(safe);
-
-        return poolBalanceOf(userGaugeBalance, token) + rewards(token, safe);
-        //return rewards(token, safe);
+        return poolBalanceOf(userGaugeBalance, token) + rewards(token, account);
     }
 
     //
@@ -348,7 +345,7 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
         }
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
         address[] memory assets = new address[](immutableData.tokens.length);
@@ -362,8 +359,7 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
     /// @param interfaceId The interface id to check
     /// @return True if this contract implements the interface
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -372,20 +368,20 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            // Return empty arrays when asset filter is specified
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -396,7 +392,7 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -444,7 +440,7 @@ contract Aura is IBalanceOracleCustom, IBalanceOracleAdapter {
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {

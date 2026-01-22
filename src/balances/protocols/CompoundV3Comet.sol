@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -14,7 +13,7 @@ import "src/errors.sol";
 /// @notice This contract provides an implementation of a balance oracle for a Compound V3 Comet.
 ///   This balance oracle can return the base token, collateral assets, and owed rewards for a user on a given Comet
 /// contract.
-contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract CompoundV3Comet is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -123,37 +122,34 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @notice Returns the number of collateral assets for the Comet contract.
     /// @return The number of collateral assets
-    function getCollateralsCount() external view returns (uint256) {
+    function getCollateralsCount() internal view returns (uint256) {
         return collaterals.length;
     }
 
-    //
-    // IBalanceOracleCustom
-    //
-
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address underlyingAsset, address safe) external view returns (int256 balance) {
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         if (underlyingAsset != address(REWARD_TOKEN) && underlyingAsset != BASE_TOKEN && !isCollateral[underlyingAsset])
         {
             revert InvalidArguments();
         }
 
         if (underlyingAsset == address(REWARD_TOKEN)) {
-            balance += _getRewardOwed(safe).toInt256();
+            balance += _getRewardOwed(account).toInt256();
         }
 
         if (underlyingAsset == BASE_TOKEN) {
-            balance += getUnderlying(COMET, safe);
+            balance += getUnderlying(COMET, account);
         }
 
         if (isCollateral[underlyingAsset]) {
-            balance += CometExtInterface(COMET).collateralBalanceOf(safe, underlyingAsset).toInt256();
+            balance += CometExtInterface(COMET).collateralBalanceOf(account, underlyingAsset).toInt256();
         }
-
-        return balance;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         // Return baseToken + collaterals + rewardToken
         uint256 totalAssets = 1 + collaterals.length + 1; // baseToken + collaterals + rewardToken
@@ -187,9 +183,9 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
 
         // https://github.com/compound-finance/comet/blob/f41fec9858ae7e53be6cde96c74c3fa16782fa2a/contracts/CometCore.sol#L90
         if (principal >= 0) {
-            total = int256(principal) * uint256(baseSupplyIndex).toInt256().toInt64();
+            total = int256(principal) * uint256(baseSupplyIndex).toInt256();
         } else {
-            total = int256(principal) * uint256(baseBorrowIndex).toInt256().toInt64();
+            total = int256(principal) * uint256(baseBorrowIndex).toInt256();
         }
 
         return total / BASE_INDEX_SCALE;
@@ -371,8 +367,7 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -381,19 +376,20 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -404,7 +400,7 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = this.getOracleBalanceForAsset(account, asset);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -452,7 +448,7 @@ contract CompoundV3Comet is IBalanceOracleCustom, IBalanceOracleAdapter {
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {

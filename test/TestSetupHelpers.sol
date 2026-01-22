@@ -6,6 +6,30 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+/// @notice Balances harness for fork tests
+/// @dev This contract extends Balances and exposes internal functions for testing
+contract BalancesHarnessForFork is Balances {
+    ERC20DefaultOracle public defaultOracle;
+
+    constructor() initializer {
+        __Balances_init();
+        // Set up ERC20DefaultOracle
+        defaultOracle = new ERC20DefaultOracle(address(this));
+        _setErc20DefaultOracle(address(defaultOracle));
+    }
+
+    // Expose internal functions for testing
+    function registerAssetForTest(address asset, uint8 decimals) public {
+        _registerAsset(asset, decimals);
+    }
+
+    function setAssetSymbolForTest(address asset, string memory symbol) public {
+        _setAssetSymbol(asset, symbol);
+    }
+}
 
 /// @title TestSetupHelpers
 /// @notice Helper functions for consistent test setup patterns
@@ -15,22 +39,17 @@ abstract contract TestSetupHelpers is Test {
     // Safe Oracle Access Helpers
     // ============================================
 
-    /// @notice Safely gets a balance oracle at a specific index
+    /// @notice Safely gets a balance oracle at a specific index from the global registry
     /// @param balances The Balances contract instance
-    /// @param asset The asset address
-    /// @param idx The oracle index
+    /// @param idx The oracle index in the global registry
     /// @return oracle The oracle address
     /// @return exists Whether the oracle exists at that index
-    function safeGetBalanceOracle(Balances balances, address asset, uint256 idx)
-        internal
-        view
-        returns (address oracle, bool exists)
-    {
-        uint256 count = balances.balanceOracleCountFor(asset);
-        if (idx >= count) {
+    function safeGetBalanceOracle(Balances balances, uint256 idx) internal view returns (address oracle, bool exists) {
+        address[] memory allOracles = balances.getAllOracles();
+        if (idx >= allOracles.length) {
             return (address(0), false);
         }
-        (oracle,) = balances.balanceOracleAt(asset, idx);
+        oracle = allOracles[idx];
         exists = oracle != address(0);
     }
 
@@ -90,38 +109,26 @@ abstract contract TestSetupHelpers is Test {
     // Balance Oracle Setup Helpers
     // ============================================
 
-    /// @notice Ensures a balance oracle is set up for an asset
+    /// @notice Ensures a balance oracle is registered globally
     /// @param nav The NAVCalculator contract instance
     /// @param manager The manager address with permissions
-    /// @param asset The asset address
     /// @param oracle The balance oracle address
-    /// @param oracleType The oracle type (ERC20, Native, or Custom)
-    function ensureBalanceOracle(
-        NAVCalculator nav,
-        address manager,
-        address asset,
-        address oracle,
-        IBalances.OracleType oracleType
-    ) internal {
-        // Check if oracle already exists
-        address[] memory existingOracles = nav.balanceOracles(asset);
-        for (uint256 i = 0; i < existingOracles.length; i++) {
-            if (existingOracles[i] == oracle) {
-                return; // Already exists
-            }
+    function ensureBalanceOracle(NAVCalculator nav, address manager, address oracle) internal {
+        // Check if oracle already exists in global registry
+        if (nav.isOracleRegistered(oracle)) {
+            return; // Already exists
         }
 
-        // Add the oracle
+        // Add the oracle globally
         vm.prank(manager);
-        nav.addBalanceOracle(asset, oracle, oracleType);
+        nav.addBalanceOracle(oracle);
     }
 
     /// @notice Ensures native address has a balance oracle set up
     /// @param balances The Balances contract instance
     /// @dev The native address should use the ERC20DefaultOracle
     function ensureNativeBalanceOracle(Balances balances) internal view {
-        uint256 count = balances.balanceOracleCountFor(balances.NATIVE_ADDRESS());
-        if (count == 0) {
+        if (!balances.isOracleRegistered(balances.erc20DefaultOracle())) {
             // This should not happen if ERC20DefaultOracle is properly set up
             // But we check to provide a clear error message
             revert("Native balance oracle not initialized. ERC20DefaultOracle should be set in constructor.");
@@ -169,8 +176,7 @@ abstract contract TestSetupHelpers is Test {
     /// @param priceOracle The price oracle address
     /// @param priceType The price type
     /// @param heartbeat The chainlink heartbeat
-    /// @param balanceOracle The balance oracle address
-    /// @param balanceOracleType The balance oracle type
+    /// @param balanceOracle The balance oracle address (optional, ERC20DefaultOracle is always available)
     function setupCompleteAsset(
         NAVCalculator nav,
         address manager,
@@ -178,13 +184,15 @@ abstract contract TestSetupHelpers is Test {
         address priceOracle,
         IPrices.PriceType priceType,
         uint256 heartbeat,
-        address balanceOracle,
-        IBalances.OracleType balanceOracleType
+        address balanceOracle
     ) internal {
         ensureAssetRegistered(nav, manager, asset, priceOracle, priceType, heartbeat);
         // Price feed is set during registration, but ensurePriceFeed will update if needed
         ensurePriceFeed(nav, manager, asset, priceOracle, priceType, heartbeat);
-        ensureBalanceOracle(nav, manager, asset, balanceOracle, balanceOracleType);
+        // Only add custom balance oracle if provided (ERC20DefaultOracle is always available)
+        if (balanceOracle != address(0)) {
+            ensureBalanceOracle(nav, manager, balanceOracle);
+        }
     }
 
     /// @notice Sets up native address with price feed and ensures balance oracle exists
@@ -195,5 +203,47 @@ abstract contract TestSetupHelpers is Test {
     function setupNativeAsset(NAVCalculator nav, address manager, address ethOracle, uint256 heartbeat) internal {
         ensureNativePriceFeed(nav, manager, ethOracle, heartbeat);
         ensureNativeBalanceOracle(nav);
+    }
+
+    // ============================================
+    // Balances Deployment Helpers for Fork Tests
+    // ============================================
+
+    /// @notice Deploys a Balances contract in the fork and registers the provided assets
+    /// @param assets Array of asset addresses to register
+    /// @return balancesInstance The deployed Balances contract with assets registered
+    /// @dev This function attempts to read decimals from each asset contract, falling back to 18 if it fails
+    function deployBalancesInFork(address[] memory assets) internal returns (BalancesHarnessForFork) {
+        BalancesHarnessForFork balancesInstance = new BalancesHarnessForFork();
+
+        // Register each asset with its decimals
+        for (uint256 i = 0; i < assets.length; i++) {
+            address asset = assets[i];
+            try IERC20Metadata(asset).decimals() returns (uint8 decimals) {
+                balancesInstance.registerAssetForTest(asset, decimals);
+            } catch {
+                // If decimals() fails, use default 18 (common for many tokens)
+                balancesInstance.registerAssetForTest(asset, 18);
+            }
+
+            // Try to get symbol from the token contract
+            try IERC20Metadata(asset).symbol() returns (string memory symbol) {
+                balancesInstance.setAssetSymbolForTest(asset, symbol);
+            } catch {
+                // If symbol() fails, use empty string or a default
+                balancesInstance.setAssetSymbolForTest(asset, "");
+            }
+        }
+
+        return balancesInstance;
+    }
+
+    /// @notice Deploys a Balances contract in the fork and registers a single asset
+    /// @param asset The asset address to register
+    /// @return balancesInstance The deployed Balances contract with the asset registered
+    function deployBalancesInFork(address asset) internal returns (BalancesHarnessForFork) {
+        address[] memory assets = new address[](1);
+        assets[0] = asset;
+        return deployBalancesInFork(assets);
     }
 }

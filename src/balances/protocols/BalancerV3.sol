@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -17,7 +16,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Balancer V3 pools and gauges
 /// @dev Supports both direct pool tokens and staked gauge positions
-contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     using SafeCast for uint256;
     using SafeCast for int256;
     using SafeCast for int128;
@@ -68,11 +67,14 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         _protocol = protocol_;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address underlyingAsset, address safe) external view override returns (int256) {
-        uint256 userBalance = POOL.balanceOf(safe);
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+        uint256 userBalance = POOL.balanceOf(account);
         // Gauge token to lp token is 1 to 1
-        uint256 userGaugeBalance = GAUGE.balanceOf(safe);
+        uint256 userGaugeBalance = GAUGE.balanceOf(account);
 
         // We need to do a single conversion of the user balance and gauge token balance because on redeem we are
         // deducted 1 wei share and 1 wei
@@ -80,8 +82,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
         // lp token
         // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-        return poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(safe, underlyingAsset)
-            + claimableTokens(underlyingAsset, safe);
+        return poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
+            + claimableTokens(underlyingAsset, account);
     }
 
     /// @notice Calculates a user's token balance in the pool
@@ -252,7 +254,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
         address[] memory assets = new address[](immutableData.tokens.length);
@@ -266,8 +268,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
     /// @param interfaceId The interface id to check
     /// @return True if this contract implements the interface
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -276,20 +277,20 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            // Return empty arrays when asset filter is specified
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -300,7 +301,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -348,7 +349,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {

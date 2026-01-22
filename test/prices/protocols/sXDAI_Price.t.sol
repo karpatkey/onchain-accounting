@@ -13,7 +13,7 @@ contract sXDAI_PriceOracleTest is TestEnvConfigurator {
     uint256 heartbeat;
 
     function setUp() public {
-        uint256 fork = vm.createFork(getAlchemyUrl("gnosis-mainnet"));
+        uint256 fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(36_738_104);
 

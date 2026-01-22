@@ -3,14 +3,14 @@ pragma solidity ^0.8;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IBalances} from "./IBalances.sol";
-import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title ERC20DefaultOracle
 /// @notice Default oracle that automatically handles all ERC20 and Native balances
 /// @dev This oracle reads the asset registry from Balances and returns balances for all registered assets
-contract ERC20DefaultOracle is IBalanceOracleAdapter, IERC165 {
+contract ERC20DefaultOracle is IBalanceOracleAdapter {
     /// @notice Reference to Balances contract for asset registry access
     IBalances public immutable BALANCES;
 
@@ -53,8 +53,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IERC165 {
                 continue;
             }
 
-            // Get balance for this asset
-            int256 balance = getOracleBalanceForAsset(account, asset);
+            // Get balance for this asset directly (avoid recursion)
+            int256 balance = _getBalanceForAsset(account, asset);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -101,17 +101,11 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IERC165 {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address asset)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (asset != address(0)) {
-            // Return empty arrays when asset filter is specified
-            // Caller should use getOracleBalanceForAsset() instead
-            return (new address[](0), new int256[](0));
-        }
-
         // Get all registered assets
         address[] memory allAssets = BALANCES.getAssets();
         uint256 assetCount = allAssets.length;
@@ -123,7 +117,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IERC165 {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address assetAddr = allAssets[i];
-            int256 balance = getOracleBalanceForAsset(account, assetAddr);
+            int256 balance = _getBalanceForAsset(account, assetAddr);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -142,19 +136,68 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IERC165 {
         }
     }
 
+    /// @notice Internal helper to get balance for a specific asset (avoids recursion)
+    /// @param account The account to query
+    /// @param asset The asset address
+    /// @return balance The balance for this asset
+    function _getBalanceForAsset(address account, address asset) internal view returns (int256 balance) {
+        // Check if asset is registered
+        if (!BALANCES.isAssetRegistered(asset)) {
+            return 0;
+        }
+
+        // Handle native address (ETH)
+        if (asset == NATIVE_ADDRESS) {
+            return int256(account.balance);
+        }
+
+        // Try to call balanceOf using low-level staticcall
+        // This works for real contracts and won't revert for non-contracts
+        uint256 tokenBalance;
+        bool success;
+        assembly {
+            // Prepare calldata for balanceOf(account)
+            let ptr := mload(0x40)
+            mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address) selector
+            mstore(add(ptr, 0x04), account)
+            mstore(0x40, add(ptr, 0x24))
+
+            // Make staticcall - returns false for non-contracts, doesn't revert
+            success := staticcall(gas(), asset, ptr, 0x24, ptr, 0x20)
+
+            if success {
+                tokenBalance := mload(ptr)
+            }
+        }
+
+        // Only return balance if staticcall succeeded
+        // For non-contracts or failed calls, return 0
+        // Note: This means deal() won't work for non-contract addresses,
+        // but that's acceptable as tests should use mock contracts
+        if (success) {
+            return int256(tokenBalance);
+        }
+
+        return 0;
+    }
+
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) public view returns (int256 balance) {
-        if (asset == NATIVE_ADDRESS) {
-            // Native balance
-            balance = int256(account.balance);
-        } else {
-            // ERC20 balance
-            balance = int256(IERC20(asset).balanceOf(account));
-        }
+        return _getBalanceForAsset(account, asset);
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function underlyingAssetsSupported() external view returns (address[] memory underlyingAssets) {
+        address[] memory allAssets = BALANCES.getAssets();
+        uint256 assetCount = allAssets.length;
+        underlyingAssets = new address[](assetCount);
+        for (uint256 i = 0; i < assetCount; i++) {
+            underlyingAssets[i] = allAssets[i];
+        }
     }
 }

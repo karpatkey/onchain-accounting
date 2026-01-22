@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -19,7 +18,7 @@ import "src/errors.sol";
 /// 3. Fetching the user's accrued rewards for the asset via the Rewards Distributor
 /// 4. Returning the sum of net balance and unclaimed rewards
 /// The final balance is denominated in the underlying asset of the reserve.
-contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -54,24 +53,6 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         BALANCES = IBalances(balances_);
     }
 
-    //
-    // IBalanceOracleCustom
-    //
-
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address underlyingAsset, address account) external view returns (int256) {
-        address[] memory supportedAssets = _underlyingAssetsSupported();
-        for (uint256 i = 0; i < supportedAssets.length; i++) {
-            if (supportedAssets[i] == underlyingAsset) {
-                (int256 suppliedAmount, int256 borrowedAmount, int256 totalRewards) =
-                    _getUserData(account, underlyingAsset);
-                int256 balance = suppliedAmount - borrowedAmount;
-                return balance + totalRewards;
-            }
-        }
-        revert InvalidArguments();
-    }
-
     /// @notice Get the supplied, borrowed amounts, and rewards for a specific token and user
     /// @param user The user address
     /// @param token The token address
@@ -104,7 +85,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         totalRewards = int256(REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, token));
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         return _underlyingAssetsSupported();
     }
@@ -126,8 +107,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -136,20 +116,20 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            // Return empty arrays when asset filter is specified
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = _underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -160,7 +140,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = this.getOracleBalanceForAsset(account, asset);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -208,7 +188,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            (int256 suppliedAmount, int256 borrowedAmount, int256 totalRewards) = _getUserData(account, asset);
+            int256 balance = suppliedAmount - borrowedAmount + totalRewards;
 
             // Only include non-zero balances
             if (balance != 0) {

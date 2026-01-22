@@ -136,15 +136,15 @@ contract PricesTest is Test {
         manager.latestPrice(usdc);
     }
 
-    function test_setPriceOracle_Chainlink() public {
+    function test_setPriceFeed_Chainlink() public {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
     }
 
-    function test_setPriceOracle_CustomOracle() public {
+    function test_setPriceFeed_CustomOracle() public {
         manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
     }
 
-    function test_RemoveOracle() public {
+    function test_unsetPriceFeed() public {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
         manager.removePriceOracle(buidl);
         (address oracle,,,) = manager.priceOracles(buidl);
@@ -165,5 +165,86 @@ contract PricesTest is Test {
     function test_RevertIf_CheckCustomOracleSupport_InvalidOracleTypeCM() public {
         vm.expectRevert();
         manager.checkPriceOracleSupport(address(usdc), address(oracleaBuidl), IPrices.PriceType.Custom);
+    }
+
+    // ============================================
+    // Price Feed Management Tests
+    // ============================================
+
+    function test_setPriceFeed_zeroAddress() public {
+        vm.expectRevert();
+        manager.setPriceFeed(usdc, address(0), type(uint256).max, IPrices.PriceType.Custom);
+    }
+
+    function test_setPriceFeed_invalidOracleType() public {
+        vm.expectRevert();
+        manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Chainlink);
+    }
+
+    function test_setPriceFeed_chainlinkZeroHeartbeat() public {
+        vm.expectRevert();
+        manager.setPriceFeed(buidl, address(oracleaBuidl), 0, IPrices.PriceType.Chainlink);
+    }
+
+    function test_unsetPriceFeed_notSet() public {
+        // Unsetting non-existent feed should not revert (delete on non-existent mapping is safe)
+        manager.removePriceOracle(usdc);
+        (address oracle,,,) = manager.priceOracles(usdc);
+        assertEq(oracle, address(0));
+    }
+
+    // ============================================
+    // Getters Tests
+    // ============================================
+
+    function test_priceOracles() public {
+        manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
+
+        (address oracle, uint8 decimals, uint256 heartbeat, IPrices.PriceType priceType) = manager.priceOracles(usdc);
+        assertEq(oracle, address(oracleusdc));
+        assertEq(decimals, 8);
+        assertEq(heartbeat, type(uint256).max);
+        assertEq(uint8(priceType), uint8(IPrices.PriceType.Custom));
+    }
+
+    function test_chainlinkL2SequencerUptimeFeed() public view {
+        address uptimeFeed = address(manager.chainlinkL2SequencerUptimeFeed());
+        // For manager (L1), should be address(0)
+        assertEq(uptimeFeed, address(0));
+    }
+
+    function test_chainlinkL2SequencerGracePeriod() public view {
+        uint256 gracePeriod = manager.chainlinkL2SequencerGracePeriod();
+        assertEq(gracePeriod, 1 hours);
+    }
+
+    // ============================================
+    // Edge Cases Tests
+    // ============================================
+
+    function test_latestPrice_zeroPrice() public {
+        // Create a mock oracle that returns zero price
+        Mock_PriceOracleChainlink zeroPriceOracle = new Mock_PriceOracleChainlink("Zero", 0, 8);
+        manager.setPriceFeed(buidl, address(zeroPriceOracle), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        (uint256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
+        assertEq(price, 0);
+        assertEq(decimals, 8);
+        assertTrue(stale); // Zero price should be marked as stale
+    }
+
+    function test_checkL2SequencerUptime_noFeed() public view {
+        // manager has no uptime feed (L1 scenario)
+        bool stale = manager.checkL2SequencerUptime();
+        assertFalse(stale); // Should return false when no feed is set
+    }
+
+    function test_checkL2SequencerUptime_withinGracePeriod() public {
+        // Create manager with uptime feed
+        managerL2 = new PricesHarness(address(disabledUptimeFeed));
+
+        // The uptime feed is disabled (answer = 1), so sequencer is down
+        bool stale = managerL2.checkL2SequencerUptime();
+        assertTrue(stale);
     }
 }

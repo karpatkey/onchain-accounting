@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -16,7 +15,7 @@ import "src/errors.sol";
 
 /// @title GMX
 /// @notice Balance oracle for GMX synthetic positions
-contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract GmxBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -119,11 +118,10 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
         BALANCES = IBalances(balances_);
     }
 
-    //
-    // IBalanceOracleCustom
-    //
-
-    /// @inheritdoc IBalanceOracleCustom
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
     /// @dev Position value calculation breakdown:
     /// 1. Net Value Formula:
     ///    Net Value = Initial Collateral + PnL - Borrow Fee - Negative Funding Fee - Close Fee
@@ -151,15 +149,15 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
     ///
     /// Reference:
     /// https://github.com/gmx-io/gmx-synthetics/blob/66b5d7dbd4684d7612c9db6f6a3000be84fa2ff7/contracts/position/PositionUtils.sol#L189
-    function balanceOf(address underlyingAsset, address safe) external view returns (int256) {
-        if (underlyingAsset == address(0) || safe == address(0)) {
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+        if (underlyingAsset == address(0) || account == address(0)) {
             return 0;
         }
 
         IGMXReader.MarketPrices[] memory marketPrices = getMarketPrices();
 
         IGMXReader.PositionInfo memory positionInfo =
-            getPositionInfo(safe, GMX_MARKET, COLLATERAL_TOKEN, IS_LONG, marketPrices);
+            getPositionInfo(account, GMX_MARKET, COLLATERAL_TOKEN, IS_LONG, marketPrices);
 
         int256 total = 0;
 
@@ -292,7 +290,7 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
         return DATA_STORE.containsBytes32(POSITION_LIST, positionKey);
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         // Return USDC + (longToken or shortToken based on IS_LONG) + COLLATERAL_TOKEN
         address[] memory assets = new address[](3);
@@ -304,8 +302,7 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -314,19 +311,20 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -337,7 +335,7 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -385,7 +383,7 @@ contract GmxBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero balances
             if (balance != 0) {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
+import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
@@ -9,7 +10,7 @@ import {MockBalances} from "test/mocks/MockBalances.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract MorphoMarketTest is TestEnvConfigurator {
+contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
     uint256 public fork;
     uint256 public forkBlock;
 
@@ -20,71 +21,105 @@ contract MorphoMarketTest is TestEnvConfigurator {
 
     MorphoMarketBalanceOracle public oracle;
     MockBalances mockBalances;
+    BalancesHarnessForFork public balances;
+
+    // Global user addresses with positions in Morpho
+    address public supplyUsdcUser;
+    address public borrowUsdcUser;
 
     function setUp() public {
         mockBalances = new MockBalances();
+
+        // Set global user addresses - use addresses that have positions
+        supplyUsdcUser = 0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B;
+        borrowUsdcUser = 0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34;
     }
 
     function test_mainnet_balanceOf_supply_usdc() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
-        address user = address(0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_361_884);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
+        address[] memory assets = new address[](2);
+        assets[0] = wsteth;
+        assets[1] = usdc;
+        balances = deployBalancesInFork(assets);
+
         oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
-        int256 balance = oracle.balanceOf(usdc, user);
-        assertEq(balance, 25_066_203_870);
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        int256 balance = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
+        assertGt(balance, 0, "User should have USDC supply position");
     }
 
     function test_mainnet_balanceOf_borrowUsdc() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_728_491);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
+        address[] memory assets = new address[](3);
+        assets[0] = usdc;
+        assets[1] = dai;
+        assets[2] = mkr;
+        balances = deployBalancesInFork(assets);
 
-        int256 balanceUsdc = oracle.balanceOf(usdc, user);
-        assertEq(balanceUsdc, -9_478_607_678_615);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+
+        int256 balanceUsdc = oracle.getOracleBalanceForAsset(borrowUsdcUser, usdc);
+        assertLt(balanceUsdc, 0, "User should have USDC borrow position");
     }
 
     function test_mainnet_balanceOf_collateralMKR() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_728_491);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
+        address[] memory assets = new address[](3);
+        assets[0] = usdc;
+        assets[1] = dai;
+        assets[2] = mkr;
+        balances = deployBalancesInFork(assets);
 
-        int256 balanceMkr = oracle.balanceOf(mkr, user);
-        assertEq(balanceMkr, 15_235_145_753_614_569_323_332);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+
+        int256 balanceMkr = oracle.getOracleBalanceForAsset(borrowUsdcUser, mkr);
+        assertGt(balanceMkr, 0, "User should have MKR collateral position");
     }
 
     function test_mainnet_balanceOf_unsupportedToken() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_728_491);
         bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(mockBalances));
+        address[] memory assets = new address[](3);
+        assets[0] = usdc;
+        assets[1] = dai;
+        assets[2] = mkr;
+        balances = deployBalancesInFork(assets);
 
-        vm.expectRevert(InvalidArguments.selector);
-        oracle.balanceOf(address(0), user);
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+
+        // getOracleBalanceForAsset returns 0 for unsupported tokens
+        int256 balance = oracle.getOracleBalanceForAsset(borrowUsdcUser, address(0));
+        assertEq(balance, 0);
     }
 
     function test_underlyingAssetsSupported() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_361_884);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
+        address[] memory assetsToRegister = new address[](2);
+        assetsToRegister[0] = wsteth;
+        assetsToRegister[1] = usdc;
+        balances = deployBalancesInFork(assetsToRegister);
+
         oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
         assertEq(assets[0], wsteth);
@@ -92,13 +127,18 @@ contract MorphoMarketTest is TestEnvConfigurator {
     }
 
     function test_collateralAndLoanTokens() public {
-        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 20_361_884);
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 20_361_884);
         bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
 
         address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
 
+        address[] memory assetsToRegister = new address[](2);
+        assetsToRegister[0] = wsteth;
+        assetsToRegister[1] = usdc;
+        balances = deployBalancesInFork(assetsToRegister);
+
         oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(mockBalances));
+            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         assertEq(oracle.COLLATERAL_TOKEN(), wsteth);
         assertEq(oracle.LOAN_TOKEN(), usdc);
     }

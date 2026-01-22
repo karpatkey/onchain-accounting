@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -22,7 +21,7 @@ interface ISavingsUSDS is IERC4626 {
 /// @title SavingsUSDS Balance Oracle
 /// @notice Balance oracle for Savings USDS (sUSDS), an ERC4626 yield-bearing vault for USDS stablecoin
 /// This contract provides balance information by converting sUSDS vault shares to their underlying USDS value
-contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -64,11 +63,13 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
     }
 
     //
-    // IBalanceOracleCustom
     //
 
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address underlyingAsset, address account) external view returns (int256) {
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
         // Ensure token matches the underlying USDS token
         if (underlyingAsset != USDS) {
             revert InvalidArguments();
@@ -80,7 +81,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         return SAVINGS_USDS.convertToAssets(SAVINGS_USDS.balanceOf(account)).toInt256();
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = USDS; // Only USDS is supported
@@ -89,8 +90,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -99,21 +99,22 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        int256 balance = this.balanceOf(supportedAssets[0], account);
+        int256 balance = this.getOracleBalanceForAsset(account, supportedAssets[0]);
 
         if (balance == 0) {
             return (new address[](0), new int256[](0));
@@ -143,7 +144,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdap
         }
 
         // Get balance for this asset
-        int256 balance = this.balanceOf(asset, account);
+        int256 balance = _calculateBalance(asset, account);
 
         // Only include non-zero balances
         if (balance == 0) {

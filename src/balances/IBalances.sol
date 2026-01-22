@@ -7,8 +7,7 @@ interface IBalances {
     //
 
     enum OracleType {
-        ERC20,
-        Native,
+        Default,
         Custom
     }
 
@@ -49,45 +48,9 @@ interface IBalances {
     /// @notice Error when the same balance oracle is already set.
     error DuplicateBalanceOracle();
 
-    /// @notice Returns the latest balance for the given underlying asset and account.
-    ///
-    /// Important :
-    /// - The ordering of assets in the underlying data structure is not guaranteed. Entries may change order as
-    ///    oracles are added or removed . It is not safe to assume a fixed order or that the same
-    ///    query will yield a consistent oracle order.
-    ///
-    /// - Ensure that any external integrations using
-    ///    the oracle data accounts for potential reordering, and calls `balanceOracleAt` directly for
-    ///    verification if needed.
-    ///
-    /// @param underlyingAsset The address of the token.
-    /// @param idx The index of the balance oracle.
-    /// @param account The address of the account.
-    /// @return balance The latest balance of the account for the token.
-    function balanceOf(address underlyingAsset, uint256 idx, address account) external view returns (int256 balance);
-
-    /// @notice Returns the amount of balance oracles defined for a given underlying asset
-    /// @param underlyingAsset The address of the token.
-    /// @return count The amount of balance oracles defined for the token.
-    function balanceOracleCountFor(address underlyingAsset) external view returns (uint256 count);
-
-    /// @notice Returns the balance oracle and type for a given underlying asset
-    /// @param underlyingAsset The address of the token.
-    /// @param idx The index of the balance oracle.
-    /// @return oracle The address of the balance oracle.
-    /// @return balanceType The type of the balance oracle.
-    function balanceOracleAt(address underlyingAsset, uint256 idx) external view returns (address, OracleType);
-
-    /// @notice Returns all the balance oracles addresses for a given underlying asset
-    /// @param underlyingAsset The address of the token.
-    /// @return oracles The address of the balance oracle.
-    function balanceOracles(address underlyingAsset) external view returns (address[] memory oracles);
-
-    /// @notice Checks if the oracle supports the given oracle type.
-    /// @param underlyingAsset The address of the token.
+    /// @notice Checks if the oracle supports the required interface and is not already registered.
     /// @param oracle The address of the oracle.
-    /// @param oracleType The type of the oracle.
-    function checkBalanceOracleSupport(address underlyingAsset, address oracle, OracleType oracleType) external view;
+    function checkBalanceOracleSupport(address oracle) external view;
 
     //
     // Global Oracle Registry
@@ -110,6 +73,12 @@ interface IBalances {
     /// @param oracle The oracle address
     /// @return oracleType The type of the oracle
     function getOracleType(address oracle) external view returns (OracleType oracleType);
+
+    /// @notice Returns all oracles that support the given asset
+    /// @dev Loops through all global oracles and checks if the asset is in their underlyingAssetsSupported() list
+    /// @param asset The asset address to check
+    /// @return oracles Array of oracle addresses that support the asset
+    function getOraclesForAsset(address asset) external view returns (address[] memory oracles);
 
     //
     // Asset Registry (shared with Prices and NAVCalculator)

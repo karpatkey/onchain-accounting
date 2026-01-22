@@ -88,19 +88,6 @@ abstract contract SuperTest is Test {
         sequencerUptimeFeedtWithinGracePeriod = new Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod();
 
         mockBalanceOracle = new Mock_CustomBalanceOracle();
-        mockBalanceOracle.setBalance(address(usdc), safe, int256(123 * 10 ** usdc.decimals()));
-        mockBalanceOracle.setBalance(address(dai), safe, int256(456 * 10 ** dai.decimals()));
-        mockBalanceOracle.setBalance(address(weth), safe, int256(789 * 10 ** weth.decimals()));
-        address[] memory underlyingAssets = new address[](3);
-        underlyingAssets[0] = address(usdc);
-        underlyingAssets[1] = address(dai);
-        underlyingAssets[2] = address(weth);
-        mockBalanceOracle.setUnderlyingAssetsSupported(underlyingAssets);
-        mockBalanceOracle.setPositionMetadata(
-            IBalanceOracleCustom.PositionMetadata({
-                protocol: "Mock Protocol", position: "Mock Position", positionType: "Mock Type"
-            })
-        );
 
         // https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades?tab=readme-ov-file#coverage-testing
         vm.startPrank(admin);
@@ -125,13 +112,10 @@ abstract contract SuperTest is Test {
         // However, if tests need it, they can access it via nav.erc20DefaultOracle()
 
         nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalanceOracle(address(usdc), address(usdc), IBalances.OracleType.ERC20);
 
         nav.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
-        nav.addBalanceOracle(address(dai), address(dai), IBalances.OracleType.ERC20);
 
         nav.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addBalanceOracle(address(weth), address(weth), IBalances.OracleType.ERC20);
 
         vm.stopPrank();
     }

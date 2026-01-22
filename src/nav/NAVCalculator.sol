@@ -11,7 +11,7 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {IBalances, Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {ERC20DefaultOracle} from "src/balances/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -126,15 +126,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function addBalanceOracle(address underlyingAsset, address oracle, IBalances.OracleType balanceType) external {
+    function addBalanceOracle(address oracle) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         if (oracle == address(0)) {
             revert InvalidArguments();
         }
 
-        _requireAssetExists(underlyingAsset);
-
-        _addBalanceOracle(underlyingAsset, oracle, balanceType);
+        _addBalanceOracle(oracle);
     }
 
     /// @inheritdoc INAVCalculator
@@ -148,12 +146,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function removeBalanceOracle(address underlyingAsset, address oracle) external {
+    function removeBalanceOracle(address oracle) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
-        _requireAssetExists(underlyingAsset);
-
-        _removeBalanceOracle(underlyingAsset, oracle);
+        _removeBalanceOracle(oracle);
     }
 
     /// @inheritdoc INAVCalculator
@@ -165,18 +161,6 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Unset price feed if it exists
         if (priceOracles[underlyingAsset].oracle != address(0)) {
             _unsetPriceFeed(underlyingAsset);
-        }
-
-        // Unset all balance oracles
-        address[] memory oraclesToRemove = balanceOracles(underlyingAsset);
-
-        // Remove all balance oracles
-        for (uint256 i = 0; i < oraclesToRemove.length; i++) {
-            // Skip native address oracle as it cannot be removed
-            if (underlyingAsset == NATIVE_ADDRESS && oraclesToRemove[i] == NATIVE_ADDRESS) {
-                continue;
-            }
-            _removeBalanceOracle(underlyingAsset, oraclesToRemove[i]);
         }
 
         // Remove the asset itself
@@ -311,24 +295,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         for (uint256 i = 0; i < totalOracles; i++) {
             address oracle = allOracles[i];
 
-            // Skip oracles that don't implement IBalanceOracleAdapter
-            // ERC20 tokens added as balance oracles don't implement this interface
-            // They are handled by ERC20DefaultOracle instead
-            // Use try-catch since some contracts don't implement IERC165 and will revert
-            bool supportsAdapter;
-            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
-                supportsAdapter = result;
+            // All registered oracles should implement IBalanceOracleAdapter
+            // Interface validation is done during oracle registration, not here
+            // Use try-catch to gracefully handle any oracles that don't implement the interface
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
+            INAVCalculator.Position[] memory oraclePositions;
+            try adapter.getOraclePositions(account, address(0)) returns (INAVCalculator.Position[] memory positions) {
+                oraclePositions = positions;
             } catch {
-                supportsAdapter = false;
-            }
-            if (!supportsAdapter) {
+                // Oracle doesn't implement IBalanceOracleAdapter, skip it
                 continue;
             }
-
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
-
-            // assetFilter = address(0) → oracle returns all assets it knows for this account
-            INAVCalculator.Position[] memory oraclePositions = adapter.getOraclePositions(account, address(0));
 
             for (uint256 j = 0; j < oraclePositions.length; j++) {
                 address assetAddr = oraclePositions[j].underlyingAsset.asset;
@@ -503,18 +480,21 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         for (uint256 i = 0; i < totalOracles; i++) {
             address oracle = allOracles[i];
 
-            // Skip oracles that don't implement IBalanceOracleAdapter
-            // ERC20 tokens added as balance oracles don't implement this interface
-            // They are handled by ERC20DefaultOracle instead
-            if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
-                continue;
-            }
-
+            // All registered oracles should implement IBalanceOracleAdapter
+            // Interface validation is done during oracle registration, not here
             // Call getOraclePositions() on each oracle adapter
             // Each oracle returns all positions it knows about for this account
             // assetFilter = address(0) means "return all assets"
             IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
-            INAVCalculator.Position[] memory oraclePositions = oracleAdapter.getOraclePositions(account, address(0));
+            INAVCalculator.Position[] memory oraclePositions;
+            try oracleAdapter.getOraclePositions(account, address(0)) returns (
+                INAVCalculator.Position[] memory positions
+            ) {
+                oraclePositions = positions;
+            } catch {
+                // Oracle doesn't implement IBalanceOracleAdapter, skip it
+                continue;
+            }
 
             // Filter positions: only include those with registered assets
             for (uint256 j = 0; j < oraclePositions.length; j++) {
@@ -699,16 +679,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         for (uint256 i = 0; i < totalOracles; i++) {
             address oracle = allOracles[i];
 
-            // Skip oracles that don't implement IBalanceOracleAdapter
-            // ERC20 tokens added as balance oracles don't implement this interface
-            // They are handled by ERC20DefaultOracle instead
-            if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
-                continue;
-            }
-
+            // All registered oracles should implement IBalanceOracleAdapter
+            // Interface validation is done during oracle registration, not here
             // Call getOraclePositions with asset filter
             IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
-            INAVCalculator.Position[] memory oraclePositions = oracleAdapter.getOraclePositions(account, asset);
+            INAVCalculator.Position[] memory oraclePositions;
+            try oracleAdapter.getOraclePositions(account, asset) returns (INAVCalculator.Position[] memory positions) {
+                oraclePositions = positions;
+            } catch {
+                // Oracle doesn't implement IBalanceOracleAdapter, skip it
+                continue;
+            }
 
             // Copy positions to temp array (all should be for the requested asset)
             for (uint256 j = 0; j < oraclePositions.length; j++) {
@@ -875,23 +856,18 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         for (uint256 i = 0; i < totalOracles; i++) {
             address oracle = allOracles[i];
 
-            // Skip oracles that don't implement IBalanceOracleAdapter
-            // ERC20 tokens added as balance oracles don't implement this interface
-            // They are handled by ERC20DefaultOracle instead
-            // Use try-catch since some contracts don't implement IERC165 and will revert
-            bool supportsAdapter;
-            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
-                supportsAdapter = result;
+            // All registered oracles should implement IBalanceOracleAdapter
+            // Interface validation is done during oracle registration, not here
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
+            address[] memory assetsList;
+            int256[] memory amounts;
+            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory amounts_) {
+                assetsList = assets;
+                amounts = amounts_;
             } catch {
-                supportsAdapter = false;
-            }
-            if (!supportsAdapter) {
+                // Oracle doesn't implement IBalanceOracleAdapter, skip it
                 continue;
             }
-
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
-
-            (address[] memory assetsList, int256[] memory amounts) = adapter.getOracleBalance(account, address(0));
 
             for (uint256 j = 0; j < assetsList.length; j++) {
                 // Skip unregistered assets
@@ -931,23 +907,18 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         for (uint256 i = 0; i < totalOracles; i++) {
             address oracle = allOracles[i];
 
-            // Skip oracles that don't implement IBalanceOracleAdapter
-            // ERC20 tokens added as balance oracles don't implement this interface
-            // They are handled by ERC20DefaultOracle instead
-            // Use try-catch since some contracts don't implement IERC165 and will revert
-            bool supportsAdapter;
-            try IERC165(oracle).supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
-                supportsAdapter = result;
+            // All registered oracles should implement IBalanceOracleAdapter
+            // Interface validation is done during oracle registration, not here
+            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
+            address[] memory assetsList;
+            int256[] memory amounts;
+            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory amounts_) {
+                assetsList = assets;
+                amounts = amounts_;
             } catch {
-                supportsAdapter = false;
-            }
-            if (!supportsAdapter) {
+                // Oracle doesn't implement IBalanceOracleAdapter, skip it
                 continue;
             }
-
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
-
-            (address[] memory assetsList, int256[] memory amounts) = adapter.getOracleBalance(account, address(0));
 
             for (uint256 j = 0; j < assetsList.length; j++) {
                 address assetAddr = assetsList[j];

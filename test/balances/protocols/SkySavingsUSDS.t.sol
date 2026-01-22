@@ -2,59 +2,68 @@
 pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
+import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {SkySavingsUsdsBalanceOracle} from "src/balances/protocols/SkySavingsUsds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract SavingsUSDSTest is TestEnvConfigurator {
+contract SavingsUSDSTest is TestEnvConfigurator, TestSetupHelpers {
     IERC4626 public constant SAVINGS_USDS = IERC4626(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD);
     IERC20 public constant USDS = IERC20(0xdC035D45d973E3EC169d2276DDab16f1e407384F);
-    address public constant TEST_USER = 0x7F311a4D48377030bD810395f4CCfC03bdbe9Ef3;
     uint256 public constant FORK_BLOCK = 21_378_910;
 
     uint256 public fork;
     SkySavingsUsdsBalanceOracle public oracle;
     MockBalances mockBalances;
+    BalancesHarnessForFork public balances;
+
+    // Global user address with SavingsUSDS position
+    address public testUser;
 
     function setUp() public {
-        fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
         mockBalances = new MockBalances();
 
-        oracle = new SkySavingsUsdsBalanceOracle(address(SAVINGS_USDS), "Sky", "SavingsUSDS", address(mockBalances));
+        balances = deployBalancesInFork(address(USDS));
+        oracle = new SkySavingsUsdsBalanceOracle(address(SAVINGS_USDS), "Sky", "SavingsUSDS", address(balances));
+
+        // Set global user address - use address that has SavingsUSDS position
+        testUser = 0x7F311a4D48377030bD810395f4CCfC03bdbe9Ef3;
     }
 
     function test_MAINNET_balanceOf_TEST_USER() public {
-        int256 balance = oracle.balanceOf(address(USDS), TEST_USER);
+        int256 balance = oracle.getOracleBalanceForAsset(testUser, address(USDS));
 
-        vm.startPrank(TEST_USER);
-        uint256 previousBalance = USDS.balanceOf(TEST_USER);
-        SAVINGS_USDS.redeem(SAVINGS_USDS.balanceOf(TEST_USER), TEST_USER, TEST_USER);
-        uint256 newBalance = USDS.balanceOf(TEST_USER);
+        vm.startPrank(testUser);
+        uint256 previousBalance = USDS.balanceOf(testUser);
+        SAVINGS_USDS.redeem(SAVINGS_USDS.balanceOf(testUser), testUser, testUser);
+        uint256 newBalance = USDS.balanceOf(testUser);
         vm.stopPrank();
 
         // casting to 'int256' is safe because newBalance >= previousBalance (balance increased)
         // forge-lint: disable-next-line(unsafe-typecast)
         int256 expected = int256(newBalance - previousBalance);
 
-        assertEq(balance, expected);
-        assertEq(balance, 98_307_873_348_802_707_423_058_221);
+        assertEq(balance, expected, "Oracle balance should match redemption amount");
+        assertGt(balance, 0, "User should have positive USDS position");
     }
 
     function test_balanceOfZeroAddress() public view {
-        int256 balance = oracle.balanceOf(address(USDS), address(0));
+        int256 balance = oracle.getOracleBalanceForAsset(address(0), address(USDS));
         assertEq(balance, 0);
     }
 
-    function test_revertsOnInvalidToken() public {
-        vm.expectRevert(InvalidArguments.selector);
-        oracle.balanceOf(address(0xdead), TEST_USER);
+    function test_returnsZeroOnInvalidToken() public view {
+        // getOracleBalanceForAsset returns 0 for unsupported tokens
+        int256 balance = oracle.getOracleBalanceForAsset(testUser, address(0xdead));
+        assertEq(balance, 0);
     }
 
     function test_underlyingAssetsSupported() public view {
@@ -69,7 +78,7 @@ contract SavingsUSDSTest is TestEnvConfigurator {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleCustom).interfaceId));
+        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
         assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
     }
 

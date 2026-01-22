@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -15,7 +14,7 @@ import "src/errors.sol";
 /// @author kpk
 /// @notice Tracks user positions in the Aave v3 Safety Module, calculating BALANCES for both staked token and rewards
 /// accrued. Returned BALANCES are denominated in terms of the underlying staked token.
-contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracleAdapter {
+contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -65,16 +64,18 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
     }
 
     //
-    // IBalanceOracleCustom
     //
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
     /// @dev Returns equivalent balance for either:
     /// - Staked tokens: Returns the withdrawable amount of underlying tokens
     /// - Reward tokens: Returns the current unclaimed rewards plus newly accrued rewards
     /// The staked token can be the same as the reward token (i.e. with stkAAVE, underlyingAsset = AAVE = STAKED_TOKEN =
     /// REWARD_TOKEN).
-    function balanceOf(address underlyingAsset, address account) external view returns (int256) {
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
         if (underlyingAsset != address(STAKED_TOKEN) && underlyingAsset != address(REWARD_TOKEN)) {
             revert InvalidArguments();
         }
@@ -95,7 +96,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
         return total;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
+    /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         if (STAKED_TOKEN == REWARD_TOKEN) {
             // If staked and reward tokens are the same, return only one address
@@ -112,8 +113,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     //
@@ -122,19 +122,20 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+        // Sum all balances for this asset across all positions
+        // _buildPositions with asset filter already returns only positions for this asset
+        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
+        for (uint256 i = 0; i < positions.length; i++) {
+            balance += positions[i].balance;
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account, address assetFilter)
+    function getOracleBalance(address account)
         external
         view
         returns (address[] memory assets, int256[] memory amounts)
     {
-        if (assetFilter != address(0)) {
-            return (new address[](0), new int256[](0));
-        }
-
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -145,7 +146,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero BALANCES
             if (balance != 0) {
@@ -193,7 +194,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleCustom, IBalanceOracle
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            int256 balance = _calculateBalance(asset, account);
 
             // Only include non-zero BALANCES
             if (balance != 0) {

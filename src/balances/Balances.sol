@@ -5,7 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IBalances} from "./IBalances.sol";
-import {IBalanceOracleCustom} from "./IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
@@ -84,7 +84,7 @@ abstract contract Balances is IBalances, Initializable {
 
         // Add to global oracle registry
         _globalOracles.push(erc20DefaultOracle);
-        _oracleTypes[erc20DefaultOracle] = OracleType.ERC20; // ERC20Default handles both ERC20 and Native
+        _oracleTypes[erc20DefaultOracle] = OracleType.Default; // ERC20Default handles both ERC20 and Native
         _isOracleRegistered[erc20DefaultOracle] = true;
     }
 
@@ -93,66 +93,11 @@ abstract contract Balances is IBalances, Initializable {
     //
 
     /// @inheritdoc IBalances
-    function balanceOf(address underlyingAsset, uint256 idx, address account) public view returns (int256) {
-        if (idx >= _balanceOracles[underlyingAsset].length()) {
-            revert BalanceOracleNotSet();
-        }
+    function checkBalanceOracleSupport(address oracle) public view {
+        if (oracle == address(0)) revert InvalidArguments();
 
-        (address oracleAddress, uint256 balanceTypeUInt) = _balanceOracles[underlyingAsset].at(idx);
-        OracleType balanceType = OracleType(balanceTypeUInt);
-
-        if (oracleAddress == address(0)) {
-            revert BalanceOracleNotSet();
-        }
-
-        int256 balance;
-
-        if (balanceType == OracleType.ERC20) {
-            balance = ERC20(oracleAddress).balanceOf(account).toInt256();
-        } else if (balanceType == OracleType.Native) {
-            balance = address(account).balance.toInt256();
-        } else {
-            balance = IBalanceOracleCustom(oracleAddress).balanceOf(underlyingAsset, account);
-        }
-
-        return balance;
-    }
-
-    /// @inheritdoc IBalances
-    function balanceOracleCountFor(address underlyingAsset) public view override returns (uint256) {
-        return _balanceOracles[underlyingAsset].length();
-    }
-
-    /// @inheritdoc IBalances
-    function balanceOracleAt(address underlyingAsset, uint256 idx) public view override returns (address, OracleType) {
-        (address oracleAddress, uint256 balanceTypeUInt) = _balanceOracles[underlyingAsset].at(idx);
-        return (oracleAddress, OracleType(balanceTypeUInt));
-    }
-
-    /// @inheritdoc IBalances
-    function balanceOracles(address underlyingAsset) public view override returns (address[] memory) {
-        return _balanceOracles[underlyingAsset].keys();
-    }
-
-    /// @inheritdoc IBalances
-    function checkBalanceOracleSupport(address underlyingAsset, address oracle, OracleType balanceType) public view {
-        if (oracle == address(0) || underlyingAsset == address(0)) revert InvalidArguments();
-
-        if (balanceType == OracleType.Custom) {
-            if (!oracle.supportsInterface(type(IBalanceOracleCustom).interfaceId)) {
-                revert InvalidBalanceOracle();
-            }
-        } else if (balanceType == OracleType.ERC20) {
-            ERC20(oracle).balanceOf(address(this));
-        } else if (balanceType == OracleType.Native) {
-            // Native balance oracles are always supported, added in the constructor
-            revert DuplicateBalanceOracle();
-        } else {
-            revert InvalidBalanceOracleType();
-        }
-
-        if (_balanceOracles[underlyingAsset].contains(oracle)) {
-            revert DuplicateBalanceOracle();
+        if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
+            revert InvalidBalanceOracle();
         }
     }
 
@@ -177,6 +122,43 @@ abstract contract Balances is IBalances, Initializable {
             revert InvalidBalanceOracle();
         }
         return _oracleTypes[oracle];
+    }
+
+    /// @inheritdoc IBalances
+    function getOraclesForAsset(address asset) public view override returns (address[] memory) {
+        uint256 oracleCount = _globalOracles.length;
+        bool[] memory supportsAsset = new bool[](oracleCount);
+        uint256 count = 0;
+
+        // Single pass: check which oracles support this asset
+        for (uint256 i = 0; i < oracleCount; i++) {
+            address oracle = _globalOracles[i];
+            try IBalanceOracleAdapter(oracle).underlyingAssetsSupported() returns (address[] memory supportedAssets) {
+                // Check if asset is in the supported assets list
+                for (uint256 j = 0; j < supportedAssets.length; j++) {
+                    if (supportedAssets[j] == asset) {
+                        supportsAsset[i] = true;
+                        count++;
+                        break; // Found it, move to next oracle
+                    }
+                }
+            } catch {
+                // If the call fails, skip this oracle (supportsAsset[i] remains false)
+                continue;
+            }
+        }
+
+        // Create array with the correct length and populate with supporting oracles
+        address[] memory supportingOracles = new address[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < oracleCount; i++) {
+            if (supportsAsset[i]) {
+                supportingOracles[index] = _globalOracles[i];
+                index++;
+            }
+        }
+
+        return supportingOracles;
     }
 
     /// @inheritdoc IBalances
@@ -214,45 +196,59 @@ abstract contract Balances is IBalances, Initializable {
     // Internal API
     //
 
-    /// @notice Adds a balance oracle for a given underlying asset.
-    /// @param underlyingAsset The address of the token.
+    /// @notice Adds a balance oracle globally.
     /// @param oracle The address of the oracle.
-    /// @param balanceType The type of the oracle.
-    function _addBalanceOracle(address underlyingAsset, address oracle, OracleType balanceType) internal {
-        checkBalanceOracleSupport(underlyingAsset, oracle, balanceType);
-
-        _balanceOracles[underlyingAsset].set(oracle, uint256(balanceType));
-        balanceOracleTotalCount++;
-
-        // Add to global oracle registry if not already registered
-        if (!_isOracleRegistered[oracle]) {
-            _globalOracles.push(oracle);
-            _oracleTypes[oracle] = balanceType;
-            _isOracleRegistered[oracle] = true;
+    function _addBalanceOracle(address oracle) internal {
+        // Check if oracle is already registered globally
+        if (_isOracleRegistered[oracle]) {
+            revert DuplicateBalanceOracle();
         }
 
-        emit BalanceOracleAdded(underlyingAsset, oracle, balanceType);
+        OracleType balanceType = OracleType.Custom;
+        checkBalanceOracleSupport(oracle);
+
+        // Add to global oracle registry
+        _globalOracles.push(oracle);
+        _oracleTypes[oracle] = balanceType;
+        _isOracleRegistered[oracle] = true;
+        balanceOracleTotalCount++;
+
+        // Emit event with address(0) for underlyingAsset since oracles are global
+        emit BalanceOracleAdded(address(0), oracle, balanceType);
     }
 
-    /// @notice Removes the oracle for a given underlying asset.
-    /// @param underlyingAsset The address of the token.
+    /// @notice Removes the oracle from the global registry.
     /// @param oracle The address of the oracle.
-    function _removeBalanceOracle(address underlyingAsset, address oracle) internal {
-        if (underlyingAsset == NATIVE_ADDRESS && oracle == NATIVE_ADDRESS) revert InvalidArguments();
+    function _removeBalanceOracle(address oracle) internal {
+        if (oracle == erc20DefaultOracle) {
+            revert InvalidArguments(); // Cannot remove ERC20DefaultOracle
+        }
 
-        bool removed = _balanceOracles[underlyingAsset].remove(oracle);
-
-        if (!removed) {
+        if (!_isOracleRegistered[oracle]) {
             revert InvalidBalanceOracle();
         }
 
+        // Remove from global registry
+        uint256 oracleIndex = _globalOracles.length;
+        for (uint256 i = 0; i < _globalOracles.length; i++) {
+            if (_globalOracles[i] == oracle) {
+                oracleIndex = i;
+                break;
+            }
+        }
+
+        if (oracleIndex < _globalOracles.length) {
+            // Move last element to the position of the element to delete
+            _globalOracles[oracleIndex] = _globalOracles[_globalOracles.length - 1];
+            _globalOracles.pop();
+        }
+
+        delete _isOracleRegistered[oracle];
+        delete _oracleTypes[oracle];
         balanceOracleTotalCount--;
 
-        // Check if oracle is still used by any other asset
-        // If not, remove from global registry (for now, keep it simple - don't remove from global registry)
-        // In the future, we can track per-asset usage and remove only when unused
-
-        emit BalanceOracleRemoved(underlyingAsset, oracle);
+        // Emit event with address(0) for underlyingAsset since oracles are global
+        emit BalanceOracleRemoved(address(0), oracle);
     }
 
     /// @notice Registers an asset in the asset registry

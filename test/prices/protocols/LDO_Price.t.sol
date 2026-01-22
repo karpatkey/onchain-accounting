@@ -12,7 +12,7 @@ contract LDO_PriceOracleTest is TestEnvConfigurator {
     address _ethToUsdOracle;
 
     function setUp() public {
-        uint256 fork = vm.createFork(getAlchemyUrl("eth-mainnet"));
+        uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(22_575_288);
 

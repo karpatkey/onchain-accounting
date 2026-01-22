@@ -2,14 +2,19 @@
 pragma solidity ^0.8;
 
 import {IBalances} from "src/balances/IBalances.sol";
+import {AssetNotFound} from "src/errors.sol";
 
 /// @title MockBalances
 /// @notice Minimal mock implementation of IBalances for protocol oracle tests
 contract MockBalances is IBalances {
     mapping(address => uint8) private _assetDecimals;
     mapping(address => string) private _assetSymbols;
+    mapping(address => bool) private _assetRegistered;
 
     function getAssetDecimals(address asset) external view returns (uint8) {
+        if (!_assetRegistered[asset]) {
+            revert AssetNotFound();
+        }
         return _assetDecimals[asset];
     }
 
@@ -19,6 +24,7 @@ contract MockBalances is IBalances {
 
     function setAssetDecimals(address asset, uint8 decimals) external {
         _assetDecimals[asset] = decimals;
+        _assetRegistered[asset] = true;
     }
 
     function setAssetSymbol(address asset, string memory symbol) external {
@@ -30,19 +36,7 @@ contract MockBalances is IBalances {
         return 0;
     }
 
-    function balanceOracleCountFor(address) external pure returns (uint256) {
-        return 0;
-    }
-
-    function balanceOracleAt(address, uint256) external pure returns (address, OracleType) {
-        return (address(0), OracleType.ERC20);
-    }
-
-    function balanceOracles(address) external pure returns (address[] memory) {
-        return new address[](0);
-    }
-
-    function checkBalanceOracleSupport(address, address, OracleType) external pure {}
+    function checkBalanceOracleSupport(address) external pure {}
 
     function getAllOracles() external pure returns (address[] memory) {
         return new address[](0);
@@ -57,7 +51,11 @@ contract MockBalances is IBalances {
     }
 
     function getOracleType(address) external pure returns (OracleType) {
-        return OracleType.ERC20;
+        return OracleType.Default;
+    }
+
+    function getOraclesForAsset(address) external pure returns (address[] memory) {
+        return new address[](0);
     }
 
     function isAssetRegistered(address) external pure returns (bool) {

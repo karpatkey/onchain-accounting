@@ -118,17 +118,17 @@ interface INAVCalculator {
     function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Adds a balance oracle for an existing asset.
-    /// @dev Cannot be called before registering the asset. Replaces any existing balance oracle with the same address.
-    function addBalanceOracle(address underlyingAsset, address oracle, IBalances.OracleType balanceType) external;
+    /// @notice Adds a balance oracle globally.
+    /// @dev The oracle will return positions for all registered assets. Replaces any existing oracle with the same address.
+    function addBalanceOracle(address oracle) external;
 
     /// @notice Unsets the price feed for a given asset.
     /// @dev The asset remains registered after this operation.
     function unsetPriceFeed(address underlyingAsset) external;
 
-    /// @notice Removes a balance oracle for a given asset.
-    /// @dev The asset remains registered after this operation.
-    function removeBalanceOracle(address underlyingAsset, address oracle) external;
+    /// @notice Removes a balance oracle from the global registry.
+    /// @dev The oracle is removed globally and will no longer return positions for any asset.
+    function removeBalanceOracle(address oracle) external;
 
     /// @notice Unregisters an asset, removing all oracles and the asset itself.
     /// @param underlyingAsset The address of the asset to unregister.

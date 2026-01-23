@@ -45,11 +45,11 @@ abstract contract SuperTest is Test {
 
     // tokens
     Mock_ERC20 public usdc;
-    Mock_PriceOracleCustom public usdcOracle;
+    Mock_CustomPriceFeed public usdcOracle;
     Mock_ERC20 public dai;
     Mock_PriceOracleChainlink public daiOracle;
     Mock_ERC20 public weth;
-    Mock_PriceOracleCustom public wethOracle;
+    Mock_CustomPriceFeed public wethOracle;
     Mock_PriceOracleChainlink public ethOracle;
     Mock_ChainlinkL2SequencerUptimeFeed public sequencerUptimeFeed;
     Mock_ChainlinkL2SequencerUptimeFeedDown public sequencerUptimeFeedDown;
@@ -79,9 +79,9 @@ abstract contract SuperTest is Test {
 
     function setupNav() internal {
         vm.warp(block.timestamp + 3600); // To pass the L2 sequencer default grace period set at deployment
-        usdcOracle = new Mock_PriceOracleCustom("USDC", address(usdc), 100_000_000, 8);
+        usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);
         daiOracle = new Mock_PriceOracleChainlink("DAI", 100_000_000, 8);
-        wethOracle = new Mock_PriceOracleCustom("WETH", address(weth), 324_057_000_000, 8);
+        wethOracle = new Mock_CustomPriceFeed("WETH", address(weth), 324_057_000_000, 8);
         ethOracle = new Mock_PriceOracleChainlink("ETH", 324_057_000_000, 8);
         sequencerUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeed();
         sequencerUptimeFeedDown = new Mock_ChainlinkL2SequencerUptimeFeedDown();

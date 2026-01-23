@@ -5,6 +5,7 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {ArrayUtils} from "src/utils/ArrayUtils.sol";
 
 /// @title Aave V3 Instance Balance Oracle
 /// @author kpk
@@ -128,7 +129,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         address[] memory registeredAssets = NAV_CALCULATOR.assets();
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = _intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
 
         UserReserveData[] memory userReservesData;
         if (registeredSupportedAssets.length == 0) {
@@ -323,39 +324,6 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
-    //
-    // Internal Functions - Utilities
-    //
-
-    /// @notice Finds addresses that are present in both input arrays (intersection)
-    /// @param array1 First array of addresses
-    /// @param array2 Second array of addresses
-    /// @return intersection Array of addresses that appear in both arrays
-    function _intersection(address[] memory array1, address[] memory array2)
-        internal
-        pure
-        returns (address[] memory intersection)
-    {
-        // Pre-allocate array (max size is the smaller of the two arrays)
-        uint256 maxSize = array1.length < array2.length ? array1.length : array2.length;
-        intersection = new address[](maxSize);
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < array1.length; i++) {
-            for (uint256 j = 0; j < array2.length; j++) {
-                if (array1[i] == array2[j]) {
-                    intersection[count] = array1[i];
-                    count++;
-                    break; // Found match, move to next element in array1
-                }
-            }
-        }
-
-        // Resize to actual count
-        assembly {
-            mstore(intersection, count)
-        }
-    }
 }
 
 //

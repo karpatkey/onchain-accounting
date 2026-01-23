@@ -3,13 +3,13 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
-import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ArrayUtils} from "src/utils/ArrayUtils.sol";
 
 // solhint-disable func-name-mixedcase
 
@@ -25,6 +25,16 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Definition of week in https://etherscan.io/token/0x9fdd52efeb601e4bc78b89c6490505b8ac637e9f#code
     uint256 public constant WEEK = 7 * 86_400;
 
+    //
+    // Type Definitions
+    //
+
+    /// @notice Asset balance data structure
+    struct AssetBalanceData {
+        address asset;
+        int256 balance;
+    }
+
     /// @notice Balancer V3 Pool contract
     IStablePool public immutable POOL;
 
@@ -36,17 +46,17 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Reference to Balances contract for asset registry access
-    IBalances public immutable BALANCES;
+    /// @notice Reference to NAVCalculator for asset registry and pricing access
+    INAVCalculator public immutable NAV_CALCULATOR;
 
     /// @notice Initializes the oracle with pool and gauge addresses
     /// @param pool_ Address of the Balancer V3 pool
     /// @param gauge_ Address of the corresponding gauge contract
     /// @param balancerMinter_ Address of the Balancer Minter contract
     /// @param protocol_ Protocol identifier (e.g., "Balancer v3").
-    /// @param balances_ The address of the Balances contract for asset registry access.
+    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     /// @dev Validates that the gauge's LP token matches the pool address
-    constructor(address pool_, address gauge_, address balancerMinter_, string memory protocol_, address balances_) {
+    constructor(address pool_, address gauge_, address balancerMinter_, string memory protocol_, address navCalculator_) {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
         }
@@ -54,7 +64,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         POOL = IStablePool(pool_);
         GAUGE = IGaugeV3(gauge_);
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
-        BALANCES = IBalances(balances_);
+        NAV_CALCULATOR = INAVCalculator(navCalculator_);
 
         try GAUGE.lp_token() returns (address lpToken) {
             if (lpToken != pool_) {
@@ -65,25 +75,6 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         }
 
         _protocol = protocol_;
-    }
-
-    /// @notice Internal helper to calculate balance for a specific asset
-    /// @param underlyingAsset The asset address
-    /// @param account The account address
-    /// @return balance The calculated balance
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
-        uint256 userBalance = POOL.balanceOf(account);
-        // Gauge token to lp token is 1 to 1
-        uint256 userGaugeBalance = GAUGE.balanceOf(account);
-
-        // We need to do a single conversion of the user balance and gauge token balance because on redeem we are
-        // deducted 1 wei share and 1 wei
-        // underlying
-        // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
-        // lp token
-        // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-        return poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
-            + claimableTokens(underlyingAsset, account);
     }
 
     /// @notice Calculates a user's token balance in the pool
@@ -277,12 +268,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Sum all balances for this asset across all positions
-        // _buildPositions with asset filter already returns only positions for this asset
-        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
-        for (uint256 i = 0; i < positions.length; i++) {
-            balance += positions[i].balance;
-        }
+        // Optimized: directly calculate balance without building full Position structs
+        balance = _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -320,90 +307,150 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
+    //
+    // Internal Functions - Asset Registry & Lookup
+    //
+
+    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
+    /// @param asset The asset address to look up
+    /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
+    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
+        uint256 assetCount = NAV_CALCULATOR.assetCount();
+        for (uint256 i = 0; i < assetCount; i++) {
+            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
+            if (a.asset == asset) {
+                return a;
+            }
+        }
+        revert("Asset not found in NAVCalculator");
+    }
+
+    //
+    // Internal Functions - Balance Calculation
+    //
+
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+        uint256 userBalance = POOL.balanceOf(account);
+        // Gauge token to lp token is 1 to 1
+        uint256 userGaugeBalance = GAUGE.balanceOf(account);
+
+        // We need to do a single conversion of the user balance and gauge token balance because on redeem we are
+        // deducted 1 wei share and 1 wei
+        // underlying
+        // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
+        // lp token
+        // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
+        return poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
+            + claimableTokens(underlyingAsset, account);
+    }
+
+    //
+    // Internal Functions - Position Building
+    //
+
     /// @notice Internal helper that builds all positions for this oracle
-    /// @param account The account to query
-    /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of Position structs from this oracle
-    function _buildPositions(address account, address assetFilter)
+    /// @param assetBalanceData Array of AssetBalanceData to build positions from
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @dev All assets are guaranteed to be registered (filtered in getOraclePositions).
+    function _buildPositions(AssetBalanceData[] memory assetBalanceData)
         internal
         view
-        returns (INAVCalculator.Position[] memory positions)
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        address[] memory supportedAssets = this.underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
-
-        if (assetCount == 0) {
-            return new INAVCalculator.Position[](0);
+        if (assetBalanceData.length == 0) {
+            return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Pre-allocate array (estimate max size)
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        // Pre-allocate array
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](assetBalanceData.length);
         uint256 positionCount = 0;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
+        for (uint256 i = 0; i < assetBalanceData.length; i++) {
+            address asset = assetBalanceData[i].asset;
 
-            // Apply asset filter if specified
-            if (assetFilter != address(0) && asset != assetFilter) {
-                continue;
-            }
+            // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
+            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
-            // Get balance for this asset
-            int256 balance = _calculateBalance(asset, account);
+            // Build position (balance-only, pricing will be added by NAVCalculator)
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                balance: assetBalanceData[i].balance,
+                protocol: _protocol,
+                positionDetail: underlyingAsset.symbol
+            });
 
-            // Only include non-zero balances
-            if (balance != 0) {
-                // Get asset info from registry (if registered)
-                uint8 decimals;
-                string memory symbol;
-                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
-                    decimals = dec;
-                } catch {
-                    // Asset not registered, skip it (NAVCalculator will filter anyway)
-                    continue;
-                }
-                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
-                    symbol = sym;
-                } catch {
-                    symbol = "";
-                }
-
-                // Build underlying asset struct
-                INAVCalculator.Asset memory underlyingAsset =
-                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
-
-                // Build position (pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.Position({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    balance: balance,
-                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
-                    value: 0, // Will be calculated by NAVCalculator
-                    price: 0, // Will be set by NAVCalculator
-                    priceDecimals: 0, // Will be set by NAVCalculator
-                    stale: false, // Will be set by NAVCalculator
-                    protocol: _protocol,
-                    positionDetail: symbol
-                });
-
-                positionCount++;
-            }
+            positionCount++;
         }
 
         // Resize to actual count
-        positions = new INAVCalculator.Position[](positionCount);
+        positions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             positions[i] = tempPositions[i];
         }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns balance-only positions for the account's Balancer V3 positions
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @dev Only returns positions for assets that are both supported by Balancer and registered in NAVCalculator.
     function getOraclePositions(address account, address assetFilter)
         external
         view
-        returns (INAVCalculator.Position[] memory positions)
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        return _buildPositions(account, assetFilter);
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+
+        // Find intersection: assets that are both supported and registered
+        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+
+        AssetBalanceData[] memory assetBalanceData;
+        if (registeredSupportedAssets.length == 0) {
+            assetBalanceData = new AssetBalanceData[](0);
+        } else if (assetFilter != address(0)) {
+            // Check if assetFilter is in the registered supported assets
+            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+                if (registeredSupportedAssets[i] == assetFilter) {
+                    int256 balance = _calculateBalance(assetFilter, account);
+                    if (balance != 0) {
+                        assetBalanceData = new AssetBalanceData[](1);
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, balance: balance});
+                    } else {
+                        assetBalanceData = new AssetBalanceData[](0);
+                    }
+                    break;
+                }
+            }
+        } else {
+            // Pre-allocate temporary array (max size)
+            AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length);
+            uint256 count = 0;
+
+            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
+                if (balance != 0) {
+                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], balance: balance});
+                    count++;
+                }
+            }
+
+            // Resize to actual count
+            assetBalanceData = new AssetBalanceData[](count);
+            for (uint256 i = 0; i < count; i++) {
+                assetBalanceData[i] = tempData[i];
+            }
+        }
+        positions = _buildPositions(assetBalanceData);
     }
 }
 

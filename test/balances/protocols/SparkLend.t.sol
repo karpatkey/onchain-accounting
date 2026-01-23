@@ -93,12 +93,12 @@ contract SparkTest is TestEnvConfigurator, TestSetupHelpers {
 
     function test_mainnet_balanceOf_supply_gnosis() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
-        
+
         address[] memory assets = new address[](2);
         assets[0] = gno;
         assets[1] = dai;
         balances = deployBalancesInFork(assets);
-        
+
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(supplyGnoDebtDaiUser, gno);
         assertGt(balance, 0, "User should have GNO supply position");
@@ -106,12 +106,12 @@ contract SparkTest is TestEnvConfigurator, TestSetupHelpers {
 
     function test_mainnet_balanceOf_debt_dai() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), 17_772_457);
-        
+
         address[] memory assets = new address[](2);
         assets[0] = gno;
         assets[1] = dai;
         balances = deployBalancesInFork(assets);
-        
+
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(supplyGnoDebtDaiUser, dai);
         assertLt(balance, 0, "User should have DAI debt position");
@@ -119,9 +119,9 @@ contract SparkTest is TestEnvConfigurator, TestSetupHelpers {
 
     function test_mainnet_balanceOf_reward_steth() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), 19_685_985);
-        
+
         balances = deployBalancesInFork(steth);
-        
+
         oracle = new SparkLendBalanceOracle(dataProvider, rewardsDistributor, "Spark", address(balances));
 
         int256 balance = oracle.getOracleBalanceForAsset(rewardStethUser, steth);

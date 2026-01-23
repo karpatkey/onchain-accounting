@@ -3,53 +3,69 @@ pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
-import {Balances} from "src/balances/Balances.sol";
-import {IBalances} from "src/balances/IBalances.sol";
+import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IPrices} from "src/prices/IPrices.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-
-contract BalancesHarnessForTest is Balances {
-    ERC20DefaultOracle public defaultOracle;
-
-    constructor() initializer {
-        __Balances_init();
-        // Set up ERC20DefaultOracle
-        defaultOracle = new ERC20DefaultOracle(address(this));
-        _setErc20DefaultOracle(address(defaultOracle));
-    }
-
-    // Expose internal functions for testing
-    function registerAssetForTest(address asset, uint8 decimals) public {
-        _registerAsset(asset, decimals);
-    }
-
-    function setAssetSymbolForTest(address asset, string memory symbol) public {
-        _setAssetSymbol(asset, symbol);
-    }
-}
+import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 
 contract ERC20DefaultOracleTest is TestEnvConfigurator {
-    BalancesHarnessForTest public balances;
+    NAVCalculator public navCalculator;
     ERC20DefaultOracle public oracle;
 
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
     Mock_ERC20 public weth;
+    Mock_CustomPriceFeed public usdcOracle;
+    Mock_CustomPriceFeed public daiOracle;
+    Mock_CustomPriceFeed public wethOracle;
+    Mock_CustomPriceFeed public ethOracle;
+
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    address public admin = makeAddr("admin");
+    address public manager = makeAddr("manager");
 
     function setUp() public {
-        balances = new BalancesHarnessForTest();
-        oracle = balances.defaultOracle();
+        // Set up tokens
         usdc = new Mock_ERC20("USDC", 6);
         dai = new Mock_ERC20("DAI", 18);
         weth = new Mock_ERC20("WETH", 18);
+
+        // Set up price feeds
+        usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 1e8, 8);
+        daiOracle = new Mock_CustomPriceFeed("DAI", address(dai), 1e8, 8);
+        wethOracle = new Mock_CustomPriceFeed("WETH", address(weth), 2000e8, 8);
+        ethOracle = new Mock_CustomPriceFeed("ETH", NATIVE_ADDRESS, 2000e8, 8);
+
+        // Set up NAVCalculator
+        vm.startPrank(admin);
+        address navImpl = address(new NAVCalculator());
+        address navProxy = UnsafeUpgrades.deployUUPSProxy(
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0)))
+        );
+        navCalculator = NAVCalculator(navProxy);
+        navCalculator.grantRole(MANAGER, manager);
+        vm.stopPrank();
+
+        // Register assets in NAVCalculator
+        vm.startPrank(manager);
+        navCalculator.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        // Create ERC20DefaultOracle (it's already created by NAVCalculator, but we can get it)
+        oracle = ERC20DefaultOracle(navCalculator.erc20DefaultOracle());
     }
 
     function test_constructor() public view {
-        assertEq(address(oracle.BALANCES()), address(balances));
+        assertEq(address(oracle.NAV_CALCULATOR()), address(navCalculator));
     }
 
     function test_supportsInterface() public view {
@@ -58,27 +74,39 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         assertFalse(oracle.supportsInterface(0x12345678));
     }
 
-    function test_underlyingAssetsSupported_returnsAllRegisteredAssets() public {
-        // Register some assets
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
-        balances.registerAssetForTest(address(dai), 18);
-        balances.setAssetSymbolForTest(address(dai), "DAI");
-        balances.registerAssetForTest(address(weth), 18);
-        balances.setAssetSymbolForTest(address(weth), "WETH");
-        balances.registerAssetForTest(NATIVE_ADDRESS, 18);
-        balances.setAssetSymbolForTest(NATIVE_ADDRESS, "ETH");
-
+    function test_underlyingAssetsSupported_returnsAllRegisteredAssets() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 4);
-        assertEq(assets[0], address(usdc));
-        assertEq(assets[1], address(dai));
-        assertEq(assets[2], address(weth));
-        assertEq(assets[3], NATIVE_ADDRESS);
+        
+        // Assets can be in any order, so we check by searching
+        bool foundUsdc = false;
+        bool foundDai = false;
+        bool foundWeth = false;
+        bool foundNative = false;
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i] == address(usdc)) foundUsdc = true;
+            if (assets[i] == address(dai)) foundDai = true;
+            if (assets[i] == address(weth)) foundWeth = true;
+            if (assets[i] == NATIVE_ADDRESS) foundNative = true;
+        }
+        assertTrue(foundUsdc, "USDC should be found");
+        assertTrue(foundDai, "DAI should be found");
+        assertTrue(foundWeth, "WETH should be found");
+        assertTrue(foundNative, "Native address should be found");
     }
 
-    function test_underlyingAssetsSupported_returnsEmptyWhenNoAssets() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+    function test_underlyingAssetsSupported_returnsEmptyWhenNoAssets() public {
+        // Create a new NAVCalculator with no assets
+        vm.startPrank(admin);
+        address navImpl = address(new NAVCalculator());
+        address navProxy = UnsafeUpgrades.deployUUPSProxy(
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0)))
+        );
+        NAVCalculator emptyNav = NAVCalculator(navProxy);
+        vm.stopPrank();
+
+        ERC20DefaultOracle emptyOracle = ERC20DefaultOracle(emptyNav.erc20DefaultOracle());
+        address[] memory assets = emptyOracle.underlyingAssetsSupported();
         assertEq(assets.length, 0);
     }
 
@@ -92,8 +120,6 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
 
     function test_getOracleBalanceForAsset_returnsZeroForZeroAddress() public {
         address user = makeAddr("user");
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
 
         int256 balance = oracle.getOracleBalanceForAsset(user, address(0));
         assertEq(balance, 0);
@@ -103,6 +129,7 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         address user = makeAddr("user");
 
         (address[] memory assets, int256[] memory amounts) = oracle.getOracleBalance(user);
+        // Should return all registered assets, but with zero balances
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
     }
@@ -110,36 +137,31 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
     function test_getOraclePositions_returnsEmptyWhenNoAssets() public {
         address user = makeAddr("user");
 
-        INAVCalculator.Position[] memory positions = oracle.getOraclePositions(user, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 0);
     }
 
     function test_getOraclePositions_withAssetFilter() public {
         address user = makeAddr("user");
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
-        balances.registerAssetForTest(address(dai), 18);
-        balances.setAssetSymbolForTest(address(dai), "DAI");
 
         // Mint some tokens to the user so we have a balance
         usdc.mint(user, 1000e6);
 
         // Filter by USDC
-        INAVCalculator.Position[] memory positions = oracle.getOraclePositions(user, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, address(usdc));
         assertEq(positions[0].underlyingAsset.symbol, "USDC");
         assertEq(positions[0].underlyingAsset.decimals, 6);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].protocol, "wallet");
+        assertEq(positions[0].positionDetail, "Idle");
     }
 
     function test_getOraclePositions_protocolAndPositionDetail() public {
         address user = makeAddr("user");
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
 
-        INAVCalculator.Position[] memory positions = oracle.getOraclePositions(user, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 0); // No balance, so no positions
 
         // Mint some USDC to the user
@@ -148,6 +170,6 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "USDC");
+        assertEq(positions[0].positionDetail, "Idle");
     }
 }

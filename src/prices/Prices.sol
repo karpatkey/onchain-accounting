@@ -6,7 +6,7 @@ import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165C
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {IPrices} from "./IPrices.sol";
-import {IPriceOracleCustom} from "./IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "./IPriceFeedCustom.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -72,7 +72,7 @@ abstract contract Prices is IPrices, Initializable {
             price = uint256(chainlinkPrice);
         } else {
             bool customStale = false;
-            (price, customStale) = IPriceOracleCustom(oracle.oracle).getLatestPrice();
+            (price, customStale) = IPriceFeedCustom(oracle.oracle).getLatestPrice();
             stale = stale || customStale;
         }
 
@@ -105,7 +105,7 @@ abstract contract Prices is IPrices, Initializable {
         }
 
         if (priceType == PriceType.Custom) {
-            if (!oracle.supportsInterface(type(IPriceOracleCustom).interfaceId)) {
+            if (!oracle.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
                 revert InvalidPriceOracle();
             }
         } else if (priceType == PriceType.Chainlink) {
@@ -131,7 +131,7 @@ abstract contract Prices is IPrices, Initializable {
             if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
             decimals = AggregatorV3Interface(oracle).decimals();
         } else {
-            decimals = IPriceOracleCustom(oracle).decimals();
+            decimals = IPriceFeedCustom(oracle).decimals();
         }
 
         priceOracles[token] = PriceFeedConfig({

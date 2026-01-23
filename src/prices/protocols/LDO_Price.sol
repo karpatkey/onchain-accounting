@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
@@ -16,7 +16,7 @@ import "src/errors.sol";
 /// using another Chainlink oracle for ETH/USD.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract LDO_PriceOracle is IPriceOracleCustom {
+contract LDO_PriceOracle is IPriceFeedCustom {
     //
     // Libraries
     //
@@ -76,10 +76,10 @@ contract LDO_PriceOracle is IPriceOracleCustom {
     }
 
     //
-    // IPriceOracleCustom
+    // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (, int256 ldoToEthPrice,, uint256 ldoToUsdUpdatedAt,) = LDO_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
         (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
@@ -103,18 +103,18 @@ contract LDO_PriceOracle is IPriceOracleCustom {
             .mulDiv(ethToUsdPrice.toUint256(), 10 ** LDO_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
         return LDO;
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

@@ -6,9 +6,9 @@ import {Test} from "forge-std/Test.sol";
 import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {
-    Mock_PriceOracleCustom,
+    Mock_CustomPriceFeed,
     Mock_PriceOracleChainlink,
-    Mock_PriceOracleCustomStaled
+    Mock_CustomPriceFeedStaled
 } from "test/mocks/price_oracles.sol";
 
 contract PricesHarness is Prices {
@@ -37,10 +37,10 @@ contract PricesTest is Test {
     PricesHarness public manager;
     PricesHarness public managerL2;
     Mock_PriceOracleChainlink chainlinkUptimeFeed;
-    Mock_PriceOracleCustom public oracleusdc;
+    Mock_CustomPriceFeed public oracleusdc;
     Mock_PriceOracleChainlink public oracleaBuidl;
     Mock_PriceOracleChainlink public disabledUptimeFeed;
-    Mock_PriceOracleCustomStaled public customStaled;
+    Mock_CustomPriceFeedStaled public customStaled;
 
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
@@ -48,12 +48,12 @@ contract PricesTest is Test {
     address buidl = makeAddr("buidl");
 
     function setUp() public {
-        oracleusdc = new Mock_PriceOracleCustom("usdc", address(usdc), 100_000_000, 8);
+        oracleusdc = new Mock_CustomPriceFeed("usdc", address(usdc), 100_000_000, 8);
         oracleaBuidl = new Mock_PriceOracleChainlink("buidl", 1000, 8);
         disabledUptimeFeed = new Mock_PriceOracleChainlink("UptimeFeed", 1, 8);
         manager = new PricesHarness(address(0));
         managerL2 = new PricesHarness(address(chainlinkUptimeFeed));
-        customStaled = new Mock_PriceOracleCustomStaled("usdc", address(usdc), 100_000_000, 8);
+        customStaled = new Mock_CustomPriceFeedStaled("usdc", address(usdc), 100_000_000, 8);
     }
 
     function test_latestPrice_WithNonStalePrices() public {

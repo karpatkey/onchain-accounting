@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-contract Mock_PriceOracleCustom is IPriceOracleCustom {
+contract Mock_CustomPriceFeed is IPriceFeedCustom {
     string name;
     address addressSupported;
     uint256 price;
@@ -35,7 +35,7 @@ contract Mock_PriceOracleCustom is IPriceOracleCustom {
     }
 
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
@@ -126,9 +126,9 @@ contract Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod is Mock_PriceOracl
     }
 }
 
-contract Mock_PriceOracleCustomStaled is Mock_PriceOracleCustom {
+contract Mock_CustomPriceFeedStaled is Mock_CustomPriceFeed {
     constructor(string memory _name, address _addressSupported, uint256 _price, uint8 _decimals)
-        Mock_PriceOracleCustom(_name, _addressSupported, _price, _decimals)
+        Mock_CustomPriceFeed(_name, _addressSupported, _price, _decimals)
     {}
 
     function getLatestPrice() external view override returns (uint256, bool) {

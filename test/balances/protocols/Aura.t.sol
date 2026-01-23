@@ -59,7 +59,7 @@ contract AuraTest is TestEnvConfigurator, TestSetupHelpers {
         allAssets[3] = GHO;
         allAssets[4] = AURA;
         allAssets[5] = BAL;
-        
+
         return deployBalancesInFork(allAssets);
     }
 

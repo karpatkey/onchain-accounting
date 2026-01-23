@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
@@ -16,7 +16,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 ///      or any input is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract sDAI_PriceOracle is IPriceOracleCustom {
+contract sDAI_PriceOracle is IPriceFeedCustom {
     //
     // State
     //
@@ -69,10 +69,10 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
     }
 
     //
-    // IPriceOracleCustom
+    // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (, int256 daiToUsdPrice,, uint256 daiToUsdUpdatedAt,) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
@@ -92,19 +92,19 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
         }
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
         return S_DAI;
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 

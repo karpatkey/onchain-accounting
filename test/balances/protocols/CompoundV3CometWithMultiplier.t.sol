@@ -115,7 +115,7 @@ contract CompoundV3CometWithMultiplierTest is TestEnvConfigurator, TestSetupHelp
         }
         allAssets[assets.length] = rewardToken;
         BalancesHarnessForFork usdtBalances = deployBalancesInFork(allAssets);
-        
+
         oracle = new CompoundV3CometWithMultiplier(
             compoundRewards, address(usdtv3), rewardToken, "Compound v3", "USDC Comet", address(usdtBalances)
         );

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -22,7 +22,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///        scaled back to `_decimals` and rounded down.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract sDAI_PriceOracle is IPriceOracleCustom {
+contract sDAI_PriceOracle is IPriceFeedCustom {
     //
     // Libraries
     //
@@ -65,10 +65,10 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
     }
 
     //
-    // IPriceOracleCustom
+    // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (, int256 xDaiToUsdPrice,, uint256 xDaiToUsdUpdatedAt,) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
@@ -85,18 +85,18 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
         price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** sDaiVault.decimals(), Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
         return address(S_DAI);
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

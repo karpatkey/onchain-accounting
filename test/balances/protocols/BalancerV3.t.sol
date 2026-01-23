@@ -61,7 +61,7 @@ contract Balancerv3Test is TestEnvConfigurator, TestSetupHelpers {
         allAssets[2] = USDC;
         allAssets[3] = GHO;
         allAssets[4] = BAL;
-        
+
         return deployBalancesInFork(allAssets);
     }
 

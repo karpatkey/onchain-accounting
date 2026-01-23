@@ -90,21 +90,23 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper that builds all positions for this oracle
     /// @param account The account to query
     /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of Position structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     function _buildPositions(address account, address assetFilter)
         internal
         view
-        returns (INAVCalculator.Position[] memory positions)
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         if (assetCount == 0) {
-            return new INAVCalculator.Position[](0);
+            return new INAVCalculator.PositionBalance[](0);
         }
 
         // Pre-allocate array (estimate max size)
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        INAVCalculator.PositionBalance[] memory tempPositions = new INAVCalculator.PositionBalance[](assetCount);
         uint256 positionCount = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
@@ -154,16 +156,11 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 INAVCalculator.Asset memory underlyingAsset =
                     INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
 
-                // Build position (pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.Position({
+                // Build position (balance-only, pricing will be added by NAVCalculator)
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
                     balance: balance,
-                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
-                    value: 0, // Will be calculated by NAVCalculator
-                    price: 0, // Will be set by NAVCalculator
-                    priceDecimals: 0, // Will be set by NAVCalculator
-                    stale: false, // Will be set by NAVCalculator
                     protocol: _protocol,
                     positionDetail: _positionDetail
                 });
@@ -173,18 +170,22 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         }
 
         // Resize to actual count
-        positions = new INAVCalculator.Position[](positionCount);
+        positions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             positions[i] = tempPositions[i];
         }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns balance-only positions for the account
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     function getOraclePositions(address account, address assetFilter)
         external
         view
-        returns (INAVCalculator.Position[] memory positions)
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        return _buildPositions(account, assetFilter);
+        positions = _buildPositions(account, assetFilter);
     }
 }

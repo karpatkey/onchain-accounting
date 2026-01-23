@@ -46,8 +46,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assets[1] = usdc;
         balances = deployBalancesInFork(assets);
 
-        oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
         assertGt(balance, 0, "User should have USDC supply position");
     }
@@ -118,8 +117,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assetsToRegister[1] = usdc;
         balances = deployBalancesInFork(assetsToRegister);
 
-        oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
         assertEq(assets[0], wsteth);
@@ -137,8 +135,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assetsToRegister[1] = usdc;
         balances = deployBalancesInFork(assetsToRegister);
 
-        oracle =
-            new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         assertEq(oracle.COLLATERAL_TOKEN(), wsteth);
         assertEq(oracle.LOAN_TOKEN(), usdc);
     }

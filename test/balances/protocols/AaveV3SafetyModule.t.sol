@@ -38,14 +38,13 @@ contract AaveV3SafetyModule is TestEnvConfigurator, TestSetupHelpers {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
         mockBalances = new MockBalances();
-        
+
         address[] memory assets = new address[](2);
         assets[0] = GHO;
         assets[1] = AAVE;
         balances = deployBalancesInFork(assets);
-        
-        ghoOracle =
-            new AaveV3SafetyModuleBalanceOracle(address(STK_GHO), "Aave v3", "Safety Module", address(balances));
+
+        ghoOracle = new AaveV3SafetyModuleBalanceOracle(address(STK_GHO), "Aave v3", "Safety Module", address(balances));
         aaveOracle =
             new AaveV3SafetyModuleBalanceOracle(address(STK_AAVE), "Aave v3", "Safety Module", address(balances));
 

@@ -1394,7 +1394,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_getAccountPositions_assetWithoutPriceFeed() public {
         // Create a new token that's not in setUp
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        Mock_PriceOracleCustom newTokenOracle = new Mock_PriceOracleCustom("NEW", address(newToken), 1e8, 8);
+        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
 
         vm.startPrank(navCalculatorManager);
         // Asset must be registered with a price feed - this is now required
@@ -1449,7 +1449,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Create a new token, register it with price oracle
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        Mock_PriceOracleCustom newTokenOracle = new Mock_PriceOracleCustom("NEW", address(newToken), 1e8, 8);
+        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(newToken), address(newTokenOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();

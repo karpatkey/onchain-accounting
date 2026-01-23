@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
@@ -24,7 +24,7 @@ import "src/errors.sol";
 ///      If the feed is stale or the quoted price is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract sUSDS_PriceOracle is IPriceOracleCustom {
+contract sUSDS_PriceOracle is IPriceFeedCustom {
     //
     // Libraries
     //
@@ -70,7 +70,7 @@ contract sUSDS_PriceOracle is IPriceOracleCustom {
     // IBalanceOracleCustom
     //
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (, int256 usdsToUsdPrice,, uint256 usdsToUsdUpdatedAt,) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
@@ -93,18 +93,18 @@ contract sUSDS_PriceOracle is IPriceOracleCustom {
             sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** IERC4626(S_USDS).decimals(), Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
         return S_USDS;
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

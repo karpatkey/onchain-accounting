@@ -5,10 +5,10 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
-import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {ArrayUtils} from "src/utils/ArrayUtils.sol";
 
 /// @title Aave v3 Safety Module Balance Oracle
 /// @author kpk
@@ -21,7 +21,17 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     using SafeCast for uint256;
 
     //
-    // State
+    // Type Definitions
+    //
+
+    /// @notice Asset balance data structure
+    struct AssetBalanceData {
+        address asset;
+        int256 balance;
+    }
+
+    //
+    // State Variables
     //
 
     /// @notice The stake token (e.g. stkAAVE, stkABPT) contract
@@ -33,12 +43,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @notice The underlying token address which is staked
     address public immutable STAKED_TOKEN;
 
+    /// @notice Reference to NAVCalculator for asset registry access
+    INAVCalculator public immutable NAV_CALCULATOR;
+
     /// @notice Protocol identifier for this oracle
     string private _protocol;
     /// @notice Position detail identifier for this oracle
     string private _positionDetail;
-    /// @notice Reference to Balances contract for asset registry access
-    IBalances public immutable BALANCES;
 
     //
     // Constructor
@@ -48,8 +59,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @param stakeToken Address of the stake token (e.g. stkAAVE) contract.
     /// @param protocol_ Protocol identifier (e.g., "Aave v3").
     /// @param positionDetail_ Position detail identifier (e.g., "Safety Module").
-    /// @param balances_ The address of the Balances contract for asset registry access.
-    constructor(address stakeToken, string memory protocol_, string memory positionDetail_, address balances_) {
+    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
+    constructor(address stakeToken, string memory protocol_, string memory positionDetail_, address navCalculator_) {
         if (stakeToken == address(0)) revert InvalidArguments();
 
         STAKE_CONTRACT = IStakeToken(stakeToken);
@@ -60,41 +71,21 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
         _protocol = protocol_;
         _positionDetail = positionDetail_;
-        BALANCES = IBalances(balances_);
+        NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
     //
+    // IERC165 Implementation
     //
 
-    /// @notice Internal helper to calculate balance for a specific asset
-    /// @param underlyingAsset The asset address
-    /// @param account The account address
-    /// @return balance The calculated balance
-    /// @dev Returns equivalent balance for either:
-    /// - Staked tokens: Returns the withdrawable amount of underlying tokens
-    /// - Reward tokens: Returns the current unclaimed rewards plus newly accrued rewards
-    /// The staked token can be the same as the reward token (i.e. with stkAAVE, underlyingAsset = AAVE = STAKED_TOKEN =
-    /// REWARD_TOKEN).
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
-        if (underlyingAsset != address(STAKED_TOKEN) && underlyingAsset != address(REWARD_TOKEN)) {
-            revert InvalidArguments();
-        }
-
-        int256 total = 0;
-
-        // If querying staked token balance
-        if (underlyingAsset == STAKED_TOKEN) {
-            total += STAKE_CONTRACT.previewRedeem(STAKE_CONTRACT.balanceOf(account)).toInt256();
-        }
-
-        // If querying reward token balance. In some cases the staked token can be the same as the reward token (i.e
-        // stkAAVE).
-        if (underlyingAsset == REWARD_TOKEN) {
-            total += STAKE_CONTRACT.getTotalRewardsBalance(account).toInt256();
-        }
-
-        return total;
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
+
+    //
+    // IBalanceOracleAdapter Implementation
+    //
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
@@ -111,23 +102,10 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
-    //
-    // IBalanceOracleAdapter
-    //
-
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Sum all balances for this asset across all positions
-        // _buildPositions with asset filter already returns only positions for this asset
-        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
-        for (uint256 i = 0; i < positions.length; i++) {
-            balance += positions[i].balance;
-        }
+        // Optimized: directly calculate balance without building full Position structs
+        balance = _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -165,91 +143,174 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
-    /// @notice Internal helper that builds all positions for this oracle
-    /// @param account The account to query
-    /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of Position structs from this oracle
-    function _buildPositions(address account, address assetFilter)
-        internal
+    /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns balance-only positions for the account's Aave v3 Safety Module positions
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev Only returns positions for assets that are both supported by the protocol and registered in NAVCalculator.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    function getOraclePositions(address account, address assetFilter)
+        external
         view
-        returns (INAVCalculator.Position[] memory positions)
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        // Get supported assets from this oracle
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
+        
+        // Get registered assets from NAVCalculator
+        address[] memory registeredAssets = NAV_CALCULATOR.assets();
 
-        if (assetCount == 0) {
-            return new INAVCalculator.Position[](0);
+        // Find intersection: assets that are both supported and registered
+        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+
+        // Apply asset filter if specified
+        address[] memory filteredAssets;
+        if (assetFilter != address(0)) {
+            // Check if assetFilter is in the registered supported assets
+            bool found = false;
+            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+                if (registeredSupportedAssets[i] == assetFilter) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                filteredAssets = new address[](1);
+                filteredAssets[0] = assetFilter;
+            } else {
+                filteredAssets = new address[](0);
+            }
+        } else {
+            filteredAssets = registeredSupportedAssets;
         }
 
-        // Pre-allocate array (estimate max size)
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
-        uint256 positionCount = 0;
+        // Pre-fetch balance data for filtered assets
+        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](filteredAssets.length);
+        uint256 count = 0;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-
-            // Apply asset filter if specified
-            if (assetFilter != address(0) && asset != assetFilter) {
-                continue;
-            }
-
-            // Get balance for this asset
+        for (uint256 i = 0; i < filteredAssets.length; i++) {
+            address asset = filteredAssets[i];
             int256 balance = _calculateBalance(asset, account);
 
-            // Only include non-zero BALANCES
+            // Only include non-zero balances
             if (balance != 0) {
-                // Get asset info from registry (if registered)
-                uint8 decimals;
-                string memory symbol;
-                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
-                    decimals = dec;
-                } catch {
-                    // Asset not registered, skip it (NAVCalculator will filter anyway)
-                    continue;
-                }
-                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
-                    symbol = sym;
-                } catch {
-                    symbol = "";
-                }
-
-                // Build underlying asset struct
-                INAVCalculator.Asset memory underlyingAsset =
-                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
-
-                // Build position (pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.Position({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    balance: balance,
-                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
-                    value: 0, // Will be calculated by NAVCalculator
-                    price: 0, // Will be set by NAVCalculator
-                    priceDecimals: 0, // Will be set by NAVCalculator
-                    stale: false, // Will be set by NAVCalculator
-                    protocol: _protocol,
-                    positionDetail: _positionDetail
-                });
-
-                positionCount++;
+                assetBalanceData[count] = AssetBalanceData({asset: asset, balance: balance});
+                count++;
             }
         }
 
         // Resize to actual count
-        positions = new INAVCalculator.Position[](positionCount);
+        AssetBalanceData[] memory finalAssetBalanceData = new AssetBalanceData[](count);
+        for (uint256 i = 0; i < count; i++) {
+            finalAssetBalanceData[i] = assetBalanceData[i];
+        }
+
+        // Build positions from pre-fetched data
+        positions = _buildPositions(finalAssetBalanceData);
+    }
+
+    //
+    // Internal Functions - Asset Registry & Lookup
+    //
+
+    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
+    /// @param asset The asset address to look up
+    /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
+    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
+        uint256 assetCount = NAV_CALCULATOR.assetCount();
+        for (uint256 i = 0; i < assetCount; i++) {
+            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
+            if (a.asset == asset) {
+                return a;
+            }
+        }
+        revert("Asset not found in NAVCalculator");
+    }
+
+    //
+    // Internal Functions - Aave Safety Module Data Retrieval
+    //
+
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param underlyingAsset The asset address
+    /// @param account The account address
+    /// @return balance The calculated balance
+    /// @dev Returns equivalent balance for either:
+    /// - Staked tokens: Returns the withdrawable amount of underlying tokens
+    /// - Reward tokens: Returns the current unclaimed rewards plus newly accrued rewards
+    /// The staked token can be the same as the reward token (i.e. with stkAAVE, underlyingAsset = AAVE = STAKED_TOKEN =
+    /// REWARD_TOKEN).
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+        if (underlyingAsset != address(STAKED_TOKEN) && underlyingAsset != address(REWARD_TOKEN)) {
+            revert InvalidArguments();
+        }
+
+        int256 total = 0;
+
+        // If querying staked token balance
+        if (underlyingAsset == STAKED_TOKEN) {
+            total += STAKE_CONTRACT.previewRedeem(STAKE_CONTRACT.balanceOf(account)).toInt256();
+        }
+
+        // If querying reward token balance. In some cases the staked token can be the same as the reward token (i.e
+        // stkAAVE).
+        if (underlyingAsset == REWARD_TOKEN) {
+            total += STAKE_CONTRACT.getTotalRewardsBalance(account).toInt256();
+        }
+
+        return total;
+    }
+
+    //
+    // Internal Functions - Position Building
+    //
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param assetBalanceData Array of AssetBalanceData with pre-fetched balance data
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @dev All assets in assetBalanceData are guaranteed to be registered in NAVCalculator.
+    function _buildPositions(AssetBalanceData[] memory assetBalanceData)
+        internal
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (assetBalanceData.length == 0) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
+        // Pre-allocate array (one position per asset)
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](assetBalanceData.length);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetBalanceData.length; i++) {
+            address asset = assetBalanceData[i].asset;
+            int256 balance = assetBalanceData[i].balance;
+
+            // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
+            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
+
+            // Build position (balance-only, pricing will be added by NAVCalculator)
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                balance: balance,
+                protocol: _protocol,
+                positionDetail: _positionDetail
+            });
+
+            positionCount++;
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             positions[i] = tempPositions[i];
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOraclePositions(address account, address assetFilter)
-        external
-        view
-        returns (INAVCalculator.Position[] memory positions)
-    {
-        return _buildPositions(account, assetFilter);
-    }
 }
 
 /// @notice Interface for the Aave StakeToken contract

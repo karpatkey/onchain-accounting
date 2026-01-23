@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+/// @title Array Utilities
+/// @notice Utility library for array operations
+library ArrayUtils {
+    /// @notice Finds addresses that are present in both input arrays (intersection)
+    /// @param array1 First array of addresses
+    /// @param array2 Second array of addresses
+    /// @return result Array of addresses that appear in both arrays
+    function intersection(address[] memory array1, address[] memory array2)
+        internal
+        pure
+        returns (address[] memory result)
+    {
+        // Pre-allocate array (max size is the smaller of the two arrays)
+        uint256 maxSize = array1.length < array2.length ? array1.length : array2.length;
+        result = new address[](maxSize);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < array1.length; i++) {
+            for (uint256 j = 0; j < array2.length; j++) {
+                if (array1[i] == array2[j]) {
+                    result[count] = array1[i];
+                    count++;
+                    break; // Found match, move to next element in array1
+                }
+            }
+        }
+
+        // Resize to actual count
+        assembly {
+            mstore(result, count)
+        }
+    }
+}

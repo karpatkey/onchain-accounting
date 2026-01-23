@@ -61,8 +61,7 @@ contract StakewiseVaultTest is TestEnvConfigurator, TestSetupHelpers {
         createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), 38_449_644);
 
         balances = deployBalancesInFork(gno);
-        oracle =
-            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
+        oracle = new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(stakeWiseVault);
         int256 balance = oracle.getOracleBalanceForAsset(testUser, gno);
         assertGt(balance, 0, "User should have GNO position");
@@ -72,8 +71,7 @@ contract StakewiseVaultTest is TestEnvConfigurator, TestSetupHelpers {
         createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
         balances = deployBalancesInFork(gno);
-        oracle =
-            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
+        oracle = new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(stakeWiseVault);
         int256 balance = oracle.getOracleBalanceForAsset(testUser2, gno);
         assertGt(balance, 0, "User should have GNO position");
@@ -83,8 +81,7 @@ contract StakewiseVaultTest is TestEnvConfigurator, TestSetupHelpers {
         uint256 fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
         balances = deployBalancesInFork(gno);
-        oracle =
-            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
+        oracle = new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(stakeWiseVault);
 
         int256 balance = oracle.getOracleBalanceForAsset(testUser2, gno);
@@ -112,8 +109,7 @@ contract StakewiseVaultTest is TestEnvConfigurator, TestSetupHelpers {
         uint256 fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), 35_261_999);
 
         balances = deployBalancesInFork(gno);
-        oracle =
-            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
+        oracle = new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(stakeWiseVault);
 
         int256 initialBalance = oracle.getOracleBalanceForAsset(testUser, gno);
@@ -151,8 +147,7 @@ contract StakewiseVaultTest is TestEnvConfigurator, TestSetupHelpers {
     function test_gnosis_osGNO_holds_osToken_butDidNotLendTheTokens() public {
         createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), 38_916_922);
         balances = deployBalancesInFork(gno);
-        oracle =
-            new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
+        oracle = new StakeWiseV3VaultBalanceOracle(gno, stakeWiseVault, "Stakewise v3", "Some vault", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(0x564E604edA8c878021126C06084a4dA4E1A960Cb, gno);
 
         uint256 balanceOsGNO = IERC20(osGno).balanceOf(0x564E604edA8c878021126C06084a4dA4E1A960Cb);

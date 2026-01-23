@@ -289,7 +289,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 totalOracles = allOracles.length;
 
         // First pass: collect all positions from all oracles, then filter to the rangeAssets set
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles * rangeSize); // upper bound estimate
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](totalOracles * rangeSize); // upper bound estimate
         uint256 positionCount = 0;
 
         for (uint256 i = 0; i < totalOracles; i++) {
@@ -299,8 +300,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Interface validation is done during oracle registration, not here
             // Use try-catch to gracefully handle any oracles that don't implement the interface
             IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
-            INAVCalculator.Position[] memory oraclePositions;
-            try adapter.getOraclePositions(account, address(0)) returns (INAVCalculator.Position[] memory positions) {
+            INAVCalculator.PositionBalance[] memory oraclePositions;
+            try adapter.getOraclePositions(account, address(0)) returns (
+                INAVCalculator.PositionBalance[] memory positions
+            ) {
                 oraclePositions = positions;
             } catch {
                 // Oracle doesn't implement IBalanceOracleAdapter, skip it
@@ -340,7 +343,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         // Resize to actual count
-        INAVCalculator.Position[] memory positionsInRange = new INAVCalculator.Position[](positionCount);
+        INAVCalculator.PositionBalance[] memory positionsInRange = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             positionsInRange[i] = tempPositions[i];
         }
@@ -401,7 +404,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Sum USD value of all positions in range
         int256 totalUsd = 0;
         for (uint256 i = 0; i < positionsInRange.length; i++) {
-            INAVCalculator.Position memory pos = positionsInRange[i];
+            INAVCalculator.PositionBalance memory pos = positionsInRange[i];
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, pos.underlyingAsset.asset);
 
             int256 usdValue = _toUsd(pos.balance, pos.underlyingAsset.decimals, feed.price, feed.decimals);
@@ -473,7 +476,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 totalOracles = allOracles.length;
 
         // Pre-allocate arrays for positions (estimate based on oracle count)
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles * 10); // Estimate
+        INAVCalculator.PositionBalance[] memory tempPositions = new INAVCalculator.PositionBalance[](totalOracles * 10); // Estimate
         uint256 positionCount = 0;
 
         // Loop through all oracles (oracle-centric aggregation)
@@ -486,9 +489,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Each oracle returns all positions it knows about for this account
             // assetFilter = address(0) means "return all assets"
             IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
-            INAVCalculator.Position[] memory oraclePositions;
+            INAVCalculator.PositionBalance[] memory oraclePositions;
             try oracleAdapter.getOraclePositions(account, address(0)) returns (
-                INAVCalculator.Position[] memory positions
+                INAVCalculator.PositionBalance[] memory positions
             ) {
                 oraclePositions = positions;
             } catch {
@@ -512,7 +515,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         // Resize to actual count
-        INAVCalculator.Position[] memory allPositions = new INAVCalculator.Position[](positionCount);
+        INAVCalculator.PositionBalance[] memory allPositions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             allPositions[i] = tempPositions[i];
         }
@@ -557,35 +560,25 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         INAVCalculator.Asset memory quoteAssetStruct =
             INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
 
-        // Attach pricing to positions and calculate values
-        // Note: All positions here are for registered assets (filtered earlier at line 516)
+        // Enrich balance positions with pricing to create full Position structs
+        // Note: All positions here are for registered assets (filtered earlier)
         // If a registered asset doesn't have a price feed, _latestPrice will revert above
+        INAVCalculator.Position[] memory pricedPositions = new INAVCalculator.Position[](allPositions.length);
         for (uint256 i = 0; i < allPositions.length; i++) {
             address asset = allPositions[i].underlyingAsset.asset;
             PriceFeedCache memory priceFeed = _findPriceFeed(priceFeeds, asset);
 
-            // Update position with pricing
-            allPositions[i].price = priceFeed.price;
-            allPositions[i].priceDecimals = priceFeed.decimals;
-            allPositions[i].stale = priceFeed.stale;
-            allPositions[i].quoteAsset = quoteAssetStruct;
-
-            // Calculate value: Convert balance (in underlying asset) to value (in quote asset)
-            int256 usdValue = _toUsd(
-                allPositions[i].balance, allPositions[i].underlyingAsset.decimals, priceFeed.price, priceFeed.decimals
+            pricedPositions[i] = _enrichPositionWithPricing(
+                allPositions[i],
+                priceFeed,
+                quoteAssetStruct,
+                quoteCurrencyPrice,
+                quoteCurrencyPriceDecimals,
+                quoteCurrencyDecimals
             );
-
-            if (quoteAsset == address(0)) {
-                // USD quote: direct conversion
-                allPositions[i].value = usdValue;
-            } else {
-                // Non-USD quote: convert via USD
-                allPositions[i].value =
-                    _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
-            }
         }
 
-        return allPositions;
+        return pricedPositions;
     }
 
     /// @notice Helper struct for price feed caching
@@ -614,10 +607,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         revert AssetNotFound();
     }
 
-    /// @notice Extracts unique assets from positions array
-    /// @param positions Array of positions
+    /// @notice Extracts unique assets from balance positions array
+    /// @param positions Array of balance-only positions
     /// @return uniqueAssets Array of unique asset addresses
-    function _extractUniqueAssets(INAVCalculator.Position[] memory positions)
+    function _extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)
         internal
         pure
         returns (address[] memory uniqueAssets)
@@ -672,7 +665,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 totalOracles = allOracles.length;
 
         // Pre-allocate array for positions
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](totalOracles);
+        INAVCalculator.PositionBalance[] memory tempPositions = new INAVCalculator.PositionBalance[](totalOracles);
         uint256 positionCount = 0;
 
         // Loop through all oracles (oracle-centric aggregation)
@@ -683,8 +676,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Interface validation is done during oracle registration, not here
             // Call getOraclePositions with asset filter
             IBalanceOracleAdapter oracleAdapter = IBalanceOracleAdapter(oracle);
-            INAVCalculator.Position[] memory oraclePositions;
-            try oracleAdapter.getOraclePositions(account, asset) returns (INAVCalculator.Position[] memory positions) {
+            INAVCalculator.PositionBalance[] memory oraclePositions;
+            try oracleAdapter.getOraclePositions(account, asset) returns (
+                INAVCalculator.PositionBalance[] memory positions
+            ) {
                 oraclePositions = positions;
             } catch {
                 // Oracle doesn't implement IBalanceOracleAdapter, skip it
@@ -702,7 +697,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         // Resize to actual count
-        INAVCalculator.Position[] memory assetPositions = new INAVCalculator.Position[](positionCount);
+        INAVCalculator.PositionBalance[] memory assetPositions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             assetPositions[i] = tempPositions[i];
         }
@@ -736,28 +731,24 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         INAVCalculator.Asset memory quoteAssetStruct =
             INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
 
-        // Attach pricing to positions and calculate values
+        // Build price feed cache for this asset
+        PriceFeedCache memory priceFeed =
+            PriceFeedCache({asset: asset, price: usdRate, decimals: uint8(usdRateDecimals), stale: stale});
+
+        // Enrich balance positions with pricing to create full Position structs
+        INAVCalculator.Position[] memory pricedPositions = new INAVCalculator.Position[](assetPositions.length);
         for (uint256 i = 0; i < assetPositions.length; i++) {
-            assetPositions[i].price = usdRate;
-            // casting to 'uint8' is safe because price decimals are always in range 0-255
-            // forge-lint: disable-next-line(unsafe-typecast)
-            assetPositions[i].priceDecimals = uint8(usdRateDecimals);
-            assetPositions[i].stale = stale;
-            assetPositions[i].quoteAsset = quoteAssetStruct;
-
-            // Calculate value
-            int256 usdValue =
-                _toUsd(assetPositions[i].balance, assetPositions[i].underlyingAsset.decimals, usdRate, usdRateDecimals);
-
-            if (quoteAsset == address(0)) {
-                assetPositions[i].value = usdValue;
-            } else {
-                assetPositions[i].value =
-                    _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
-            }
+            pricedPositions[i] = _enrichPositionWithPricing(
+                assetPositions[i],
+                priceFeed,
+                quoteAssetStruct,
+                quoteCurrencyPrice,
+                quoteCurrencyPriceDecimals,
+                quoteCurrencyDecimals
+            );
         }
 
-        return assetPositions;
+        return pricedPositions;
     }
 
     /// @inheritdoc INAVCalculator
@@ -1085,6 +1076,50 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             return checkL2SequencerUptime();
         }
         return false;
+    }
+
+    /// @notice Enriches a PositionBalance with pricing information to create a Position
+    /// @param balance The balance-only position from an oracle
+    /// @param priceFeed The cached price feed information for the asset
+    /// @param quoteAssetStruct The quote asset struct
+    /// @param quoteCurrencyPrice The price of the quote currency in USD (0 if USD)
+    /// @param quoteCurrencyPriceDecimals The decimals of the quote currency price
+    /// @param quoteCurrencyDecimals The decimals of the quote currency itself
+    /// @return position The enriched Position with pricing information
+    function _enrichPositionWithPricing(
+        INAVCalculator.PositionBalance memory balance,
+        PriceFeedCache memory priceFeed,
+        INAVCalculator.Asset memory quoteAssetStruct,
+        uint256 quoteCurrencyPrice,
+        uint8 quoteCurrencyPriceDecimals,
+        uint8 quoteCurrencyDecimals
+    ) internal pure returns (INAVCalculator.Position memory position) {
+        // Calculate USD value
+        int256 usdValue = _toUsd(balance.balance, balance.underlyingAsset.decimals, priceFeed.price, priceFeed.decimals);
+
+        // Calculate value in quote currency
+        int256 value;
+        if (quoteAssetStruct.asset == address(0)) {
+            // USD quote: direct conversion
+            value = usdValue;
+        } else {
+            // Non-USD quote: convert via USD
+            value = _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+        }
+
+        // Build enriched position
+        position = INAVCalculator.Position({
+            underlyingAsset: balance.underlyingAsset,
+            balanceOracle: balance.balanceOracle,
+            balance: balance.balance,
+            protocol: balance.protocol,
+            positionDetail: balance.positionDetail,
+            quoteAsset: quoteAssetStruct,
+            value: value,
+            price: priceFeed.price,
+            priceDecimals: priceFeed.decimals,
+            stale: priceFeed.stale
+        });
     }
 
     /// @notice Converts an asset's balance to USD

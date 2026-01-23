@@ -2,98 +2,174 @@
 pragma solidity ^0.8.0;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
-import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
-import "src/errors.sol";
 
 /// @title Aave V3 Instance Balance Oracle
 /// @author kpk
-/// @notice This contract calculates a user's net position in an Aave v3 Instance by:
+/// @notice This contract calculates a user's positions in an Aave v3 Instance by:
 /// 1. Retrieving the user's supplied and borrowed amounts for each supported reserve via the Protocol Data Provider
-/// 2. Computing net balance as (supplied - borrowed)
-/// 3. Fetching the user's accrued rewards for the asset via the Rewards Distributor
-/// 4. Returning the sum of net balance and unclaimed rewards
-/// The final balance is denominated in the underlying asset of the reserve.
+/// 2. Fetching the user's accrued rewards for each asset via the Rewards Distributor
+/// 3. Returning separate balance-only positions for deposits, borrows, and rewards
+/// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+/// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+/// @dev For each asset, up to 3 positions may be returned: Deposit/Collateral (positive balance), Borrow (negative balance), and Rewards (positive balance).
+/// @dev Deposit positions distinguish between collateral and non-collateral deposits via the positionDetail field.
 contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
-    using Math for uint256;
     using SafeCast for uint256;
 
     //
-    // State
+    // Type Definitions
     //
 
-    /// @notice The address of the data provider
+    /// @notice User reserve data structure
+    struct UserReserveData {
+        address asset;
+        uint256 currentATokenBalance;
+        uint256 currentVariableDebt;
+        uint256 rewardBalance;
+        bool usageAsCollateralEnabled;
+    }
+
+    //
+    // State Variables
+    //
+
+    /// @notice The address of the Aave v3 Protocol Data Provider contract
     IProtocolDataProvider public immutable DATA_PROVIDER;
-    /// @notice The address of the incentives controller
+
+    /// @notice The address of the Aave v3 Rewards Distributor contract
     IRewardsDistributor public immutable REWARDS_DISTRIBUTOR;
-    /// @notice Protocol identifier for this oracle
+
+    /// @notice Reference to NAVCalculator for asset registry and pricing access
+    INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol identifier for this oracle (e.g., "Aave v3")
     string private _protocol;
-    /// @notice Reference to Balances contract for asset registry access
-    IBalances public immutable BALANCES;
 
     //
     // Constructor
     //
 
-    /// @param dataProvider_ The address of the Aave v3 Pool Data Provider contract.
-    /// @param rewardsDistributor_ The address of the Aave v3 Rewards Distributor contract.
-    /// @param protocol_ Protocol identifier (e.g., "Aave v3").
-    /// @param balances_ The address of the Balances contract for asset registry access.
-    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address balances_) {
+    /// @param dataProvider_ The address of the Aave v3 Pool Data Provider contract
+    /// @param rewardsDistributor_ The address of the Aave v3 Rewards Distributor contract
+    /// @param protocol_ Protocol identifier (e.g., "Aave v3")
+    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
+    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address navCalculator_) {
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         REWARDS_DISTRIBUTOR = IRewardsDistributor(rewardsDistributor_);
         _protocol = protocol_;
-        BALANCES = IBalances(balances_);
+        NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
-    /// @notice Get the supplied, borrowed amounts, and rewards for a specific token and user
-    /// @param user The user address
-    /// @param token The token address
-    /// @return suppliedAmount The amount of the token supplied by the user
-    /// @return borrowedAmount The amount of the token borrowed by the user
-    /// @return totalRewards The total rewards accrued by the user
-    function _getUserData(address user, address token)
-        internal
-        view
-        returns (int256 suppliedAmount, int256 borrowedAmount, int256 totalRewards)
-    {
-        try DATA_PROVIDER.getUserReserveData(token, user) returns (
-            uint256 currentATokenBalance,
-            uint256 currentStableDebt,
-            uint256 currentVariableDebt,
-            uint256,
-            uint256,
-            uint256,
-            uint256,
-            uint40,
-            bool
-        ) {
-            suppliedAmount = currentATokenBalance.toInt256();
-            borrowedAmount = (currentStableDebt + currentVariableDebt).toInt256();
-        } catch {
-            suppliedAmount = 0;
-            borrowedAmount = 0;
-        }
+    //
+    // IERC165 Implementation
+    //
 
-        totalRewards = int256(REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, token));
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
+
+    //
+    // IBalanceOracleAdapter Implementation
+    //
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        return _underlyingAssetsSupported();
+        return _getSupportedAssets();
     }
 
-    /// @notice Returns the list of all the underlying assets supported by this oracle.
-    /// @dev The returned list may be empty if the oracle cannot determine or provide the supported assets.
-    /// @return underlyingAssets The list of underlying asset addresses supported by this oracle (may be empty).
-    function _underlyingAssetsSupported() internal view returns (address[] memory) {
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+        // Optimized: directly calculate balance without building full Position structs
+        UserReserveData memory data = _getUserAssetData(account, asset);
+        balance = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
+            + data.rewardBalance.toInt256();
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalance(address account)
+        external
+        view
+        returns (address[] memory assets, int256[] memory balances)
+    {
+        address[] memory supportedAssets = _getSupportedAssets();
+
+        // Only return assets and amounts for tokens with non-zero balances
+        UserReserveData[] memory userReserveData = _getUserReservesData(account, supportedAssets);
+        assets = new address[](userReserveData.length);
+        balances = new int256[](userReserveData.length);
+        for (uint256 i = 0; i < userReserveData.length; i++) {
+            assets[i] = userReserveData[i].asset;
+            UserReserveData memory data = _getUserAssetData(account, assets[i]);
+            balances[i] = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
+                + data.rewardBalance.toInt256();
+        }
+        return (assets, balances);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns balance-only positions for the account's Aave v3 positions
+    /// @dev Returns PositionBalance structs containing deposit, borrow, and reward positions.
+    /// @dev Only returns positions for assets that are both supported by Aave and registered in NAVCalculator.
+    /// @dev Pricing information is added by NAVCalculator when these positions are enriched.
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        address[] memory supportedAssets = _getSupportedAssets();
+        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+
+        // Find intersection: assets that are both supported and registered
+        address[] memory registeredSupportedAssets = _intersection(supportedAssets, registeredAssets);
+
+        UserReserveData[] memory userReservesData;
+        if (registeredSupportedAssets.length == 0) {
+            userReservesData = new UserReserveData[](0);
+        } else if (assetFilter != address(0)) {
+            // Check if assetFilter is in the registered supported assets
+            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+                if (registeredSupportedAssets[i] == assetFilter) {
+                    userReservesData = new UserReserveData[](1);
+                    userReservesData[0] = _getUserAssetData(account, assetFilter);
+                    break;
+                }
+            }
+        } else {
+            userReservesData = _getUserReservesData(account, registeredSupportedAssets);
+        }
+        positions = _buildPositions(userReservesData);
+    }
+
+    //
+    // Internal Functions - Asset Registry & Lookup
+    //
+
+    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
+    /// @param asset The asset address to look up
+    /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
+    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
+        uint256 assetCount = NAV_CALCULATOR.assetCount();
+        for (uint256 i = 0; i < assetCount; i++) {
+            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
+            if (a.asset == asset) {
+                return a;
+            }
+        }
+        revert("Asset not found in NAVCalculator");
+    }
+
+    /// @notice Returns the list of all the underlying assets supported by this oracle
+    /// @dev The returned list may be empty if the oracle cannot determine or provide the supported assets
+    /// @return underlyingAssets The list of underlying asset addresses supported by this oracle (may be empty)
+    function _getSupportedAssets() internal view returns (address[] memory) {
         IProtocolDataProvider.TokenData[] memory reserves = DATA_PROVIDER.getAllReservesTokens();
 
         address[] memory assets = new address[](reserves.length);
@@ -105,164 +181,203 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         return assets;
     }
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
     //
-    // IBalanceOracleAdapter
+    // Internal Functions - Aave Protocol Data Retrieval
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Sum all balances for this asset across all positions
-        // _buildPositions with asset filter already returns only positions for this asset
-        INAVCalculator.Position[] memory positions = _buildPositions(account, asset);
-        for (uint256 i = 0; i < positions.length; i++) {
-            balance += positions[i].balance;
-        }
+    /// @notice Retrieves user reserve data for a specific asset
+    /// @param user The user address to query
+    /// @param asset The asset address to query
+    /// @return UserReserveData struct containing aToken balance, variable debt, rewards, and collateral status
+    function _getUserAssetData(address user, address asset) internal view returns (UserReserveData memory) {
+        (
+            uint256 currentATokenBalance,, // currentStableDebt - unused
+            uint256 currentVariableDebt,, // principalStableDebt - unused
+            , // scaledVariableDebt - unused
+            , // stableBorrowRate - unused
+            , // liquidityRate - unused
+            , // stableRateLastUpdated - unused
+            bool usageAsCollateralEnabled
+        ) = DATA_PROVIDER.getUserReserveData(asset, user);
+        uint256 rewardBalance = _getRewardsData(user, asset);
+        return UserReserveData({
+            asset: asset,
+            currentATokenBalance: currentATokenBalance,
+            currentVariableDebt: currentVariableDebt,
+            rewardBalance: rewardBalance,
+            usageAsCollateralEnabled: usageAsCollateralEnabled
+        });
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
-        external
+    /// @notice Get the supplied, borrowed amounts, and rewards for multiple tokens and user
+    /// @param user The user address
+    /// @param tokens Array of token addresses
+    /// @return userReserveData Array of UserReserveData for tokens with non-zero balances
+    function _getUserReservesData(address user, address[] memory tokens)
+        internal
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (UserReserveData[] memory userReserveData)
     {
-        address[] memory supportedAssets = _underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
-
-        // Pre-allocate arrays
-        address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempAmounts = new int256[](assetCount);
+        // Pre-allocate temporary array (max size)
+        UserReserveData[] memory tempData = new UserReserveData[](tokens.length);
         uint256 count = 0;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            int256 balance = this.getOracleBalanceForAsset(account, asset);
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                tempAssets[count] = asset;
-                tempAmounts[count] = balance;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            UserReserveData memory data = _getUserAssetData(user, tokens[i]);
+            if (data.currentATokenBalance > 0 || data.currentVariableDebt > 0 || data.rewardBalance > 0) {
+                tempData[count] = data;
                 count++;
             }
         }
 
         // Resize to actual count
-        assets = new address[](count);
-        amounts = new int256[](count);
+        userReserveData = new UserReserveData[](count);
         for (uint256 i = 0; i < count; i++) {
-            assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
+            userReserveData[i] = tempData[i];
         }
     }
 
+    /// @notice Retrieves the total accrued rewards for a user and asset
+    /// @param user The user address to query
+    /// @param asset The asset address to query
+    /// @return rewardAmount The total unclaimed rewards (from both aToken and asset rewards)
+    function _getRewardsData(address user, address asset) internal view returns (uint256 rewardAmount) {
+        address aTokenAddress = DATA_PROVIDER.getReserveData(asset).aTokenAddress;
+        if (aTokenAddress != address(0)) {
+            rewardAmount = REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, aTokenAddress);
+        }
+        rewardAmount = REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, asset);
+        return rewardAmount;
+    }
+
+    //
+    // Internal Functions - Position Building
+    //
+
     /// @notice Internal helper that builds all positions for this oracle
-    /// @param account The account to query
-    /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of Position structs from this oracle
-    function _buildPositions(address account, address assetFilter)
+    /// @param userReservesData Array of UserReserveData to build positions from
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Creates up to 3 positions per asset: Deposit/Collateral (if aTokenBalance > 0), Borrow (if variableDebt > 0), and Rewards (if rewardBalance > 0)
+    /// @dev Deposit positions are labeled as "Deposit (Collateral)" if usageAsCollateralEnabled is true, otherwise "Deposit"
+    /// @dev All positions are balance-only; pricing is added by NAVCalculator during enrichment
+    function _buildPositions(UserReserveData[] memory userReservesData)
         internal
         view
-        returns (INAVCalculator.Position[] memory positions)
+        returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        address[] memory supportedAssets = _underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
-
-        if (assetCount == 0) {
-            return new INAVCalculator.Position[](0);
-        }
-
-        // Pre-allocate array (estimate max size)
-        INAVCalculator.Position[] memory tempPositions = new INAVCalculator.Position[](assetCount);
+        // Pre-allocate array (max 3 positions per asset: deposit, borrow, rewards)
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](userReservesData.length * 3);
         uint256 positionCount = 0;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
+        for (uint256 i = 0; i < userReservesData.length; i++) {
+            address asset = userReservesData[i].asset;
 
-            // Apply asset filter if specified
-            if (assetFilter != address(0) && asset != assetFilter) {
-                continue;
-            }
+            // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
+            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
-            // Get balance for this asset
-            (int256 suppliedAmount, int256 borrowedAmount, int256 totalRewards) = _getUserData(account, asset);
-            int256 balance = suppliedAmount - borrowedAmount + totalRewards;
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                // Get asset info from registry (if registered)
-                uint8 decimals;
-                string memory symbol;
-                try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
-                    decimals = dec;
-                } catch {
-                    // Asset not registered, skip it (NAVCalculator will filter anyway)
-                    continue;
-                }
-                try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
-                    symbol = sym;
-                } catch {
-                    symbol = "";
-                }
-
-                // Build underlying asset struct
-                INAVCalculator.Asset memory underlyingAsset =
-                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
-
-                // Build position (pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.Position({
+            // Build deposit position (supplied assets)
+            // Distinguish between collateral and non-collateral deposits
+            if (userReservesData[i].currentATokenBalance > 0) {
+                string memory positionDetail =
+                    userReservesData[i].usageAsCollateralEnabled ? "Deposit (Collateral)" : "Deposit";
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    balance: balance,
-                    quoteAsset: INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), // Will be set by NAVCalculator
-                    value: 0, // Will be calculated by NAVCalculator
-                    price: 0, // Will be set by NAVCalculator
-                    priceDecimals: 0, // Will be set by NAVCalculator
-                    stale: false, // Will be set by NAVCalculator
+                    balance: userReservesData[i].currentATokenBalance.toInt256(),
                     protocol: _protocol,
-                    positionDetail: symbol
+                    positionDetail: positionDetail
                 });
+                positionCount++;
+            }
 
+            // Build borrowing position (borrowed assets - negative balance)
+            if (userReservesData[i].currentVariableDebt > 0) {
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: -userReservesData[i].currentVariableDebt.toInt256(),
+                    protocol: _protocol,
+                    positionDetail: "Borrow"
+                });
+                positionCount++;
+            }
+
+            // Build rewards position (unclaimed rewards)
+            if (userReservesData[i].rewardBalance > 0) {
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    balance: userReservesData[i].rewardBalance.toInt256(),
+                    protocol: _protocol,
+                    positionDetail: "Rewards"
+                });
                 positionCount++;
             }
         }
 
         // Resize to actual count
-        positions = new INAVCalculator.Position[](positionCount);
+        positions = new INAVCalculator.PositionBalance[](positionCount);
         for (uint256 i = 0; i < positionCount; i++) {
             positions[i] = tempPositions[i];
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOraclePositions(address account, address assetFilter)
-        external
-        view
-        returns (INAVCalculator.Position[] memory positions)
+    //
+    // Internal Functions - Utilities
+    //
+
+    /// @notice Finds addresses that are present in both input arrays (intersection)
+    /// @param array1 First array of addresses
+    /// @param array2 Second array of addresses
+    /// @return intersection Array of addresses that appear in both arrays
+    function _intersection(address[] memory array1, address[] memory array2)
+        internal
+        pure
+        returns (address[] memory intersection)
     {
-        return _buildPositions(account, assetFilter);
+        // Pre-allocate array (max size is the smaller of the two arrays)
+        uint256 maxSize = array1.length < array2.length ? array1.length : array2.length;
+        intersection = new address[](maxSize);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < array1.length; i++) {
+            for (uint256 j = 0; j < array2.length; j++) {
+                if (array1[i] == array2[j]) {
+                    intersection[count] = array1[i];
+                    count++;
+                    break; // Found match, move to next element in array1
+                }
+            }
+        }
+
+        // Resize to actual count
+        assembly {
+            mstore(intersection, count)
+        }
     }
 }
 
-///@title IPoolDataProvider
-///@notice Defines the basic interface of a PoolDataProvider
+//
+// Interfaces
+//
+
+/// @title IProtocolDataProvider
+/// @notice Defines the interface for Aave v3 Protocol Data Provider
+/// @dev This interface matches the current Aave v3 ProtocolDataProvider implementation
 interface IProtocolDataProvider {
-    ///@notice Returns the user data in a reserve
-    ///@param asset The address of the underlying asset of the reserve
-    ///@param user The address of the user
-    ///@return currentATokenBalance The current AToken balance of the user
-    ///@return currentStableDebt The current stable debt of the user
-    ///@return currentVariableDebt The current variable debt of the user
-    ///@return principalStableDebt The principal stable debt of the user
-    ///@return scaledVariableDebt The scaled variable debt of the user
-    ///@return stableBorrowRate The stable borrow rate of the user
-    ///@return liquidityRate The liquidity rate of the reserve
-    ///@return stableRateLastUpdated The timestamp of the last update of the user stable rate
-    ///@return usageAsCollateralEnabled True if the user is using the asset as collateral, false
-    ///        otherwise
+    /// @notice Returns the user data in a reserve
+    /// @param asset The address of the underlying asset of the reserve
+    /// @param user The address of the user
+    /// @return currentATokenBalance The current AToken balance of the user
+    /// @return currentStableDebt The current stable debt of the user
+    /// @return currentVariableDebt The current variable debt of the user
+    /// @return principalStableDebt The principal stable debt of the user
+    /// @return scaledVariableDebt The scaled variable debt of the user
+    /// @return stableBorrowRate The stable borrow rate of the user
+    /// @return liquidityRate The liquidity rate of the reserve
+    /// @return stableRateLastUpdated The timestamp of the last update of the user stable rate
+    /// @return usageAsCollateralEnabled True if the user is using the asset as collateral, false otherwise
     function getUserReserveData(address asset, address user)
         external
         view
@@ -278,28 +393,40 @@ interface IProtocolDataProvider {
             bool usageAsCollateralEnabled
         );
 
-    /// @notice Struct to hold a token’s symbol and its contract address.
+    /// @notice Struct to hold a token's symbol and its contract address.
     /// @dev Used when returning lists of reserves or aTokens as symbol–address pairs.
-    /// @param symbol The symbol of the token (e.g., "AAVE", "USDC")
-    /// @param tokenAddress The address of the token contract
     struct TokenData {
         string symbol;
         address tokenAddress;
+    }
+
+    /// @notice Struct to hold reserve data
+    struct ReserveData {
+        address aTokenAddress;
     }
 
     /// @notice Returns the list of the existing reserves in the pool.
     /// @dev Handling MKR and ETH in a different way since they do not have standard `symbol` functions.
     /// @return reserveTokens The list of reserves, pairs of symbols and addresses
     function getAllReservesTokens() external view returns (TokenData[] memory reserveTokens);
+
+    /// @notice Returns the reserve data for a given asset
+    /// @param asset The address of the underlying asset
+    /// @return The reserve data containing the aToken address
+    function getReserveData(address asset) external view returns (ReserveData memory);
 }
 
-///@title RewardsDistributor
-///@notice Accounting contract to manage multiple staking distributions with multiple rewards
+/// @title IRewardsDistributor
+/// @notice Interface for Aave v3 Rewards Distributor contract
+/// @dev This interface matches the current Aave v3 RewardsController implementation
 interface IRewardsDistributor {
-    ///@dev Returns the accrued rewards balance of a user, not including virtually accrued rewards since last
-    /// distribution.
-    ///@param user The address of the user
-    ///@param reward The address of the reward token
-    ///@return Unclaimed rewards, not including new distributions
+    /// @notice Returns the list of all reward tokens available in the system
+    /// @return The list of reward token addresses
+    function getRewardsList() external view returns (address[] memory);
+
+    /// @notice Returns the accrued rewards balance of a user for a specific reward token
+    /// @param user The address of the user
+    /// @param reward The address of the reward token
+    /// @return The unclaimed rewards balance, not including virtually accrued rewards since last distribution
     function getUserAccruedRewards(address user, address reward) external view returns (uint256);
 }

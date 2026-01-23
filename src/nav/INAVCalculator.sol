@@ -8,6 +8,20 @@ import {IBalances} from "src/balances/IBalances.sol";
 /// @notice Interface for NAVCalculator contract
 /// @author kpk
 interface INAVCalculator {
+    /// @notice Balance-only position data returned by balance oracles
+    /// @dev Balance oracles return this struct without pricing information
+    /// @dev NAVCalculator enriches these with pricing to create Position structs
+    struct PositionBalance {
+        Asset underlyingAsset;
+        address balanceOracle;
+        int256 balance;
+        string protocol;
+        string positionDetail;
+    }
+
+    /// @notice Complete position with pricing information
+    /// @dev This is the enriched version returned by NAVCalculator public methods
+    /// @dev Contains all PositionBalance fields plus pricing data (quoteAsset, value, price, priceDecimals, stale)
     struct Position {
         Asset underlyingAsset;
         address balanceOracle;
@@ -177,7 +191,8 @@ interface INAVCalculator {
     /// @notice Gets all positions for a given account with pricing in the specified quote currency
     /// @param account The address of the account to calculate for
     /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
-    /// @return positions Array of Position structs for all positions
+    /// @return positions Array of enriched Position structs with pricing information
+    /// @dev This method aggregates balance-only PositionBalance data from oracles and enriches them with pricing
     function getAccountPositions(address account, address quoteAsset)
         external
         view
@@ -187,7 +202,8 @@ interface INAVCalculator {
     /// @param account The address of the account to calculate for
     /// @param asset The specific asset to filter by (must be registered)
     /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
-    /// @return positions Array of Position structs for the specified asset
+    /// @return positions Array of enriched Position structs with pricing information for the specified asset
+    /// @dev This method aggregates balance-only PositionBalance data from oracles and enriches them with pricing
     function getAccountPositionsForAsset(address account, address asset, address quoteAsset)
         external
         view

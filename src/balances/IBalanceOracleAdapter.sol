@@ -12,11 +12,12 @@ interface IBalanceOracleAdapter is IERC165 {
     /// @notice Get all positions from this oracle for an account
     /// @param account The account to query
     /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of Position structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Balance oracles return balance-only data without pricing. NAVCalculator enriches these with pricing.
     function getOraclePositions(address account, address assetFilter)
         external
         view
-        returns (INAVCalculator.Position[] memory positions);
+        returns (INAVCalculator.PositionBalance[] memory positions);
 
     /// @notice Get balances from this oracle for an account
     /// @param account The account to query

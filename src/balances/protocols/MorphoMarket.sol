@@ -43,7 +43,8 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     /// @notice Asset balance data structure
     struct AssetBalanceData {
         address asset;
-        int256 balance;
+        uint256 amount;
+        bool isDebt;
     }
 
     //
@@ -85,6 +86,9 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         string memory positionDetail_,
         address navCalculator_
     ) {
+        require(morpho_.code.length > 0, "Morpho must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        
         MORPHO = IMorpho(morpho_);
         MARKET_ID = Id.wrap(marketId_);
         MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
@@ -98,8 +102,8 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+    /// @return balance The calculated balance (positive for credit, negative for debt)
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
 
         Position memory position = MORPHO.position(MARKET_ID, account);
@@ -124,9 +128,10 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to
             // avoid overestimating the supply
 
-            return suppliedAssets.toInt256() - borrowedAssets.toInt256();
+            // Calculate net: supplied - borrowed (can be negative)
+            balance = int256(suppliedAssets) - int256(borrowedAssets);
         } else if (underlyingAsset == COLLATERAL_TOKEN) {
-            return uint256(position.collateral).toInt256();
+            balance = int256(uint256(position.collateral)); // Collateral is always credit (positive)
         } else {
             revert InvalidArguments();
         }
@@ -150,7 +155,11 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -159,34 +168,34 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempAmounts = new int256[](assetCount);
+        int256[] memory tempBalances = new int256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
             int256 balance = _calculateBalance(asset, account);
 
-            // Only include non-zero BALANCES
+            // Only include non-zero balances
             if (balance != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = balance;
+                tempBalances[count] = balance;
                 count++;
             }
         }
 
         // Resize to actual count
         assets = new address[](count);
-        amounts = new int256[](count);
+        balances = new int256[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
+            balances[i] = tempBalances[i];
         }
     }
 
@@ -217,8 +226,18 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 if (registeredSupportedAssets[i] == assetFilter) {
                     int256 balance = _calculateBalance(assetFilter, account);
                     if (balance != 0) {
+                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                        uint256 amount;
+                        bool isDebt;
+                        if (balance < 0) {
+                            amount = uint256(-balance);
+                            isDebt = true;
+                        } else {
+                            amount = uint256(balance);
+                            isDebt = false;
+                        }
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, balance: balance});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -233,7 +252,17 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
                 if (balance != 0) {
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], balance: balance});
+                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                    uint256 amount;
+                    bool isDebt;
+                    if (balance < 0) {
+                        amount = uint256(-balance);
+                        isDebt = true;
+                    } else {
+                        amount = uint256(balance);
+                        isDebt = false;
+                    }
+                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -296,13 +325,14 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-            tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
-                balanceOracle: address(this),
-                balance: assetBalanceData[i].balance,
-                protocol: _protocol,
-                positionDetail: _positionDetail
-            });
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    amount: assetBalanceData[i].amount,
+                    isDebt: assetBalanceData[i].isDebt,
+                    protocol: _protocol,
+                    positionDetail: _positionDetail
+                });
 
             positionCount++;
         }

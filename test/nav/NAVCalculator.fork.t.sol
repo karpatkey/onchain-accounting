@@ -46,6 +46,17 @@ contract NAVCalculatorForkHarness is TestEnvConfigurator {
         return reading;
     }
 
+    /// @notice Checks if fork tests should be skipped
+    /// @dev Call this at the start of setUp() in child contracts
+    function _checkSkipForkTests() internal {
+        // Skip fork tests by default
+        // Set FORGE_SKIP_FORK_TESTS=false to enable fork tests
+        string memory skipEnv = vm.envOr("FORGE_SKIP_FORK_TESTS", string("true"));
+        if (keccak256(bytes(skipEnv)) == keccak256(bytes("true"))) {
+            vm.skip(true, "Fork tests are skipped by default. Set FORGE_SKIP_FORK_TESTS=false to enable.");
+        }
+    }
+
     function setupNavCalculator() internal {
         vm.selectFork(fork);
 
@@ -111,6 +122,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public ethToUsdChainlink = address(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
 
     function setUp() public {
+        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         // Using latest block - all contracts should exist
@@ -243,6 +255,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     address public compoundToUsdChainlink = address(0xe1011160d78a80E2eEBD60C228EEf7af4Dfcd4d7);
 
     function setUp() public {
+        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("opt-mainnet"));
         vm.selectFork(fork);
         // Using latest block - all contracts should exist
@@ -258,8 +271,10 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         assertTrue(aaveUsdcBalance > 0);
         // Compound balances are 0 if oracle was created, or if oracle creation was skipped
         if (address(compoundV3CometWithMultiplier) != address(0)) {
-            assertEq(compoundV3CometWithMultiplier.getOracleBalanceForAsset(safe, address(compound)), 0);
-            assertEq(compoundV3CometWithMultiplier.getOracleBalanceForAsset(safe, address(usdc)), 0);
+            int256 compoundBalance = compoundV3CometWithMultiplier.getOracleBalanceForAsset(safe, address(compound));
+            assertEq(compoundBalance, 0);
+            int256 usdcBalance = compoundV3CometWithMultiplier.getOracleBalanceForAsset(safe, address(usdc));
+            assertEq(usdcBalance, 0);
         }
     }
 
@@ -340,6 +355,7 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     bytes32 public marketIdWsethUsdc = 0xdba352d93a64b17c71104cbddc6aef85cd432322a1446b5b65163cbbc615cd0c;
 
     function setUp() public {
+        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
         // Using latest block - all contracts should exist
@@ -352,9 +368,12 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         assertEq(reading.issues.stalePriceAssets.length, 0);
         assertEq(reading.issues.sequencerDown, false);
         // Balances may differ at latest block, but should be positive
-        assertTrue(morphoBlueOracle.getOracleBalanceForAsset(safe, address(usdc)) > 0);
-        assertTrue(aaveOracle.getOracleBalanceForAsset(safe, address(usdc)) > 0);
-        assertTrue(compoundV3Comet.getOracleBalanceForAsset(safe, address(compound)) > 0);
+        int256 morphoBalance = morphoBlueOracle.getOracleBalanceForAsset(safe, address(usdc));
+        assertTrue(morphoBalance > 0);
+        int256 aaveBalance = aaveOracle.getOracleBalanceForAsset(safe, address(usdc));
+        assertTrue(aaveBalance > 0);
+        int256 compoundBalance = compoundV3Comet.getOracleBalanceForAsset(safe, address(compound));
+        assertTrue(compoundBalance > 0);
 
         // Value may differ at latest block, but should be positive
         assertTrue(reading.value > 0);
@@ -430,6 +449,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     address public compoundRewardContract = address(0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae);
 
     function setUp() public {
+        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
         // Using latest block - all contracts should exist
@@ -506,6 +526,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public daiToUsdChainlink = address(0x678df3415fc31947dA4324eC63212874be5a82f8);
 
     function setUp() public {
+        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         // Using latest block - all contracts should exist

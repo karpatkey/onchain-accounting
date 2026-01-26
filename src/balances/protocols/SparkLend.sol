@@ -15,8 +15,8 @@ contract SparkLendBalanceOracle is AaveV3InstanceBalanceOracle {
     /// @param dataProvider_ The address of the Spark Pool Data Provider contract.
     /// @param rewardsDistributor_ The address of the Spark Rewards Distributor contract.
     /// @param protocol_ Protocol identifier (e.g., "Spark").
-    /// @param balances_ The address of the Balances contract for asset registry access.
-    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address balances_)
-        AaveV3InstanceBalanceOracle(dataProvider_, rewardsDistributor_, protocol_, balances_)
+    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
+    constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address navCalculator_)
+        AaveV3InstanceBalanceOracle(dataProvider_, rewardsDistributor_, protocol_, navCalculator_)
     {}
 }

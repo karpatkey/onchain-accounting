@@ -7,6 +7,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 
@@ -41,6 +42,26 @@ contract BalancesHarness is Balances {
         // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
         _removeBalanceOracle(oracle);
     }
+    
+    // Compatibility methods for ERC20DefaultOracle which expects NAVCalculator interface
+    function assets() external view returns (address[] memory) {
+        return getAssets();
+    }
+    
+    function assetCount() external view returns (uint256) {
+        return getAssetCount();
+    }
+    
+    function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory a) {
+        address[] memory allAssets = getAssets();
+        if (idx >= allAssets.length) {
+            revert AssetNotFound();
+        }
+        address asset = allAssets[idx];
+        a.asset = asset;
+        a.decimals = getAssetDecimals(asset);
+        a.symbol = getAssetSymbol(asset);
+    }
 }
 
 contract BalancesTest is Test {
@@ -66,8 +87,8 @@ contract BalancesTest is Test {
         address[] memory assets = new address[](1);
         assets[0] = address(customOracle);
         customOracle.setUnderlyingAssetsSupported(assets);
-        customOracle.setBalance(address(usdc), alice, 123_456_789);
-        customOracle.setBalance(address(usdc), bob, -987_654_321);
+        customOracle.setBalance(address(usdc), alice, 123_456_789, false);
+        customOracle.setBalance(address(usdc), bob, 987_654_321, true);
         address[] memory underlyingAssets = new address[](1);
         underlyingAssets[0] = address(usdc);
         customOracle.setUnderlyingAssetsSupported(underlyingAssets);
@@ -108,7 +129,7 @@ contract BalancesTest is Test {
         balances.addBalanceOracleDirect(address(customOracle), address(customOracle), IBalances.OracleType.Custom);
         vm.stopPrank();
 
-        customOracle.setBalance(address(customOracle), alice, 2000);
+        customOracle.setBalance(address(customOracle), alice, 2000, false);
 
         // Get balance from custom oracle
         int256 balance =
@@ -116,12 +137,12 @@ contract BalancesTest is Test {
         assertEq(balance, 2000);
     }
 
-    function test_setAndGetCustomBalanceOracleNegativeBalance() public {
+    function test_setAndGetCustomBalanceOracleDebtPosition() public {
         vm.startPrank(admin);
         balances.addBalanceOracleDirect(address(customOracle), address(customOracle), IBalances.OracleType.Custom);
         vm.stopPrank();
 
-        customOracle.setBalance(address(customOracle), alice, -2000);
+        customOracle.setBalance(address(customOracle), alice, 2000, true);
 
         // Get balance from custom oracle
         int256 balance =

@@ -407,7 +407,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             INAVCalculator.PositionBalance memory pos = positionsInRange[i];
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, pos.underlyingAsset.asset);
 
-            int256 usdValue = _toUsd(pos.balance, pos.underlyingAsset.decimals, feed.price, feed.decimals);
+            int256 usdValue = _toUsd(pos.amount, pos.isDebt, pos.underlyingAsset.decimals, feed.price, feed.decimals);
             totalUsd += usdValue;
         }
 
@@ -851,10 +851,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Interface validation is done during oracle registration, not here
             IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
             address[] memory assetsList;
-            int256[] memory amounts;
-            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory amounts_) {
+            int256[] memory balances;
+            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory balances_) {
                 assetsList = assets;
-                amounts = amounts_;
+                balances = balances_;
             } catch {
                 // Oracle doesn't implement IBalanceOracleAdapter, skip it
                 continue;
@@ -866,7 +866,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                     continue;
                 }
 
-                if (amounts[j] != 0) {
+                if (balances[j] != 0) {
                     return true;
                 }
             }
@@ -902,10 +902,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Interface validation is done during oracle registration, not here
             IBalanceOracleAdapter adapter = IBalanceOracleAdapter(oracle);
             address[] memory assetsList;
-            int256[] memory amounts;
-            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory amounts_) {
+            int256[] memory balances;
+            try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory balances_) {
                 assetsList = assets;
-                amounts = amounts_;
+                balances = balances_;
             } catch {
                 // Oracle doesn't implement IBalanceOracleAdapter, skip it
                 continue;
@@ -920,7 +920,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 }
 
                 // Skip zero balances
-                if (amounts[j] == 0) {
+                if (balances[j] == 0) {
                     continue;
                 }
 
@@ -961,13 +961,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function calculateValue(address[] memory assets, int256[] memory balances, address quoteCurrency)
-        external
-        view
-        returns (int256 value)
-    {
-        if (assets.length != balances.length) {
-            revert InvalidArgumentsWithContext("assets.length != balances.length");
+    function calculateValue(
+        address[] memory assets,
+        uint256[] memory amounts,
+        bool[] memory isDebt,
+        address quoteCurrency
+    ) external view returns (int256 value) {
+        if (assets.length != amounts.length || assets.length != isDebt.length) {
+            revert InvalidArgumentsWithContext("arrays.length mismatch");
         }
 
         // Get quote currency info if not USD
@@ -986,13 +987,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         int256 totalUsd = 0;
 
-        // Calculate USD value for each asset/balance pair
+        // Calculate USD value for each asset/amount pair
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
-            int256 balance = balances[i];
+            uint256 amount = amounts[i];
 
-            // Skip zero balances
-            if (balance == 0) {
+            // Skip zero amounts
+            if (amount == 0) {
                 continue;
             }
 
@@ -1006,8 +1007,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // Get USD price
             (uint256 usdRate, uint256 usdRateDecimals,) = _latestPrice(asset);
 
-            // Calculate USD value
-            int256 usdValue = _toUsd(balance, assetDecimals, usdRate, usdRateDecimals);
+            // Calculate USD value (negative for debt, positive for credit)
+            int256 usdValue = _toUsd(amount, isDebt[i], assetDecimals, usdRate, usdRateDecimals);
             totalUsd += usdValue;
         }
 
@@ -1095,7 +1096,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint8 quoteCurrencyDecimals
     ) internal pure returns (INAVCalculator.Position memory position) {
         // Calculate USD value
-        int256 usdValue = _toUsd(balance.balance, balance.underlyingAsset.decimals, priceFeed.price, priceFeed.decimals);
+        int256 usdValue = _toUsd(balance.amount, balance.isDebt, balance.underlyingAsset.decimals, priceFeed.price, priceFeed.decimals);
 
         // Calculate value in quote currency
         int256 value;
@@ -1111,7 +1112,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         position = INAVCalculator.Position({
             underlyingAsset: balance.underlyingAsset,
             balanceOracle: balance.balanceOracle,
-            balance: balance.balance,
+            amount: balance.amount,
+            isDebt: balance.isDebt,
             protocol: balance.protocol,
             positionDetail: balance.positionDetail,
             quoteAsset: quoteAssetStruct,
@@ -1122,13 +1124,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         });
     }
 
-    /// @notice Converts an asset's balance to USD
-    /// @param balance The balance of the asset
+    /// @notice Converts an asset's amount to USD
+    /// @param amount The amount of the asset (always positive)
+    /// @param isDebt Whether this amount represents debt (true) or credit (false)
     /// @param decimals The number of decimals of the asset
     /// @param usdRate The USD rate of the asset
     /// @param usdRateDecimals The number of decimals of the USD rate
-    /// @return usd The computed balance in USD
-    function _toUsd(int256 balance, uint8 decimals, uint256 usdRate, uint256 usdRateDecimals)
+    /// @return usd The computed amount in USD (negative for debt, positive for credit)
+    function _toUsd(uint256 amount, bool isDebt, uint8 decimals, uint256 usdRate, uint256 usdRateDecimals)
         internal
         pure
         returns (int256 usd)
@@ -1146,9 +1149,19 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             revert InvalidArgumentsWithContext("denominator > MAX_DECIMAL_EXPONENT");
         }
 
-        // casting to 'int256' is safe because usdRate is uint256 and the result fits in int256 range
-        // forge-lint: disable-next-line(unsafe-typecast)
-        usd = (balance * int256(usdRate)) / int256(10 ** denominator);
+        // Calculate USD value (always positive)
+        uint256 usdValue = (amount * usdRate) / (10 ** denominator);
+        
+        // Return negative for debt, positive for credit
+        if (isDebt) {
+            // casting to 'int256' is safe because usdValue fits in int256 range
+            // forge-lint: disable-next-line(unsafe-typecast)
+            usd = -int256(usdValue);
+        } else {
+            // casting to 'int256' is safe because usdValue fits in int256 range
+            // forge-lint: disable-next-line(unsafe-typecast)
+            usd = int256(usdValue);
+        }
     }
 
     /// @notice Converts USD value to a base asset value

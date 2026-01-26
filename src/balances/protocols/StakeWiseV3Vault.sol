@@ -29,7 +29,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice Asset balance data structure
     struct AssetBalanceData {
         address asset;
-        int256 balance;
+        uint256 amount;
+        bool isDebt;
     }
 
     //
@@ -70,6 +71,9 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         if (underlyingToken_ == address(0) || vault_ == address(0)) {
             revert InvalidArguments();
         }
+        require(vault_.code.length > 0, "Vault must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        
         UNDERLYING_TOKEN = underlyingToken_;
         VAULT = IStakeWiseVault(vault_);
         _protocol = protocol_;
@@ -80,7 +84,7 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance
+    /// @return balance The calculated balance (positive for credit, negative for debt)
     function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         if (underlyingAsset != address(UNDERLYING_TOKEN)) {
             revert InvalidArguments();
@@ -92,7 +96,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         uint256 vaultAssets = VAULT.convertToAssets(directBalance);
         uint256 mintedOs = VAULT.convertToAssets(osTokenPosition);
 
-        return vaultAssets.toInt256() - mintedOs.toInt256();
+        // Calculate net: vaultAssets - mintedOs (can be negative)
+        balance = int256(vaultAssets) - int256(mintedOs);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -112,7 +117,11 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -121,7 +130,7 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         int256 balance = this.getOracleBalanceForAsset(account, supportedAssets[0]);
@@ -131,9 +140,9 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         }
 
         assets = new address[](1);
-        amounts = new int256[](1);
+        balances = new int256[](1);
         assets[0] = supportedAssets[0];
-        amounts[0] = balance;
+        balances[0] = balance;
     }
 
 
@@ -163,8 +172,18 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
                 if (registeredSupportedAssets[i] == assetFilter) {
                     int256 balance = _calculateBalance(assetFilter, account);
                     if (balance != 0) {
+                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                        uint256 amount;
+                        bool isDebt;
+                        if (balance < 0) {
+                            amount = uint256(-balance);
+                            isDebt = true;
+                        } else {
+                            amount = uint256(balance);
+                            isDebt = false;
+                        }
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, balance: balance});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -179,7 +198,17 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
                 if (balance != 0) {
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], balance: balance});
+                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                    uint256 amount;
+                    bool isDebt;
+                    if (balance < 0) {
+                        amount = uint256(-balance);
+                        isDebt = true;
+                    } else {
+                        amount = uint256(balance);
+                        isDebt = false;
+                    }
+                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -242,13 +271,14 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-            tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
-                balanceOracle: address(this),
-                balance: assetBalanceData[i].balance,
-                protocol: _protocol,
-                positionDetail: _positionDetail
-            });
+                tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                    underlyingAsset: underlyingAsset,
+                    balanceOracle: address(this),
+                    amount: assetBalanceData[i].amount,
+                    isDebt: assetBalanceData[i].isDebt,
+                    protocol: _protocol,
+                    positionDetail: _positionDetail
+                });
 
             positionCount++;
         }

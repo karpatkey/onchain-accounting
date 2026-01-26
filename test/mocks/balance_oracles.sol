@@ -8,7 +8,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
-    mapping(address => mapping(address => int256)) public balances;
+    mapping(address => mapping(address => uint256)) public amounts;
+    mapping(address => mapping(address => bool)) public isDebt;
     address[] public underlyingAassetsSupported;
     string internal _protocol;
     string internal _positionDetail;
@@ -20,12 +21,13 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         BALANCES = balances_;
     }
 
-    function setBalance(address token, address account, int256 balance) external {
-        balances[token][account] = balance;
+    function setBalance(address token, address account, uint256 amount, bool debt) external {
+        amounts[token][account] = amount;
+        isDebt[token][account] = debt;
     }
 
-    function balanceOf(address token, address account) external view returns (int256) {
-        return int256(balances[token][account]);
+    function balanceOf(address token, address account) external view returns (uint256 amount, bool debt) {
+        return (amounts[token][account], isDebt[token][account]);
     }
 
     function setUnderlyingAssetsSupported(address[] calldata underlyingAssets) external {
@@ -48,42 +50,55 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        return this.balanceOf(asset, account);
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
+        (uint256 amount, bool isDebt_) = this.balanceOf(asset, account);
+        if (isDebt_) {
+            balance = -int256(amount);
+        } else {
+            balance = int256(amount);
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempAmounts = new int256[](assetCount);
+        int256[] memory tempBalances = new int256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = this.balanceOf(asset, account);
+            (uint256 amount, bool debt) = this.balanceOf(asset, account);
 
             // Only include non-zero balances
-            if (balance != 0) {
+            if (amount != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = balance;
+                if (debt) {
+                    tempBalances[count] = -int256(amount);
+                } else {
+                    tempBalances[count] = int256(amount);
+                }
                 count++;
             }
         }
 
         // Resize to actual count
         assets = new address[](count);
-        amounts = new int256[](count);
+        balances = new int256[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
+            balances[i] = tempBalances[i];
         }
     }
 
@@ -118,10 +133,10 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
             }
 
             // Get balance for this asset
-            int256 balance = this.balanceOf(asset, account);
+            (uint256 amount, bool debt) = this.balanceOf(asset, account);
 
-            // Only include non-zero balances
-            if (balance != 0) {
+            // Only include non-zero amounts
+            if (amount != 0) {
                 // Get asset info from registry (if registered) or from token directly
                 uint8 decimals;
                 string memory symbol;
@@ -160,7 +175,8 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    balance: balance,
+                    amount: amount,
+                    isDebt: debt,
                     protocol: _protocol,
                     positionDetail: _positionDetail
                 });

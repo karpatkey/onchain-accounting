@@ -27,7 +27,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @notice Asset balance data structure
     struct AssetBalanceData {
         address asset;
-        int256 balance;
+        uint256 amount;
+        bool isDebt;
     }
 
     //
@@ -62,6 +63,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
     constructor(address stakeToken, string memory protocol_, string memory positionDetail_, address navCalculator_) {
         if (stakeToken == address(0)) revert InvalidArguments();
+        require(stakeToken.code.length > 0, "StakeToken must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         STAKE_CONTRACT = IStakeToken(stakeToken);
         REWARD_TOKEN = STAKE_CONTRACT.REWARD_TOKEN();
@@ -103,7 +106,11 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -112,34 +119,34 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempAmounts = new int256[](assetCount);
+        int256[] memory tempBalances = new int256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
             int256 balance = _calculateBalance(asset, account);
 
-            // Only include non-zero BALANCES
+            // Only include non-zero balances
             if (balance != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = balance;
+                tempBalances[count] = balance;
                 count++;
             }
         }
 
         // Resize to actual count
         assets = new address[](count);
-        amounts = new int256[](count);
+        balances = new int256[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
+            balances[i] = tempBalances[i];
         }
     }
 
@@ -194,7 +201,17 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
             // Only include non-zero balances
             if (balance != 0) {
-                assetBalanceData[count] = AssetBalanceData({asset: asset, balance: balance});
+                // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                uint256 amount;
+                bool isDebt;
+                if (balance < 0) {
+                    amount = uint256(-balance);
+                    isDebt = true;
+                } else {
+                    amount = uint256(balance);
+                    isDebt = false;
+                }
+                assetBalanceData[count] = AssetBalanceData({asset: asset, amount: amount, isDebt: isDebt});
                 count++;
             }
         }
@@ -234,13 +251,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance
+    /// @return balance The calculated balance (always positive for safety module)
     /// @dev Returns equivalent balance for either:
     /// - Staked tokens: Returns the withdrawable amount of underlying tokens
     /// - Reward tokens: Returns the current unclaimed rewards plus newly accrued rewards
     /// The staked token can be the same as the reward token (i.e. with stkAAVE, underlyingAsset = AAVE = STAKED_TOKEN =
     /// REWARD_TOKEN).
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         if (underlyingAsset != address(STAKED_TOKEN) && underlyingAsset != address(REWARD_TOKEN)) {
             revert InvalidArguments();
         }
@@ -249,16 +266,16 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
         // If querying staked token balance
         if (underlyingAsset == STAKED_TOKEN) {
-            total += STAKE_CONTRACT.previewRedeem(STAKE_CONTRACT.balanceOf(account)).toInt256();
+            total += int256(STAKE_CONTRACT.previewRedeem(STAKE_CONTRACT.balanceOf(account)));
         }
 
         // If querying reward token balance. In some cases the staked token can be the same as the reward token (i.e
         // stkAAVE).
         if (underlyingAsset == REWARD_TOKEN) {
-            total += STAKE_CONTRACT.getTotalRewardsBalance(account).toInt256();
+            total += int256(STAKE_CONTRACT.getTotalRewardsBalance(account));
         }
 
-        return total;
+        return total; // Safety module positions are always credit (positive)
     }
 
     //
@@ -287,7 +304,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetBalanceData.length; i++) {
             address asset = assetBalanceData[i].asset;
-            int256 balance = assetBalanceData[i].balance;
+            // AssetBalanceData already has amount and isDebt, no need to extract
 
             // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
@@ -296,7 +313,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
                 underlyingAsset: underlyingAsset,
                 balanceOracle: address(this),
-                balance: balance,
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
                 positionDetail: _positionDetail
             });

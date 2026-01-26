@@ -47,11 +47,9 @@ contract SavingsUSDSTest is TestEnvConfigurator, TestSetupHelpers {
         uint256 newBalance = USDS.balanceOf(testUser);
         vm.stopPrank();
 
-        // casting to 'int256' is safe because newBalance >= previousBalance (balance increased)
-        // forge-lint: disable-next-line(unsafe-typecast)
-        int256 expected = int256(newBalance - previousBalance);
+        uint256 expected = newBalance - previousBalance;
 
-        assertEq(balance, expected, "Oracle balance should match redemption amount");
+        assertEq(uint256(balance), expected, "Oracle balance should match redemption amount");
         assertGt(balance, 0, "User should have positive USDS position");
     }
 

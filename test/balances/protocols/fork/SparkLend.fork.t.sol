@@ -1,0 +1,188 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
+/// @title SparkLendBalanceOracleForkTest
+/// @notice Fork tests for SparkLendBalanceOracle using real mainnet contracts
+/// @dev Tests adapter behavior with real Spark protocol contracts and positions
+/// @dev SparkLend inherits from AaveV3Instance, so it uses the same protocol structure
+contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
+    // Spark contract addresses (mainnet)
+    address public constant DATA_PROVIDER = 0xFc21d6d146E6086B8359705C8b28512a983db0cb;
+    address public constant REWARDS_DISTRIBUTOR = 0x4370D3b6C9588E02ce9D22e684387859c7Ff5b34;
+    
+    // Token addresses
+    address public constant DAI = MAINNET_DAI;
+    address public constant WBTC = MAINNET_WBTC;
+    address public constant WETH = MAINNET_WETH;
+    address public constant USDC = MAINNET_USDC;
+    address public constant GNO = 0x6810e776880C02933D47DB1b9fc05908e5386b96;
+    address public constant STETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
+    
+    // Fork blocks
+    uint256 public constant FORK_BLOCK_1 = 20_734_274;
+    uint256 public constant FORK_BLOCK_2 = 17_772_457;
+    uint256 public constant FORK_BLOCK_3 = 19_685_985;
+    
+    // Oracle instance
+    SparkLendBalanceOracle public oracle;
+    
+    // Real user addresses with positions in Spark
+    address public constant SUPPLY_DAI_WBTC_BORROW_WETH_USER = 0xB6875EC94bE06d159A28d627422b7c9388cc8861;
+    address public constant SUPPLY_GNO_DEBT_DAI_USER = 0x849D52316331967b6fF1198e5E32A0eB168D039d;
+    address public constant REWARD_STETH_USER = 0x4F2083f5fBede34C2714aFfb3105539775f7FE64;
+    
+    function setUp() public override {
+        // Note: Fork setup is done per-test since different tests use different blocks
+        super.setUp();
+    }
+    
+    // ============================================
+    // Real Position Tests - Block 1
+    // ============================================
+    
+    function test_getOracleBalanceForAsset_supply_dai() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
+        
+        address[] memory assets = new address[](4);
+        assets[0] = DAI;
+        assets[1] = WBTC;
+        assets[2] = WETH;
+        assets[3] = USDC;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
+        assertGt(balance, 0, "User should have DAI supply position");
+    }
+    
+    function test_getOracleBalanceForAsset_supply_wbtc() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
+        
+        address[] memory assets = new address[](4);
+        assets[0] = DAI;
+        assets[1] = WBTC;
+        assets[2] = WETH;
+        assets[3] = USDC;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
+        assertGt(balance, 0, "User should have WBTC supply position");
+    }
+    
+    function test_getOracleBalanceForAsset_borrow_weth() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
+        
+        address[] memory assets = new address[](4);
+        assets[0] = DAI;
+        assets[1] = WBTC;
+        assets[2] = WETH;
+        assets[3] = USDC;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
+        assertLt(balance, 0, "User should have WETH borrow position (negative balance)");
+    }
+    
+    // ============================================
+    // Real Position Tests - Block 2
+    // ============================================
+    
+    function test_getOracleBalanceForAsset_supply_gnosis() public {
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_2);
+        
+        address[] memory assets = new address[](2);
+        assets[0] = GNO;
+        assets[1] = DAI;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
+        assertGt(balance, 0, "User should have GNO supply position");
+    }
+    
+    function test_getOracleBalanceForAsset_debt_dai() public {
+        fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_2);
+        
+        address[] memory assets = new address[](2);
+        assets[0] = GNO;
+        assets[1] = DAI;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
+        assertLt(balance, 0, "User should have DAI debt position (negative balance)");
+    }
+    
+    // ============================================
+    // Real Position Tests - Block 3
+    // ============================================
+    
+    function test_getOracleBalanceForAsset_reward_steth() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_3);
+        
+        balances = _deployBalancesForOracle(STETH);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        int256 balance = oracle.getOracleBalanceForAsset(REWARD_STETH_USER, STETH);
+        assertGt(balance, 0, "User should have stETH reward position");
+    }
+    
+    // ============================================
+    // Position Aggregation Tests
+    // ============================================
+    
+    function test_getOracleBalance_aggregatesPositions() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
+        
+        address[] memory assets = new address[](4);
+        assets[0] = DAI;
+        assets[1] = WBTC;
+        assets[2] = WETH;
+        assets[3] = USDC;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        (address[] memory resultAssets, int256[] memory balances) = 
+            oracle.getOracleBalance(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
+        
+        // Should have at least DAI, WBTC, and WETH positions
+        assertGe(resultAssets.length, 3, "Should have multiple positions");
+        assertEq(resultAssets.length, balances.length, "Arrays should match length");
+    }
+    
+    function test_getOraclePositions_returnsCorrectPositions() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
+        
+        address[] memory assets = new address[](4);
+        assets[0] = DAI;
+        assets[1] = WBTC;
+        assets[2] = WETH;
+        assets[3] = USDC;
+        balances = _deployBalancesForOracle(assets);
+        
+        oracle = new SparkLendBalanceOracle(DATA_PROVIDER, REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        
+        INAVCalculator.PositionBalance[] memory positions = 
+            oracle.getOraclePositions(SUPPLY_DAI_WBTC_BORROW_WETH_USER, address(0));
+        
+        assertGe(positions.length, 1, "Should have at least one position");
+        
+        // Verify positions have correct structure
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertTrue(positions[i].amount > 0, "Position amount should be positive");
+        }
+    }
+}

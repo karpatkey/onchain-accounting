@@ -5,9 +5,8 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
-
-// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
@@ -48,7 +47,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
 
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
-        assertGt(balance, 0, "User should have USDC supply position");
+        assertGt(balance, 0, "User should have USDC supply position (positive balance)");
     }
 
     function test_mainnet_balanceOf_borrowUsdc() public {
@@ -66,7 +65,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
 
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(borrowUsdcUser, usdc);
-        assertLt(balanceUsdc, 0, "User should have USDC borrow position");
+        assertLt(balanceUsdc, 0, "User should have USDC borrow position (negative balance)");
     }
 
     function test_mainnet_balanceOf_collateralMKR() public {
@@ -84,7 +83,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
 
         int256 balanceMkr = oracle.getOracleBalanceForAsset(borrowUsdcUser, mkr);
-        assertGt(balanceMkr, 0, "User should have MKR collateral position");
+        assertGt(balanceMkr, 0, "User should have MKR collateral position (positive balance)");
     }
 
     function test_mainnet_balanceOf_unsupportedToken() public {

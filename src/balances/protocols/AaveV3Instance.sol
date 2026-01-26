@@ -61,6 +61,12 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @param protocol_ Protocol identifier (e.g., "Aave v3")
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(address dataProvider_, address rewardsDistributor_, string memory protocol_, address navCalculator_) {
+        // Validate that addresses are contracts (for production safety)
+        // In tests, mocks should be proper contracts, but we handle failures gracefully in view functions
+        require(dataProvider_.code.length > 0, "DataProvider must be a contract");
+        require(rewardsDistributor_.code.length > 0, "RewardsDistributor must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         REWARDS_DISTRIBUTOR = IRewardsDistributor(rewardsDistributor_);
         _protocol = protocol_;
@@ -86,8 +92,22 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Optimized: directly calculate balance without building full Position structs
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
+        // Return zero for zero address
+        if (asset == address(0)) {
+            return 0;
+        }
+        
+        // Return zero for unsupported assets
+        if (!_isAssetSupported(asset)) {
+            return 0;
+        }
+        
+        // Optimized: directly calculate net balance without building full Position structs
         UserReserveData memory data = _getUserAssetData(account, asset);
         balance = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
             + data.rewardBalance.toInt256();
@@ -101,7 +121,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     {
         address[] memory supportedAssets = _getSupportedAssets();
 
-        // Only return assets and amounts for tokens with non-zero balances
+        // Only return assets and balances for tokens with non-zero balances
         UserReserveData[] memory userReserveData = _getUserReservesData(account, supportedAssets);
         assets = new address[](userReserveData.length);
         balances = new int256[](userReserveData.length);
@@ -172,7 +192,6 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @return underlyingAssets The list of underlying asset addresses supported by this oracle (may be empty)
     function _getSupportedAssets() internal view returns (address[] memory) {
         IProtocolDataProvider.TokenData[] memory reserves = DATA_PROVIDER.getAllReservesTokens();
-
         address[] memory assets = new address[](reserves.length);
 
         for (uint256 i = 0; i < reserves.length; i++) {
@@ -180,6 +199,19 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         }
 
         return assets;
+    }
+
+    /// @notice Checks if an asset is supported by Aave
+    /// @param asset The asset address to check
+    /// @return supported True if the asset is supported
+    function _isAssetSupported(address asset) internal view returns (bool supported) {
+        address[] memory supportedAssets = _getSupportedAssets();
+        for (uint256 i = 0; i < supportedAssets.length; i++) {
+            if (supportedAssets[i] == asset) {
+                return true;
+            }
+        }
+        return false;
     }
 
     //
@@ -192,14 +224,17 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @return UserReserveData struct containing aToken balance, variable debt, rewards, and collateral status
     function _getUserAssetData(address user, address asset) internal view returns (UserReserveData memory) {
         (
-            uint256 currentATokenBalance,, // currentStableDebt - unused
-            uint256 currentVariableDebt,, // principalStableDebt - unused
+            uint256 currentATokenBalance,
+            , // currentStableDebt - unused
+            uint256 currentVariableDebt,
+            , // principalStableDebt - unused
             , // scaledVariableDebt - unused
             , // stableBorrowRate - unused
             , // liquidityRate - unused
             , // stableRateLastUpdated - unused
             bool usageAsCollateralEnabled
         ) = DATA_PROVIDER.getUserReserveData(asset, user);
+        
         uint256 rewardBalance = _getRewardsData(user, asset);
         return UserReserveData({
             asset: asset,
@@ -243,11 +278,15 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to query
     /// @return rewardAmount The total unclaimed rewards (from both aToken and asset rewards)
     function _getRewardsData(address user, address asset) internal view returns (uint256 rewardAmount) {
-        address aTokenAddress = DATA_PROVIDER.getReserveData(asset).aTokenAddress;
+        IProtocolDataProvider.ReserveData memory reserveData = DATA_PROVIDER.getReserveData(asset);
+        address aTokenAddress = reserveData.aTokenAddress;
+        
         if (aTokenAddress != address(0)) {
             rewardAmount = REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, aTokenAddress);
         }
-        rewardAmount = REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, asset);
+        
+        rewardAmount += REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, asset);
+        
         return rewardAmount;
     }
 
@@ -285,19 +324,21 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    balance: userReservesData[i].currentATokenBalance.toInt256(),
+                    amount: userReservesData[i].currentATokenBalance,
+                    isDebt: false, // Deposits are credit
                     protocol: _protocol,
                     positionDetail: positionDetail
                 });
                 positionCount++;
             }
 
-            // Build borrowing position (borrowed assets - negative balance)
+            // Build borrowing position (borrowed assets - debt)
             if (userReservesData[i].currentVariableDebt > 0) {
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    balance: -userReservesData[i].currentVariableDebt.toInt256(),
+                    amount: userReservesData[i].currentVariableDebt,
+                    isDebt: true, // Borrows are debt
                     protocol: _protocol,
                     positionDetail: "Borrow"
                 });
@@ -309,7 +350,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    balance: userReservesData[i].rewardBalance.toInt256(),
+                    amount: userReservesData[i].rewardBalance,
+                    isDebt: false, // Rewards are credit
                     protocol: _protocol,
                     positionDetail: "Rewards"
                 });

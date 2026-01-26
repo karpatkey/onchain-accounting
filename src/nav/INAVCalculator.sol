@@ -14,7 +14,8 @@ interface INAVCalculator {
     struct PositionBalance {
         Asset underlyingAsset;
         address balanceOracle;
-        int256 balance;
+        uint256 amount; // Always positive, use isDebt to indicate debt vs credit
+        bool isDebt; // true = debt (subtract from NAV), false = credit (add to NAV)
         string protocol;
         string positionDetail;
     }
@@ -25,9 +26,10 @@ interface INAVCalculator {
     struct Position {
         Asset underlyingAsset;
         address balanceOracle;
-        int256 balance;
+        uint256 amount; // Always positive, use isDebt to indicate debt vs credit
+        bool isDebt; // true = debt (subtract from NAV), false = credit (add to NAV)
         Asset quoteAsset;
-        int256 value;
+        int256 value; // Can be negative for debt positions (calculated from amount, isDebt, and price)
         uint256 price;
         uint8 priceDecimals;
         bool stale;
@@ -245,13 +247,17 @@ interface INAVCalculator {
 
     /// @notice Calculates the total value of provided asset balances in the specified quote currency
     /// @param assets Array of asset addresses
-    /// @param balances Array of balances corresponding to each asset (signed to allow debt)
+    /// @param amounts Array of amounts corresponding to each asset (always positive)
+    /// @param isDebt Array of flags indicating whether each amount is debt (true) or credit (false)
     /// @param quoteCurrency The address of the quote currency (address(0) for USD)
     /// @return value The total value of all balances in the quote currency
     /// @dev Arrays must be the same length. Each asset must be registered and have a price oracle.
     /// @dev If quoteCurrency is address(0), returns USD value. Otherwise, converts from USD to quoteCurrency.
-    function calculateValue(address[] memory assets, int256[] memory balances, address quoteCurrency)
-        external
-        view
-        returns (int256 value);
+    /// @dev Debt positions (isDebt = true) are subtracted from the total, credit positions (isDebt = false) are added.
+    function calculateValue(
+        address[] memory assets,
+        uint256[] memory amounts,
+        bool[] memory isDebt,
+        address quoteCurrency
+    ) external view returns (int256 value);
 }

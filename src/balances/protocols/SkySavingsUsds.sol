@@ -34,7 +34,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @notice Asset balance data structure
     struct AssetBalanceData {
         address asset;
-        int256 balance;
+        uint256 amount;
+        bool isDebt;
     }
 
     //
@@ -65,6 +66,9 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(address savingsUsds_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
         if (savingsUsds_ == address(0)) revert InvalidArguments();
+        require(savingsUsds_.code.length > 0, "SavingsUSDS must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        
         SAVINGS_USDS = ISavingsUSDS(savingsUsds_);
         USDS = SAVINGS_USDS.usds();
         _protocol = protocol_;
@@ -78,8 +82,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+    /// @return balance The calculated balance (always positive for savings)
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         // Ensure token matches the underlying USDS token
         if (underlyingAsset != USDS) {
             revert InvalidArguments();
@@ -87,8 +91,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         // Get user's sUSDS balance and convert to underlying USDS amount:
         // 1. balanceOf() - Get user's sUSDS vault shares
         // 2. convertToAssets() - Convert shares to USDS based on current exchange rate
-        // 3. toInt256() - Convert uint256 to int256 for interface compatibility
-        return SAVINGS_USDS.convertToAssets(SAVINGS_USDS.balanceOf(account)).toInt256();
+        return int256(SAVINGS_USDS.convertToAssets(SAVINGS_USDS.balanceOf(account))); // Savings are always credit (positive)
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -108,7 +111,11 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -117,7 +124,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         // Only one asset is supported, so we can directly get the balance for the first asset
@@ -128,9 +135,9 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         }
 
         assets = new address[](1);
-        amounts = new int256[](1);
+        balances = new int256[](1);
         assets[0] = supportedAssets[0];
-        amounts[0] = balance;
+        balances[0] = balance;
     }
 
 
@@ -160,8 +167,18 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
                 if (registeredSupportedAssets[i] == assetFilter) {
                     int256 balance = _calculateBalance(assetFilter, account);
                     if (balance != 0) {
+                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                        uint256 amount;
+                        bool isDebt;
+                        if (balance < 0) {
+                            amount = uint256(-balance);
+                            isDebt = true;
+                        } else {
+                            amount = uint256(balance);
+                            isDebt = false;
+                        }
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, balance: balance});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -176,7 +193,17 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
                 if (balance != 0) {
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], balance: balance});
+                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                    uint256 amount;
+                    bool isDebt;
+                    if (balance < 0) {
+                        amount = uint256(-balance);
+                        isDebt = true;
+                    } else {
+                        amount = uint256(balance);
+                        isDebt = false;
+                    }
+                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -242,7 +269,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
                 underlyingAsset: underlyingAsset,
                 balanceOracle: address(this),
-                balance: assetBalanceData[i].balance,
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
                 positionDetail: "Savings USDS"
             });

@@ -128,10 +128,10 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
     function test_getOracleBalance_returnsEmptyWhenNoAssets() public {
         address user = makeAddr("user");
 
-        (address[] memory assets, int256[] memory amounts) = oracle.getOracleBalance(user);
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(user);
         // Should return all registered assets, but with zero balances
         assertEq(assets.length, 0);
-        assertEq(amounts.length, 0);
+        assertEq(balances.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyWhenNoAssets() public {
@@ -155,7 +155,7 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         assertEq(positions[0].underlyingAsset.decimals, 6);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "Idle");
+        assertEq(positions[0].positionDetail, "USDC");
     }
 
     function test_getOraclePositions_protocolAndPositionDetail() public {
@@ -170,6 +170,6 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "Idle");
+        assertEq(positions[0].positionDetail, "USDC");
     }
 }

@@ -22,5 +22,17 @@ no_match_test = "upgrade"
 # Exclude script folder from coverage reports (regex pattern)
 no_match_coverage = "^script/"
 
+# Fuzz testing configuration
+[fuzz]
+runs = 1000
+max_test_rejects = 65536
+
+# Invariant testing configuration
+[invariant]
+runs = 256
+depth = 15
+fail_on_revert = false
+show_metrics = true
+
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}" }

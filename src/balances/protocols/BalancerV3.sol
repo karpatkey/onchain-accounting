@@ -32,7 +32,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Asset balance data structure
     struct AssetBalanceData {
         address asset;
-        int256 balance;
+        uint256 amount;
+        bool isDebt;
     }
 
     /// @notice Balancer V3 Pool contract
@@ -60,6 +61,10 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
         }
+        require(pool_.code.length > 0, "Pool must be a contract");
+        require(gauge_.code.length > 0, "Gauge must be a contract");
+        require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         POOL = IStablePool(pool_);
         GAUGE = IGaugeV3(gauge_);
@@ -151,13 +156,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param safe Address of the user
     /// @param token Address of the reward token
     /// @return Amount of claimable reward tokens
-    /// @dev Returns 0 if the token is not a reward token or if the call fails
     function gaugeRewards(address safe, address token) public view returns (int256) {
-        try GAUGE.claimable_reward(safe, token) returns (uint256 claimableReward) {
-            return claimableReward.toInt256();
-        } catch {
-            return 0;
-        }
+        uint256 claimableReward = GAUGE.claimable_reward(safe, token);
+        return claimableReward.toInt256();
     }
 
     /// @notice Gets the claimable BAL token for a user in the gauge
@@ -267,7 +268,11 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (int256 balance)
+    {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -276,14 +281,14 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     function getOracleBalance(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory amounts)
+        returns (address[] memory assets, int256[] memory balances)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempAmounts = new int256[](assetCount);
+        int256[] memory tempBalances = new int256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
@@ -293,17 +298,17 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             // Only include non-zero balances
             if (balance != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = balance;
+                tempBalances[count] = balance;
                 count++;
             }
         }
 
         // Resize to actual count
         assets = new address[](count);
-        amounts = new int256[](count);
+        balances = new int256[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
+            balances[i] = tempBalances[i];
         }
     }
 
@@ -332,8 +337,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256) {
+    /// @return balance The calculated balance (positive for credit, negative for debt)
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
         uint256 userBalance = POOL.balanceOf(account);
         // Gauge token to lp token is 1 to 1
         uint256 userGaugeBalance = GAUGE.balanceOf(account);
@@ -344,7 +349,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
         // lp token
         // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-        return poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
+        balance = poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
             + claimableTokens(underlyingAsset, account);
     }
 
@@ -382,7 +387,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
                 underlyingAsset: underlyingAsset,
                 balanceOracle: address(this),
-                balance: assetBalanceData[i].balance,
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
                 positionDetail: underlyingAsset.symbol
             });
@@ -423,8 +429,18 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
                 if (registeredSupportedAssets[i] == assetFilter) {
                     int256 balance = _calculateBalance(assetFilter, account);
                     if (balance != 0) {
+                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                        uint256 amount;
+                        bool isDebt;
+                        if (balance < 0) {
+                            amount = uint256(-balance);
+                            isDebt = true;
+                        } else {
+                            amount = uint256(balance);
+                            isDebt = false;
+                        }
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, balance: balance});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -439,7 +455,17 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
                 if (balance != 0) {
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], balance: balance});
+                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
+                    uint256 amount;
+                    bool isDebt;
+                    if (balance < 0) {
+                        amount = uint256(-balance);
+                        isDebt = true;
+                    } else {
+                        amount = uint256(balance);
+                        isDebt = false;
+                    }
+                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }

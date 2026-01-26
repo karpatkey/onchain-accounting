@@ -51,7 +51,11 @@ contract NAVCalculatorTest is SuperTest {
         // Set balances for each asset (use provided balances or defaults)
         for (uint256 i = 0; i < assets.length; i++) {
             int256 balance = balances.length > i ? balances[i] : int256(0);
-            mockBalanceOracle.setBalance(assets[i], safe, balance);
+            if (balance >= 0) {
+                mockBalanceOracle.setBalance(assets[i], safe, uint256(balance), false);
+            } else {
+                mockBalanceOracle.setBalance(assets[i], safe, uint256(-balance), true);
+            }
         }
 
         // Set position metadata
@@ -67,6 +71,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[0] = asset;
         int256[] memory balances = new int256[](1);
         balances[0] = balance;
+        // Note: setupMockBalanceOracle still uses int256[] for backward compatibility
         setupMockBalanceOracle(assets, balances, "", "");
     }
 
@@ -825,7 +830,8 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset.asset, address(usdc));
         assertEq(p.underlyingAsset.symbol, "USDC");
         assertEq(p.underlyingAsset.decimals, usdc.decimals());
-        assertEq(p.balance, int256(10 ** usdc.decimals()));
+        assertEq(p.amount, 10 ** usdc.decimals());
+        assertFalse(p.isDebt, "Should be credit position");
         assertPositionMetadata(p, address(usdc), "wallet", "USDC");
 
         // Check pricing data
@@ -893,7 +899,8 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset.asset, nav.NATIVE_ADDRESS());
         assertEq(p.underlyingAsset.symbol, "ETH");
         assertEq(p.underlyingAsset.decimals, 18);
-        assertEq(p.balance, int256(11 ether));
+        assertEq(p.amount, 11 ether);
+        assertFalse(p.isDebt, "Should be credit position");
         assertPositionMetadata(p, nav.NATIVE_ADDRESS(), "wallet", "ETH");
         assertEq(p.value, 3_564_627_000_000);
     }
@@ -917,7 +924,8 @@ contract NAVCalculatorTest is SuperTest {
                 assertPositionMetadata(p, address(usdc), "Mock Protocol", "Mock Position");
                 assertEq(p.underlyingAsset.symbol, "USDC");
                 assertEq(p.underlyingAsset.decimals, usdc.decimals());
-                assertEq(p.balance, int256(123 * 10 ** usdc.decimals()));
+                assertEq(p.amount, 123 * 10 ** usdc.decimals());
+                assertFalse(p.isDebt, "Should be credit position");
                 assertEq(p.value, 123e8);
                 assertEq(p.price, 1e8);
                 assertEq(p.priceDecimals, 8);
@@ -962,7 +970,7 @@ contract NAVCalculatorTest is SuperTest {
         // Verify both positions are for DAI
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].underlyingAsset.asset, address(dai));
-            assertTrue(positions[i].balance != 0);
+            assertTrue(positions[i].amount != 0);
         }
 
         // Verify NAV matches sum
@@ -1009,7 +1017,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         // mint 1 USDC to both the safe and the custom oracle
-        stakingBalanceOracle.setBalance(address(usdc), safe, int256(10 ** usdc.decimals()));
+        stakingBalanceOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), false);
         usdc.mint(safe, 10 ** usdc.decimals());
 
         INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
@@ -1042,7 +1050,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.addBalanceOracle(address(stakingBalanceOracle));
 
         //Set the custom oracle to -1 USDC  and  mint 1 USDC to the safe
-        stakingBalanceOracle.setBalance(address(usdc), safe, -1 * int256(10 ** usdc.decimals()));
+        stakingBalanceOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
         vm.stopPrank();
         usdc.mint(safe, 10 ** usdc.decimals());
 
@@ -1058,7 +1066,7 @@ contract NAVCalculatorTest is SuperTest {
         bool foundNegative = false;
         bool foundPositive = false;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].balance < 0) {
+            if (positions[i].isDebt) {
                 assertTrue(positions[i].value <= 0);
                 foundNegative = true;
             } else {
@@ -1268,7 +1276,7 @@ contract NAVCalculatorTest is SuperTest {
         debtOracle.setUnderlyingAssetsSupported(debtAssets);
         vm.startPrank(navCalculatorManager);
         nav.addBalanceOracle(address(debtOracle));
-        debtOracle.setBalance(address(usdc), safe, -1 * int256(10 ** usdc.decimals()));
+        debtOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
         vm.stopPrank();
 
         INAVCalculator.NAV memory nav4 = nav.getAccountNav(safe, address(0));
@@ -1290,7 +1298,7 @@ contract NAVCalculatorTest is SuperTest {
         customOracle.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
         nav.addBalanceOracle(address(customOracle));
-        customOracle.setBalance(address(usdc), safe, 0); // Zero balance
+        customOracle.setBalance(address(usdc), safe, 0, false); // Zero balance
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
@@ -1298,11 +1306,11 @@ contract NAVCalculatorTest is SuperTest {
         // Should only have 1 position (ERC20 USDC), not the zero custom oracle position
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, address(usdc));
-        assertTrue(positions[0].balance != 0);
+        assertTrue(positions[0].amount != 0);
 
         // Verify no zero positions
         for (uint256 i = 0; i < positions.length; i++) {
-            assertTrue(positions[i].balance != 0, "Zero position found");
+            assertTrue(positions[i].amount != 0, "Zero position found");
         }
     }
 
@@ -1352,7 +1360,7 @@ contract NAVCalculatorTest is SuperTest {
         zeroOracle.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
         nav.addBalanceOracle(address(zeroOracle));
-        zeroOracle.setBalance(address(usdc), safe, 0);
+        zeroOracle.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions2 = nav.getAccountPositions(safe, address(0));
@@ -1533,10 +1541,12 @@ contract NAVCalculatorTest is SuperTest {
         // Value should be converted from USD to ETH using the contract's conversion logic
         // Verify by comparing with calculateValue which uses the same conversion
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
-        balances[0] = int256(usdcBalance);
-        int256 calculatedEthValue = nav.calculateValue(assets, balances, nav.NATIVE_ADDRESS());
+        amounts[0] = usdcBalance;
+        isDebt[0] = false;
+        int256 calculatedEthValue = nav.calculateValue(assets, amounts, isDebt, nav.NATIVE_ADDRESS());
         assertEq(ethPos.value, calculatedEthValue);
     }
 
@@ -1579,26 +1589,32 @@ contract NAVCalculatorTest is SuperTest {
     // Test calculateValue_singleAsset_usd
     function test_calculateValue_singleAsset_usd() public {
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
 
-        int256 value = nav.calculateValue(assets, balances, address(0));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
         assertEq(value, 1e8); // 1 USDC = 1 USD (with 8 decimals)
     }
 
     // Test calculateValue_multipleAssets_usd
     function test_calculateValue_multipleAssets_usd() public {
         address[] memory assets = new address[](3);
-        int256[] memory balances = new int256[](3);
+        uint256[] memory amounts = new uint256[](3);
+        bool[] memory isDebt = new bool[](3);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
         assets[1] = address(dai);
-        balances[1] = int256(10 ** dai.decimals());
+        amounts[1] = 10 ** dai.decimals();
+        isDebt[1] = false;
         assets[2] = address(weth);
-        balances[2] = int256(10 ** weth.decimals());
+        amounts[2] = 10 ** weth.decimals();
+        isDebt[2] = false;
 
-        int256 value = nav.calculateValue(assets, balances, address(0));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
         // USDC: 1e8, DAI: 1e8, WETH: ~3240e8
         assertApproxEqRel(value, 3242e8, 0.01 ether);
     }
@@ -1623,11 +1639,13 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
 
-        int256 value = nav.calculateValue(assets, balances, nav.NATIVE_ADDRESS());
+        int256 value = nav.calculateValue(assets, amounts, isDebt, nav.NATIVE_ADDRESS());
         // 1 USDC in ETH should be positive
         assertTrue(value > 0);
     }
@@ -1635,11 +1653,13 @@ contract NAVCalculatorTest is SuperTest {
     // Test calculateValue_customQuoteCurrency
     function test_calculateValue_customQuoteCurrency() public {
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
 
-        int256 value = nav.calculateValue(assets, balances, address(dai));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(dai));
         // 1 USDC in DAI should be approximately 1 DAI (both are $1)
         assertApproxEqRel(value, int256(10 ** dai.decimals()), 0.01 ether);
     }
@@ -1647,39 +1667,48 @@ contract NAVCalculatorTest is SuperTest {
     // Test calculateValue_zeroBalances
     function test_calculateValue_zeroBalances() public {
         address[] memory assets = new address[](2);
-        int256[] memory balances = new int256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bool[] memory isDebt = new bool[](2);
         assets[0] = address(usdc);
-        balances[0] = 0;
+        amounts[0] = 0;
+        isDebt[0] = false;
         assets[1] = address(dai);
-        balances[1] = 0;
+        amounts[1] = 0;
+        isDebt[1] = false;
 
-        int256 value = nav.calculateValue(assets, balances, address(0));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
         assertEq(value, 0);
     }
 
     // Test calculateValue_negativeBalances
     function test_calculateValue_negativeBalances() public {
         address[] memory assets = new address[](2);
-        int256[] memory balances = new int256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bool[] memory isDebt = new bool[](2);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
         assets[1] = address(usdc);
-        balances[1] = -1 * int256(10 ** usdc.decimals());
+        amounts[1] = 10 ** usdc.decimals();
+        isDebt[1] = true; // Debt position
 
-        int256 value = nav.calculateValue(assets, balances, address(0));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
         assertEq(value, 0);
     }
 
     // Test calculateValue_mixedPositiveNegative
     function test_calculateValue_mixedPositiveNegative() public {
         address[] memory assets = new address[](2);
-        int256[] memory balances = new int256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bool[] memory isDebt = new bool[](2);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
         assets[1] = address(dai);
-        balances[1] = -1 * int256(5 * 10 ** (dai.decimals() - 1)); // -0.5 DAI
+        amounts[1] = 5 * 10 ** (dai.decimals() - 1); // 0.5 DAI
+        isDebt[1] = true; // Debt position
 
-        int256 value = nav.calculateValue(assets, balances, address(0));
+        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
         // 1 USDC - 0.5 DAI = 0.5 USD (in 8 decimals = 0.5e8)
         assertEq(value, 5e7);
     }
@@ -1687,27 +1716,31 @@ contract NAVCalculatorTest is SuperTest {
     // Test calculateValue_arrayLengthMismatch
     function test_calculateValue_arrayLengthMismatch() public {
         address[] memory assets = new address[](2);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
         assets[1] = address(dai);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
 
         vm.expectRevert(
-            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "assets.length != balances.length")
+            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "arrays.length mismatch")
         );
-        nav.calculateValue(assets, balances, address(0));
+        nav.calculateValue(assets, amounts, isDebt, address(0));
     }
 
     // Test calculateValue_assetNotFound
     function test_calculateValue_assetNotFound() public {
         address invalidAsset = makeAddr("invalid");
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = invalidAsset;
-        balances[0] = int256(10 ** 18);
+        amounts[0] = 10 ** 18;
+        isDebt[0] = false;
 
         vm.expectRevert(AssetNotFound.selector);
-        nav.calculateValue(assets, balances, address(0));
+        nav.calculateValue(assets, amounts, isDebt, address(0));
     }
 
     // Test calculateValue_priceOracleNotSet
@@ -1717,13 +1750,15 @@ contract NAVCalculatorTest is SuperTest {
     // Test calculateValue_invalidQuoteCurrency
     function test_calculateValue_invalidQuoteCurrency() public {
         address[] memory assets = new address[](1);
-        int256[] memory balances = new int256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        bool[] memory isDebt = new bool[](1);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
 
         address invalidQuote = makeAddr("invalid");
         vm.expectRevert(AssetNotFound.selector);
-        nav.calculateValue(assets, balances, invalidQuote);
+        nav.calculateValue(assets, amounts, isDebt, invalidQuote);
     }
 
     // Test calculateValue_consistencyWithGetAllPositions
@@ -1737,13 +1772,16 @@ contract NAVCalculatorTest is SuperTest {
 
         // Calculate value manually
         address[] memory assets = new address[](2);
-        int256[] memory balances = new int256[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bool[] memory isDebt = new bool[](2);
         assets[0] = address(usdc);
-        balances[0] = int256(10 ** usdc.decimals());
+        amounts[0] = 10 ** usdc.decimals();
+        isDebt[0] = false;
         assets[1] = address(dai);
-        balances[1] = int256(10 ** dai.decimals());
+        amounts[1] = 10 ** dai.decimals();
+        isDebt[1] = false;
 
-        int256 calculatedValue = nav.calculateValue(assets, balances, address(0));
+        int256 calculatedValue = nav.calculateValue(assets, amounts, isDebt, address(0));
 
         // Should match (allowing for any rounding differences)
         assertEq(calculatedValue, positionsValue);
@@ -1866,7 +1904,7 @@ contract NAVCalculatorTest is SuperTest {
         customOracle.setUnderlyingAssetsSupported(oracleAssets);
         vm.startPrank(navCalculatorManager);
         nav.addBalanceOracle(address(customOracle));
-        customOracle.setBalance(address(usdc), safe, int256(5 * 10 ** (usdc.decimals() - 1)));
+        customOracle.setBalance(address(usdc), safe, 5 * 10 ** (usdc.decimals() - 1), false);
         vm.stopPrank();
 
         address[] memory assetsWithPos = nav.getAssetsWithPositions(safe);
@@ -1885,7 +1923,7 @@ contract NAVCalculatorTest is SuperTest {
         zeroOracle.setUnderlyingAssetsSupported(oracleAssets);
         vm.startPrank(navCalculatorManager);
         nav.addBalanceOracle(address(zeroOracle));
-        zeroOracle.setBalance(address(usdc), safe, 0);
+        zeroOracle.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 
         address[] memory assetsWithPos = nav.getAssetsWithPositions(safe);

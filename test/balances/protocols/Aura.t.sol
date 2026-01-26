@@ -238,19 +238,27 @@ contract AuraTest is TestEnvConfigurator, TestSetupHelpers {
         tokens[4] = BAL;
 
         // Declare arrays to store oracle balances and before balances
-        int256[5] memory oracleBalances;
+        uint256[5] memory amounts;
+        bool[5] memory isDebt;
         uint256[5] memory beforeBalances;
 
         // Get oracle balances and token balances before redemption
         for (uint256 i = 0; i < tokens.length; i++) {
-            oracleBalances[i] = oracle.getOracleBalanceForAsset(user, tokens[i]);
+            int256 balance = oracle.getOracleBalanceForAsset(user, tokens[i]);
+            if (balance < 0) {
+                amounts[i] = uint256(-balance);
+                isDebt[i] = true;
+            } else {
+                amounts[i] = uint256(balance);
+                isDebt[i] = false;
+            }
             beforeBalances[i] = IERC20(tokens[i]).balanceOf(user);
         }
 
         // Check that user has at least one non-zero position
         bool hasPosition = false;
         for (uint256 i = 0; i < tokens.length; i++) {
-            if (oracleBalances[i] != 0) {
+            if (amounts[i] != 0) {
                 hasPosition = true;
                 break;
             }
@@ -262,10 +270,10 @@ contract AuraTest is TestEnvConfigurator, TestSetupHelpers {
 
         // Verify that redemption resulted in receiving tokens (for positions that were non-zero)
         for (uint256 i = 0; i < tokens.length; i++) {
-            if (oracleBalances[i] != 0) {
+            if (amounts[i] != 0) {
                 uint256 received = IERC20(tokens[i]).balanceOf(user) - beforeBalances[i];
-                // For positive oracle balances, user should receive tokens
-                if (oracleBalances[i] > 0) {
+                // For positive oracle balances (credit positions), user should receive tokens
+                if (!isDebt[i] && amounts[i] > 0) {
                     assertGt(received, 0, "User should receive tokens for positive oracle balance");
                 }
             }

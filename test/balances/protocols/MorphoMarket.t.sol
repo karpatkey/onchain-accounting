@@ -79,7 +79,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assets[1] = usdc;
         balances = deployBalancesInFork(assets);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho - wstETH/USDC", address(balances));
         int256 balance = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
         assertGt(balance, 0, "User should have USDC supply position (positive balance)");
     }
@@ -96,7 +96,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assets[2] = mkr;
         balances = deployBalancesInFork(assets);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho - USDC/DAI/MKR", address(balances));
 
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(borrowUsdcUser, usdc);
         assertLt(balanceUsdc, 0, "User should have USDC borrow position (negative balance)");
@@ -114,7 +114,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assets[2] = mkr;
         balances = deployBalancesInFork(assets);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho - USDC/DAI/MKR", address(balances));
 
         int256 balanceMkr = oracle.getOracleBalanceForAsset(borrowUsdcUser, mkr);
         assertGt(balanceMkr, 0, "User should have MKR collateral position (positive balance)");
@@ -132,7 +132,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assets[2] = mkr;
         balances = deployBalancesInFork(assets);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho - USDC/DAI/MKR", address(balances));
 
         // MorphoMarket reverts InvalidArguments for unsupported or zero asset (same as unit test)
         vm.expectRevert(InvalidArguments.selector);
@@ -150,7 +150,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assetsToRegister[1] = usdc;
         balances = deployBalancesInFork(assetsToRegister);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho - wstETH/USDC", address(balances));
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
         assertEq(assets[0], wsteth);
@@ -168,7 +168,7 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         assetsToRegister[1] = usdc;
         balances = deployBalancesInFork(assetsToRegister);
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
+        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho - wstETH/USDC", address(balances));
         assertEq(oracle.COLLATERAL_TOKEN(), wsteth);
         assertEq(oracle.LOAN_TOKEN(), usdc);
     }
@@ -195,8 +195,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         oracle = new MorphoMarketBalanceOracle(
             address(mockMorpho),
             marketId,
-            "Morpho",
-            "Mock Market",
+            "Morpho - Mock",
             address(balances)
         );
     }

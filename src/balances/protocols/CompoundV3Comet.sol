@@ -79,8 +79,6 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
-    string private _positionDetail;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -94,15 +92,13 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     /// @param compoundRewards_ The address of the Compound rewards contract.
     /// @param comet_ The address of the Comet contract we want to get the balance of.
     /// @param rewardToken_ The address of the compound reward token contract.
-    /// @param protocol_ Protocol identifier (e.g., "Compound v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "Comet").
+    /// @param protocol_ Protocol identifier including market (e.g., "Compound v3 USDC").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address compoundRewards_,
         address comet_,
         address rewardToken_,
         string memory protocol_,
-        string memory positionDetail_,
         address navCalculator_
     ) {
         if (compoundRewards_ == address(0) || comet_ == address(0) || rewardToken_ == address(0)) {
@@ -131,8 +127,15 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         }
 
         _protocol = protocol_;
-        _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+    }
+
+    /// @notice Returns the position detail for a given asset and debt flag (Supply, Borrow, Collateral, or Reward).
+    function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
+        if (asset == address(REWARD_TOKEN)) return "Reward";
+        if (asset == BASE_TOKEN) return isDebt ? "Borrow" : "Supply";
+        if (isCollateral[asset]) return "Collateral";
+        return "";
     }
 
     /// @notice Returns the number of collateral assets for the Comet contract.
@@ -212,19 +215,48 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         return total / BASE_INDEX_SCALE;
     }
 
+    /// @notice Fetches reward config from the rewards contract, supporting both 3-return (standard)
+    ///   and 4-return (with multiplier) rewardConfig implementations. Decodes based on return data size.
+    /// @return token Reward token address (address(0) if call failed or no rewards).
+    /// @return rescaleFactor Factor to rescale accrued rewards.
+    /// @return shouldUpscale Whether to upscale (true) or downscale (false) by rescaleFactor.
+    /// @return multiplier Extra multiplier for accrued rewards (FACTOR_SCALE when contract has no multiplier).
+    function _getRewardConfig()
+        internal
+        view
+        returns (address token, uint64 rescaleFactor, bool shouldUpscale, uint256 multiplier)
+    {
+        (bool success, bytes memory data) =
+            address(COMPOUND_REWARDS).staticcall(abi.encodeWithSelector(ICompoundRewards.rewardConfig.selector, COMET));
+        if (!success) return (address(0), 0, false, FACTOR_SCALE);
+        if (data.length == 96) {
+            (token, rescaleFactor, shouldUpscale) = abi.decode(data, (address, uint64, bool));
+            return (token, rescaleFactor, shouldUpscale, FACTOR_SCALE);
+        }
+        if (data.length == 128) {
+            (token, rescaleFactor, shouldUpscale, multiplier) =
+                abi.decode(data, (address, uint64, bool, uint256));
+            return (token, rescaleFactor, shouldUpscale, multiplier);
+        }
+        // Unknown return format (e.g. different chain/contract version): treat as no rewards
+        return (address(0), 0, false, FACTOR_SCALE);
+    }
+
     /// @notice Calculates the unclaimed rewards owed to a user for a given Comet contract.
     ///   This function is a modified version of the getRewardOwed function in the CompoundV3Comet
     ///   contract, which is part of the Balances system. The original function is not view, as it
     ///   calls the Comet contract's accrueAccount function, which updates the user's rewards.
     ///   https://etherscan.io/address/0x1B0e765F6224C21223AeA2af16c1C46E38885a40#code
+    ///   Supports both standard (3-return) and multiplier (4-return) reward contracts; type is
+    ///   detected from rewardConfig return size at read time.
     /// @param src The address of the user's account.
     /// @return The amount of rewards owed to the user.
     function _getRewardOwed(address src) internal view returns (uint256) {
-        (address token, uint64 rescaleFactor, bool shouldUpscale) = COMPOUND_REWARDS.rewardConfig(COMET);
+        (address token, uint64 rescaleFactor, bool shouldUpscale, uint256 multiplier) = _getRewardConfig();
         if (token == address(0)) return 0;
 
         uint256 claimed = COMPOUND_REWARDS.rewardsClaimed(COMET, src);
-        uint256 accrued = _getRewardAccrued(COMET, src, shouldUpscale, rescaleFactor);
+        uint256 accrued = _getRewardAccrued(COMET, src, shouldUpscale, rescaleFactor, multiplier);
 
         if (accrued > claimed) {
             unchecked {
@@ -363,12 +395,15 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     /// @param account The address of the user's account.
     /// @param shouldUpscale Whether the rewards should be upscaled.
     /// @param rescaleFactor The factor by which to rescale the rewards.
+    /// @param multiplier Extra multiplier (use FACTOR_SCALE for no scaling; used when rewards contract has 4-return config).
     /// @return The total accrued rewards for the user.
-    function _getRewardAccrued(address comet_, address account, bool shouldUpscale, uint64 rescaleFactor)
-        internal
-        view
-        returns (uint256)
-    {
+    function _getRewardAccrued(
+        address comet_,
+        address account,
+        bool shouldUpscale,
+        uint64 rescaleFactor,
+        uint256 multiplier
+    ) internal view returns (uint256) {
         (uint64 trackingSupplyIndex, uint64 trackingBorrowIndex,,) = accrueInternal();
 
         (int104 principal, uint64 baseTrackingIndex, uint64 baseTrackingAccrued,,) =
@@ -383,7 +418,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         } else {
             accrued /= rescaleFactor;
         }
-        return accrued;
+        return accrued * multiplier / FACTOR_SCALE;
     }
 
     /// @inheritdoc IERC165
@@ -585,7 +620,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
                     amount: assetBalanceData[i].amount,
                     isDebt: assetBalanceData[i].isDebt,
                     protocol: _protocol,
-                    positionDetail: _positionDetail
+                    positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
                 });
 
             positionCount++;

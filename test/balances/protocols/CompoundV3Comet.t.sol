@@ -137,8 +137,7 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
             address(mockCompoundRewards),
             address(mockComet),
             address(mockRewardToken),
-            "Compound v3",
-            "USDC Comet",
+            "Compound v3 USDC",
             address(balances)
         );
     }

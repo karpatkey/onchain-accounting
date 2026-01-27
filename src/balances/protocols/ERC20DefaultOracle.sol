@@ -217,7 +217,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
                     amount: amount,
                     isDebt: isDebt,
                     protocol: PROTOCOL,
-                    positionDetail: underlyingAsset.symbol
+                    positionDetail: "Holding"
                 });
 
                 positionCount++;

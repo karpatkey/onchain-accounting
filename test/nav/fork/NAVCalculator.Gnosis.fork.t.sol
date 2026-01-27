@@ -46,7 +46,6 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public usdt = address(0x4ECaBa5870353805a9F068101A40E0f32ed605C6);  // Tether USDT
 
     function setUp() public {
-        _checkSkipForkTests();
         fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         setupNavCalculator();
@@ -66,25 +65,6 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(account, address(0));
 
-        console2.log("=== Gnosis treasury positions (0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f) ===");
-        console2.log("Account:", account);
-        console2.log("NAV total (8 dp):", uint256(navTotal.value));
-        console2.log("Number of positions:", positions.length);
-        for (uint256 i = 0; i < positions.length; i++) {
-            INAVCalculator.Position memory p = positions[i];
-            console2.log("--- Position", i + 1, "---");
-            console2.log("  asset:", p.underlyingAsset.asset);
-            console2.log("  symbol:", p.underlyingAsset.symbol);
-            console2.log("  protocol:", p.protocol);
-            console2.log("  positionDetail:", p.positionDetail);
-            console2.log("  amount:", p.amount);
-            console2.log("  isDebt:", p.isDebt);
-            console2.log("  value (8 dp):", uint256(p.value));
-            console2.log("  price:", p.price);
-            console2.log("  stale:", p.stale);
-        }
-        console2.log("=== End treasury positions ===");
-
         assertTrue(navTotal.value > 0, "Treasury should have positive NAV");
         int256 sum = 0;
         for (uint256 i = 0; i < positions.length; i++) {
@@ -96,25 +76,6 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function test_gnosisFork_getAllPositions() public {
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(USD_Prime_Fund, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(USD_Prime_Fund, address(0));
-
-        console2.log("=== Gnosis fork positions for USD_Prime_Fund ===");
-        console2.log("Account:", USD_Prime_Fund);
-        console2.log("NAV total (8 dp):", uint256(navTotal.value));
-        console2.log("Number of positions:", positions.length);
-        for (uint256 i = 0; i < positions.length; i++) {
-            INAVCalculator.Position memory p = positions[i];
-            console2.log("--- Position", i + 1, "---");
-            console2.log("  asset:", p.underlyingAsset.asset);
-            console2.log("  symbol:", p.underlyingAsset.symbol);
-            console2.log("  protocol:", p.protocol);
-            console2.log("  positionDetail:", p.positionDetail);
-            console2.log("  amount:", p.amount);
-            console2.log("  isDebt:", p.isDebt);
-            console2.log("  value (8 dp):", uint256(p.value));
-            console2.log("  price:", p.price);
-            console2.log("  stale:", p.stale);
-        }
-        console2.log("=== End positions ===");
 
         assertTrue(navTotal.value > 0);
 

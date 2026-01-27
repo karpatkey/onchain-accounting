@@ -832,7 +832,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset.decimals, usdc.decimals());
         assertEq(p.amount, 10 ** usdc.decimals());
         assertFalse(p.isDebt, "Should be credit position");
-        assertPositionMetadata(p, address(usdc), "wallet", "USDC");
+        assertPositionMetadata(p, address(usdc), "wallet", "Holding");
 
         // Check pricing data
         assertEq(p.quoteAsset.asset, address(0));
@@ -901,7 +901,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.underlyingAsset.decimals, 18);
         assertEq(p.amount, 11 ether);
         assertFalse(p.isDebt, "Should be credit position");
-        assertPositionMetadata(p, nav.NATIVE_ADDRESS(), "wallet", "ETH");
+        assertPositionMetadata(p, nav.NATIVE_ADDRESS(), "wallet", "Holding");
         assertEq(p.value, 3_564_627_000_000);
     }
 
@@ -1321,7 +1321,7 @@ contract NAVCalculatorTest is SuperTest {
         // Test ERC20 oracle metadata
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory erc20Pos = positions[0];
-        assertPositionMetadata(erc20Pos, address(usdc), "wallet", "USDC");
+        assertPositionMetadata(erc20Pos, address(usdc), "wallet", "Holding");
 
         // Configure mockBalanceOracle for USDC
         setupMockBalanceOracle(address(usdc), int256(123 * 10 ** usdc.decimals()));

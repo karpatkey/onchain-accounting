@@ -4,10 +4,11 @@ pragma solidity ^0.8.0;
 /// @title Array Utilities
 /// @notice Utility library for array operations
 library ArrayUtils {
-    /// @notice Finds addresses that are present in both input arrays (intersection)
+    /// @notice Finds addresses that are present in both input arrays (intersection).
+    /// @dev Deduplicates: if array1 contains the same address multiple times, it appears only once in the result.
     /// @param array1 First array of addresses
     /// @param array2 Second array of addresses
-    /// @return result Array of addresses that appear in both arrays
+    /// @return result Array of addresses that appear in both arrays (no duplicates)
     function intersection(address[] memory array1, address[] memory array2)
         internal
         pure
@@ -21,8 +22,18 @@ library ArrayUtils {
         for (uint256 i = 0; i < array1.length; i++) {
             for (uint256 j = 0; j < array2.length; j++) {
                 if (array1[i] == array2[j]) {
-                    result[count] = array1[i];
-                    count++;
+                    // Skip if already in result (array1 may contain duplicates, e.g. COMP as collateral + reward)
+                    bool alreadyAdded = false;
+                    for (uint256 k = 0; k < count; k++) {
+                        if (result[k] == array1[i]) {
+                            alreadyAdded = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyAdded) {
+                        result[count] = array1[i];
+                        count++;
+                    }
                     break; // Found match, move to next element in array1
                 }
             }

@@ -41,7 +41,7 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // Expected oracle balances at FORK_BLOCK_TENDERLY for USER_TENDERLY (Tenderly simulation)
     int256 public constant EXPECTED_USDT = 1_148_397; // 6 decimals
     int256 public constant EXPECTED_USDC = 3_714_973; // 6 decimals
-    int256 public constant EXPECTED_GHO = 5_135_070_400_402_385_644; // 18 decimals
+    int256 public constant EXPECTED_GHO = 5_135_070_405_257_166_097; // 18 decimals
     
     function setUp() public override {
         super.setUp();

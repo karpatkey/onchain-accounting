@@ -53,8 +53,7 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
             COMPOUND_REWARDS,
             USDCV3_COMET,
             REWARD_TOKEN,
-            "Compound v3",
-            "USDC Comet",
+            "Compound v3 USDC",
             address(balances)
         );
         comet = CometExtInterface(USDCV3_COMET);
@@ -64,7 +63,7 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
         // Temp Balances (with code) required by adapter constructor; only underlyingAssetsSupported() is used
         BalancesHarnessForFork tempBalances = new BalancesHarnessForFork();
         CompoundV3Comet tempOracle = new CompoundV3Comet(
-            COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3", "USDC Comet", address(tempBalances)
+            COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(tempBalances)
         );
         address[] memory raw = tempOracle.underlyingAssetsSupported();
         // Deduplicate (adapter can return same asset e.g. COMP as collateral and reward)
@@ -227,8 +226,7 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
             COMPOUND_REWARDS,
             USDCV3_COMET,
             REWARD_TOKEN,
-            "Compound v3",
-            "USDC Comet",
+            "Compound v3 USDC",
             address(balances)
         );
 

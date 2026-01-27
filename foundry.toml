@@ -34,5 +34,12 @@ depth = 15
 fail_on_revert = false
 show_metrics = true
 
+# Fork tests: single thread + throttle RPC to avoid rate limits. Use with FOUNDRY_PROFILE=slow.
+# threads: see book.getfoundry.sh/reference/config/testing (FOUNDRY_THREADS)
+# compute_units_per_second: mirrors --compute-units-per-second (throttles RPC during fork; default 330)
+[profile.slow]
+threads = 1
+
+
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}" }

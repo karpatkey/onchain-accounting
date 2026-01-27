@@ -155,7 +155,7 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         assertEq(positions[0].underlyingAsset.decimals, 6);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "USDC");
+        assertEq(positions[0].positionDetail, "Holding");
     }
 
     function test_getOraclePositions_protocolAndPositionDetail() public {
@@ -170,6 +170,6 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "USDC");
+        assertEq(positions[0].positionDetail, "Holding");
     }
 }

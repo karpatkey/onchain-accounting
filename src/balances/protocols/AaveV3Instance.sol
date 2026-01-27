@@ -12,11 +12,11 @@ import {ArrayUtils} from "src/utils/ArrayUtils.sol";
 /// @notice This contract calculates a user's positions in an Aave v3 Instance by:
 /// 1. Retrieving the user's supplied and borrowed amounts for each supported reserve via the Protocol Data Provider
 /// 2. Fetching the user's accrued rewards for each asset via the Rewards Distributor
-/// 3. Returning separate balance-only positions for deposits, borrows, and rewards
+/// 3. Returning separate balance-only positions for supply, borrows, and rewards
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-/// @dev For each asset, up to 3 positions may be returned: Deposit/Collateral (positive balance), Borrow (negative balance), and Rewards (positive balance).
-/// @dev Deposit positions distinguish between collateral and non-collateral deposits via the positionDetail field.
+/// @dev For each asset, up to 3 positions may be returned: Supply/Collateral (positive balance), Borrow (negative balance), and Rewards (positive balance).
+/// @dev positionDetail is "Supply", "Collateral", "Borrow", or "Rewards" (Collateral when usageAsCollateralEnabled, else Supply for deposits).
 contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
@@ -297,8 +297,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper that builds all positions for this oracle
     /// @param userReservesData Array of UserReserveData to build positions from
     /// @return positions Array of balance-only PositionBalance structs from this oracle
-    /// @dev Creates up to 3 positions per asset: Deposit/Collateral (if aTokenBalance > 0), Borrow (if variableDebt > 0), and Rewards (if rewardBalance > 0)
-    /// @dev Deposit positions are labeled as "Deposit (Collateral)" if usageAsCollateralEnabled is true, otherwise "Deposit"
+    /// @dev Creates up to 3 positions per asset: Supply/Collateral (if aTokenBalance > 0), Borrow (if variableDebt > 0), and Rewards (if rewardBalance > 0)
+    /// @dev Supply positions are labeled as "Collateral" if usageAsCollateralEnabled is true, otherwise "Supply"
     /// @dev All positions are balance-only; pricing is added by NAVCalculator during enrichment
     function _buildPositions(UserReserveData[] memory userReservesData)
         internal
@@ -316,11 +316,11 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
-            // Build deposit position (supplied assets)
-            // Distinguish between collateral and non-collateral deposits
+            // Build supply position (supplied assets)
+            // Label as Collateral when used as collateral, otherwise Supply
             if (userReservesData[i].currentATokenBalance > 0) {
                 string memory positionDetail =
-                    userReservesData[i].usageAsCollateralEnabled ? "Deposit (Collateral)" : "Deposit";
+                    userReservesData[i].usageAsCollateralEnabled ? "Collateral" : "Supply";
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),

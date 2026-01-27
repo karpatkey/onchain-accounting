@@ -65,8 +65,6 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
-    string private _positionDetail;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -76,27 +74,31 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
     /// @param morpho_ The Morpho contract address.
     /// @param marketId_ The market id to query.
-    /// @param protocol_ Protocol identifier (e.g., "Morpho").
-    /// @param positionDetail_ Position detail identifier (e.g., "Market").
+    /// @param protocol_ Protocol identifier including market (e.g., "Morpho - cbBTC/USDC").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address morpho_,
         bytes32 marketId_,
         string memory protocol_,
-        string memory positionDetail_,
         address navCalculator_
     ) {
         require(morpho_.code.length > 0, "Morpho must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         MORPHO = IMorpho(morpho_);
         MARKET_ID = Id.wrap(marketId_);
         MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
         COLLATERAL_TOKEN = marketParams.collateralToken;
         LOAN_TOKEN = marketParams.loanToken;
         _protocol = protocol_;
-        _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+    }
+
+    /// @notice Returns the position detail for a given asset and debt flag (Supply, Borrow, or Collateral).
+    function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
+        if (asset == COLLATERAL_TOKEN) return "Collateral";
+        if (asset == LOAN_TOKEN) return isDebt ? "Borrow" : "Supply";
+        return "";
     }
 
     /// @notice Internal helper to calculate balance for a specific asset
@@ -116,17 +118,17 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 uint256 totalBorrowShares
             ) = MORPHO.expectedMarketBalances(marketParams);
 
-            if (totalBorrowShares == 0 || totalSupplyShares == 0) {
-                return 0;
+            uint256 suppliedAssets = 0;
+            if (totalSupplyShares != 0 && position.supplyShares != 0) {
+                suppliedAssets =
+                    totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to avoid overestimating the supply
             }
 
-            uint256 borrowedAssets =
-                totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid
-            // underestimating the debt
-
-            uint256 suppliedAssets =
-                totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to
-            // avoid overestimating the supply
+            uint256 borrowedAssets = 0;
+            if (totalBorrowShares != 0 && position.borrowShares != 0) {
+                borrowedAssets =
+                    totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating the debt
+            }
 
             // Calculate net: supplied - borrowed (can be negative)
             balance = int256(suppliedAssets) - int256(borrowedAssets);
@@ -325,14 +327,14 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    amount: assetBalanceData[i].amount,
-                    isDebt: assetBalanceData[i].isDebt,
-                    protocol: _protocol,
-                    positionDetail: _positionDetail
-                });
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
+                protocol: _protocol,
+                positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
+            });
 
             positionCount++;
         }

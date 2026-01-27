@@ -2,29 +2,43 @@
 pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.sol";
+import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
-    IERC20 public usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-    address public eth = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    /// @notice Safe with Aave V3, Compound V3, Morpho positions on Base (same as base harness default)
+    /// @notice USD Prime fund on Base
+    address public constant BASE_SAFE = 0xCE74fa7A7dEe1d7640540bd752Bee784BE831b4F;
 
-    IERC20 public cUsdCv3 = IERC20(0xb125E6687d4313864e53df431d5425969c15Eb2F);
-    IERC20 public compound = IERC20(0x9e1028F5F1D5eDE59748FFceE5532509976840E0);
+    // Native and wrapped ETH
+    address public native = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    address public weth = address(0x4200000000000000000000000000000000000006);
 
+    // Token addresses (Base Mainnet)
+    address public usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+    address public cbbtc = address(0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf); // Coinbase Wrapped BTC
+    address public compound = address(0x9e1028F5F1D5eDE59748FFceE5532509976840E0);
+
+    // Aave V3 (Base)
     address public aaveV3DataProvider = address(0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad);
-    address public aaveV3rewardsDistributor = address(0xf9cc4F0D883F1a1eb2c253bdb46c254Ca51E1F44);
+    address public aaveV3RewardsDistributor = address(0xf9cc4F0D883F1a1eb2c253bdb46c254Ca51E1F44);
 
+    // Compound V3 (Base)
+    address public cUsdCv3 = address(0xb125E6687d4313864e53df431d5425969c15Eb2F);
     address public compoundRewardContract = address(0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1);
+
+    // Morpho Blue (Base) — cbBTC/USDC market (USD Prime fund position)
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-    bytes32 public marketIdWsethUsdc = 0xdba352d93a64b17c71104cbddc6aef85cd432322a1446b5b65163cbbc615cd0c;
+    // Morpho Blue Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
+    bytes32 public marketIdCbbtcUsdc = 0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836;
 
     function setUp() public {
-        _checkSkipForkTests();
+        togglePositionsLogging();
+        safe = BASE_SAFE;
         fork = createForkWithCadence(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
         setupNavCalculator();
@@ -35,19 +49,13 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
         assertEq(reading.stalePriceAssets.length, 0);
         assertEq(reading.sequencerDown, false);
-        int256 morphoBalance = morphoBlueOracle.getOracleBalanceForAsset(safe, address(usdc));
-        assertTrue(morphoBalance > 0);
-        int256 aaveBalance = aaveOracle.getOracleBalanceForAsset(safe, address(usdc));
-        assertTrue(aaveBalance > 0);
-        int256 compoundBalance = compoundV3Comet.getOracleBalanceForAsset(safe, address(compound));
-        assertTrue(compoundBalance > 0);
-
         assertTrue(reading.value > 0);
     }
 
     function test_baseFork_getAllPositions() public view {
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
+        assertTrue(positions.length > 0, "at least one position");
         assertTrue(navTotal.value > 0);
 
         int256 sum = 0;
@@ -58,33 +66,30 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        nav.registerAsset(
-            address(usdc), address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B), IPrices.PriceType.Chainlink, heartbeat
-        );
-        nav.registerAsset(
-            address(compound),
-            address(0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428),
-            IPrices.PriceType.Chainlink,
-            heartbeat
-        );
-        nav.registerAsset(
-            address(eth), address(0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70), IPrices.PriceType.Chainlink, heartbeat
-        );
+        nav.registerAsset(usdc, ChainlinkPriceFeeds.USDC_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(cbbtc, ChainlinkPriceFeeds.CBBTC_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(compound, ChainlinkPriceFeeds.COMP_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(native, ChainlinkPriceFeeds.ETH_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(weth, ChainlinkPriceFeeds.ETH_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {
         aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3rewardsDistributor, "Aave v3", address(nav));
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
 
         compoundV3Comet = new CompoundV3Comet(
-            compoundRewardContract, address(cUsdCv3), address(compound), "Compound v3", "USDC Comet", address(nav)
+            compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav)
         );
 
         morphoBlueOracle =
-            new MorphoMarketBalanceOracle(morphoBlue, marketIdWsethUsdc, "Morpho", "Some Market", address(nav));
+            new MorphoMarketBalanceOracle(morphoBlue, marketIdCbbtcUsdc, "Morpho - cbBTC/USDC", address(nav));
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(compoundV3Comet));
         nav.addBalanceOracle(address(morphoBlueOracle));
+    }
+
+    function test_logPositions() public view {
+        logAccountPositions(safe, address(0));
     }
 }

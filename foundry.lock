@@ -1,9 +1,18 @@
 {
+  "lib/aave-v3-core": {
+    "tag": {
+      "name": "v1.19.4",
+      "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
+    }
+  },
   "lib/chainlink-brownie-contracts": {
     "tag": {
       "name": "1.3.0",
       "rev": "5cb41fbc9b525338b6098da5ea7dd0b7e92f89e4"
     }
+  },
+  "lib/comet": {
+    "rev": "ed6ebcd84ac00906e8e725716891d482f4bef8b9"
   },
   "lib/forge-std": {
     "tag": {

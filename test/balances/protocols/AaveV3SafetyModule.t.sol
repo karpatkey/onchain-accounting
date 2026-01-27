@@ -8,7 +8,19 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
 import "src/errors.sol";
+
+/// @notice Mock stake token that returns reward/staked token addresses (required by AaveV3SafetyModule constructor)
+contract MockStakeToken {
+    address public immutable REWARD_TOKEN;
+    address public immutable STAKED_TOKEN;
+
+    constructor(address rewardToken_, address stakedToken_) {
+        REWARD_TOKEN = rewardToken_;
+        STAKED_TOKEN = stakedToken_;
+    }
+}
 
 /// @title AaveV3SafetyModuleBalanceOracleTest
 /// @notice Unit and implementation tests for AaveV3SafetyModuleBalanceOracle
@@ -16,15 +28,14 @@ import "src/errors.sol";
 contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     AaveV3SafetyModuleBalanceOracle public oracle;
     MockBalances public mockBalances;
-    
-    // Mock stake token address (for unit tests)
-    address public constant MOCK_STAKE_TOKEN = address(0x1111111111111111111111111111111111111111);
+    MockStakeToken public mockStakeToken;
     
     function setUp() public override {
         super.setUp();
         mockBalances = new MockBalances();
+        mockStakeToken = new MockStakeToken(address(usdc), address(dai));
         oracle = new AaveV3SafetyModuleBalanceOracle(
-            MOCK_STAKE_TOKEN,
+            address(mockStakeToken),
             "Aave v3",
             "Safety Module",
             address(balances)

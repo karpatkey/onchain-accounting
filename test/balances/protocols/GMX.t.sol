@@ -4,36 +4,71 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {GmxBalanceOracle} from "src/balances/protocols/GMX.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
+import {IMarket, IDataStore, IGMXReader} from "src/balances/protocols/GMX.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
+/// @notice Mock GMX DataStore (constructor only needs it to be a contract; containsBytes32 unused at construction)
+contract MockGMXDataStore is IDataStore {
+    function containsBytes32(bytes32, bytes32) external pure returns (bool) {
+        return false;
+    }
+}
+
+/// @notice Mock GMX Market that returns a fixed dataStore address
+contract MockGMXMarket is IMarket {
+    address public override dataStore;
+
+    constructor(address dataStore_) {
+        dataStore = dataStore_;
+    }
+}
+
+/// @notice Mock GMX Reader that returns fixed MarketProps for getMarket (getPositionInfo not used in unit tests)
+contract MockGMXReader {
+    IGMXReader.MarketProps private _props;
+
+    constructor(address marketToken, address indexToken, address longToken, address shortToken) {
+        _props = IGMXReader.MarketProps(marketToken, indexToken, longToken, shortToken);
+    }
+
+    function getMarket(IDataStore, address) external view returns (IGMXReader.MarketProps memory) {
+        return _props;
+    }
+}
 
 /// @title GmxBalanceOracleTest
 /// @notice Unit and implementation tests for GmxBalanceOracle
 /// @dev Tests adapter logic and error handling without requiring fork
 contract GmxBalanceOracleTest is BalanceAdapterTestBase {
     GmxBalanceOracle public oracle;
-    MockBalances public mockBalances;
-    
-    // Mock GMX addresses (for unit tests)
-    address public constant MOCK_MARKET = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_READER = address(0x2222222222222222222222222222222222222222);
-    address public constant MOCK_REFERRAL_STORAGE = address(0x3333333333333333333333333333333333333333);
-    address public constant MOCK_COLLATERAL_TOKEN = address(0x4444444444444444444444444444444444444444);
-    address public constant MOCK_INDEX_TOKEN = address(0x5555555555555555555555555555555555555555);
-    address public constant MOCK_PRICE_FEED = address(0x6666666666666666666666666666666666666666);
-    
+    MockGMXDataStore public mockDataStore;
+    MockGMXMarket public mockMarket;
+    MockGMXReader public mockReader;
+    MockContract public mockReferralStorage;
+    MockContract public mockPriceFeed;
+
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
-        
+        mockDataStore = new MockGMXDataStore();
+        mockMarket = new MockGMXMarket(address(mockDataStore));
+        mockReader = new MockGMXReader(
+            address(usdc),  // marketToken
+            address(weth),  // indexToken
+            address(weth),  // longToken
+            address(usdc)   // shortToken
+        );
+        mockReferralStorage = new MockContract();
+        mockPriceFeed = new MockContract();
+
         GmxBalanceOracle.TokenFeed[] memory feeds = new GmxBalanceOracle.TokenFeed[](2);
-        feeds[0] = GmxBalanceOracle.TokenFeed(address(usdc), MOCK_PRICE_FEED);
-        feeds[1] = GmxBalanceOracle.TokenFeed(address(weth), MOCK_PRICE_FEED);
-        
+        feeds[0] = GmxBalanceOracle.TokenFeed(address(usdc), address(mockPriceFeed));
+        feeds[1] = GmxBalanceOracle.TokenFeed(address(weth), address(mockPriceFeed));
+
         oracle = new GmxBalanceOracle(
-            MOCK_MARKET,
-            MOCK_READER,
-            MOCK_REFERRAL_STORAGE,
+            address(mockMarket),
+            address(mockReader),
+            address(mockReferralStorage),
             address(usdc),
             address(weth),
             false,

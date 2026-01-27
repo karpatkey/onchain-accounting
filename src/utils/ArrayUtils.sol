@@ -28,9 +28,11 @@ library ArrayUtils {
             }
         }
 
-        // Resize to actual count
-        assembly {
-            mstore(result, count)
+        // Copy to correctly-sized array so callers see the right length (mstore resize can be ignored by callers)
+        address[] memory out = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            out[i] = result[i];
         }
+        return out;
     }
 }

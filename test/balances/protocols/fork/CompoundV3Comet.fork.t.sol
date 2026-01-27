@@ -3,15 +3,11 @@ pragma solidity ^0.8.0;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-
-interface CometRewardsAux {
-    function getRewardOwed(address comet, address account) external returns (address token, uint256 owed);
-}
 
 /// @title CompoundV3CometBalanceOracleForkTest
 /// @notice Fork tests for CompoundV3CometBalanceOracle using real mainnet contracts
@@ -65,12 +61,38 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
     }
     
     function _getSupportedAssets() internal returns (address[] memory) {
-        // Create temporary oracle to get supported assets
-        MockBalances tempMockBalances = new MockBalances();
+        // Temp Balances (with code) required by adapter constructor; only underlyingAssetsSupported() is used
+        BalancesHarnessForFork tempBalances = new BalancesHarnessForFork();
         CompoundV3Comet tempOracle = new CompoundV3Comet(
-            COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3", "USDC Comet", address(tempMockBalances)
+            COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3", "USDC Comet", address(tempBalances)
         );
-        return tempOracle.underlyingAssetsSupported();
+        address[] memory raw = tempOracle.underlyingAssetsSupported();
+        // Deduplicate (adapter can return same asset e.g. COMP as collateral and reward)
+        uint256 n = raw.length;
+        uint256 uniqueCount = 0;
+        for (uint256 i = 0; i < n; i++) {
+            bool seen = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (raw[j] == raw[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) uniqueCount++;
+        }
+        address[] memory assets = new address[](uniqueCount);
+        uint256 k = 0;
+        for (uint256 i = 0; i < n; i++) {
+            bool seen = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (raw[j] == raw[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) assets[k++] = raw[i];
+        }
+        return assets;
     }
     
     // ============================================
@@ -197,13 +219,24 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
         assertEq(assets.length, balances.length, "Arrays should match length");
     }
     
-    function test_getOraclePositions_returnsCorrectPositions() public view {
-        INAVCalculator.PositionBalance[] memory positions = 
+    function test_getOraclePositions_returnsCorrectPositions() public {
+        // Use same fork and oracle as setUp so state is consistent
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
+        balances = _deployBalancesForOracle(_getSupportedAssets());
+        oracle = new CompoundV3Comet(
+            COMPOUND_REWARDS,
+            USDCV3_COMET,
+            REWARD_TOKEN,
+            "Compound v3",
+            "USDC Comet",
+            address(balances)
+        );
+
+        INAVCalculator.PositionBalance[] memory positions =
             oracle.getOraclePositions(LEND_USER, address(0));
-        
+
         assertGe(positions.length, 1, "Should have at least one position");
-        
-        // Verify positions have correct structure
+
         for (uint256 i = 0; i < positions.length; i++) {
             assertTrue(positions[i].amount > 0, "Position amount should be positive");
         }

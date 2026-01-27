@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {MockAaveProtocolDataProvider, MockAaveRewardsDistributor} from "test/balances/protocols/AaveV3Instance.t.sol";
 
 /// @title SparkLendBalanceOracleTest
 /// @notice Unit and implementation tests for SparkLendBalanceOracle
@@ -13,18 +13,16 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @dev SparkLend inherits from AaveV3Instance, so most logic is tested there
 contract SparkLendBalanceOracleTest is BalanceAdapterTestBase {
     SparkLendBalanceOracle public oracle;
-    MockBalances public mockBalances;
-    
-    // Mock Spark addresses (for unit tests)
-    address public constant MOCK_DATA_PROVIDER = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_REWARDS_DISTRIBUTOR = address(0x2222222222222222222222222222222222222222);
+    MockAaveProtocolDataProvider public mockDataProvider;
+    MockAaveRewardsDistributor public mockRewardsDistributor;
     
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
+        mockDataProvider = new MockAaveProtocolDataProvider();
+        mockRewardsDistributor = new MockAaveRewardsDistributor();
         oracle = new SparkLendBalanceOracle(
-            MOCK_DATA_PROVIDER,
-            MOCK_REWARDS_DISTRIBUTOR,
+            address(mockDataProvider),
+            address(mockRewardsDistributor),
             "Spark",
             address(balances)
         );

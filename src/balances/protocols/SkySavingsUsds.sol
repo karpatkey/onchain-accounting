@@ -116,6 +116,10 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         view
         returns (int256 balance)
     {
+        // Return zero for unsupported or invalid tokens (adapter convention)
+        if (asset == address(0) || asset != USDS) {
+            return 0;
+        }
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }

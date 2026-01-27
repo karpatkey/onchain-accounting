@@ -209,34 +209,34 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function getAccountNav(address account, address baseAsset) external view returns (INAVCalculator.NAV memory nav) {
+    function getAccountNav(address account, address quoteAsset) external view returns (INAVCalculator.NAV memory nav) {
         // Validate quoteAsset has PriceFeedConfig (early validation)
         // Skip validation for address(0) which represents USD (no price feed needed)
-        if (baseAsset != address(0)) {
-            _requirePriceFeedConfig(baseAsset);
+        if (quoteAsset != address(0)) {
+            _requirePriceFeedConfig(quoteAsset);
         }
 
         nav.timestamp = uint64(block.timestamp);
 
         // Build quoteAsset
-        INAVCalculator.Asset memory quoteAsset;
-        if (baseAsset != address(0)) {
-            uint8 quoteDecimals = _getAssetDecimals(baseAsset);
+        INAVCalculator.Asset memory quoteAssetStruct;
+        if (quoteAsset != address(0)) {
+            uint8 quoteDecimals = _getAssetDecimals(quoteAsset);
             string memory quoteSymbol;
-            if (baseAsset == NATIVE_ADDRESS) {
+            if (quoteAsset == NATIVE_ADDRESS) {
                 quoteSymbol = _nativeTokenSymbol;
             } else {
-                try IERC20Metadata(baseAsset).symbol() returns (string memory symbol_) {
+                try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
                     quoteSymbol = symbol_;
                 } catch {
                     quoteSymbol = "";
                 }
             }
-            quoteAsset = INAVCalculator.Asset({asset: baseAsset, symbol: quoteSymbol, decimals: quoteDecimals});
+            quoteAssetStruct = INAVCalculator.Asset({asset: quoteAsset, symbol: quoteSymbol, decimals: quoteDecimals});
         } else {
-            quoteAsset = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
+            quoteAssetStruct = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
         }
-        nav.quoteAsset = quoteAsset;
+        nav.quoteAsset = quoteAssetStruct;
 
         uint256 length = getAssetCount();
 
@@ -244,14 +244,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             // read all of the account's positions
             // NOTE: this can exceed gas limit
             (int256 totalValue, INAVCalculator.Asset[] memory staleAssets, bool sequencerDown) =
-                _readPositionsRangeWithQuote(account, 0, length - 1, baseAsset);
+                _readPositionsRangeWithQuote(account, 0, length - 1, quoteAsset);
             nav.value = totalValue;
-            nav.issues = INAVCalculator.HealthCheck({stalePriceAssets: staleAssets, sequencerDown: sequencerDown});
+            nav.stalePriceAssets = staleAssets;
+            nav.sequencerDown = sequencerDown;
         } else {
             // Initialize empty arrays when no assets
             nav.value = 0;
-            nav.issues =
-                INAVCalculator.HealthCheck({stalePriceAssets: new INAVCalculator.Asset[](0), sequencerDown: false});
+            nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            nav.sequencerDown = false;
         }
     }
 
@@ -389,74 +390,77 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             });
         }
 
-        // Get quote currency price info if not USD
-        uint256 quoteCurrencyPrice = 0;
-        uint8 quoteCurrencyPriceDecimals = 0;
-        uint8 quoteCurrencyDecimals = 0;
+        // Get quote asset price info if not USD
+        uint256 quoteAssetPrice = 0;
+        uint8 quoteAssetPriceDecimals = 0;
+        uint8 quoteAssetDecimals = 0;
         if (quoteAsset != address(0)) {
             _requirePriceFeedConfig(quoteAsset);
-            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
-            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+            (quoteAssetPrice, quoteAssetPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteAssetDecimals = _getAssetDecimals(quoteAsset);
         } else {
-            quoteCurrencyDecimals = NAV_DECIMALS;
+            quoteAssetDecimals = NAV_DECIMALS;
         }
 
-        // Sum USD value of all positions in range
+        // Sum USD value of all positions in range (use registry decimals for consistency)
         int256 totalUsd = 0;
         for (uint256 i = 0; i < positionsInRange.length; i++) {
             INAVCalculator.PositionBalance memory pos = positionsInRange[i];
-            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, pos.underlyingAsset.asset);
+            address asset = pos.underlyingAsset.asset;
+            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
+            uint8 canonicalDecimals = _getAssetDecimals(asset);
 
-            int256 usdValue = _toUsd(pos.amount, pos.isDebt, pos.underlyingAsset.decimals, feed.price, feed.decimals);
+            int256 usdValue = _toUsd(pos.amount, pos.isDebt, canonicalDecimals, feed.price, feed.decimals);
             totalUsd += usdValue;
         }
 
-        // Convert USD total to quote currency if needed
+        // Convert USD total to quote asset if needed
         if (quoteAsset != address(0)) {
-            totalValue = _fromUsd(totalUsd, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+            totalValue = _fromUsd(totalUsd, quoteAssetPrice, quoteAssetPriceDecimals, quoteAssetDecimals);
         } else {
             totalValue = totalUsd;
         }
     }
 
     /// @inheritdoc INAVCalculator
-    function getAccountNavForRange(address account, uint256 from, uint256 to, address baseAsset)
+    function getAccountNavForRange(address account, uint256 from, uint256 to, address quoteAsset)
         external
         view
         returns (INAVCalculator.NAV memory nav)
     {
         // Validate quoteAsset has PriceFeedConfig (early validation)
         // Skip validation for address(0) which represents USD (no price feed needed)
-        if (baseAsset != address(0)) {
-            _requirePriceFeedConfig(baseAsset);
+        if (quoteAsset != address(0)) {
+            _requirePriceFeedConfig(quoteAsset);
         }
 
         nav.timestamp = uint64(block.timestamp);
 
         // Build quoteAsset
-        INAVCalculator.Asset memory quoteAsset;
-        if (baseAsset != address(0)) {
-            uint8 quoteDecimals = _getAssetDecimals(baseAsset);
+        INAVCalculator.Asset memory quoteAssetStruct;
+        if (quoteAsset != address(0)) {
+            uint8 quoteDecimals = _getAssetDecimals(quoteAsset);
             string memory quoteSymbol;
-            if (baseAsset == NATIVE_ADDRESS) {
+            if (quoteAsset == NATIVE_ADDRESS) {
                 quoteSymbol = _nativeTokenSymbol;
             } else {
-                try IERC20Metadata(baseAsset).symbol() returns (string memory symbol_) {
+                try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
                     quoteSymbol = symbol_;
                 } catch {
                     quoteSymbol = "";
                 }
             }
-            quoteAsset = INAVCalculator.Asset({asset: baseAsset, symbol: quoteSymbol, decimals: quoteDecimals});
+            quoteAssetStruct = INAVCalculator.Asset({asset: quoteAsset, symbol: quoteSymbol, decimals: quoteDecimals});
         } else {
-            quoteAsset = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
+            quoteAssetStruct = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
         }
-        nav.quoteAsset = quoteAsset;
+        nav.quoteAsset = quoteAssetStruct;
 
         (int256 totalValue, INAVCalculator.Asset[] memory staleAssets, bool sequencerDown) =
-            _readPositionsRangeWithQuote(account, from, to, baseAsset);
+            _readPositionsRangeWithQuote(account, from, to, quoteAsset);
         nav.value = totalValue;
-        nav.issues = INAVCalculator.HealthCheck({stalePriceAssets: staleAssets, sequencerDown: sequencerDown});
+        nav.stalePriceAssets = staleAssets;
+        nav.sequencerDown = sequencerDown;
     }
 
     /// @inheritdoc INAVCalculator
@@ -532,49 +536,54 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: priceDecimals, stale: stale});
         }
 
-        // Get quote currency info
+        // Get quote asset info
         // Note: Quote asset price is fetched separately as it may not be in the positions
-        uint256 quoteCurrencyPrice = 0;
-        uint8 quoteCurrencyPriceDecimals = 0;
-        uint8 quoteCurrencyDecimals = 0;
-        string memory quoteCurrencySymbol = "";
+        uint256 quoteAssetPrice = 0;
+        uint8 quoteAssetPriceDecimals = 0;
+        uint8 quoteAssetDecimals = 0;
+        string memory quoteAssetSymbol = "";
 
         if (quoteAsset != address(0)) {
             // Quote asset price feed is validated earlier, so we can safely fetch it
-            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
-            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+            (quoteAssetPrice, quoteAssetPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteAssetDecimals = _getAssetDecimals(quoteAsset);
             if (quoteAsset == NATIVE_ADDRESS) {
-                quoteCurrencySymbol = _nativeTokenSymbol;
+                quoteAssetSymbol = _nativeTokenSymbol;
             } else {
                 try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
-                    quoteCurrencySymbol = symbol_;
+                    quoteAssetSymbol = symbol_;
                 } catch {
-                    quoteCurrencySymbol = "";
+                    quoteAssetSymbol = "";
                 }
             }
         } else {
-            quoteCurrencyDecimals = NAV_DECIMALS;
-            quoteCurrencySymbol = "USD";
+            quoteAssetDecimals = NAV_DECIMALS;
+            quoteAssetSymbol = "USD";
         }
 
         INAVCalculator.Asset memory quoteAssetStruct =
-            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
+            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteAssetSymbol, decimals: quoteAssetDecimals});
 
         // Enrich balance positions with pricing to create full Position structs
+        // Complete positions with canonical asset data (decimals, symbol) from registry
         // Note: All positions here are for registered assets (filtered earlier)
         // If a registered asset doesn't have a price feed, _latestPrice will revert above
         INAVCalculator.Position[] memory pricedPositions = new INAVCalculator.Position[](allPositions.length);
         for (uint256 i = 0; i < allPositions.length; i++) {
             address asset = allPositions[i].underlyingAsset.asset;
             PriceFeedCache memory priceFeed = _findPriceFeed(priceFeeds, asset);
+            uint8 canonicalDecimals = _getAssetDecimals(asset);
+            string memory canonicalSymbol = getAssetSymbol(asset);
 
             pricedPositions[i] = _enrichPositionWithPricing(
                 allPositions[i],
                 priceFeed,
                 quoteAssetStruct,
-                quoteCurrencyPrice,
-                quoteCurrencyPriceDecimals,
-                quoteCurrencyDecimals
+                quoteAssetPrice,
+                quoteAssetPriceDecimals,
+                quoteAssetDecimals,
+                canonicalDecimals,
+                canonicalSymbol
             );
         }
 
@@ -705,46 +714,51 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Fetch price for this asset (optimized - single fetch)
         (uint256 usdRate, uint256 usdRateDecimals, bool stale) = _latestPrice(asset);
 
-        // Get quote currency price if needed
-        uint256 quoteCurrencyPrice = 0;
-        uint8 quoteCurrencyPriceDecimals = 0;
-        uint8 quoteCurrencyDecimals = 0;
-        string memory quoteCurrencySymbol = "";
+        // Get quote asset price if needed
+        uint256 quoteAssetPrice = 0;
+        uint8 quoteAssetPriceDecimals = 0;
+        uint8 quoteAssetDecimals = 0;
+        string memory quoteAssetSymbol = "";
 
         if (quoteAsset != address(0)) {
-            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteAsset);
-            quoteCurrencyDecimals = _getAssetDecimals(quoteAsset);
+            (quoteAssetPrice, quoteAssetPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteAssetDecimals = _getAssetDecimals(quoteAsset);
             if (quoteAsset == NATIVE_ADDRESS) {
-                quoteCurrencySymbol = _nativeTokenSymbol;
+                quoteAssetSymbol = _nativeTokenSymbol;
             } else {
                 try IERC20Metadata(quoteAsset).symbol() returns (string memory symbol_) {
-                    quoteCurrencySymbol = symbol_;
+                    quoteAssetSymbol = symbol_;
                 } catch {
-                    quoteCurrencySymbol = "";
+                    quoteAssetSymbol = "";
                 }
             }
         } else {
-            quoteCurrencyDecimals = NAV_DECIMALS;
-            quoteCurrencySymbol = "USD";
+            quoteAssetDecimals = NAV_DECIMALS;
+            quoteAssetSymbol = "USD";
         }
 
         INAVCalculator.Asset memory quoteAssetStruct =
-            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteCurrencySymbol, decimals: quoteCurrencyDecimals});
+            INAVCalculator.Asset({asset: quoteAsset, symbol: quoteAssetSymbol, decimals: quoteAssetDecimals});
 
         // Build price feed cache for this asset
         PriceFeedCache memory priceFeed =
             PriceFeedCache({asset: asset, price: usdRate, decimals: uint8(usdRateDecimals), stale: stale});
 
-        // Enrich balance positions with pricing to create full Position structs
+        // Complete positions with canonical asset data from registry; enrich with pricing
+        uint8 canonicalDecimals = _getAssetDecimals(asset);
+        string memory canonicalSymbol = getAssetSymbol(asset);
+
         INAVCalculator.Position[] memory pricedPositions = new INAVCalculator.Position[](assetPositions.length);
         for (uint256 i = 0; i < assetPositions.length; i++) {
             pricedPositions[i] = _enrichPositionWithPricing(
                 assetPositions[i],
                 priceFeed,
                 quoteAssetStruct,
-                quoteCurrencyPrice,
-                quoteCurrencyPriceDecimals,
-                quoteCurrencyDecimals
+                quoteAssetPrice,
+                quoteAssetPriceDecimals,
+                quoteAssetDecimals,
+                canonicalDecimals,
+                canonicalSymbol
             );
         }
 
@@ -775,7 +789,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceFeed memory priceFeed) {
+    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
         _requireAssetExists(underlyingAsset);
 
         IPrices.PriceFeedConfig storage oracle = priceOracles[underlyingAsset];
@@ -783,22 +797,22 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         (uint256 price, uint8 decimals, bool stale) = _latestPrice(underlyingAsset);
 
-        priceFeed.oracle = oracle.oracle;
-        priceFeed.priceType = oracle.priceType;
-        priceFeed.price = price;
-        priceFeed.decimals = decimals;
-        priceFeed.chainlinkHeartbeat = oracle.chainlinkHeartbeat;
-        priceFeed.stale = stale;
+        priceFeedData.oracle = oracle.oracle;
+        priceFeedData.priceType = oracle.priceType;
+        priceFeedData.price = price;
+        priceFeedData.decimals = decimals;
+        priceFeedData.chainlinkHeartbeat = oracle.chainlinkHeartbeat;
+        priceFeedData.stale = stale;
 
         // Get Chainlink-specific data
         if (oracle.priceType == IPrices.PriceType.Chainlink) {
             AggregatorV3Interface chainlinkOracle = AggregatorV3Interface(oracle.oracle);
             (,,, uint256 roundUpdatedAt,) = chainlinkOracle.latestRoundData();
-            priceFeed.updatedAt = roundUpdatedAt;
+            priceFeedData.updatedAt = roundUpdatedAt;
         }
 
         // Check L2 sequencer uptime (conditional on L2)
-        priceFeed.sequencerDown = _isSequencerDown();
+        priceFeedData.sequencerDown = _isSequencerDown();
     }
 
     /// @inheritdoc INAVCalculator
@@ -961,63 +975,50 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function calculateValue(
-        address[] memory assets,
-        uint256[] memory amounts,
-        bool[] memory isDebt,
-        address quoteCurrency
-    ) external view returns (int256 value) {
-        if (assets.length != amounts.length || assets.length != isDebt.length) {
+    function calculateValue(address[] memory assets, uint256[] memory amounts, address quoteAsset)
+        external
+        view
+        override
+        returns (int256 value)
+    {
+        if (assets.length != amounts.length) {
             revert InvalidArgumentsWithContext("arrays.length mismatch");
         }
 
-        // Get quote currency info if not USD
-        uint256 quoteCurrencyPrice = 0;
-        uint8 quoteCurrencyPriceDecimals = 0;
-        uint8 quoteCurrencyDecimals = 0;
+        if (quoteAsset != address(0)) {
+            _requireAssetExists(quoteAsset);
+            _requirePriceFeedExists(quoteAsset);
+        }
 
-        if (quoteCurrency != address(0)) {
-            _requireAssetExists(quoteCurrency);
-            _requirePriceFeedExists(quoteCurrency);
-            (quoteCurrencyPrice, quoteCurrencyPriceDecimals,) = _latestPrice(quoteCurrency);
-            quoteCurrencyDecimals = _getAssetDecimals(quoteCurrency);
+        uint256 quoteAssetPrice = 0;
+        uint8 quoteAssetPriceDecimals = 0;
+        uint8 quoteAssetDecimals = 0;
+        if (quoteAsset != address(0)) {
+            (quoteAssetPrice, quoteAssetPriceDecimals,) = _latestPrice(quoteAsset);
+            quoteAssetDecimals = _getAssetDecimals(quoteAsset);
         } else {
-            quoteCurrencyDecimals = NAV_DECIMALS;
+            quoteAssetDecimals = NAV_DECIMALS;
         }
 
         int256 totalUsd = 0;
-
-        // Calculate USD value for each asset/amount pair
         for (uint256 i = 0; i < assets.length; i++) {
-            address asset = assets[i];
             uint256 amount = amounts[i];
+            if (amount == 0) continue;
 
-            // Skip zero amounts
-            if (amount == 0) {
-                continue;
-            }
-
-            // Validate asset exists and has price oracle
+            address asset = assets[i];
             _requireAssetExists(asset);
             _requirePriceFeedExists(asset);
-
-            // Get asset decimals
             uint8 assetDecimals = _getAssetDecimals(asset);
-
-            // Get USD price
             (uint256 usdRate, uint256 usdRateDecimals,) = _latestPrice(asset);
-
-            // Calculate USD value (negative for debt, positive for credit)
-            int256 usdValue = _toUsd(amount, isDebt[i], assetDecimals, usdRate, usdRateDecimals);
-            totalUsd += usdValue;
+            // All amounts are positive balances (credit only)
+            totalUsd += _toUsd(amount, false, assetDecimals, usdRate, usdRateDecimals);
         }
 
-        // Convert to quote currency if needed
-        if (quoteCurrency != address(0)) {
-            if (quoteCurrencyPrice == 0) {
-                revert InvalidArgumentsWithContext("quoteCurrencyPrice == 0");
+        if (quoteAsset != address(0)) {
+            if (quoteAssetPrice == 0) {
+                revert InvalidArgumentsWithContext("quoteAssetPrice == 0");
             }
-            value = _fromUsd(totalUsd, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+            value = _fromUsd(totalUsd, quoteAssetPrice, quoteAssetPriceDecimals, quoteAssetDecimals);
         } else {
             value = totalUsd;
         }
@@ -1083,34 +1084,43 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @param balance The balance-only position from an oracle
     /// @param priceFeed The cached price feed information for the asset
     /// @param quoteAssetStruct The quote asset struct
-    /// @param quoteCurrencyPrice The price of the quote currency in USD (0 if USD)
-    /// @param quoteCurrencyPriceDecimals The decimals of the quote currency price
-    /// @param quoteCurrencyDecimals The decimals of the quote currency itself
-    /// @return position The enriched Position with pricing information
+    /// @param quoteAssetPrice The price of the quote asset in USD (0 if USD)
+    /// @param quoteAssetPriceDecimals The decimals of the quote asset price
+    /// @param quoteAssetDecimals The decimals of the quote asset itself
+    /// @param canonicalDecimals Decimals from NAV calculator registry
+    /// @param canonicalSymbol Symbol from NAV calculator registry
+    /// @return position The enriched Position with pricing information and canonical asset metadata
     function _enrichPositionWithPricing(
         INAVCalculator.PositionBalance memory balance,
         PriceFeedCache memory priceFeed,
         INAVCalculator.Asset memory quoteAssetStruct,
-        uint256 quoteCurrencyPrice,
-        uint8 quoteCurrencyPriceDecimals,
-        uint8 quoteCurrencyDecimals
+        uint256 quoteAssetPrice,
+        uint8 quoteAssetPriceDecimals,
+        uint8 quoteAssetDecimals,
+        uint8 canonicalDecimals,
+        string memory canonicalSymbol
     ) internal pure returns (INAVCalculator.Position memory position) {
-        // Calculate USD value
-        int256 usdValue = _toUsd(balance.amount, balance.isDebt, balance.underlyingAsset.decimals, priceFeed.price, priceFeed.decimals);
+        // Calculate USD value using canonical decimals from registry
+        int256 usdValue = _toUsd(balance.amount, balance.isDebt, canonicalDecimals, priceFeed.price, priceFeed.decimals);
 
-        // Calculate value in quote currency
+        // Calculate value in quote asset
         int256 value;
         if (quoteAssetStruct.asset == address(0)) {
             // USD quote: direct conversion
             value = usdValue;
         } else {
             // Non-USD quote: convert via USD
-            value = _fromUsd(usdValue, quoteCurrencyPrice, quoteCurrencyPriceDecimals, quoteCurrencyDecimals);
+            value = _fromUsd(usdValue, quoteAssetPrice, quoteAssetPriceDecimals, quoteAssetDecimals);
         }
 
-        // Build enriched position
+        // Build enriched position with canonical asset metadata (decimals, symbol from registry)
+        INAVCalculator.Asset memory underlyingAsset = INAVCalculator.Asset({
+            asset: balance.underlyingAsset.asset,
+            symbol: canonicalSymbol,
+            decimals: canonicalDecimals
+        });
         position = INAVCalculator.Position({
-            underlyingAsset: balance.underlyingAsset,
+            underlyingAsset: underlyingAsset,
             balanceOracle: balance.balanceOracle,
             amount: balance.amount,
             isDebt: balance.isDebt,
@@ -1164,41 +1174,41 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
     }
 
-    /// @notice Converts USD value to a base asset value
+    /// @notice Converts USD value to quote asset value
     /// @param usdValue The USD value with NAV_DECIMALS decimals
-    /// @param baseAssetPrice The USD price of the base asset
-    /// @param baseAssetPriceDecimals The number of decimals of the base asset price
-    /// @param baseAssetDecimals The number of decimals of the base asset
-    /// @return baseAssetValue The computed value in the base asset with baseAssetDecimals
-    function _fromUsd(int256 usdValue, uint256 baseAssetPrice, uint8 baseAssetPriceDecimals, uint8 baseAssetDecimals)
+    /// @param quoteAssetPrice The USD price of the quote asset
+    /// @param quoteAssetPriceDecimals The number of decimals of the quote asset price
+    /// @param quoteAssetDecimals The number of decimals of the quote asset
+    /// @return quoteAssetValue The computed value in the quote asset with quoteAssetDecimals
+    function _fromUsd(int256 usdValue, uint256 quoteAssetPrice, uint8 quoteAssetPriceDecimals, uint8 quoteAssetDecimals)
         internal
         pure
-        returns (int256 baseAssetValue)
+        returns (int256 quoteAssetValue)
     {
-        if (baseAssetPrice == 0) {
-            revert InvalidArgumentsWithContext("baseAssetPrice == 0");
+        if (quoteAssetPrice == 0) {
+            revert InvalidArgumentsWithContext("quoteAssetPrice == 0");
         }
 
         // Calculate the scaling factor needed
-        // We need: (usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)) / (baseAssetPrice * 10^NAV_DECIMALS)
-        // This ensures the result is in baseAssetDecimals
+        // We need: (usdValue * 10^(quoteAssetDecimals + quoteAssetPriceDecimals)) / (quoteAssetPrice * 10^NAV_DECIMALS)
+        // This ensures the result is in quoteAssetDecimals
 
         // Check for potential overflow in exponent calculation
-        uint256 totalDecimals = uint256(baseAssetDecimals) + uint256(baseAssetPriceDecimals);
+        uint256 totalDecimals = uint256(quoteAssetDecimals) + uint256(quoteAssetPriceDecimals);
         if (totalDecimals > MAX_DECIMAL_EXPONENT) {
             revert InvalidArgumentsWithContext("totalDecimals > MAX_DECIMAL_EXPONENT");
         }
 
-        // Calculate numerator: usdValue * 10^(baseAssetDecimals + baseAssetPriceDecimals)
+        // Calculate numerator: usdValue * 10^(quoteAssetDecimals + quoteAssetPriceDecimals)
         // casting to 'int256' is safe because 10^totalDecimals fits in int256 range (totalDecimals <= 255)
         // forge-lint: disable-next-line(unsafe-typecast)
         int256 numerator = usdValue * int256(10 ** totalDecimals);
 
-        // Calculate denominator: baseAssetPrice * 10^NAV_DECIMALS
-        // casting to 'int256' is safe because baseAssetPrice and 10^NAV_DECIMALS fit in int256 range
+        // Calculate denominator: quoteAssetPrice * 10^NAV_DECIMALS
+        // casting to 'int256' is safe because quoteAssetPrice and 10^NAV_DECIMALS fit in int256 range
         // forge-lint: disable-next-line(unsafe-typecast)
-        int256 denominator = int256(baseAssetPrice) * int256(10 ** NAV_DECIMALS);
+        int256 denominator = int256(quoteAssetPrice) * int256(10 ** NAV_DECIMALS);
 
-        baseAssetValue = numerator / denominator;
+        quoteAssetValue = numerator / denominator;
     }
 }

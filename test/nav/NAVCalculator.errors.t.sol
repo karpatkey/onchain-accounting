@@ -325,42 +325,35 @@ contract NAVCalculatorErrorTest is SuperTest {
         assertEq(navResult.value, 0, "Should return zero NAV when all oracles revert or have no positions");
     }
     
-    /// @notice Test that invalid quote currency is handled
-    function test_RevertWhen_invalidQuoteCurrency() public {
+    /// @notice Test that invalid quote asset is handled
+    function test_RevertWhen_invalidQuoteAsset() public {
         address invalidQuote = makeAddr("invalid");
         
         // Should revert with PriceFeedNotSet
         vm.expectRevert(abi.encodeWithSelector(PriceFeedNotSet.selector, invalidQuote));
         nav.getAccountNav(safe, invalidQuote);
     }
-    
+
     /// @notice Test that unregistered asset in calculateValue is handled
     function test_RevertWhen_unregisteredAssetInCalculateValue() public {
-        address unregisteredAsset = makeAddr("unregistered");
-        
         address[] memory assets = new address[](1);
         uint256[] memory amounts = new uint256[](1);
-        bool[] memory isDebt = new bool[](1);
-        assets[0] = unregisteredAsset;
+        assets[0] = makeAddr("unregistered");
         amounts[0] = 1e18;
-        isDebt[0] = false;
-        
+
         vm.expectRevert(AssetNotFound.selector);
-        nav.calculateValue(assets, amounts, isDebt, address(0));
+        nav.calculateValue(assets, amounts, address(0));
     }
-    
+
     /// @notice Test that array length mismatch in calculateValue is handled
-    function test_RevertWhen_arrayLengthMismatch() public {
+    function test_RevertWhen_calculateValue_arrayLengthMismatch() public {
         address[] memory assets = new address[](2);
         uint256[] memory amounts = new uint256[](1);
-        bool[] memory isDebt = new bool[](1);
-        
         assets[0] = address(usdc);
         assets[1] = address(dai);
         amounts[0] = 1e18;
-        isDebt[0] = false;
-        
+
         vm.expectRevert(abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "arrays.length mismatch"));
-        nav.calculateValue(assets, amounts, isDebt, address(0));
+        nav.calculateValue(assets, amounts, address(0));
     }
 }

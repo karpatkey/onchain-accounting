@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IPoolDataProvider} from "aave-v3-core/interfaces/IPoolDataProvider.sol";
 
 /// @title AaveV3InstanceBalanceOracleForkTest
 /// @notice Fork tests for AaveV3InstanceBalanceOracle using real mainnet contracts
@@ -40,7 +41,7 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterForkTestBase {
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_getAaveAssets());
         oracle = new AaveV3InstanceBalanceOracle(
-            AAVE_DATA_PROVIDER,
+            address(AAVE_DATA_PROVIDER),
             REWARDS_DISTRIBUTOR,
             "Aave v3",
             address(balances)
@@ -171,7 +172,7 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         balances = _deployBalancesForOracle(USDT);
         oracle = new AaveV3InstanceBalanceOracle(
-            AAVE_DATA_PROVIDER,
+            address(AAVE_DATA_PROVIDER),
             REWARDS_DISTRIBUTOR,
             "Aave v3",
             address(balances)

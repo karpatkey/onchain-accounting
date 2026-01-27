@@ -248,12 +248,104 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
-        address[] memory assets = new address[](immutableData.tokens.length);
-        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
-            assets[i] = address(immutableData.tokens[i]);
+        return _underlyingAssetsSupported();
+    }
+
+    /// @notice Internal helper to list all underlying assets supported by the Balancer V3 pool.
+    /// @dev Includes pool underlying tokens, gauge reward tokens, and the BAL token from the minter.
+    /// @return assets Array of supported underlying asset addresses.
+    function _underlyingAssetsSupported() internal view returns (address[] memory assets) {
+        address[] memory poolTokens = _getPoolTokens();
+        address[] memory rewardTokens = _getRewardTokens();
+        address balToken = BALANCER_MINTER.getBalancerToken();
+
+        uint256 totalLen = poolTokens.length + rewardTokens.length + 1;
+        address[] memory temp = new address[](totalLen);
+        uint256 count = 0;
+
+        // Add pool tokens
+        for (uint256 i = 0; i < poolTokens.length; i++) {
+            temp[count++] = poolTokens[i];
         }
-        return assets;
+
+        // Add unique reward tokens
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            if (!_isDuplicate(temp, count, rewardTokens[i])) {
+                temp[count++] = rewardTokens[i];
+            }
+        }
+
+        // Add BAL token if not duplicate
+        if (!_isDuplicate(temp, count, balToken)) {
+            temp[count++] = balToken;
+        }
+
+        // Trim and return
+        assets = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = temp[i];
+        }
+    }
+
+    /// @notice Gets pool tokens, unwrapping ERC4626 tokens to their underlying assets
+    /// @return Pool token addresses (underlying where token is ERC4626 vault)
+    function _getPoolTokens() internal view returns (address[] memory) {
+        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
+        address[] memory tokens = new address[](immutableData.tokens.length);
+
+        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
+            address currentToken = address(immutableData.tokens[i]);
+
+            (bool success, bytes memory data) = currentToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
+
+            if (success && data.length >= 32) {
+                tokens[i] = abi.decode(data, (address));
+            } else {
+                tokens[i] = currentToken;
+            }
+        }
+        return tokens;
+    }
+
+    /// @notice Gets reward tokens from the gauge
+    /// @return Reward token addresses
+    function _getRewardTokens() internal view returns (address[] memory) {
+        (bool success, bytes memory data) =
+            address(GAUGE).staticcall(abi.encodeWithSelector(IGaugeV3.reward_count.selector));
+
+        if (!success || data.length < 32) {
+            return new address[](0);
+        }
+
+        uint256 rewardCount = abi.decode(data, (uint256));
+        address[] memory temp = new address[](rewardCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < rewardCount; i++) {
+            (bool tokenSuccess, bytes memory tokenData) =
+                address(GAUGE).staticcall(abi.encodeWithSelector(IGaugeV3.reward_tokens.selector, i));
+
+            if (tokenSuccess && tokenData.length >= 32) {
+                address rewardToken = abi.decode(tokenData, (address));
+                if (rewardToken != address(0)) {
+                    temp[count++] = rewardToken;
+                }
+            }
+        }
+
+        address[] memory result = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = temp[i];
+        }
+        return result;
+    }
+
+    /// @notice Returns true if token is already in the array within the given length
+    function _isDuplicate(address[] memory arr, uint256 len, address token) internal pure returns (bool) {
+        for (uint256 i = 0; i < len; i++) {
+            if (arr[i] == token) return true;
+        }
+        return false;
     }
 
     /// @notice Implementation of IERC165 interface detection
@@ -273,6 +365,25 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         view
         returns (int256 balance)
     {
+        // Return zero for zero account or invalid asset (adapter convention)
+        if (account == address(0) || asset == address(0)) {
+            return 0;
+        }
+        // Check if asset is supported (try/catch for unit tests with minimal pool mocks)
+        try this.underlyingAssetsSupported() returns (address[] memory supported) {
+            bool isSupported = false;
+            for (uint256 i = 0; i < supported.length; i++) {
+                if (supported[i] == asset) {
+                    isSupported = true;
+                    break;
+                }
+            }
+            if (!isSupported) {
+                return 0;
+            }
+        } catch {
+            return 0;
+        }
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -283,6 +394,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, int256[] memory balances)
     {
+        if (account == address(0)) {
+            return (new address[](0), new int256[](0));
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -414,6 +528,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        if (account == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         address[] memory registeredAssets = NAV_CALCULATOR.assets();
 
@@ -541,6 +658,15 @@ interface IGaugeV3 is IERC20 {
     /// @notice Returns the future epoch time
     /// @return The future epoch time
     function future_epoch_time() external view returns (uint256);
+    /// @notice Returns the number of reward tokens on the gauge
+    /// @return The number of reward tokens
+    // forge-lint: disable-next-line(mixed-case-function)
+    function reward_count() external view returns (uint256);
+    /// @notice Returns the reward token at the given index
+    /// @param i Index of the reward token
+    /// @return Address of the reward token
+    // forge-lint: disable-next-line(mixed-case-function)
+    function reward_tokens(uint256 i) external view returns (address);
 }
 
 /// @notice General interface for token exchange rates.

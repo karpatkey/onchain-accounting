@@ -348,12 +348,124 @@ contract Aura is IBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
-        address[] memory assets = new address[](immutableData.tokens.length);
-        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
-            assets[i] = address(immutableData.tokens[i]);
+        return _underlyingAssetsSupported();
+    }
+
+    /// @notice Internal helper to list all underlying assets supported by the Aura pool.
+    /// @dev Includes pool underlying tokens (unwrapping ERC4626) and reward tokens from Aura rewards.
+    /// @return assets Array of supported underlying asset addresses.
+    function _underlyingAssetsSupported() internal view returns (address[] memory assets) {
+        address[] memory poolTokens = _getPoolTokens();
+        address[] memory rewardTokens = _getRewardTokens();
+
+        uint256 totalLen = poolTokens.length + rewardTokens.length;
+        address[] memory temp = new address[](totalLen);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < poolTokens.length; i++) {
+            temp[count++] = poolTokens[i];
         }
-        return assets;
+
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            if (!_isDuplicate(temp, count, rewardTokens[i])) {
+                temp[count++] = rewardTokens[i];
+            }
+        }
+
+        assets = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = temp[i];
+        }
+    }
+
+    /// @notice Gets pool tokens, unwrapping ERC4626 tokens to their underlying assets.
+    /// @return Pool token addresses (underlying where the pool token is an ERC4626 vault).
+    function _getPoolTokens() internal view returns (address[] memory) {
+        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
+        address[] memory tokens = new address[](immutableData.tokens.length);
+
+        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
+            address currentToken = address(immutableData.tokens[i]);
+            (bool success, bytes memory data) =
+                currentToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
+            if (success && data.length >= 32) {
+                tokens[i] = abi.decode(data, (address));
+            } else {
+                tokens[i] = currentToken;
+            }
+        }
+        return tokens;
+    }
+
+    /// @notice Gets reward tokens from the Aura rewards pool (base reward, AURA, and extra rewards).
+    /// @return Reward token addresses (base tokens where reward is a stash wrapper).
+    function _getRewardTokens() internal view returns (address[] memory) {
+        uint256 maxRewards = 10;
+        address[] memory temp = new address[](maxRewards);
+        uint256 count = 0;
+
+        (bool success, bytes memory data) =
+            address(AURA_REWARDS).staticcall(abi.encodeWithSelector(IBaseRewardPool4626.rewardToken.selector));
+        if (success && data.length >= 32) {
+            address rewardToken = abi.decode(data, (address));
+            if (rewardToken != address(0)) {
+                temp[count++] = rewardToken;
+            }
+        }
+
+        temp[count++] = address(AURA_TOKEN);
+
+        (bool lengthSuccess, bytes memory lengthData) = address(AURA_REWARDS).staticcall(
+            abi.encodeWithSelector(IBaseRewardPool4626.extraRewardsLength.selector)
+        );
+        if (lengthSuccess && lengthData.length >= 32) {
+            uint256 extraLength = abi.decode(lengthData, (uint256));
+            uint256 maxExtra = extraLength > 8 ? 8 : extraLength;
+            for (uint256 i = 0; i < maxExtra; i++) {
+                (bool extraSuccess, bytes memory extraData) = address(AURA_REWARDS).staticcall(
+                    abi.encodeWithSelector(IBaseRewardPool4626.extraRewards.selector, i)
+                );
+                if (extraSuccess && extraData.length >= 32) {
+                    address extraPool = abi.decode(extraData, (address));
+                    address baseToken = _getBaseToken(extraPool);
+                    if (baseToken != address(0) && !_isDuplicate(temp, count, baseToken)) {
+                        temp[count++] = baseToken;
+                    }
+                }
+            }
+        }
+
+        address[] memory result = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = temp[i];
+        }
+        return result;
+    }
+
+    /// @notice Resolves base token for an extra reward pool (unstashes wrapper tokens).
+    /// @param extraPool Address of the extra reward pool.
+    /// @return The base token address, or the reward token if not a stash.
+    function _getBaseToken(address extraPool) internal view returns (address) {
+        (bool success, bytes memory data) =
+            extraPool.staticcall(abi.encodeWithSelector(IBaseRewardPool4626.rewardToken.selector));
+        if (!success || data.length < 32) {
+            return address(0);
+        }
+        address rewardToken = abi.decode(data, (address));
+        (bool baseSuccess, bytes memory baseData) =
+            rewardToken.staticcall(abi.encodeWithSelector(IStashToken.baseToken.selector));
+        if (baseSuccess && baseData.length >= 32) {
+            return abi.decode(baseData, (address));
+        }
+        return rewardToken;
+    }
+
+    /// @notice Returns true if token is already present in the array within the given length.
+    function _isDuplicate(address[] memory arr, uint256 len, address token) internal pure returns (bool) {
+        for (uint256 i = 0; i < len; i++) {
+            if (arr[i] == token) return true;
+        }
+        return false;
     }
 
     /// @notice Implementation of IERC165 interface detection

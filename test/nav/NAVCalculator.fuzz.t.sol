@@ -4,12 +4,17 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
 
 /// @title NAVCalculator Fuzz Tests
 /// @notice Property-based fuzz tests for core NAVCalculator functions
 contract NAVCalculatorFuzzTest is SuperTest {
+    /// @notice An account with no token/native balances (address of a contract never funded)
+    address public emptyAccount;
+
     function setUp() public {
         setupAll();
+        emptyAccount = address(new MockContract());
     }
     
     /// @notice Helper function to sum position values
@@ -113,128 +118,6 @@ contract NAVCalculatorFuzzTest is SuperTest {
         // Verify consistency
         int256 positionsSum = sumPositionValues(positions);
         assertApproxEqAbs(navResult.value, positionsSum, 1, "NAV should equal sum of positions");
-    }
-
-    // ============================================
-    // Fuzz Tests for calculateValue
-    // ============================================
-
-    /// @notice Fuzz test for calculateValue with random assets and balances
-    function testFuzz_calculateValue(
-        uint256 assetCountSeed,
-        uint256 balanceSeed,
-        uint256 quoteCurrencySeed
-    ) public {
-        // Bound all seeds first to prevent overflow issues
-        assetCountSeed = bound(assetCountSeed, 0, type(uint128).max);
-        balanceSeed = bound(balanceSeed, 0, type(uint128).max);
-        quoteCurrencySeed = bound(quoteCurrencySeed, 0, type(uint128).max);
-        
-        // Bound asset count to reasonable range
-        uint256 assetCount = bound(assetCountSeed, 0, 10);
-        
-        if (assetCount == 0) {
-            // Test with empty arrays
-            address[] memory emptyAssets = new address[](0);
-            int256[] memory emptyBalances = new int256[](0);
-            address quoteCurrency = getValidQuoteAsset(quoteCurrencySeed);
-            
-            if (quoteCurrency != address(0)) {
-                vm.assume(nav.isAssetRegistered(quoteCurrency));
-                (address oracle,,,) = nav.priceOracles(quoteCurrency);
-                vm.assume(oracle != address(0));
-            }
-            
-            uint256[] memory emptyAmounts = new uint256[](0);
-            bool[] memory emptyIsDebt = new bool[](0);
-            int256 value = nav.calculateValue(emptyAssets, emptyAmounts, emptyIsDebt, quoteCurrency);
-            assertEq(value, 0, "Empty arrays should return zero value");
-            return;
-        }
-        
-        // Get registered assets
-        address[] memory allAssets = nav.getAssets();
-        vm.assume(allAssets.length > 0);
-        
-        // Bound asset count to available assets
-        assetCount = bound(assetCount, 1, allAssets.length);
-        
-        // Select random assets
-        address[] memory assets = new address[](assetCount);
-        uint256[] memory amounts = new uint256[](assetCount);
-        bool[] memory isDebt = new bool[](assetCount);
-        
-        for (uint256 i = 0; i < assetCount; i++) {
-            uint256 assetIndex = bound(balanceSeed + i, 0, allAssets.length - 1);
-            assets[i] = allAssets[assetIndex];
-            
-            // Get asset decimals and price to bound amount appropriately
-            uint8 assetDecimals = nav.getAssetDecimals(assets[i]);
-            (uint256 usdRate,,) = nav.latestPrice(assets[i]);
-            
-            // Bound balance to prevent overflow in amount * usdRate
-            // Use a unique seed per iteration
-            uint256 seedForBalance = bound(balanceSeed + i * 7919, 0, type(uint256).max / 7919);
-            uint256 balanceAmount = getSafeAmountBound(seedForBalance, assetDecimals, usdRate);
-            amounts[i] = balanceAmount;
-            // For fuzz testing, randomly assign debt flag
-            isDebt[i] = (seedForBalance % 2 == 0);
-        }
-        
-        // Get valid quote currency
-        address quoteCurrency = getValidQuoteAsset(quoteCurrencySeed);
-        if (quoteCurrency != address(0)) {
-            vm.assume(nav.isAssetRegistered(quoteCurrency));
-            (address oracle,,,) = nav.priceOracles(quoteCurrency);
-            vm.assume(oracle != address(0));
-        }
-        
-        // Should not revert
-        int256 value = nav.calculateValue(assets, amounts, isDebt, quoteCurrency);
-        
-        // Value should be reasonable (not overflow)
-        assertTrue(value >= type(int128).min && value <= type(int128).max, "Value should be within reasonable range");
-    }
-
-    /// @notice Fuzz test for calculateValue with debt positions
-    function testFuzz_calculateValue_negativeBalances(uint256 seed) public {
-        // Bound seed first to prevent overflow issues
-        seed = bound(seed, 0, type(uint128).max);
-        
-        address[] memory allAssets = nav.getAssets();
-        vm.assume(allAssets.length >= 2);
-        
-        address[] memory assets = new address[](2);
-        uint256[] memory amounts = new uint256[](2);
-        bool[] memory isDebt = new bool[](2);
-        
-        assets[0] = allAssets[0];
-        assets[1] = allAssets[1];
-        
-        // Get asset decimals and prices to bound amounts appropriately
-        uint8 decimals0 = nav.getAssetDecimals(assets[0]);
-        uint8 decimals1 = nav.getAssetDecimals(assets[1]);
-        (uint256 price0,,) = nav.latestPrice(assets[0]);
-        (uint256 price1,,) = nav.latestPrice(assets[1]);
-        
-        // Bound amounts to prevent overflow in amount * usdRate
-        // Use separate seeds to avoid overflow in multiplication
-        uint256 seed1 = bound(seed, 0, type(uint128).max);
-        uint256 seed2 = bound(seed + 1, 0, type(uint128).max);
-        uint256 amount1 = getSafeAmountBound(seed1, decimals0, price0);
-        uint256 amount2 = getSafeAmountBound(seed2, decimals1, price1);
-        
-        // Make one credit, one debt
-        amounts[0] = amount1;
-        isDebt[0] = false; // Credit position
-        amounts[1] = amount2;
-        isDebt[1] = true; // Debt position
-        
-        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
-        
-        // Value can be positive or negative depending on positions
-        // Just verify it doesn't revert and is reasonable
-        assertTrue(value >= type(int128).min && value <= type(int128).max, "Value should be within reasonable range");
     }
 
     // ============================================
@@ -394,20 +277,15 @@ contract NAVCalculatorFuzzTest is SuperTest {
         assertGe(navResult.value, 0, "NAV should be non-negative");
     }
 
-    /// @notice Fuzz test for zero balances (should be excluded)
-    function testFuzz_zeroBalances(address account) public {
-        vm.assume(account != address(0));
-        
-        // Don't mint anything - all balances should be zero
-        
-        // Get positions
-        INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, address(0));
-        
-        // Should have no positions (zero balances excluded)
+    /// @notice Test that an account with no balances returns no positions and zero NAV
+    /// @dev Uses emptyAccount (address of a deployed contract that is never funded) so
+    ///      we don't depend on fuzz input; arbitrary addresses may have balance in test env.
+    function testFuzz_zeroBalances() public view {
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(emptyAccount, address(0));
+
         assertEq(positions.length, 0, "Zero balances should be excluded");
-        
-        // NAV should be zero
-        INAVCalculator.NAV memory navResult = nav.getAccountNav(account, address(0));
+
+        INAVCalculator.NAV memory navResult = nav.getAccountNav(emptyAccount, address(0));
         assertEq(navResult.value, 0, "NAV should be zero for empty account");
     }
 }

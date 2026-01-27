@@ -29,12 +29,6 @@ abstract contract BalanceAdapterForkTestBase is TestEnvConfigurator, TestSetupHe
     uint256 public constant DEFAULT_FORK_BLOCK = 20_576_908;
     
     function setUp() public virtual {
-        // Skip fork tests by default
-        // Set FORGE_SKIP_FORK_TESTS=false to enable fork tests
-        string memory skipEnv = vm.envOr("FORGE_SKIP_FORK_TESTS", string("true"));
-        if (keccak256(bytes(skipEnv)) == keccak256(bytes("true"))) {
-            vm.skip(true, "Fork tests are skipped by default. Set FORGE_SKIP_FORK_TESTS=false to enable.");
-        }
         _setupFork();
     }
     
@@ -71,12 +65,8 @@ abstract contract BalanceAdapterForkTestBase is TestEnvConfigurator, TestSetupHe
     
     /// @notice Gets asset symbol, with fallback to empty string
     /// @param asset The asset address
-    /// @return symbol The asset symbol
+    /// @return symbol The asset symbol (handles bytes32 and string-returning symbol(), e.g. MKR)
     function _getAssetSymbol(address asset) internal view returns (string memory symbol) {
-        try IERC20Metadata(asset).symbol() returns (string memory s) {
-            return s;
-        } catch {
-            return ""; // Default fallback
-        }
+        return _safeTokenSymbol(asset);
     }
 }

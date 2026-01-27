@@ -1,13 +1,50 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
+import {Id, MarketParams, Market, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
+import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 import "src/errors.sol";
+
+/// @notice Mock Morpho that returns a single market's params, zero position, and zero market state for unit tests (no fork).
+/// Implements only idToMarketParams, position, and market used by MorphoMarketBalanceOracle and MorphoBalancesLib.
+contract MockMorpho {
+    using MarketParamsLib for MarketParams;
+
+    MarketParams private _marketParams;
+    Id private _id;
+
+    constructor(MarketParams memory marketParams) {
+        _marketParams = marketParams;
+        _id = marketParams.id();
+    }
+
+    function idToMarketParams(Id id) external view returns (MarketParams memory) {
+        require(Id.unwrap(id) == Id.unwrap(_id), "unknown market");
+        return _marketParams;
+    }
+
+    function position(Id, address) external pure returns (Position memory) {
+        return Position({supplyShares: 0, borrowShares: 0, collateral: 0});
+    }
+
+    function market(Id) external view returns (Market memory) {
+        return Market({
+            totalSupplyAssets: 0,
+            totalSupplyShares: 0,
+            totalBorrowAssets: 0,
+            totalBorrowShares: 0,
+            lastUpdate: uint128(block.timestamp),
+            fee: 0
+        });
+    }
+}
 
 contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
     uint256 public fork;
@@ -19,7 +56,6 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
     address mkr = address(0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2);
 
     MorphoMarketBalanceOracle public oracle;
-    MockBalances mockBalances;
     BalancesHarnessForFork public balances;
 
     // Global user addresses with positions in Morpho
@@ -27,8 +63,6 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
     address public borrowUsdcUser;
 
     function setUp() public {
-        mockBalances = new MockBalances();
-
         // Set global user addresses - use addresses that have positions
         supplyUsdcUser = 0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B;
         borrowUsdcUser = 0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34;
@@ -100,9 +134,9 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
 
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho", "Some market", address(balances));
 
-        // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(borrowUsdcUser, address(0));
-        assertEq(balance, 0);
+        // MorphoMarket reverts InvalidArguments for unsupported or zero asset (same as unit test)
+        vm.expectRevert(InvalidArguments.selector);
+        oracle.getOracleBalanceForAsset(borrowUsdcUser, address(0));
     }
 
     function test_underlyingAssetsSupported() public {
@@ -137,5 +171,75 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho", "Some market", address(balances));
         assertEq(oracle.COLLATERAL_TOKEN(), wsteth);
         assertEq(oracle.LOAN_TOKEN(), usdc);
+    }
+}
+
+/// @title MorphoMarketBalanceOracleUnitTest
+/// @notice Unit tests using MockMorpho (no fork).
+contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
+    MorphoMarketBalanceOracle public oracle;
+    MockMorpho public mockMorpho;
+    bytes32 public marketId;
+
+    function setUp() public override {
+        super.setUp();
+        MarketParams memory params = MarketParams({
+            loanToken: address(usdc),
+            collateralToken: address(weth),
+            oracle: address(1),
+            irm: address(0),
+            lltv: 1e18
+        });
+        marketId = Id.unwrap(MarketParamsLib.id(params));
+        mockMorpho = new MockMorpho(params);
+        oracle = new MorphoMarketBalanceOracle(
+            address(mockMorpho),
+            marketId,
+            "Morpho",
+            "Mock Market",
+            address(balances)
+        );
+    }
+
+    function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
+        int256 balance = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(balance, 0);
+    }
+
+    function test_getOracleBalanceForAsset_unsupportedToken_reverts() public {
+        address unsupported = address(1);
+        vm.expectRevert(InvalidArguments.selector);
+        oracle.getOracleBalanceForAsset(alice, unsupported);
+    }
+
+    function test_getOracleBalanceForAsset_zeroPosition_returnsZero() public view {
+        int256 balanceUsdc = oracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(balanceUsdc, 0);
+        int256 balanceWeth = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(balanceWeth, 0);
+    }
+
+    function test_underlyingAssetsSupported() public view {
+        address[] memory assets = oracle.underlyingAssetsSupported();
+        assertEq(assets.length, 2);
+        assertEq(assets[0], address(weth));
+        assertEq(assets[1], address(usdc));
+    }
+
+    function test_collateralAndLoanTokens() public view {
+        assertEq(oracle.COLLATERAL_TOKEN(), address(weth));
+        assertEq(oracle.LOAN_TOKEN(), address(usdc));
+    }
+
+    function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
+        (address[] memory assets, int256[] memory amounts) = oracle.getOracleBalance(address(0));
+        assertEq(assets.length, 0);
+        assertEq(amounts.length, 0);
+    }
+
+    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
+        INAVCalculator.PositionBalance[] memory positions =
+            oracle.getOraclePositions(address(0), address(0));
+        assertEq(positions.length, 0);
     }
 }

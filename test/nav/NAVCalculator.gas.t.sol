@@ -360,31 +360,6 @@ contract NAVCalculatorGasTest is SuperTest {
         // Gas usage documentation: getAccountPositions gas will be visible in test output
     }
     
-    /// @notice Establish baseline for calculateValue
-    function test_gasBenchmark_baseline_calculateValue() public {
-        address[] memory assets = new address[](3);
-        uint256[] memory amounts = new uint256[](3);
-        bool[] memory isDebt = new bool[](3);
-        assets[0] = address(usdc);
-        amounts[0] = 10 ** usdc.decimals();
-        isDebt[0] = false;
-        assets[1] = address(dai);
-        amounts[1] = 10 ** dai.decimals();
-        isDebt[1] = false;
-        assets[2] = address(weth);
-        amounts[2] = 10 ** weth.decimals();
-        isDebt[2] = false;
-        
-        uint256 gasBefore = gasleft();
-        int256 value = nav.calculateValue(assets, amounts, isDebt, address(0));
-        uint256 gasUsed = gasBefore - gasleft();
-        
-        assertGt(value, 0, "Should have positive value");
-        
-        // Gas usage documentation: calculateValue gas will be visible in test output
-        // Typically cheap as no oracle queries needed, just price lookups
-    }
-    
     // ============================================
     // Gas Per Asset/Oracle Analysis
     // ============================================

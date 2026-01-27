@@ -2,13 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CometExtInterface, CompoundV3CometWithMultiplier} from "src/balances/protocols/CompoundV3CometWithMultiplier.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-
-interface CometRewardsAux {
-    function getRewardOwed(address comet, address account) external returns (address token, uint256 owed);
-}
 
 /// @title CompoundV3CometWithMultiplierBalanceOracleForkTest
 /// @notice Fork tests for CompoundV3CometWithMultiplierBalanceOracle using real Arbitrum contracts
@@ -60,20 +57,38 @@ contract CompoundV3CometWithMultiplierBalanceOracleForkTest is BalanceAdapterFor
     }
     
     function _getSupportedAssets() internal returns (address[] memory) {
-        // Create temporary oracle to get supported assets
-        // Use a minimal mock balances for this purpose
-        address mockBalances = address(0x1111111111111111111111111111111111111111);
+        // Temp Balances (with code) required by adapter constructor; only underlyingAssetsSupported() is used
+        BalancesHarnessForFork tempBalances = new BalancesHarnessForFork();
         CompoundV3CometWithMultiplier tempOracle = new CompoundV3CometWithMultiplier(
-            COMPOUND_REWARDS, address(USDCV3), REWARD_TOKEN, "Compound v3", "USDC Comet", mockBalances
+            COMPOUND_REWARDS, address(USDCV3), REWARD_TOKEN, "Compound v3", "USDC Comet", address(tempBalances)
         );
-        address[] memory assets = tempOracle.underlyingAssetsSupported();
-        // Also add reward token
-        address[] memory allAssets = new address[](assets.length + 1);
-        for (uint256 i = 0; i < assets.length; i++) {
-            allAssets[i] = assets[i];
+        address[] memory raw = tempOracle.underlyingAssetsSupported();
+        // Deduplicate (adapter can return same asset as collateral and reward); reward may already be in raw
+        uint256 n = raw.length;
+        uint256 uniqueCount = 0;
+        for (uint256 i = 0; i < n; i++) {
+            bool seen = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (raw[j] == raw[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) uniqueCount++;
         }
-        allAssets[assets.length] = REWARD_TOKEN;
-        return allAssets;
+        address[] memory assets = new address[](uniqueCount);
+        uint256 k = 0;
+        for (uint256 i = 0; i < n; i++) {
+            bool seen = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (raw[j] == raw[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) assets[k++] = raw[i];
+        }
+        return assets;
     }
     
     // ============================================
@@ -112,10 +127,10 @@ contract CompoundV3CometWithMultiplierBalanceOracleForkTest is BalanceAdapterFor
     }
     
     function test_getOracleBalanceForAsset_multiCollaterals() public {
-        // Deploy balances for USDT comet
-        address mockBalances = address(0x1111111111111111111111111111111111111111);
+        // Deploy balances for USDT comet (temp Balances required by adapter constructor)
+        BalancesHarnessForFork tempBalances = new BalancesHarnessForFork();
         CompoundV3CometWithMultiplier tempOracle = new CompoundV3CometWithMultiplier(
-            COMPOUND_REWARDS, address(USDTV3), REWARD_TOKEN, "Compound v3", "USDC Comet", mockBalances
+            COMPOUND_REWARDS, address(USDTV3), REWARD_TOKEN, "Compound v3", "USDC Comet", address(tempBalances)
         );
         address[] memory assets = tempOracle.underlyingAssetsSupported();
         address[] memory allAssets = new address[](assets.length + 1);

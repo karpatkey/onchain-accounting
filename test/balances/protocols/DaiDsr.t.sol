@@ -4,26 +4,59 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
+/// @notice Minimal mock for Pot contract (used by DaiDsrBalanceOracle)
+contract MockPot {
+    uint256 public constant RAY = 10 ** 27;
+
+    function dsr() external pure returns (uint256) {
+        return RAY;
+    }
+
+    function chi() external pure returns (uint256) {
+        return RAY;
+    }
+
+    function rho() external pure returns (uint256) {
+        return type(uint32).max; // so block.timestamp > rho is false in unit tests
+    }
+
+    function drip() external pure returns (uint256) {
+        return RAY;
+    }
+
+    function join(uint256) external pure {}
+
+    function exit(uint256) external pure {}
+}
+
+/// @notice Minimal mock for DsrManager (used by DaiDsrBalanceOracle)
+contract MockDsrManager {
+    MockPot public immutable pot;
+
+    constructor() {
+        pot = new MockPot();
+    }
+
+    function pieOf(address) external pure returns (uint256) {
+        return 0;
+    }
+}
 
 /// @title DaiDsrBalanceOracleTest
 /// @notice Unit and implementation tests for DaiDsrBalanceOracle
 /// @dev Tests adapter logic and error handling without requiring fork
 contract DaiDsrBalanceOracleTest is BalanceAdapterTestBase {
     DaiDsrBalanceOracle public oracle;
-    MockBalances public mockBalances;
-    
-    // Mock Maker addresses (for unit tests)
-    address public constant MOCK_DAI = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_DSR = address(0x2222222222222222222222222222222222222222);
-    
+    MockDsrManager public mockDsrManager;
+
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
+        mockDsrManager = new MockDsrManager();
         oracle = new DaiDsrBalanceOracle(
-            MOCK_DAI,
-            MOCK_DSR,
+            address(dai), // use test base DAI token so it's a real contract if ever queried
+            address(mockDsrManager),
             "Maker",
             "DSR",
             address(balances)

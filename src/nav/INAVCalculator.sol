@@ -37,25 +37,19 @@ interface INAVCalculator {
         string positionDetail;
     }
 
-    /// @notice Health check information for NAV calculations
-    /// @param stalePriceAssets Array of assets with stale prices
-    /// @param sequencerDown Whether the L2 sequencer is down
-    struct HealthCheck {
-        Asset[] stalePriceAssets;
-        bool sequencerDown;
-    }
-
     /// @notice The complete NAV snapshot
     /// @param value Total value in quoteAsset
     /// @param quoteAsset The quote currency (must have PriceFeedConfig configured)
     /// @param timestamp Block timestamp this reading refers to
-    /// @param issues Health check information
+    /// @param stalePriceAssets Array of assets with stale prices
+    /// @param sequencerDown Whether the L2 sequencer is down
     // forge-lint: disable-next-line(pascal-case-struct)
     struct NAV {
         int256 value;
         Asset quoteAsset;
         uint64 timestamp;
-        HealthCheck issues;
+        Asset[] stalePriceAssets;
+        bool sequencerDown;
     }
 
     struct Asset {
@@ -73,7 +67,7 @@ interface INAVCalculator {
     /// @param updatedAt The timestamp when price was last updated (Chainlink only, 0 for custom)
     /// @param stale Whether the price is stale (asset-specific, e.g., heartbeat timeout)
     /// @param sequencerDown Whether L2 sequencer is down (L2 only, false on L1)
-    struct PriceFeed {
+    struct PriceFeedData {
         address oracle;
         IPrices.PriceType priceType;
         uint256 price;
@@ -171,21 +165,21 @@ interface INAVCalculator {
     /// @notice Returns the current initialization version as tracked by OpenZeppelin's Initializable storage
     function version() external view returns (uint64);
 
-    /// @notice Gets NAV for an account in the specified baseAsset (quote currency)
+    /// @notice Gets NAV for an account in the specified quoteAsset (quote currency)
     /// @param account The address of the account to calculate for
-    /// @param baseAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
     /// @return nav The NAV of the account in the specified quote currency
-    function getAccountNav(address account, address baseAsset) external view returns (NAV memory nav);
+    function getAccountNav(address account, address quoteAsset) external view returns (NAV memory nav);
 
     /// @notice Gets NAV for a range of assets (chunked query)
     /// @param account The address of the account to calculate for
     /// @param from Starting asset index (inclusive, from asset enumeration)
     /// @param to Ending asset index (inclusive, from asset enumeration)
-    /// @param baseAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
     /// @dev Validates that from <= to and both indices are within asset count bounds
     /// @dev Reverts with InvalidArguments if indices are out of range or from > to
     /// @return nav The NAV of the account for the specified asset range in the quote currency
-    function getAccountNavForRange(address account, uint256 from, uint256 to, address baseAsset)
+    function getAccountNavForRange(address account, uint256 from, uint256 to, address quoteAsset)
         external
         view
         returns (NAV memory nav);
@@ -226,8 +220,8 @@ interface INAVCalculator {
 
     /// @notice Returns comprehensive price feed query result for a given token
     /// @param underlyingAsset The address of the token
-    /// @return priceFeed The complete price information including oracle details, price, staleness, and sequencer status
-    function getPriceData(address underlyingAsset) external view returns (PriceFeed memory priceFeed);
+    /// @return priceFeedData The complete price information including oracle details, price, staleness, and sequencer status
+    function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
     /// @notice Returns overall health status
     /// @return sequencerDown Whether the L2 sequencer is down (false on L1)
@@ -245,19 +239,15 @@ interface INAVCalculator {
     /// @dev This is a gas-efficient way to identify which assets need processing
     function getAssetsWithPositions(address account) external view returns (address[] memory assets);
 
-    /// @notice Calculates the total value of provided asset balances in the specified quote currency
+    /// @notice Converts one or more positive balances into a total value in the quote currency
     /// @param assets Array of asset addresses
-    /// @param amounts Array of amounts corresponding to each asset (always positive)
-    /// @param isDebt Array of flags indicating whether each amount is debt (true) or credit (false)
-    /// @param quoteCurrency The address of the quote currency (address(0) for USD)
-    /// @return value The total value of all balances in the quote currency
-    /// @dev Arrays must be the same length. Each asset must be registered and have a price oracle.
-    /// @dev If quoteCurrency is address(0), returns USD value. Otherwise, converts from USD to quoteCurrency.
-    /// @dev Debt positions (isDebt = true) are subtracted from the total, credit positions (isDebt = false) are added.
-    function calculateValue(
-        address[] memory assets,
-        uint256[] memory amounts,
-        bool[] memory isDebt,
-        address quoteCurrency
-    ) external view returns (int256 value);
+    /// @param amounts Array of amounts (positive balances only; zero amounts are skipped)
+    /// @param quoteAsset Quote currency address (address(0) for USD)
+    /// @return value Total value of the balances in the quote asset (always non-negative for valid inputs)
+    /// @dev Uses the same pricing and decimals as the rest of the NAV calculator. Only positive
+    ///      balances are supported; no debt/negative positions. Each asset must be registered with a price feed.
+    function calculateValue(address[] memory assets, uint256[] memory amounts, address quoteAsset)
+        external
+        view
+        returns (int256 value);
 }

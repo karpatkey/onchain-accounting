@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import "src/errors.sol";
 
@@ -82,13 +81,11 @@ contract MockAaveRewardsDistributor {
 /// @dev Tests adapter logic and implementation without requiring fork
 contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
     AaveV3InstanceBalanceOracle public oracle;
-    MockBalances public mockBalances;
     MockAaveProtocolDataProvider public mockDataProvider;
     MockAaveRewardsDistributor public mockRewardsDistributor;
     
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
         mockDataProvider = new MockAaveProtocolDataProvider();
         mockRewardsDistributor = new MockAaveRewardsDistributor();
         oracle = new AaveV3InstanceBalanceOracle(

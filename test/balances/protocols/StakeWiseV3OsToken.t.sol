@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title StakeWiseV3OsTokenBalanceOracleTest
@@ -12,20 +12,19 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @dev Tests adapter logic and error handling without requiring fork
 contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
     StakeWiseV3OsTokenBalanceOracle public oracle;
-    MockBalances public mockBalances;
-    
-    // Mock addresses (for unit tests)
-    address public constant MOCK_OS_TOKEN = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_UNDERLYING = address(0x2222222222222222222222222222222222222222);
-    address public constant MOCK_VAULT_CONTROLLER = address(0x3333333333333333333333333333333333333333);
-    
+    MockContract public mockOsToken;
+    MockContract public mockUnderlying;
+    MockContract public mockVaultController;
+
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
+        mockOsToken = new MockContract();
+        mockUnderlying = new MockContract();
+        mockVaultController = new MockContract();
         oracle = new StakeWiseV3OsTokenBalanceOracle(
-            MOCK_OS_TOKEN,
-            MOCK_UNDERLYING,
-            MOCK_VAULT_CONTROLLER,
+            address(mockOsToken),
+            address(mockUnderlying),
+            address(mockVaultController),
             "Stakewise v3",
             "osGNO",
             address(balances)
@@ -56,7 +55,7 @@ contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
     function test_underlyingAssetsSupported() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 1);
-        assertEq(assets[0], MOCK_UNDERLYING);
+        assertEq(assets[0], address(mockUnderlying));
     }
     
     // ============================================

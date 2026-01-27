@@ -403,6 +403,13 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleAdapter {
         view
         returns (int256 balance)
     {
+        // Return zero for zero account or unsupported/invalid tokens (adapter convention)
+        if (account == address(0) || asset == address(0)) {
+            return 0;
+        }
+        if (asset != address(REWARD_TOKEN) && asset != BASE_TOKEN && !isCollateral[asset]) {
+            return 0;
+        }
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -413,6 +420,9 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, int256[] memory balances)
     {
+        if (account == address(0)) {
+            return (new address[](0), new int256[](0));
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -454,6 +464,9 @@ contract CompoundV3CometWithMultiplier is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        if (account == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         address[] memory registeredAssets = NAV_CALCULATOR.assets();
 

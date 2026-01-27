@@ -68,12 +68,6 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
     uint256 public constant OPTIMISM_FORK_BLOCK = 130_000_000; // Adjust to recent block
 
     function setUp() public virtual {
-        // Skip fork tests by default
-        // Set FORGE_SKIP_FORK_TESTS=false to enable fork tests
-        string memory skipEnv = vm.envOr("FORGE_SKIP_FORK_TESTS", string("true"));
-        if (keccak256(bytes(skipEnv)) == keccak256(bytes("true"))) {
-            vm.skip(true, "Fork tests are skipped by default. Set FORGE_SKIP_FORK_TESTS=false to enable.");
-        }
         _setupForks();
         _setupBridgeEscrow();
         _setupLabels();

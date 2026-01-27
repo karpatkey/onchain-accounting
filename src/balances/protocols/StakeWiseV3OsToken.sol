@@ -118,6 +118,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         view
         returns (int256 balance)
     {
+        // Return zero for unsupported or invalid tokens (adapter convention)
+        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
+            return 0;
+        }
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -128,6 +132,9 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, int256[] memory balances)
     {
+        if (account == address(0)) {
+            return (new address[](0), new int256[](0));
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         int256 balance = this.getOracleBalanceForAsset(account, supportedAssets[0]);
 

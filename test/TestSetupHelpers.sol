@@ -8,9 +8,12 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @notice Balances harness for fork tests
-/// @dev This contract extends Balances and exposes internal functions for testing
+/// @dev This contract extends Balances and exposes internal functions for testing.
+///      Implements INAVCalculator view methods (assets, assetCount, assetAt) so adapters'
+///      getOraclePositions() work when this contract is passed as "NAVCalculator".
 contract BalancesHarnessForFork is Balances {
     ERC20DefaultOracle public defaultOracle;
 
@@ -28,6 +31,29 @@ contract BalancesHarnessForFork is Balances {
 
     function setAssetSymbolForTest(address asset, string memory symbol) public {
         _setAssetSymbol(asset, symbol);
+    }
+
+    /// @notice INAVCalculator.assets() compatibility for getOraclePositions in fork tests
+    function assets() external view returns (address[] memory) {
+        return getAssets();
+    }
+
+    /// @notice INAVCalculator.assetCount() compatibility for getOraclePositions in fork tests
+    /// @dev Returns getAssets().length so iteration 0..assetCount()-1 is always valid for assetAt(i)
+    function assetCount() external view returns (uint256) {
+        return getAssets().length;
+    }
+
+    /// @notice INAVCalculator.assetAt() compatibility for getOraclePositions in fork tests
+    function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory) {
+        address[] memory assts = getAssets();
+        require(idx < assts.length, "assetAt: index out of range");
+        address asset = assts[idx];
+        return INAVCalculator.Asset({
+            asset: asset,
+            symbol: getAssetSymbol(asset),
+            decimals: getAssetDecimals(asset)
+        });
     }
 }
 
@@ -212,30 +238,59 @@ abstract contract TestSetupHelpers is Test {
     /// @notice Deploys a Balances contract in the fork and registers the provided assets
     /// @param assets Array of asset addresses to register
     /// @return balancesInstance The deployed Balances contract with assets registered
-    /// @dev This function attempts to read decimals from each asset contract, falling back to 18 if it fails
+    /// @dev This function attempts to read decimals from each asset contract, falling back to 18 if it fails.
+    ///      Symbol is read via low-level call so both string and bytes32 (e.g. MKR) return types are supported.
     function deployBalancesInFork(address[] memory assets) internal returns (BalancesHarnessForFork) {
         BalancesHarnessForFork balancesInstance = new BalancesHarnessForFork();
 
-        // Register each asset with its decimals
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
             try IERC20Metadata(asset).decimals() returns (uint8 decimals) {
                 balancesInstance.registerAssetForTest(asset, decimals);
             } catch {
-                // If decimals() fails, use default 18 (common for many tokens)
                 balancesInstance.registerAssetForTest(asset, 18);
             }
 
-            // Try to get symbol from the token contract
-            try IERC20Metadata(asset).symbol() returns (string memory symbol) {
-                balancesInstance.setAssetSymbolForTest(asset, symbol);
-            } catch {
-                // If symbol() fails, use empty string or a default
-                balancesInstance.setAssetSymbolForTest(asset, "");
-            }
+            string memory symbol = _safeTokenSymbol(asset);
+            balancesInstance.setAssetSymbolForTest(asset, symbol);
         }
 
         return balancesInstance;
+    }
+
+    /// @notice Reads token symbol safely for fork tests. Handles both string and bytes32 (old ERC20) returns.
+    /// @param asset Token address
+    /// @return symbol The symbol string, or "" if the call fails or returns unreadable data
+    function _safeTokenSymbol(address asset) internal view returns (string memory symbol) {
+        (bool ok, bytes memory data) = asset.staticcall(abi.encodeWithSignature("symbol()"));
+        if (!ok || data.length == 0) return "";
+        if (data.length == 32) {
+            // Old ERC20 (e.g. MKR) returns bytes32; left-padded, trailing zeros
+            bytes32 b = abi.decode(data, (bytes32));
+            if (b == 0) return "";
+            uint256 len;
+            for (uint256 i = 0; i < 32; i++) {
+                if (uint8(uint256(b) >> (248 - i * 8)) == 0) break;
+                len++;
+            }
+            bytes memory s = new bytes(len);
+            for (uint256 i = 0; i < len; i++) s[i] = bytes1(uint8(uint256(b) >> (248 - i * 8)));
+            return string(s);
+        }
+        // ABI-encoded string: offset (32) + length (32) + data
+        if (data.length >= 64) {
+            uint256 offset = abi.decode(data, (uint256));
+            if (offset != 32) return "";
+            uint256 strLen;
+            assembly {
+                strLen := mload(add(add(data, 32), 32))
+            }
+            if (64 + strLen > data.length || strLen > 256) return "";
+            bytes memory s = new bytes(strLen);
+            for (uint256 i = 0; i < strLen; i++) s[i] = data[64 + i];
+            return string(s);
+        }
+        return "";
     }
 
     /// @notice Deploys a Balances contract in the fork and registers a single asset

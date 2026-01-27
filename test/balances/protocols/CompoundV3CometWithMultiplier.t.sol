@@ -4,11 +4,35 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {CometExtInterface, CompoundV3CometWithMultiplier} from "src/balances/protocols/CompoundV3CometWithMultiplier.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
+import {MockCometMinimal} from "test/balances/protocols/CompoundV3Comet.t.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-interface CometRewardsAux {
-    function getRewardOwed(address comet, address account) external returns (address token, uint256 owed);
+/// @notice Mock Compound rewards for WithMultiplier: rewardConfig returns 4 values (token, rescaleFactor, shouldUpscale, multiplier).
+contract MockCompoundRewardsWithMultiplier {
+    address public rewardToken;
+    uint64 public rescaleFactor;
+    bool public shouldUpscale;
+    uint256 public multiplier;
+
+    constructor(address rewardToken_, uint64 rescaleFactor_, bool shouldUpscale_, uint256 multiplier_) {
+        rewardToken = rewardToken_;
+        rescaleFactor = rescaleFactor_ == 0 ? 1 : rescaleFactor_; // avoid div by zero in adapter
+        shouldUpscale = shouldUpscale_;
+        multiplier = multiplier_;
+    }
+
+    function rewardConfig(address)
+        external
+        view
+        returns (address token, uint64 rescaleFactor_, bool shouldUpscale_, uint256 multiplier_)
+    {
+        return (rewardToken, rescaleFactor, shouldUpscale, multiplier);
+    }
+
+    function rewardsClaimed(address, address) external pure returns (uint256) {
+        return 0;
+    }
 }
 
 /// @title CompoundV3CometWithMultiplierBalanceOracleTest
@@ -16,20 +40,25 @@ interface CometRewardsAux {
 /// @dev Tests adapter logic and error handling without requiring fork
 contract CompoundV3CometWithMultiplierBalanceOracleTest is BalanceAdapterTestBase {
     CompoundV3CometWithMultiplier public oracle;
-    MockBalances public mockBalances;
-    
-    // Mock Compound addresses (for unit tests)
-    address public constant MOCK_COMPOUND_REWARDS = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_COMET = address(0x2222222222222222222222222222222222222222);
-    address public constant MOCK_REWARD_TOKEN = address(0x3333333333333333333333333333333333333333);
-    
+    MockCompoundRewardsWithMultiplier public mockCompoundRewards;
+    MockCometMinimal public mockComet;
+    MockContract public mockRewardToken;
+
     function setUp() public override {
         super.setUp();
-        mockBalances = new MockBalances();
+        mockRewardToken = new MockContract();
+        // rewardConfig returns (token, rescaleFactor=1, shouldUpscale=false, multiplier=1e18)
+        mockCompoundRewards = new MockCompoundRewardsWithMultiplier(
+            address(mockRewardToken),
+            1,
+            false,
+            1e18
+        );
+        mockComet = new MockCometMinimal(address(usdc));
         oracle = new CompoundV3CometWithMultiplier(
-            MOCK_COMPOUND_REWARDS,
-            MOCK_COMET,
-            MOCK_REWARD_TOKEN,
+            address(mockCompoundRewards),
+            address(mockComet),
+            address(mockRewardToken),
             "Compound v3",
             "USDC Comet",
             address(balances)
@@ -65,58 +94,51 @@ contract CompoundV3CometWithMultiplierBalanceOracleTest is BalanceAdapterTestBas
     
     function test_getOracleBalanceForAsset_edgeCase_MaxPrincipal() public {
         address user = address(1);
-        
         int104 maxPositivePrincipal = type(int104).max;
         vm.mockCall(
-            MOCK_COMET,
+            address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
-            abi.encode(maxPositivePrincipal, 0, 0, 0, 0, 1)
+            abi.encode(maxPositivePrincipal, uint64(0), uint64(0), uint16(0), uint8(0))
         );
-        
         int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
         assertGt(balance, 0, "Balance should be positive (credit)");
     }
-    
+
     function test_getOracleBalanceForAsset_edgeCase_MinimalPrincipal() public {
         address user = address(1);
-        
         int104 maxNegativePrincipal = type(int104).min;
         vm.mockCall(
-            MOCK_COMET,
+            address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
-            abi.encode(maxNegativePrincipal, 0, 0, 0, 0, 1)
+            abi.encode(maxNegativePrincipal, uint64(0), uint64(0), uint16(0), uint8(0))
         );
-        
         int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
         assertLt(balance, 0, "Balance should be negative (debt)");
     }
     
     function test_getOracleBalanceForAsset_edgeCase_OneMultiplier() public {
         address user = address(1);
-        
-        int104 maxPositivePrincipal = 1;
+        // userBasic(principal=1, baseTrackingIndex=1, baseTrackingAccrued=1, assetsIn=0, reserved=0)
+        // -> updateBasePrincipal yields accrued 1; reward = 1 * 1e18 / 1e18 = 1
         vm.mockCall(
-            MOCK_COMET,
+            address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
-            abi.encode(maxPositivePrincipal, 1, 1, 1, 1, 1)
+            abi.encode(int104(1), uint64(1), uint64(1), uint16(0), uint8(0))
         );
-        
-        int256 balance = oracle.getOracleBalanceForAsset(user, MOCK_REWARD_TOKEN);
-        assertEq(balance, 1_000_000_000_000);
+        int256 balance = oracle.getOracleBalanceForAsset(user, address(mockRewardToken));
+        assertEq(balance, 1);
     }
-    
+
     function test_getOracleBalanceForAsset_edgeCase_DoubleMultiplier() public {
         address user = address(1);
-        
-        int104 maxNegativePrincipal = 1;
+        // userBasic(principal=1, baseTrackingIndex=1, baseTrackingAccrued=2, ...) -> accrued 2; reward = 2
         vm.mockCall(
-            MOCK_COMET,
+            address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
-            abi.encode(maxNegativePrincipal, 1, 2, 1, 1, 1)
+            abi.encode(int104(1), uint64(1), uint64(2), uint16(0), uint8(0))
         );
-        
-        int256 balance = oracle.getOracleBalanceForAsset(user, MOCK_REWARD_TOKEN);
-        assertEq(balance, -2_000_000_000_000);
+        int256 balance = oracle.getOracleBalanceForAsset(user, address(mockRewardToken));
+        assertEq(balance, 2);
     }
     
     // ============================================

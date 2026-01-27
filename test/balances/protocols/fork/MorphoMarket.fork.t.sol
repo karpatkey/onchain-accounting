@@ -4,6 +4,8 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Id} from "morpho-blue/src/interfaces/IMorpho.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title MorphoMarketBalanceOracleForkTest
 /// @notice Fork tests for MorphoMarketBalanceOracle using real mainnet contracts
@@ -12,9 +14,9 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // Morpho contract addresses (mainnet)
     address public constant MORPHO_MAINNET = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
     
-    // Market IDs
-    bytes32 public constant MARKET_ID_WSTETH_USDC = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
-    bytes32 public constant MARKET_ID_USDC_DAI_MKR = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
+    // Market IDs (morpho-blue Id type)
+    Id public constant MARKET_ID_WSTETH_USDC = Id.wrap(0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc);
+    Id public constant MARKET_ID_USDC_DAI_MKR = Id.wrap(0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f);
     
     // Token addresses
     address public constant USDC = MAINNET_USDC;
@@ -32,7 +34,29 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // Real user addresses with positions in Morpho
     address public constant SUPPLY_USDC_USER = 0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B;
     address public constant BORROW_USDC_USER = 0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34;
-    
+
+    // --- kpkUSDC Morpho vault (ERC4626) ---
+    /// @notice kpkUSDC v1 Morpho vault address
+    address public constant VAULT_V1 = 0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd;
+    /// @notice kpkUSDC v2 Morpho vault address
+    address public constant VAULT_V2 = 0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6;
+    /// @notice USDC token address (vault's underlying asset)
+    address public constant VAULT_USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    /// @notice Test user safe address
+    address public constant SAFE = 0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7;
+    /// @notice Test block number for v1
+    uint256 public constant TEST_BLOCK_V1 = 23_641_970;
+    /// @notice Test block number for v2
+    uint256 public constant TEST_BLOCK_V2 = 23_741_965;
+    /// @notice Expected v1 vault shares for the safe
+    uint256 public constant EXPECTED_SHARES_V1 = 2_982_110_271_240_305_431_905_256;
+    /// @notice Expected v2 vault shares for the safe
+    uint256 public constant EXPECTED_SHARES_V2 = 9_995_002_548_700_162_916_912;
+    /// @notice Expected v1 underlying USDC balance
+    uint256 public constant EXPECTED_BALANCE_V1 = 3_002_464_933_597;
+    /// @notice Expected v2 underlying USDC balance
+    uint256 public constant EXPECTED_BALANCE_V2 = 10_000_286_118;
+
     function setUp() public override {
         super.setUp();
     }
@@ -51,7 +75,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_WSTETH_USDC,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho",
             "Some market",
             address(balances)
@@ -76,7 +100,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_USDC_DAI_MKR,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho",
             "Some market",
             address(balances)
@@ -97,7 +121,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_USDC_DAI_MKR,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho",
             "Some market",
             address(balances)
@@ -121,7 +145,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_WSTETH_USDC,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho",
             "Some market",
             address(balances)
@@ -147,7 +171,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_WSTETH_USDC,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho",
             "Some market",
             address(balances)
@@ -172,7 +196,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_USDC_DAI_MKR,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho",
             "Some market",
             address(balances)
@@ -196,7 +220,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         
         oracle = new MorphoMarketBalanceOracle(
             MORPHO_MAINNET,
-            MARKET_ID_WSTETH_USDC,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho",
             "Some market",
             address(balances)
@@ -211,5 +235,33 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertTrue(positions[i].amount > 0, "Position amount should be positive");
         }
+    }
+
+    // ============================================
+    // kpkUSDC Morpho Vault (ERC4626) Fork Tests
+    // ============================================
+
+    function test_kpkUSDC_v1_vault_sharesAndBalance() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), TEST_BLOCK_V1);
+        IERC4626 vault = IERC4626(VAULT_V1);
+        assertEq(vault.asset(), VAULT_USDC, "v1 vault asset should be USDC");
+
+        uint256 shares = vault.balanceOf(SAFE);
+        assertEq(shares, EXPECTED_SHARES_V1, "v1 vault shares for SAFE");
+
+        uint256 assets = vault.convertToAssets(shares);
+        assertEq(assets, EXPECTED_BALANCE_V1, "v1 vault underlying USDC for SAFE");
+    }
+
+    function test_kpkUSDC_v2_vault_sharesAndBalance() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), TEST_BLOCK_V2);
+        IERC4626 vault = IERC4626(VAULT_V2);
+        assertEq(vault.asset(), VAULT_USDC, "v2 vault asset should be USDC");
+
+        uint256 shares = vault.balanceOf(SAFE);
+        assertEq(shares, EXPECTED_SHARES_V2, "v2 vault shares for SAFE");
+
+        uint256 assets = vault.convertToAssets(shares);
+        assertEq(assets, EXPECTED_BALANCE_V2, "v2 vault underlying USDC for SAFE");
     }
 }

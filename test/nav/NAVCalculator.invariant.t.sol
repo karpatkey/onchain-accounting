@@ -204,8 +204,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
     /// @notice Test that getPriceData returns consistent results
     function test_invariant_priceFeedConsistency_getPriceData() public {
-        INAVCalculator.PriceFeed memory feed1 = nav.getPriceData(address(usdc));
-        INAVCalculator.PriceFeed memory feed2 = nav.getPriceData(address(usdc));
+        INAVCalculator.PriceFeedData memory feed1 = nav.getPriceData(address(usdc));
+        INAVCalculator.PriceFeedData memory feed2 = nav.getPriceData(address(usdc));
         
         assertEq(feed1.price, feed2.price, "Price should be consistent");
         assertEq(feed1.decimals, feed2.decimals, "Decimals should be consistent");
@@ -388,7 +388,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     // ============================================
 
     /// @notice Test that NAV value is independent of quote currency (after conversion)
-    function test_invariant_quoteCurrencyIndependence() public {
+    function test_invariant_quoteAssetIndependence() public {
         usdc.mint(safe, 10 ** usdc.decimals());
         dai.mint(safe, 10 ** dai.decimals());
         
@@ -415,7 +415,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     /// @notice Test that converting between quote currencies preserves relative values
-    function test_invariant_quoteCurrencyIndependence_relativeValues() public {
+    function test_invariant_quoteAssetIndependence_relativeValues() public {
         // Setup: Two accounts with different balances
         address account1 = makeAddr("account1");
         address account2 = makeAddr("account2");

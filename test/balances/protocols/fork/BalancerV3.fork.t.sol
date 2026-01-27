@@ -25,14 +25,23 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     uint256 public constant FORK_BLOCK = 22_087_430;
     uint256 public constant FORK_BLOCK_2 = 22_131_971;
     uint256 public constant FORK_BLOCK_3 = 22_131_954;
-    
+    /// @notice Fork block for Aave GHO/USDT/USDC Tenderly simulation
+    uint256 public constant FORK_BLOCK_TENDERLY = 23_569_450;
+
     // Oracle instance
     BalancerV3PoolBalanceOracle public oracle;
-    
+
     // Real user addresses with positions in Balancer V3
     address public constant MAINNET_STAKED_USER = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
     address public constant MAINNET_UNSTAKED_USER = 0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f;
     address public constant MAINNET_WHALE_USER = 0xaF52695E1bB01A16D33D7194C28C42b10e0Dbec2;
+    /// @notice Test user for Aave GHO/USDT/USDC (Tenderly expected values)
+    address public constant USER_TENDERLY = 0xC01318baB7ee1f5ba734172bF7718b5DC6Ec90E1;
+
+    // Expected oracle balances at FORK_BLOCK_TENDERLY for USER_TENDERLY (Tenderly simulation)
+    int256 public constant EXPECTED_USDT = 1_148_397; // 6 decimals
+    int256 public constant EXPECTED_USDC = 3_714_973; // 6 decimals
+    int256 public constant EXPECTED_GHO = 5_135_070_400_402_385_644; // 18 decimals
     
     function setUp() public override {
         super.setUp();
@@ -48,6 +57,7 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_getSupportedAssets());
+        // Pool: Aave GHO/USDT/USDC; position type: Supplied
         oracle = new BalancerV3PoolBalanceOracle(
             POOL,
             GAUGE,
@@ -58,19 +68,39 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     }
     
     function _getSupportedAssets() internal pure returns (address[] memory) {
-        address[] memory assets = new address[](5);
-        assets[0] = POOL; // Pool itself is the underlying asset
-        assets[1] = USDT;
-        assets[2] = USDC;
-        assets[3] = GHO;
-        assets[4] = BAL;
+        address[] memory assets = new address[](4);
+        assets[0] = USDT;
+        assets[1] = USDC;
+        assets[2] = GHO;
+        assets[3] = BAL;
         return assets;
     }
     
     // ============================================
     // Real Position Tests
     // ============================================
-    
+
+    /// @notice Oracle balances at fork 23_569_450 match Tenderly simulation for USER_TENDERLY (Aave GHO/USDT/USDC)
+    function test_getOracleBalanceForAsset_tenderly_expectedValues() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_TENDERLY);
+        balances = _deployBalancesForOracle(_getSupportedAssets());
+        oracle = new BalancerV3PoolBalanceOracle(
+            POOL,
+            GAUGE,
+            BALANCER_MINTER,
+            "Balancer v3",
+            address(balances)
+        );
+
+        int256 balanceUsdt = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDT);
+        int256 balanceUsdc = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDC);
+        int256 balanceGho = oracle.getOracleBalanceForAsset(USER_TENDERLY, GHO);
+
+        assertEq(balanceUsdt, EXPECTED_USDT, "USDT balance should match Tenderly");
+        assertEq(balanceUsdc, EXPECTED_USDC, "USDC balance should match Tenderly");
+        assertEq(balanceGho, EXPECTED_GHO, "GHO balance should match Tenderly");
+    }
+
     function test_getOracleBalanceForAsset_mainnet_staked_gauge() public {
         vm.rollFork(FORK_BLOCK_2);
         balances = _deployBalancesForOracle(_getSupportedAssets());

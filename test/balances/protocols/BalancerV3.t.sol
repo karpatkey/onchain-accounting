@@ -6,7 +6,21 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTest
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
+import {MockContract} from "test/mocks/MockContract.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
+/// @notice Mock gauge that returns the given pool from lp_token() (required by BalancerV3 constructor)
+contract MockBalancerGauge {
+    address private _lpToken;
+
+    constructor(address pool_) {
+        _lpToken = pool_;
+    }
+
+    function lp_token() external view returns (address) {
+        return _lpToken;
+    }
+}
 
 /// @title BalancerV3PoolBalanceOracleTest
 /// @notice Unit and implementation tests for BalancerV3PoolBalanceOracle
@@ -14,19 +28,20 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     BalancerV3PoolBalanceOracle public oracle;
     MockBalances public mockBalances;
-    
-    // Mock addresses (for unit tests)
-    address public constant MOCK_POOL = address(0x1111111111111111111111111111111111111111);
-    address public constant MOCK_GAUGE = address(0x2222222222222222222222222222222222222222);
-    address public constant MOCK_MINTER = address(0x3333333333333333333333333333333333333333);
+    MockContract public mockPool;
+    MockBalancerGauge public mockGauge;
+    MockContract public mockMinter;
     
     function setUp() public override {
         super.setUp();
         mockBalances = new MockBalances();
+        mockPool = new MockContract();
+        mockGauge = new MockBalancerGauge(address(mockPool));
+        mockMinter = new MockContract();
         oracle = new BalancerV3PoolBalanceOracle(
-            MOCK_POOL,
-            MOCK_GAUGE,
-            MOCK_MINTER,
+            address(mockPool),
+            address(mockGauge),
+            address(mockMinter),
             "Balancer v3",
             address(balances)
         );
@@ -37,18 +52,18 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     // ============================================
     
     function test_constructor() public view {
-        assertEq(address(oracle.POOL()), MOCK_POOL);
-        assertEq(address(oracle.GAUGE()), MOCK_GAUGE);
+        assertEq(address(oracle.POOL()), address(mockPool));
+        assertEq(address(oracle.GAUGE()), address(mockGauge));
     }
     
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(address(0), MOCK_GAUGE, MOCK_MINTER, "Balancer v3", address(mockBalances));
+        new BalancerV3PoolBalanceOracle(address(0), address(mockGauge), address(mockMinter), "Balancer v3", address(mockBalances));
     }
     
     function test_constructor_reverts_zeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(MOCK_POOL, address(0), MOCK_MINTER, "Balancer v3", address(mockBalances));
+        new BalancerV3PoolBalanceOracle(address(mockPool), address(0), address(mockMinter), "Balancer v3", address(mockBalances));
     }
     
     // ============================================

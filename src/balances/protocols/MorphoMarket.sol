@@ -76,12 +76,7 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     /// @param marketId_ The market id to query.
     /// @param protocol_ Protocol identifier including market (e.g., "Morpho - cbBTC/USDC").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address morpho_,
-        bytes32 marketId_,
-        string memory protocol_,
-        address navCalculator_
-    ) {
+    constructor(address morpho_, bytes32 marketId_, string memory protocol_, address navCalculator_) {
         require(morpho_.code.length > 0, "Morpho must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
@@ -120,14 +115,12 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
             uint256 suppliedAssets = 0;
             if (totalSupplyShares != 0 && position.supplyShares != 0) {
-                suppliedAssets =
-                    totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to avoid overestimating the supply
+                suppliedAssets = totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to avoid overestimating the supply
             }
 
             uint256 borrowedAssets = 0;
             if (totalBorrowShares != 0 && position.borrowShares != 0) {
-                borrowedAssets =
-                    totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating the debt
+                borrowedAssets = totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating the debt
             }
 
             // Calculate net: supplied - borrowed (can be negative)
@@ -157,11 +150,7 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -200,7 +189,6 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             balances[i] = tempBalances[i];
         }
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's Morpho positions
@@ -264,7 +252,8 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }

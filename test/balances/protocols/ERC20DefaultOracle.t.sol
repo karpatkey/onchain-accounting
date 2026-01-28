@@ -77,7 +77,7 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
     function test_underlyingAssetsSupported_returnsAllRegisteredAssets() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 4);
-        
+
         // Assets can be in any order, so we check by searching
         bool foundUsdc = false;
         bool foundDai = false;

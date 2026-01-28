@@ -127,8 +127,6 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         string memory protocol_,
         address nav_
     ) external returns (CompoundV3Comet) {
-        return new CompoundV3Comet(
-            compoundRewardContract_, comet_, compound_, protocol_, nav_
-        );
+        return new CompoundV3Comet(compoundRewardContract_, comet_, compound_, protocol_, nav_);
     }
 }

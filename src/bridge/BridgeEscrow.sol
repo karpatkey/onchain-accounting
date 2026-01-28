@@ -77,6 +77,13 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @dev Invariant: Should equal sum of _inTransitBalances[safe][asset] across all safes
     mapping(address => uint256) private _inTransitBalancesAllSafes;
 
+    /// @notice Adapter per selector (delegatecall target for protocol callbacks, e.g. ccipReceive)
+    mapping(bytes4 => address) private _callbackAdapters;
+
+    /// @notice Callback selector per adapter (reverse mapping for clearing on revoke/update)
+    /// @dev bytes4(0) means no callback configured for this adapter
+    mapping(address => bytes4) private _adapterToCallbackSelector;
+
     //
     // Constructor
     //
@@ -123,6 +130,19 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
     /// @notice Allows contract to receive native tokens
     receive() external payable {}
+
+    /// @notice Dispatches unknown selectors to the registered adapter (call). Adapter implements the protocol callback and calls releaseByInvoiceId.
+    fallback() external payable {
+        address adapter = _callbackAdapters[msg.sig];
+        if (adapter == address(0)) revert InvalidArguments();
+        (bool success,) = adapter.call(msg.data);
+        if (!success) {
+            assembly ("memory-safe") {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
+    }
 
     //
     // Core Functions
@@ -582,18 +602,57 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         emit PortfolioSafeRevoked(safe);
     }
 
-    /// @notice Authorizes a bridge adapter
+    /// @notice Authorizes a bridge adapter (no callback; use updateAdapterConfig to add callback later if needed)
     /// @param adapter The adapter address to authorize
     function authorizeAdapter(address adapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _authorizeAdapter(adapter);
         emit AdapterAuthorized(adapter);
     }
 
-    /// @notice Revokes authorization for a bridge adapter
+    /// @notice Authorizes a bridge adapter and registers its callback. The adapter is the delegatecall target (it implements the protocol callback, e.g. handleAcrossMessage).
+    /// @param adapter The adapter address to authorize
+    /// @param selector The function selector the bridge protocol calls (e.g. handleAcrossMessage.selector)
+    function authorizeAdapterWithCallback(address adapter, bytes4 selector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (selector == bytes4(0)) revert InvalidArguments();
+        if (_authorizedAdapters.contains(adapter)) revert InvalidArguments(); // use updateAdapterConfig to add callback
+        _authorizeAdapter(adapter);
+        _callbackAdapters[selector] = adapter;
+        _adapterToCallbackSelector[adapter] = selector;
+        emit AdapterAuthorized(adapter);
+    }
+
+    /// @notice Revokes authorization for a bridge adapter and clears its callback config if any
     /// @param adapter The adapter address to revoke
     function revokeAdapter(address adapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        bytes4 selector = _adapterToCallbackSelector[adapter];
+        if (selector != bytes4(0)) {
+            delete _callbackAdapters[selector];
+            delete _adapterToCallbackSelector[adapter];
+        }
         _authorizedAdapters.remove(adapter);
         emit AdapterRevoked(adapter);
+    }
+
+    /// @notice Updates callback config for an authorized adapter (set or clear). The adapter is the delegatecall target.
+    /// @param adapter The authorized adapter
+    /// @param selector Callback selector (0 to clear)
+    function updateAdapterConfig(address adapter, bytes4 selector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_authorizedAdapters.contains(adapter)) revert NotAuthorized();
+        bytes4 oldSelector = _adapterToCallbackSelector[adapter];
+        if (oldSelector != bytes4(0)) {
+            delete _callbackAdapters[oldSelector];
+            delete _adapterToCallbackSelector[adapter];
+        }
+        if (selector != bytes4(0)) {
+            _callbackAdapters[selector] = adapter;
+            _adapterToCallbackSelector[adapter] = selector;
+        }
+        emit AdapterCallbackConfigUpdated(adapter, selector, adapter);
+    }
+
+    /// @notice Returns the adapter registered for a callback selector
+    function getCallbackAdapter(bytes4 selector) external view returns (address) {
+        return _callbackAdapters[selector];
     }
 
     /// @notice Pauses the contract (prevents deposits and releases)

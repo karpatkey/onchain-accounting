@@ -115,7 +115,7 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
         require(reader_.code.length > 0, "Reader must be a contract");
         require(referralStorage_.code.length > 0, "ReferralStorage must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         GMX_MARKET = market_;
         READER = IGMXReader(reader_);
         REFERRAL_STORAGE = referralStorage_;
@@ -326,11 +326,7 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -369,7 +365,6 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
             balances[i] = tempBalances[i];
         }
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's GMX positions
@@ -433,7 +428,8 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -496,14 +492,14 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    amount: assetBalanceData[i].amount,
-                    isDebt: assetBalanceData[i].isDebt,
-                    protocol: _protocol,
-                    positionDetail: _positionDetail
-                });
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
+                protocol: _protocol,
+                positionDetail: _positionDetail
+            });
 
             positionCount++;
         }

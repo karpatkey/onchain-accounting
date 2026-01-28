@@ -20,16 +20,16 @@ interface ICometRewardsGetOwed {
 }
 
 contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
-    /// @notice Address with Compound V3 (cUSDCv3) positions on Optimism. USDy vault 
+    /// @notice Address with Compound V3 (cUSDCv3) positions on Optimism. USDy vault
     address public constant OPTIMISM_SAFE = 0x1eC50880101022C11530A069690F5446d1464592;
 
     // Native and wrapped ETH
     address public native = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE); // Native ETH (NATIVE)
-    address public weth = address(0x4200000000000000000000000000000000000006);  // Optimism WETH
+    address public weth = address(0x4200000000000000000000000000000000000006); // Optimism WETH
 
     // Token addresses (Optimism Mainnet)
-    address public usdc = address(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);   // USDC (Circle)
-    address public usdt = address(0x94b008aA00579c1307B0EF2c499aD98a8ce58e58);   // USDT (Tether)
+    address public usdc = address(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85); // USDC (Circle)
+    address public usdt = address(0x94b008aA00579c1307B0EF2c499aD98a8ce58e58); // USDT (Tether)
     address public compound = address(0x7e7d4467112689329f7E06571eD0E8CbAd4910eE); // COMP
 
     // Aave V3 (Optimism)

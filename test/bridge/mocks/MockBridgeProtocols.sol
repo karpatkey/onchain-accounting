@@ -9,6 +9,8 @@ import {IRouterClient} from "@chainlink/src/v0.8/ccip/interfaces/IRouterClient.s
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
 import {IStargateRouter} from "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
 import {IOmnibridge, IAMB} from "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
+import {Types} from "@optimism/libraries/Types.sol";
+import {IOptimismPortal} from "src/bridge/adapters/interfaces/ISuperchainInterfaces.sol";
 
 /// @notice Extended ERC20 with mint function for testing
 interface IMintableERC20 {
@@ -177,6 +179,31 @@ contract MockCcipRouter is IRouterClient {
         return bytes32(uint256(messageId));
     }
 
+    /// @notice Returns the data payload of the last sent message (for realistic tests: read from source)
+    function getLastMessageData() external view returns (bytes memory) {
+        require(messageId > 0, "BridgeScenario: no message");
+        return messages[messageId].data;
+    }
+
+    /// @notice Add a message on "destination" for realistic delivery via deliverMessage (simulates CCIP delivery)
+    /// @param data Message payload (must match what was sent from source)
+    /// @param token Token address to deliver
+    /// @param amount Amount to deliver to receiver
+    /// @return msgId The message ID to pass to deliverMessage; caller must mint token to this contract first
+    function addMessageForDelivery(bytes memory data, address token, uint256 amount) external returns (uint64 msgId) {
+        messageId++;
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
+        tokenAmounts[0] = Client.EVMTokenAmount({token: token, amount: amount});
+        messages[messageId] = Client.EVM2AnyMessage({
+            receiver: abi.encode(address(0)),
+            data: data,
+            tokenAmounts: tokenAmounts,
+            feeToken: address(0),
+            extraArgs: ""
+        });
+        return messageId;
+    }
+
     function getFee(uint64 destinationChainSelector, Client.EVM2AnyMessage memory message)
         external
         view
@@ -272,6 +299,29 @@ contract MockStargateRouter is IStargateRouter {
         // For testing, we just track the swap
 
         emit Swap(messageId, msg.sender, _lzChainId);
+    }
+
+    /// @notice Returns the payload of the last swap (for realistic tests: read from source)
+    function getLastSwapPayload() external view returns (bytes memory) {
+        require(messageId > 0, "BridgeScenario: no swap");
+        return swaps[messageId].payload;
+    }
+
+    /// @notice Add a swap on "destination" for realistic delivery via deliverMessage
+    /// @param payload Message payload (must match what was sent from source)
+    /// @return msgId The message ID to pass to deliverMessage; caller must fund this contract with token/ETH first
+    function addSwapForDelivery(bytes memory payload) external returns (uint64 msgId) {
+        messageId++;
+        swaps[messageId] = MockSwapParams({
+            dstChainId: 0,
+            srcPoolId: 0,
+            dstPoolId: 0,
+            refundTo: address(0),
+            amountLd: 0,
+            minAmountLd: 0,
+            payload: payload
+        });
+        return messageId;
     }
 
     function quoteLayerZeroFee(
@@ -407,6 +457,34 @@ contract MockSpokePool {
             );
         require(receiveSuccess, "handleAcrossMessage failed");
     }
+
+    /// @notice Returns the message payload of a deposit (for realistic tests: read payload from source deposit)
+    /// @param _depositId Deposit ID
+    /// @return Message bytes from the deposit
+    function getDepositMessage(uint256 _depositId) external view returns (bytes memory) {
+        return deposits[_depositId].message;
+    }
+
+    /// @notice Add a relay deposit on "destination" for realistic tests (simulates a deposit that was initiated on source and is now filled by relayer)
+    /// @param recipient Address that will receive tokens and handleAcrossMessage (e.g. destination adapter)
+    /// @param message Message payload (must match what was sent from source chain)
+    /// @return _depositId The deposit ID to pass to fillDeposit when simulating relay
+    /// @dev Caller must fund this contract with token/ETH before fillDeposit so the transfer to recipient succeeds
+    function addRelayDeposit(address recipient, bytes memory message) external returns (uint256 _depositId) {
+        depositId++;
+        deposits[depositId] = Deposit({
+            depositor: address(0),
+            recipient: recipient,
+            inputToken: address(0),
+            inputAmount: 0,
+            outputAmount: 0,
+            destinationChainId: 0,
+            relayerFeePct: 0,
+            quoteTimestamp: 0,
+            message: message
+        });
+        return depositId;
+    }
 }
 
 // ============ Superchain Mocks ============
@@ -420,7 +498,7 @@ contract MockL1StandardBridge {
         address indexed l1Token, address indexed l2Token, address indexed from, address to, uint256 amount, bytes data
     );
 
-    function depositEthTo(address to, uint32 l2Gas, bytes calldata data) external payable {
+    function depositETHTo(address to, uint32 l2Gas, bytes calldata data) external payable {
         emit ETHDepositInitiated(msg.sender, to, msg.value, data);
     }
 
@@ -437,26 +515,60 @@ contract MockL1StandardBridge {
     }
 }
 
-/// @notice Mock L2StandardBridge
+/// @notice Mock L2StandardBridge (IL2StandardBridge 5-param withdrawTo)
 contract MockL2StandardBridge {
     using SafeERC20 for IERC20;
 
-    event WithdrawalInitiated(
+    event ETHWithdrawalInitiated(address indexed from, address indexed to, uint256 amount, bytes data);
+    event ERC20WithdrawalInitiated(
         address indexed l1Token, address indexed l2Token, address indexed from, address to, uint256 amount, bytes data
     );
 
-    function withdrawTo(address l1Token, address l2Token, address to, uint256 amount, uint32 l1Gas, bytes calldata data)
+    /// @dev IL2StandardBridge.withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _l1Gas, bytes _data)
+    function withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _l1Gas, bytes calldata _data)
         external
         payable
     {
-        if (l2Token != address(0)) {
-            IERC20(l2Token).safeTransferFrom(msg.sender, address(this), amount);
+        address legacyEth = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
+        if (_l2Token == legacyEth) {
+            require(msg.value >= _amount, "Insufficient native token");
+            emit ETHWithdrawalInitiated(msg.sender, _to, _amount, _data);
         } else {
-            require(msg.value >= amount, "Insufficient native token");
+            IERC20(_l2Token).safeTransferFrom(msg.sender, address(this), _amount);
+            emit ERC20WithdrawalInitiated(_l2Token, _l2Token, msg.sender, _to, _amount, _data);
         }
-
-        emit WithdrawalInitiated(l1Token, l2Token, msg.sender, to, amount, data);
     }
+}
+
+/// @notice Mock Optimism Portal for proving and finalizing L2->L1 withdrawals
+contract MockOptimismPortal is IOptimismPortal {
+    mapping(bytes32 => bool) private _provenWithdrawals;
+    uint256 public minimumWithdrawalDelay = 0;
+
+    function proveWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx,
+        uint256,
+        Types.OutputRootProof memory,
+        bytes[] calldata
+    ) external override {
+        bytes32 h = keccak256(abi.encodePacked(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
+        _provenWithdrawals[h] = true;
+    }
+
+    function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
+        bytes32 h = keccak256(abi.encodePacked(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
+        require(_provenWithdrawals[h], "withdrawal not proven");
+        if (_tx.value > 0) {
+            (bool ok,) = _tx.target.call{value: _tx.value}("");
+            require(ok, "ETH transfer failed");
+        }
+    }
+
+    function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
+        return _provenWithdrawals[_withdrawalHash];
+    }
+
+    receive() external payable {}
 }
 
 // ============ Gnosis Mocks ============
@@ -472,8 +584,13 @@ contract MockOmnibridge is IOmnibridge {
         emit TokensBridged(_token, _receiver, _value, "");
     }
 
+    bytes public lastRelayData;
+    uint256 public lastRelayValue;
+
     function relayTokensAndCall(address token, address receiver, uint256 value, bytes memory data) external override {
         IERC20(token).safeTransferFrom(msg.sender, address(this), value);
+        lastRelayData = data;
+        lastRelayValue = value;
         emit TokensBridged(token, receiver, value, data);
 
         // Simulate callback on destination chain (for testing)
@@ -488,6 +605,11 @@ contract MockOmnibridge is IOmnibridge {
                 // If callback fails, tokens remain in bridge
             }
         }
+    }
+
+    /// @notice Returns the last relay payload and value (for realistic tests: read from source after depositAndBridge)
+    function getLastRelayData() external view returns (bytes memory data, uint256 value) {
+        return (lastRelayData, lastRelayValue);
     }
 
     // Simulate token transfer on destination chain (for testing)

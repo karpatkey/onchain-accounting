@@ -18,40 +18,40 @@ contract AdapterConsistencyTest is Test {
     Mock_CustomBalanceOracle public customOracle;
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
-    
+
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-    
+
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
-    
+
     function setUp() public {
         // Use mock NAVCalculator instead of BalancesHarness for isolated adapter testing
         mockNav = new Mock_NAVCalculator();
-        
+
         // Create ERC20DefaultOracle with mock NAVCalculator
         erc20DefaultOracle = new ERC20DefaultOracle(address(mockNav));
-        
+
         customOracle = new Mock_CustomBalanceOracle();
-        
+
         usdc = new Mock_ERC20("USDC", 6);
         dai = new Mock_ERC20("DAI", 18);
-        
+
         // Register assets in mock NAVCalculator
         mockNav.registerAsset(address(usdc), 6, "USDC");
         mockNav.registerAsset(address(dai), 18, "DAI");
         mockNav.registerAsset(NATIVE_ADDRESS, 18, "ETH");
-        
+
         address[] memory assets = new address[](2);
         assets[0] = address(usdc);
         assets[1] = address(dai);
         customOracle.setUnderlyingAssetsSupported(assets);
         customOracle.setPositionMetadata("Test Protocol", "Test Position");
     }
-    
+
     // ============================================
     // Interface Compliance Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters implement the same interface IDs consistently
     /// @dev This focuses on consistency across adapters, while test_invariant_interfaceCompliance
     ///      in BalanceAdapter.invariant.t.sol tests the full interface contract
@@ -60,24 +60,25 @@ contract AdapterConsistencyTest is Test {
         IBalanceOracleAdapter[] memory adapters = new IBalanceOracleAdapter[](2);
         adapters[0] = erc20DefaultOracle;
         adapters[1] = customOracle;
-        
+
         if (adapters.length == 0) return;
-        
+
         // Get interface IDs from first adapter as reference
         IBalanceOracleAdapter firstAdapter = adapters[0];
-        bool firstSupportsIBalanceOracleAdapter = firstAdapter.supportsInterface(type(IBalanceOracleAdapter).interfaceId);
+        bool firstSupportsIBalanceOracleAdapter =
+            firstAdapter.supportsInterface(type(IBalanceOracleAdapter).interfaceId);
         bool firstSupportsIERC165 = firstAdapter.supportsInterface(type(IERC165).interfaceId);
-        
+
         // All adapters should have the same interface support
         for (uint256 i = 1; i < adapters.length; i++) {
             IBalanceOracleAdapter adapter = adapters[i];
-            
+
             assertEq(
                 adapter.supportsInterface(type(IBalanceOracleAdapter).interfaceId),
                 firstSupportsIBalanceOracleAdapter,
                 "All adapters should consistently support IBalanceOracleAdapter"
             );
-            
+
             assertEq(
                 adapter.supportsInterface(type(IERC165).interfaceId),
                 firstSupportsIERC165,
@@ -85,27 +86,25 @@ contract AdapterConsistencyTest is Test {
             );
         }
     }
-    
+
     // ============================================
     // Zero Balance Handling Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters exclude zero balances consistently
     function test_consistency_zeroBalanceExclusion() public {
         // Setup: Some tokens with balances, some without
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         // Don't mint DAI (zero balance)
-        
+
         // Query from ERC20DefaultOracle
-        INAVCalculator.PositionBalance[] memory positions1 = 
-            erc20DefaultOracle.getOraclePositions(alice, address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, address(0));
+
         // Query from customOracle
         customOracle.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
         // Don't set DAI balance (zero)
-        INAVCalculator.PositionBalance[] memory positions2 = 
-            customOracle.getOraclePositions(alice, address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions2 = customOracle.getOraclePositions(alice, address(0));
+
         // Both should exclude zero balances
         for (uint256 i = 0; i < positions1.length; i++) {
             assertTrue(positions1[i].amount != 0, "ERC20DefaultOracle: No zero amounts");
@@ -113,93 +112,76 @@ contract AdapterConsistencyTest is Test {
         for (uint256 i = 0; i < positions2.length; i++) {
             assertTrue(positions2[i].amount != 0, "CustomOracle: No zero amounts");
         }
-        
+
         // Both should only have USDC (not DAI)
         assertEq(positions1.length, 1, "ERC20DefaultOracle should have one position");
         assertEq(positions1[0].underlyingAsset.asset, address(usdc), "Should be USDC");
-        
+
         assertEq(positions2.length, 1, "CustomOracle should have one position");
         assertEq(positions2[0].underlyingAsset.asset, address(usdc), "Should be USDC");
     }
-    
+
     // ============================================
     // Debt Position Handling Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters handle debt positions correctly
     function test_consistency_debtPositionHandling() public {
         // Set debt position in custom oracle
         customOracle.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), true);
-        
+
         // Get balance - should be debt (negative)
         int256 balance = customOracle.getOracleBalanceForAsset(alice, address(usdc));
         assertEq(balance, -int256(1000 * 10 ** usdc.decimals()), "Debt balance should be negative");
-        
+
         // Get positions - should include debt position
-        INAVCalculator.PositionBalance[] memory positions = 
-            customOracle.getOraclePositions(alice, address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = customOracle.getOraclePositions(alice, address(0));
+
         assertEq(positions.length, 1, "Should have one position");
         assertEq(positions[0].amount, 1000 * 10 ** usdc.decimals(), "Amount should match");
         assertTrue(positions[0].isDebt, "Position should be debt");
     }
-    
+
     // ============================================
     // Metadata Format Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters return consistent metadata structure
     function test_consistency_metadataFormat() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         customOracle.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
-        
+
         // Get positions from both adapters
-        INAVCalculator.PositionBalance[] memory positions1 = 
-            erc20DefaultOracle.getOraclePositions(alice, address(0));
-        INAVCalculator.PositionBalance[] memory positions2 = 
-            customOracle.getOraclePositions(alice, address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions2 = customOracle.getOraclePositions(alice, address(0));
+
         // Both should have protocol and positionDetail
         if (positions1.length > 0) {
-            assertTrue(
-                bytes(positions1[0].protocol).length > 0,
-                "ERC20DefaultOracle should have protocol"
-            );
-            assertTrue(
-                bytes(positions1[0].positionDetail).length > 0,
-                "ERC20DefaultOracle should have positionDetail"
-            );
+            assertTrue(bytes(positions1[0].protocol).length > 0, "ERC20DefaultOracle should have protocol");
+            assertTrue(bytes(positions1[0].positionDetail).length > 0, "ERC20DefaultOracle should have positionDetail");
         }
-        
+
         if (positions2.length > 0) {
-            assertTrue(
-                bytes(positions2[0].protocol).length > 0,
-                "CustomOracle should have protocol"
-            );
-            assertTrue(
-                bytes(positions2[0].positionDetail).length > 0,
-                "CustomOracle should have positionDetail"
-            );
+            assertTrue(bytes(positions2[0].protocol).length > 0, "CustomOracle should have protocol");
+            assertTrue(bytes(positions2[0].positionDetail).length > 0, "CustomOracle should have positionDetail");
         }
     }
-    
+
     // ============================================
     // Asset Filtering Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters support asset filtering consistently
     function test_consistency_assetFiltering() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         dai.mint(alice, 2000 * 10 ** dai.decimals());
         customOracle.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
         customOracle.setBalance(address(dai), alice, 1000 * 10 ** dai.decimals(), false);
-        
+
         // Test filtering with both adapters
-        INAVCalculator.PositionBalance[] memory positions1 = 
-            erc20DefaultOracle.getOraclePositions(alice, address(usdc));
-        INAVCalculator.PositionBalance[] memory positions2 = 
-            customOracle.getOraclePositions(alice, address(usdc));
-        
+        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions2 = customOracle.getOraclePositions(alice, address(usdc));
+
         // All filtered positions should be for USDC
         for (uint256 i = 0; i < positions1.length; i++) {
             assertEq(
@@ -208,7 +190,7 @@ contract AdapterConsistencyTest is Test {
                 "ERC20DefaultOracle: Filtered positions should match filter"
             );
         }
-        
+
         for (uint256 i = 0; i < positions2.length; i++) {
             assertEq(
                 positions2[i].underlyingAsset.asset,
@@ -217,69 +199,67 @@ contract AdapterConsistencyTest is Test {
             );
         }
     }
-    
+
     // ============================================
     // Error Handling Consistency
     // ============================================
-    
+
     /// @notice Test that all adapters handle invalid inputs consistently
     function test_consistency_errorHandling() public {
         address invalidAsset = makeAddr("invalid");
-        
+
         // Both adapters should return zero for invalid asset, not revert
         int256 balance1 = erc20DefaultOracle.getOracleBalanceForAsset(alice, invalidAsset);
         int256 balance2 = customOracle.getOracleBalanceForAsset(alice, invalidAsset);
-        
+
         assertEq(balance1, 0, "ERC20DefaultOracle should return zero for invalid asset");
         assertEq(balance2, 0, "CustomOracle should return zero for invalid asset");
-        
+
         // Both should return empty arrays for invalid asset filter
-        INAVCalculator.PositionBalance[] memory positions1 = 
-            erc20DefaultOracle.getOraclePositions(alice, invalidAsset);
-        INAVCalculator.PositionBalance[] memory positions2 = 
-            customOracle.getOraclePositions(alice, invalidAsset);
-        
+        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, invalidAsset);
+        INAVCalculator.PositionBalance[] memory positions2 = customOracle.getOraclePositions(alice, invalidAsset);
+
         assertEq(positions1.length, 0, "ERC20DefaultOracle should return empty for invalid filter");
         assertEq(positions2.length, 0, "CustomOracle should return empty for invalid filter");
     }
-    
+
     /// @notice Test that all adapters handle zero address account consistently
     function test_consistency_zeroAddressAccount() public {
         // Both adapters should return zero for zero address account
         int256 balance1 = erc20DefaultOracle.getOracleBalanceForAsset(address(0), address(usdc));
         int256 balance2 = customOracle.getOracleBalanceForAsset(address(0), address(usdc));
-        
+
         assertEq(balance1, 0, "ERC20DefaultOracle should return zero for zero address");
         assertEq(balance2, 0, "CustomOracle should return zero for zero address");
     }
-    
+
     // ============================================
     // Balance Consistency Across Adapters
     // ============================================
-    
+
     /// @notice Test that getOracleBalance matches sum of positions for all adapters
     function test_consistency_balanceConsistency() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         dai.mint(alice, 2000 * 10 ** dai.decimals());
-        
+
         // Test both adapters
         IBalanceOracleAdapter[] memory adapters = new IBalanceOracleAdapter[](2);
         adapters[0] = erc20DefaultOracle;
         adapters[1] = customOracle;
-        
+
         // Set balances for custom oracle
         customOracle.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
         customOracle.setBalance(address(dai), alice, 2000 * 10 ** dai.decimals(), false);
-        
+
         for (uint256 i = 0; i < adapters.length; i++) {
             IBalanceOracleAdapter adapter = adapters[i];
-            
+
             // Get balance via getOracleBalance
             (address[] memory assets, int256[] memory balances_) = adapter.getOracleBalance(alice);
-            
+
             // Get positions
             INAVCalculator.PositionBalance[] memory positions = adapter.getOraclePositions(alice, address(0));
-            
+
             // Sum positions
             int256 positionsSum = 0;
             for (uint256 j = 0; j < positions.length; j++) {
@@ -289,48 +269,51 @@ contract AdapterConsistencyTest is Test {
                     positionsSum += int256(positions[j].amount);
                 }
             }
-            
+
             // Sum balances (already signed)
             int256 balanceSum = 0;
             for (uint256 j = 0; j < balances_.length; j++) {
                 balanceSum += balances_[j];
             }
-            
+
             // Should match
             assertEq(positionsSum, balanceSum, "Sum of positions should equal sum of balances for all adapters");
         }
     }
-    
+
     // ============================================
     // Supported Assets Consistency
     // ============================================
-    
+
     /// @notice Test that underlyingAssetsSupported is consistent across queries
     function test_consistency_supportedAssetsConsistency() public view {
         // Test both adapters
         IBalanceOracleAdapter[] memory adapters = new IBalanceOracleAdapter[](2);
         adapters[0] = erc20DefaultOracle;
         adapters[1] = customOracle;
-        
+
         for (uint256 i = 0; i < adapters.length; i++) {
             IBalanceOracleAdapter adapter = adapters[i];
-            
+
             // Query multiple times - should be consistent
             address[] memory assets1 = adapter.underlyingAssetsSupported();
             address[] memory assets2 = adapter.underlyingAssetsSupported();
             address[] memory assets3 = adapter.underlyingAssetsSupported();
-            
+
             assertEq(assets1.length, assets2.length, "Length should be consistent");
             assertEq(assets2.length, assets3.length, "Length should be consistent");
-            
+
             // All supported assets should be queryable
             for (uint256 j = 0; j < assets1.length; j++) {
                 address asset = assets1[j];
-                
+
                 // Should be able to query balance (may be zero, that's fine)
-                try adapter.getOracleBalanceForAsset(alice, asset) returns (int256) {
-                    // Success
-                } catch {
+                try adapter.getOracleBalanceForAsset(alice, asset) returns (
+                    int256
+                ) {
+                // Success
+                }
+                catch {
                     revert("Should be able to query supported asset");
                 }
             }

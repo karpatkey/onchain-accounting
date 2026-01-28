@@ -42,16 +42,16 @@ contract BalancesHarness is Balances {
         // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
         _removeBalanceOracle(oracle);
     }
-    
+
     // Compatibility methods for ERC20DefaultOracle which expects NAVCalculator interface
     function assets() external view returns (address[] memory) {
         return getAssets();
     }
-    
+
     function assetCount() external view returns (uint256) {
         return getAssetCount();
     }
-    
+
     function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory a) {
         address[] memory allAssets = getAssets();
         if (idx >= allAssets.length) {

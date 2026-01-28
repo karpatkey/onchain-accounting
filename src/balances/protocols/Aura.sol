@@ -386,8 +386,7 @@ contract Aura is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < immutableData.tokens.length; i++) {
             address currentToken = address(immutableData.tokens[i]);
-            (bool success, bytes memory data) =
-                currentToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
+            (bool success, bytes memory data) = currentToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
             if (success && data.length >= 32) {
                 tokens[i] = abi.decode(data, (address));
             } else {
@@ -415,16 +414,14 @@ contract Aura is IBalanceOracleAdapter {
 
         temp[count++] = address(AURA_TOKEN);
 
-        (bool lengthSuccess, bytes memory lengthData) = address(AURA_REWARDS).staticcall(
-            abi.encodeWithSelector(IBaseRewardPool4626.extraRewardsLength.selector)
-        );
+        (bool lengthSuccess, bytes memory lengthData) =
+            address(AURA_REWARDS).staticcall(abi.encodeWithSelector(IBaseRewardPool4626.extraRewardsLength.selector));
         if (lengthSuccess && lengthData.length >= 32) {
             uint256 extraLength = abi.decode(lengthData, (uint256));
             uint256 maxExtra = extraLength > 8 ? 8 : extraLength;
             for (uint256 i = 0; i < maxExtra; i++) {
-                (bool extraSuccess, bytes memory extraData) = address(AURA_REWARDS).staticcall(
-                    abi.encodeWithSelector(IBaseRewardPool4626.extraRewards.selector, i)
-                );
+                (bool extraSuccess, bytes memory extraData) = address(AURA_REWARDS)
+                    .staticcall(abi.encodeWithSelector(IBaseRewardPool4626.extraRewards.selector, i));
                 if (extraSuccess && extraData.length >= 32) {
                     address extraPool = abi.decode(extraData, (address));
                     address baseToken = _getBaseToken(extraPool);
@@ -480,11 +477,7 @@ contract Aura is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Optimized: directly calculate balance without building full Position structs
         balance = _calculateBalance(asset, account);
     }
@@ -537,7 +530,7 @@ contract Aura is IBalanceOracleAdapter {
     {
         // Get supported assets from pool tokens
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        
+
         // Get registered assets from NAVCalculator
         address[] memory registeredAssets = NAV_CALCULATOR.assets();
 

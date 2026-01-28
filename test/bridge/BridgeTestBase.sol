@@ -104,6 +104,16 @@ abstract contract BridgeTestBase is Test {
         vm.stopPrank();
     }
 
+    /// @notice Register callback for an adapter on an escrow (adapter must already be authorized). Adapter is the delegatecall target.
+    /// @param escrow BridgeEscrow to configure
+    /// @param selector Function selector the bridge protocol calls (e.g. handleAcrossMessage.selector)
+    /// @param callbackAdapter Adapter (authorized)
+    function _registerCallbackModule(BridgeEscrow escrow, bytes4 selector, address callbackAdapter) internal {
+        vm.startPrank(admin);
+        escrow.updateAdapterConfig(callbackAdapter, selector);
+        vm.stopPrank();
+    }
+
     /// @notice Helper to create a valid invoice data
     function _createInvoiceData(
         uint64 sourceChainId,

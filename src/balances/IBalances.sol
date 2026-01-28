@@ -21,15 +21,15 @@ interface IBalances {
     // Events
     //
 
-    /// @notice Event emitted when a balance oracle is added for an underlying asset.
-    /// @param underlyingAsset The address of the token for which the oracle is set.
-    /// @param oracle The address of the oracle being set.
-    /// @param oracleType The type of the oracle.
+    /// @notice Event emitted when a balance oracle is added to the global registry.
+    /// @param underlyingAsset Reserved; currently address(0) as oracles are registered globally, not per asset.
+    /// @param oracle The address of the oracle being added.
+    /// @param oracleType The type of the oracle (Default or Custom).
     event BalanceOracleAdded(address indexed underlyingAsset, address indexed oracle, OracleType oracleType);
 
-    /// @notice Event emitted when a balance oracle is removed for an underlying asset.
-    /// @param underlyingAsset The address of the token for which the oracle is unset.
-    /// @param oracle The address of the balance oracle being unset.
+    /// @notice Event emitted when a balance oracle is removed from the global registry.
+    /// @param underlyingAsset Reserved; currently address(0) as oracles are global.
+    /// @param oracle The address of the balance oracle being removed.
     event BalanceOracleRemoved(address indexed underlyingAsset, address oracle);
 
     //
@@ -48,8 +48,8 @@ interface IBalances {
     /// @notice Error when the same balance oracle is already set.
     error DuplicateBalanceOracle();
 
-    /// @notice Checks if the oracle supports the required interface and is not already registered.
-    /// @param oracle The address of the oracle.
+    /// @notice Validates that the oracle implements IBalanceOracleAdapter (reverts with InvalidBalanceOracle if not).
+    /// @param oracle The address of the oracle to check.
     function checkBalanceOracleSupport(address oracle) external view;
 
     //

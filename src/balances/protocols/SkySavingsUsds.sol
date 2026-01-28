@@ -68,7 +68,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         if (savingsUsds_ == address(0)) revert InvalidArguments();
         require(savingsUsds_.code.length > 0, "SavingsUSDS must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         SAVINGS_USDS = ISavingsUSDS(savingsUsds_);
         USDS = SAVINGS_USDS.usds();
         _protocol = protocol_;
@@ -111,11 +111,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for unsupported or invalid tokens (adapter convention)
         if (asset == address(0) || asset != USDS) {
             return 0;
@@ -143,7 +139,6 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         assets[0] = supportedAssets[0];
         balances[0] = balance;
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's Sky Savings positions
@@ -207,7 +202,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }

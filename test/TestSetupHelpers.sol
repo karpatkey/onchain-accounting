@@ -49,11 +49,7 @@ contract BalancesHarnessForFork is Balances {
         address[] memory assts = getAssets();
         require(idx < assts.length, "assetAt: index out of range");
         address asset = assts[idx];
-        return INAVCalculator.Asset({
-            asset: asset,
-            symbol: getAssetSymbol(asset),
-            decimals: getAssetDecimals(asset)
-        });
+        return INAVCalculator.Asset({asset: asset, symbol: getAssetSymbol(asset), decimals: getAssetDecimals(asset)});
     }
 }
 
@@ -274,7 +270,9 @@ abstract contract TestSetupHelpers is Test {
                 len++;
             }
             bytes memory s = new bytes(len);
-            for (uint256 i = 0; i < len; i++) s[i] = bytes1(uint8(uint256(b) >> (248 - i * 8)));
+            for (uint256 i = 0; i < len; i++) {
+                s[i] = bytes1(uint8(uint256(b) >> (248 - i * 8)));
+            }
             return string(s);
         }
         // ABI-encoded string: offset (32) + length (32) + data
@@ -287,7 +285,9 @@ abstract contract TestSetupHelpers is Test {
             }
             if (64 + strLen > data.length || strLen > 256) return "";
             bytes memory s = new bytes(strLen);
-            for (uint256 i = 0; i < strLen; i++) s[i] = data[64 + i];
+            for (uint256 i = 0; i < strLen; i++) {
+                s[i] = data[64 + i];
+            }
             return string(s);
         }
         return "";

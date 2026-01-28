@@ -62,40 +62,38 @@ contract DaiDsrBalanceOracleTest is BalanceAdapterTestBase {
             address(balances)
         );
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
-        
+
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
         int256 balance = oracle.getOracleBalanceForAsset(address(0), address(usdc));
         assertEq(balance, 0);
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions = 
-            oracle.getOraclePositions(address(0), address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+
         assertEq(positions.length, 0);
     }
 }

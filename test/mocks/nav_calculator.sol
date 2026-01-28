@@ -39,7 +39,7 @@ contract Mock_NAVCalculator is INAVCalculator {
     function unregisterAssetHelper(address asset) external {
         require(_isRegistered[asset], "Asset not registered");
         _isRegistered[asset] = false;
-        
+
         // Remove from array
         for (uint256 i = 0; i < _assets.length; i++) {
             if (_assets[i].asset == asset) {
@@ -109,8 +109,6 @@ contract Mock_NAVCalculator is INAVCalculator {
     function removeBalanceOracle(address) external pure override {
         revert("Not implemented in mock");
     }
-
-
 
     function healthCheck() external pure override returns (bool, address[] memory) {
         revert("Not implemented in mock");

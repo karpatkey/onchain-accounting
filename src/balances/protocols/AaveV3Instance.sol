@@ -66,7 +66,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         require(dataProvider_.code.length > 0, "DataProvider must be a contract");
         require(rewardsDistributor_.code.length > 0, "RewardsDistributor must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         REWARDS_DISTRIBUTOR = IRewardsDistributor(rewardsDistributor_);
         _protocol = protocol_;
@@ -92,21 +92,17 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for zero address
         if (asset == address(0)) {
             return 0;
         }
-        
+
         // Return zero for unsupported assets
         if (!_isAssetSupported(asset)) {
             return 0;
         }
-        
+
         // Optimized: directly calculate net balance without building full Position structs
         UserReserveData memory data = _getUserAssetData(account, asset);
         balance = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
@@ -224,17 +220,15 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @return UserReserveData struct containing aToken balance, variable debt, rewards, and collateral status
     function _getUserAssetData(address user, address asset) internal view returns (UserReserveData memory) {
         (
-            uint256 currentATokenBalance,
-            , // currentStableDebt - unused
-            uint256 currentVariableDebt,
-            , // principalStableDebt - unused
+            uint256 currentATokenBalance,, // currentStableDebt - unused
+            uint256 currentVariableDebt,, // principalStableDebt - unused
             , // scaledVariableDebt - unused
             , // stableBorrowRate - unused
             , // liquidityRate - unused
             , // stableRateLastUpdated - unused
             bool usageAsCollateralEnabled
         ) = DATA_PROVIDER.getUserReserveData(asset, user);
-        
+
         uint256 rewardBalance = _getRewardsData(user, asset);
         return UserReserveData({
             asset: asset,
@@ -280,13 +274,13 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     function _getRewardsData(address user, address asset) internal view returns (uint256 rewardAmount) {
         IProtocolDataProvider.ReserveData memory reserveData = DATA_PROVIDER.getReserveData(asset);
         address aTokenAddress = reserveData.aTokenAddress;
-        
+
         if (aTokenAddress != address(0)) {
             rewardAmount = REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, aTokenAddress);
         }
-        
+
         rewardAmount += REWARDS_DISTRIBUTOR.getUserAccruedRewards(user, asset);
-        
+
         return rewardAmount;
     }
 
@@ -319,8 +313,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             // Build supply position (supplied assets)
             // Label as Collateral when used as collateral, otherwise Supply
             if (userReservesData[i].currentATokenBalance > 0) {
-                string memory positionDetail =
-                    userReservesData[i].usageAsCollateralEnabled ? "Collateral" : "Supply";
+                string memory positionDetail = userReservesData[i].usageAsCollateralEnabled ? "Collateral" : "Supply";
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
@@ -365,7 +358,6 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             positions[i] = tempPositions[i];
         }
     }
-
 }
 
 //

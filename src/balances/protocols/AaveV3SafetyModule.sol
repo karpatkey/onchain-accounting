@@ -106,13 +106,12 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for zero account or unsupported/invalid tokens (adapter convention)
-        if (account == address(0) || asset == address(0) || (asset != address(STAKED_TOKEN) && asset != address(REWARD_TOKEN))) {
+        if (
+            account == address(0) || asset == address(0)
+                || (asset != address(STAKED_TOKEN) && asset != address(REWARD_TOKEN))
+        ) {
             return 0;
         }
         // Optimized: directly calculate balance without building full Position structs
@@ -173,7 +172,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         }
         // Get supported assets from this oracle
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        
+
         // Get registered assets from NAVCalculator
         address[] memory registeredAssets = NAV_CALCULATOR.assets();
 
@@ -338,7 +337,6 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
             positions[i] = tempPositions[i];
         }
     }
-
 }
 
 /// @notice Interface for the Aave StakeToken contract

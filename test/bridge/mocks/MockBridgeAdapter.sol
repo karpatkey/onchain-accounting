@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8;
+
+import {BridgeAdapter} from "src/bridge/BridgeAdapter.sol";
+import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
+
+/// @title MockBridgeAdapter
+/// @notice Minimal concrete implementation of BridgeAdapter for testing base behavior
+/// @dev _bridge and _completeBridge are no-ops; used to test bridge(), completeBridge(), recoverStuckAssets()
+contract MockBridgeAdapter is BridgeAdapter {
+    /// @notice No-op bridge implementation for unit testing base adapter
+    function _bridge(InvoiceDataLib.InvoiceData memory) internal pure override {
+        // No-op: base tests verify caller check and event emission only
+    }
+
+    /// @notice No-op completion implementation; releaseByInvoiceId is called by base after this
+    function _completeBridge(bytes calldata, bytes calldata) internal pure override {
+        // No-op
+    }
+
+    /// @notice Accept native ETH (e.g. when BridgeEscrow sends ETH to adapter for native bridging)
+    receive() external payable {}
+}

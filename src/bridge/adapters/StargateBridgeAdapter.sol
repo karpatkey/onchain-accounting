@@ -13,7 +13,7 @@ import "src/errors.sol";
 
 /// @title StargateBridgeAdapter
 /// @notice Bridge adapter for Stargate Finance cross-chain protocol
-/// @dev Enables bridging tokens and messages between chains using Stargate and LayerZero
+/// @dev Recipient is always BridgeEscrow; escrow fallback forwards protocol callbacks (e.g. lzReceive) to this adapter.
 /// @author kpk
 contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -165,11 +165,8 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             dstGasForCall: defaultDstGasForCall, dstNativeAmount: 0, dstNativeAddr: bytes("")
         });
 
-        // Encode destination address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
-        // Note: Stargate requires recipient to implement lzReceive callback, so we use adapter address
-        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
-        bytes memory toAddress = abi.encodePacked(address(this));
+        // Recipient is BridgeEscrow; escrow fallback forwards lzReceive to this adapter
+        bytes memory toAddress = abi.encodePacked(bridgeEscrow);
 
         // Quote LayerZero fee
         (uint256 nativeFee,) = router.quoteLayerZeroFee(
@@ -220,73 +217,32 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             messagePayloads[data.invoiceId] = messagePayload;
         }
 
-        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
-        // Stargate sends tokens to recipient (adapter), so we transfer to BridgeEscrow
-        // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-
-        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
-        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
-        _transferTokensToEscrow(data.invoiceId, asset, data.amount);
-
-        // Get source LayerZero chain ID from protocol data if available
+        // When recipient is BridgeEscrow, tokens are already at escrow; no transfer needed
         uint16 sourceLzChainId = 0;
         if (protocolData.length >= 2) {
             sourceLzChainId = abi.decode(protocolData, (uint16));
         }
-
         emit StargateBridgeCompleted(data.invoiceId, sourceLzChainId);
     }
 
-    //
-    // LayerZero Receiver Implementation
-    //
-
     /// @inheritdoc ILayerZeroReceiver
-    /// @dev Receives LayerZero messages from Stargate
-    function lzReceive(
-        uint16 _srcChainId,
-        bytes calldata,
-        /* _srcAddress */
-        uint64 _nonce,
-        bytes calldata _payload
-    )
-        external
-        override
-    {
-        // Verify caller is the LayerZero endpoint
-        if (msg.sender != endpoint) {
-            revert InvalidEndpoint();
-        }
-
-        // Verify payload is not empty
-        if (_payload.length == 0) {
+    /// @dev When called by BridgeEscrow (escrow fallback forwards here), completes delivery.
+    ///      When called directly on the adapter, reverts.
+    function lzReceive(uint16, bytes calldata, uint64, bytes calldata _payload) external override {
+        if (msg.sender != bridgeEscrow) {
+            if (msg.sender != endpoint) revert InvalidEndpoint();
             revert MessageReceiveFailed();
         }
+        _completeDelivery(_payload);
+    }
 
-        // Decode messagePayload from payload
-        // The payload should contain the messagePayload (96 bytes: invoiceId + amount + meta)
-        if (_payload.length < 96) {
-            revert InvalidCompletionData();
+    function _completeDelivery(bytes memory messagePayload) internal {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+        if (messagePayload.length >= 96) {
+            InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+            messagePayloads[data.invoiceId] = messagePayload;
         }
-
-        // Extract messagePayload from payload
-        bytes memory messagePayload = _payload;
-
-        // Decode invoice data
-        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-
-        // Store nonce mapping for correlation
-        nonceToInvoiceId[_nonce] = data.invoiceId;
-        invoiceToNonce[data.invoiceId] = _nonce;
-
-        // Store message payload
-        messagePayloads[data.invoiceId] = messagePayload;
-
-        // Tokens are automatically transferred by Stargate before lzReceive is called
-        // The operator will need to call completeBridge() with the messagePayload
-        // We emit an event here to signal that the message was received
-        emit StargateBridgeCompleted(data.invoiceId, _srcChainId);
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
     }
 
     //

@@ -107,7 +107,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         require(compoundRewards_.code.length > 0, "CompoundRewards must be a contract");
         require(comet_.code.length > 0, "Comet must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         COMPOUND_REWARDS = ICompoundRewards(compoundRewards_);
         REWARD_TOKEN = IERC20(rewardToken_);
 
@@ -169,7 +169,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         if (isCollateral[underlyingAsset]) {
             total += int256(CometExtInterface(COMET).collateralBalanceOf(account, underlyingAsset));
         }
-        
+
         return total; // Collateral and rewards are always credit (positive)
     }
 
@@ -234,8 +234,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             return (token, rescaleFactor, shouldUpscale, FACTOR_SCALE);
         }
         if (data.length == 128) {
-            (token, rescaleFactor, shouldUpscale, multiplier) =
-                abi.decode(data, (address, uint64, bool, uint256));
+            (token, rescaleFactor, shouldUpscale, multiplier) = abi.decode(data, (address, uint64, bool, uint256));
             return (token, rescaleFactor, shouldUpscale, multiplier);
         }
         // Unknown return format (e.g. different chain/contract version): treat as no rewards
@@ -431,11 +430,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for zero account or unsupported/invalid tokens (adapter convention)
         if (account == address(0) || asset == address(0)) {
             return 0;
@@ -484,7 +479,6 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             balances[i] = tempBalances[i];
         }
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's Compound V3 positions
@@ -551,7 +545,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -614,14 +609,14 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    amount: assetBalanceData[i].amount,
-                    isDebt: assetBalanceData[i].isDebt,
-                    protocol: _protocol,
-                    positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
-                });
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
+                protocol: _protocol,
+                positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
+            });
 
             positionCount++;
         }

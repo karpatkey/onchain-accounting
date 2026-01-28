@@ -60,18 +60,13 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
         }
 
         if (
-            block.timestamp - xToUsdUpdatedAt > X_TO_USD_HEARTBEAT
-                || block.timestamp - yToXUpdatedAt > Y_TO_X_HEARTBEAT
+            block.timestamp - xToUsdUpdatedAt > X_TO_USD_HEARTBEAT || block.timestamp - yToXUpdatedAt > Y_TO_X_HEARTBEAT
         ) {
             stale = true;
         }
 
         // Y/USD = (X/USD) * (Y/X) / 10^yToXDecimals
-        price = xToUsd.toUint256().mulDiv(
-            yToX.toUint256(),
-            10 ** Y_TO_X_FEED.decimals(),
-            Math.Rounding.Floor
-        );
+        price = xToUsd.toUint256().mulDiv(yToX.toUint256(), 10 ** Y_TO_X_FEED.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

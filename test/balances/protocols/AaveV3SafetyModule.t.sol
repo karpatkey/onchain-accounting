@@ -29,68 +29,62 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     AaveV3SafetyModuleBalanceOracle public oracle;
     MockBalances public mockBalances;
     MockStakeToken public mockStakeToken;
-    
+
     function setUp() public override {
         super.setUp();
         mockBalances = new MockBalances();
         mockStakeToken = new MockStakeToken(address(usdc), address(dai));
-        oracle = new AaveV3SafetyModuleBalanceOracle(
-            address(mockStakeToken),
-            "Aave v3",
-            "Safety Module",
-            address(balances)
-        );
+        oracle =
+            new AaveV3SafetyModuleBalanceOracle(address(mockStakeToken), "Aave v3", "Safety Module", address(balances));
     }
-    
+
     // ============================================
     // Constructor Tests
     // ============================================
-    
+
     function test_constructor_RevertsOnZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
         new AaveV3SafetyModuleBalanceOracle(address(0), "Aave v3", "Safety Module", address(mockBalances));
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
         int256 balance1 = oracle.getOracleBalanceForAsset(address(0), address(usdc));
         assertEq(balance1, 0);
-        
+
         int256 balance2 = oracle.getOracleBalanceForAsset(address(0), address(dai));
         assertEq(balance2, 0);
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_supportsInterface() public view {
         assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
         assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
     }
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions = 
-            oracle.getOraclePositions(address(0), address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+
         assertEq(positions.length, 0);
     }
 }

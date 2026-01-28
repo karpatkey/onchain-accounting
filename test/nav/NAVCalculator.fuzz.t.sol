@@ -16,7 +16,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
         setupAll();
         emptyAccount = address(new MockContract());
     }
-    
+
     /// @notice Helper function to sum position values
     function sumPositionValues(INAVCalculator.Position[] memory positions) internal pure returns (int256) {
         int256 sum = 0;
@@ -25,7 +25,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
         }
         return sum;
     }
-    
+
     /// @notice Helper to check if amount * price would overflow
     /// @dev Returns true if the multiplication is safe
     function isSafeMultiplication(uint256 amount, uint256 price) internal pure returns (bool) {
@@ -35,7 +35,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
         // This is equivalent to: amount <= type(uint256).max / price
         return amount <= type(uint256).max / price;
     }
-    
+
     /// @notice Helper to get a safe bound for amount given max price
     /// @dev Returns a bound that ensures amount * maxPrice won't overflow
     function getSafeAmountBound(uint256 seed, uint8 decimals, uint256 maxPrice) internal pure returns (uint256) {
@@ -68,28 +68,28 @@ contract NAVCalculatorFuzzTest is SuperTest {
     function testFuzz_getAccountNav(address account, uint256 quoteAssetSeed) public {
         // Bound account to non-zero address
         vm.assume(account != address(0));
-        
+
         // Get valid quote asset
         address quoteAsset = getValidQuoteAsset(quoteAssetSeed);
-        
+
         // If quote asset is not USD, verify it has a price feed
         if (quoteAsset != address(0)) {
             vm.assume(nav.isAssetRegistered(quoteAsset));
             (address oracle,,,) = nav.priceOracles(quoteAsset);
             vm.assume(oracle != address(0));
         }
-        
+
         // Should not revert (unless account has invalid state, which is unlikely)
         INAVCalculator.NAV memory navResult = nav.getAccountNav(account, quoteAsset);
-        
+
         // Verify basic properties
         assertEq(navResult.timestamp, block.timestamp, "Timestamp should match block.timestamp");
         assertTrue(navResult.quoteAsset.asset == quoteAsset, "Quote asset should match");
-        
+
         // Verify NAV consistency invariant
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, quoteAsset);
         int256 positionsSum = sumPositionValues(positions);
-        
+
         // Allow small rounding differences
         assertApproxEqAbs(navResult.value, positionsSum, 1, "NAV should equal sum of positions");
     }
@@ -98,23 +98,23 @@ contract NAVCalculatorFuzzTest is SuperTest {
     function testFuzz_getAccountNav_withPositions(address account, uint256 amountSeed) public {
         vm.assume(account != address(0));
         vm.assume(account != address(nav));
-        
+
         // Bound amount to reasonable range (avoid overflow)
         uint256 amount = bound(amountSeed, 1, 1_000_000 * 10 ** usdc.decimals());
-        
+
         // Mint tokens to account
         usdc.mint(account, amount);
-        
+
         // Get NAV
         INAVCalculator.NAV memory navResult = nav.getAccountNav(account, address(0));
-        
+
         // Should have positive value
         assertGe(navResult.value, 0, "NAV should be non-negative for positive balances");
-        
+
         // Verify positions exist
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, address(0));
         assertGt(positions.length, 0, "Should have positions");
-        
+
         // Verify consistency
         int256 positionsSum = sumPositionValues(positions);
         assertApproxEqAbs(navResult.value, positionsSum, 1, "NAV should equal sum of positions");
@@ -127,25 +127,25 @@ contract NAVCalculatorFuzzTest is SuperTest {
     /// @notice Fuzz test for getAccountPositions with random quote currencies
     function testFuzz_getAccountPositions(address account, uint256 quoteAssetSeed) public {
         vm.assume(account != address(0));
-        
+
         // Get valid quote asset
         address quoteAsset = getValidQuoteAsset(quoteAssetSeed);
-        
+
         if (quoteAsset != address(0)) {
             vm.assume(nav.isAssetRegistered(quoteAsset));
             (address oracle,,,) = nav.priceOracles(quoteAsset);
             vm.assume(oracle != address(0));
         }
-        
+
         // Should not revert
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, quoteAsset);
-        
+
         // Verify all positions have correct quote asset
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].quoteAsset.asset, quoteAsset, "Quote asset should match");
             assertTrue(positions[i].value != 0, "No zero positions");
         }
-        
+
         // Verify NAV consistency
         INAVCalculator.NAV memory navResult = nav.getAccountNav(account, quoteAsset);
         int256 positionsSum = sumPositionValues(positions);
@@ -157,15 +157,11 @@ contract NAVCalculatorFuzzTest is SuperTest {
     // ============================================
 
     /// @notice Fuzz test for various decimal combinations
-    function testFuzz_decimalCombinations(
-        uint8 assetDecimals,
-        uint8 priceDecimals,
-        uint256 balanceAmount
-    ) public {
+    function testFuzz_decimalCombinations(uint8 assetDecimals, uint8 priceDecimals, uint256 balanceAmount) public {
         // Bound decimals to valid range (0-255, but avoid extreme values that cause overflow)
         assetDecimals = uint8(bound(assetDecimals, 0, 18)); // Common range
         priceDecimals = uint8(bound(priceDecimals, 0, 18)); // Common range
-        
+
         // Ensure we don't violate the constraint: decimals + priceDecimals >= NAV_DECIMALS (8)
         if (assetDecimals + priceDecimals < 8) {
             // Adjust to meet constraint
@@ -175,27 +171,27 @@ contract NAVCalculatorFuzzTest is SuperTest {
                 priceDecimals = 8 - assetDecimals;
             }
         }
-        
+
         // Bound balance to avoid overflow
         balanceAmount = bound(balanceAmount, 1, 1_000_000 * 10 ** assetDecimals);
-        
+
         // Create mock token with specific decimals
         Mock_ERC20 token = new Mock_ERC20("TEST", assetDecimals);
-        
+
         // Create price oracle with specific decimals
         Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TEST", address(token), 1e8, priceDecimals);
-        
+
         // Register asset
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(token), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
-        
+
         // Mint tokens
         token.mint(safe, balanceAmount);
-        
+
         // Get NAV - should not revert
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
-        
+
         // Value should be positive
         assertGe(navResult.value, 0, "NAV should be non-negative");
     }
@@ -207,38 +203,40 @@ contract NAVCalculatorFuzzTest is SuperTest {
     /// @notice Fuzz test for range queries with random boundaries
     function testFuzz_rangeQueries(address account, uint256 fromSeed, uint256 toSeed) public {
         vm.assume(account != address(0));
-        
+
         uint256 assetCount = nav.getAssetCount();
         if (assetCount == 0) return; // Skip if no assets
-        
+
         // Bound from and to to valid range
         uint256 from = bound(fromSeed, 0, assetCount - 1);
         uint256 to = bound(toSeed, from, assetCount - 1);
-        
+
         // Get range NAV
         INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(account, from, to, address(0));
-        
+
         // Verify basic properties
         assertEq(rangeNav.timestamp, block.timestamp, "Timestamp should match");
         assertEq(rangeNav.quoteAsset.asset, address(0), "Quote asset should be USD");
-        
+
         // Value should be reasonable
-        assertTrue(rangeNav.value >= type(int128).min && rangeNav.value <= type(int128).max, "Value should be reasonable");
+        assertTrue(
+            rangeNav.value >= type(int128).min && rangeNav.value <= type(int128).max, "Value should be reasonable"
+        );
     }
 
     /// @notice Fuzz test for range query completeness
     function testFuzz_rangeQueries_completeness(address account, uint256 chunkSizeSeed) public {
         vm.assume(account != address(0));
-        
+
         uint256 assetCount = nav.getAssetCount();
         if (assetCount == 0) return;
-        
+
         // Get full NAV
         INAVCalculator.NAV memory fullNav = nav.getAccountNav(account, address(0));
-        
+
         // Bound chunk size
         uint256 chunkSize = bound(chunkSizeSeed, 1, assetCount);
-        
+
         // Split into chunks and sum
         int256 rangeSum = 0;
         for (uint256 i = 0; i < assetCount; i += chunkSize) {
@@ -246,11 +244,11 @@ contract NAVCalculatorFuzzTest is SuperTest {
             if (to >= assetCount) {
                 to = assetCount - 1;
             }
-            
+
             INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(account, i, to, address(0));
             rangeSum += rangeNav.value;
         }
-        
+
         // Sum should equal full NAV (within rounding)
         assertApproxEqAbs(fullNav.value, rangeSum, 1, "Sum of ranges should equal full NAV");
     }
@@ -263,16 +261,16 @@ contract NAVCalculatorFuzzTest is SuperTest {
     function testFuzz_largeBalances(address account, uint256 amountSeed) public {
         vm.assume(account != address(0));
         vm.assume(account != address(nav));
-        
+
         // Use uint96 to avoid overflow issues
         uint96 amount = uint96(bound(amountSeed, 1, type(uint96).max / 2));
-        
+
         // Mint tokens
         usdc.mint(account, amount);
-        
+
         // Should handle large balances without reverting
         INAVCalculator.NAV memory navResult = nav.getAccountNav(account, address(0));
-        
+
         // Value should be positive
         assertGe(navResult.value, 0, "NAV should be non-negative");
     }

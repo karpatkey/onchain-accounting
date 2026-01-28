@@ -113,6 +113,9 @@ interface IBridgeEscrow {
     /// @notice Event emitted when an adapter is revoked
     event AdapterRevoked(address indexed adapter);
 
+    /// @notice Event emitted when an adapter's callback config is updated
+    event AdapterCallbackConfigUpdated(address indexed adapter, bytes4 selector, address module);
+
     /// @notice Event emitted when an asset is registered
     event AssetRegistered(bytes6 indexed symbol, address indexed asset);
 
@@ -237,5 +240,8 @@ interface IBridgeEscrow {
         external
         view
         returns (bool[] memory isCompleted);
+
+    /// @notice Returns the adapter registered for a callback selector
+    function getCallbackAdapter(bytes4 selector) external view returns (address);
 }
 

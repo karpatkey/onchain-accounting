@@ -8,6 +8,7 @@ import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -16,7 +17,7 @@ import "test/mocks/tokens.sol";
 
 /// @title CctpBridgeAdapterTest
 /// @notice Test suite for CCTP Bridge Adapter
-contract CctpBridgeAdapterTest is BridgeTestBase {
+contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     CctpBridgeAdapter public adapter;
     MockTokenMessenger public tokenMessenger;
     MockMessageTransmitter public messageTransmitter;
@@ -235,6 +236,68 @@ contract CctpBridgeAdapterTest is BridgeTestBase {
 
         // Note: In-transit balance is only tracked on source chain
         // On destination chain, there are no invoices, so in-transit balance is always 0
+    }
+
+    /// @notice Full round-trip: depositAndBridge on source → payload from invoice → deliver via receiveMessage → completeBridge
+    function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaCctp() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(portfolioSafe);
+        bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = _getMessagePayloadFromInvoiceHash(bridgeEscrow, invoiceHash);
+        uint64 nonce = tokenMessenger.nonce();
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        assertGt(messagePayload.length, 0, "messagePayload from invoice");
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+
+        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockMessageTransmitter destMessageTransmitter = new MockMessageTransmitter(DEST_DOMAIN, address(usdc));
+        MockTokenMessenger destTokenMessenger = new MockTokenMessenger(address(destMessageTransmitter));
+
+        address destAdapterImpl = address(new CctpBridgeAdapter());
+        address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
+            destAdapterImpl,
+            abi.encodeCall(
+                CctpBridgeAdapter.initialize,
+                (
+                    admin,
+                    address(destBridgeEscrow),
+                    address(destTokenMessenger),
+                    address(destMessageTransmitter),
+                    "1.0.0"
+                )
+            )
+        );
+        CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
+        destAdapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
+
+        bytes memory cctpMessage = _createMockCctpMessage(
+            SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, address(destBridgeEscrow), address(destAdapter)
+        );
+        bytes memory attestation = "mock_attestation";
+        bytes memory protocolData = abi.encode(cctpMessage, attestation);
+
+        vm.prank(operator);
+        destAdapter.completeBridge(messagePayload, protocolData);
+
+        bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertEq(
+            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
+            amount,
+            "portfolio safe received bridged amount"
+        );
     }
 
     function test_completeBridge_validatesChecksum() public {

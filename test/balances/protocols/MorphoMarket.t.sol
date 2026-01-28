@@ -184,20 +184,11 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         MarketParams memory params = MarketParams({
-            loanToken: address(usdc),
-            collateralToken: address(weth),
-            oracle: address(1),
-            irm: address(0),
-            lltv: 1e18
+            loanToken: address(usdc), collateralToken: address(weth), oracle: address(1), irm: address(0), lltv: 1e18
         });
         marketId = Id.unwrap(MarketParamsLib.id(params));
         mockMorpho = new MockMorpho(params);
-        oracle = new MorphoMarketBalanceOracle(
-            address(mockMorpho),
-            marketId,
-            "Morpho - Mock",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(address(mockMorpho), marketId, "Morpho - Mock", address(balances));
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
@@ -237,8 +228,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     }
 
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions =
-            oracle.getOraclePositions(address(0), address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
         assertEq(positions.length, 0);
     }
 }

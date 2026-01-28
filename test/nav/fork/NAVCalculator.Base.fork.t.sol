@@ -77,9 +77,8 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         aaveOracle =
             new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
 
-        compoundV3Comet = new CompoundV3Comet(
-            compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav)
-        );
+        compoundV3Comet =
+            new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));
 
         morphoBlueOracle =
             new MorphoMarketBalanceOracle(morphoBlue, marketIdCbbtcUsdc, "Morpho - cbBTC/USDC", address(nav));

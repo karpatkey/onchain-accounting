@@ -15,7 +15,7 @@ import "src/errors.sol";
 
 /// @title CcipBridgeAdapter
 /// @notice Bridge adapter for Chainlink's Cross-Chain Interoperability Protocol (CCIP)
-/// @dev Enables bridging tokens and messages between chains with invoiceId relay support
+/// @dev Recipient is always BridgeEscrow; escrow fallback forwards protocol callbacks (e.g. ccipReceive) to this adapter.
 /// @author kpk
 contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -171,11 +171,8 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
             tokenAmounts = new Client.EVMTokenAmount[](0);
         }
 
-        // Encode receiver address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
-        // Note: CCIP requires receiver to implement ccipReceive callback, so we use adapter address
-        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
-        bytes memory receiver = abi.encode(address(this));
+        // Recipient is BridgeEscrow; escrow fallback forwards ccipReceive to this adapter
+        bytes memory receiver = abi.encode(bridgeEscrow);
 
         // Get extraArgs for this chain (use configured or empty for default)
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
@@ -235,45 +232,28 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
             messagePayloads[data.invoiceId] = payloadToUse;
         }
 
-        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
-        // CCIP sends tokens to receiver (adapter) before calling ccipReceive
-        // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-
-        // CCIP only supports ERC20 tokens (not native)
-        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
-        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
-        if (!_isNativeToken(asset)) {
-            _transferTokensToEscrow(data.invoiceId, asset, data.amount);
-        }
-
+        // When recipient is BridgeEscrow, tokens are already at escrow; no transfer needed
         emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);
     }
 
-    //
-    // CCIP Receiver Implementation
-    //
-
-    /// @inheritdoc ICcipBridgeAdapter
+    /// @inheritdoc IAny2EVMMessageReceiver
+    /// @dev When called by BridgeEscrow (escrow fallback forwards here), completes delivery.
+    ///      When called directly on the adapter, reverts.
     function ccipReceive(Client.Any2EVMMessage calldata message) external override {
-        // Verify caller is the router
-        if (msg.sender != address(router)) {
-            revert InvalidRouter();
+        if (msg.sender != bridgeEscrow) {
+            if (msg.sender != address(router)) revert InvalidRouter();
+            revert InvalidBridgeData();
         }
+        _completeDelivery(message.data);
+    }
 
-        // Extract invoiceId, amount, and meta from message data (exactly 96 bytes = 3 slots)
-        if (message.data.length >= 96) {
-            (bytes32 invoiceId, uint256 amount, bytes32 meta) = abi.decode(message.data, (bytes32, uint256, bytes32));
-
-            // Store invoiceId mapping for correlation
-            messageIdToInvoiceId[message.messageId] = invoiceId;
-
-            // Store message payload
-            messagePayloads[invoiceId] = message.data;
+    function _completeDelivery(bytes memory messagePayload) internal {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+        if (messagePayload.length >= 96) {
+            InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+            messagePayloads[data.invoiceId] = messagePayload;
         }
-
-        // Note: Tokens are automatically transferred by CCIP router before this callback.
-        // The operator still needs to call completeBridge to release funds from BridgeEscrow.
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
     }
 
     //

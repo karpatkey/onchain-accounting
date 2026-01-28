@@ -789,7 +789,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function getPriceData(address underlyingAsset) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
+    function getPriceData(address underlyingAsset)
+        external
+        view
+        returns (INAVCalculator.PriceFeedData memory priceFeedData)
+    {
         _requireAssetExists(underlyingAsset);
 
         IPrices.PriceFeedConfig storage oracle = priceOracles[underlyingAsset];
@@ -1115,9 +1119,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Build enriched position with canonical asset metadata (decimals, symbol from registry)
         INAVCalculator.Asset memory underlyingAsset = INAVCalculator.Asset({
-            asset: balance.underlyingAsset.asset,
-            symbol: canonicalSymbol,
-            decimals: canonicalDecimals
+            asset: balance.underlyingAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
         });
         position = INAVCalculator.Position({
             underlyingAsset: underlyingAsset,
@@ -1161,7 +1163,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Calculate USD value (always positive)
         uint256 usdValue = (amount * usdRate) / (10 ** denominator);
-        
+
         // Return negative for debt, positive for credit
         if (isDebt) {
             // casting to 'int256' is safe because usdValue fits in int256 range

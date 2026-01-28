@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-/// @title IOracleManager
+/// @title IPrices Interface
 /// @notice Interface for managing price oracles for different tokens.
 /// @author kpk
 interface IPrices {

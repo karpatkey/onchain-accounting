@@ -74,7 +74,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         }
         require(osTokenvaultController_.code.length > 0, "OsTokenVaultController must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         OS_TOKEN = osToken_;
         UNDERLYING_TOKEN = underlyingToken_;
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenvaultController_);
@@ -113,11 +113,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for unsupported or invalid tokens (adapter convention)
         if (asset == address(0) || asset != UNDERLYING_TOKEN) {
             return 0;
@@ -147,7 +143,6 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         assets[0] = supportedAssets[0];
         balances[0] = balance;
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's StakeWise V3 OsToken positions
@@ -211,7 +206,8 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }
@@ -274,14 +270,14 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
-                    balanceOracle: address(this),
-                    amount: assetBalanceData[i].amount,
-                    isDebt: assetBalanceData[i].isDebt,
-                    protocol: _protocol,
-                    positionDetail: _positionDetail
-                });
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
+                protocol: _protocol,
+                positionDetail: _positionDetail
+            });
 
             positionCount++;
         }

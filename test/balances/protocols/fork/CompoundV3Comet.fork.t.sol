@@ -17,48 +17,43 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
     address public constant COMPOUND_REWARDS = 0x1B0e765F6224C21223AeA2af16c1C46E38885a40;
     address public constant REWARD_TOKEN = 0xc00e94Cb662C3520282E6f5717214004A7f26888;
     address public constant USDCV3_COMET = 0xc3d688B66703497DAA19211EEdff47f25384cdc3;
-    
+
     // Token addresses
     IERC20 public constant USDC = IERC20(MAINNET_USDC);
     address public constant WBTC = MAINNET_WBTC;
     address public constant WSTETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
     address public constant WETH = MAINNET_WETH;
-    
+
     // Oracle instance
     CompoundV3Comet public oracle;
     CometExtInterface public comet;
-    
+
     // Real user addresses with positions in Compound V3 at fork block
     address public constant LEND_USER = 0x2b2E894f08F1BF8C93a82297c347EbdC8717d99a;
     address public constant BORROW_USER = 0xe84A061897afc2e7fF5FB7e3686717C528617487;
     address public constant MULTI_COLLATERAL_USER = 0xc94A3Ff0bac12eeB9ff0CC4e08511E1FFaD6ba94;
     address public constant COMP_ONLY_USER = 0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B;
-    
+
     // Fork block
     uint256 public constant FORK_BLOCK = 20_570_307;
-    
+
     function setUp() public override {
         super.setUp();
         _setupFork();
         _setupOracle();
     }
-    
+
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
     }
-    
+
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_getSupportedAssets());
-        oracle = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            address(balances)
-        );
+        oracle =
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
         comet = CometExtInterface(USDCV3_COMET);
     }
-    
+
     function _getSupportedAssets() internal returns (address[] memory) {
         // Temp Balances (with code) required by adapter constructor; only underlyingAssetsSupported() is used
         BalancesHarnessForFork tempBalances = new BalancesHarnessForFork();
@@ -93,58 +88,58 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
         }
         return assets;
     }
-    
+
     // ============================================
     // Initialization Tests
     // ============================================
-    
+
     function test_initialization() public view {
         assertEq(oracle.BASE_TOKEN(), address(USDC));
         assertEq(address(oracle.REWARD_TOKEN()), REWARD_TOKEN);
         assertEq(oracle.COMET(), USDCV3_COMET);
-        
+
         uint8 numAssets = comet.numAssets();
         for (uint8 i = 0; i < numAssets; i++) {
             (, address asset,,,,,,) = comet.getAssetInfo(i);
             assertTrue(oracle.isCollateral(asset));
         }
     }
-    
+
     // ============================================
     // Real Position Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_lend() public view {
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(LEND_USER, address(USDC));
         // User should have a positive lending position
         assertGt(balanceUsdc, 0, "User should have a positive USDC lending position");
-        
+
         int256 balanceComp = oracle.getOracleBalanceForAsset(LEND_USER, REWARD_TOKEN);
         // User should have rewards
         assertGt(balanceComp, 0, "User should have COMP rewards");
     }
-    
+
     function test_getOracleBalanceForAsset_borrow() public view {
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(BORROW_USER, address(USDC));
         // User should have a debt position
         assertLt(balanceUsdc, 0, "User should have a USDC borrowing position (negative balance)");
-        
+
         int256 balanceComp = oracle.getOracleBalanceForAsset(BORROW_USER, REWARD_TOKEN);
         // User should have rewards
         assertGt(balanceComp, 0, "User should have COMP rewards");
-        
+
         int256 balanceWbtc = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
         // User should have WBTC collateral
         assertGt(balanceWbtc, 0, "User should have WBTC collateral");
     }
-    
+
     function test_getOracleBalanceForAsset_singleCollaterals() public view {
         int256 balance = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
-        
+
         // User should have WBTC collateral
         assertGt(balance, 0, "User should have WBTC collateral position");
     }
-    
+
     function test_getOracleBalanceForAsset_multiCollaterals() public view {
         uint8 numAssets = comet.numAssets();
         bool hasCollateral = false;
@@ -162,76 +157,69 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
                 }
             }
         }
-        
+
         assertTrue(hasCollateral, "User should have at least one collateral position");
-        
+
         // User should have a borrowing position (debt USDC position)
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, address(USDC));
         assertLt(balanceUsdc, 0, "User should have a USDC borrowing position (negative balance)");
     }
-    
+
     function test_getOracleBalanceForAsset_compAsRewardAndCollateral() public view {
         uint256 collateral = comet.collateralBalanceOf(MULTI_COLLATERAL_USER, REWARD_TOKEN);
-        
+
         int256 balance = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, REWARD_TOKEN);
-        
+
         // User should have COMP position (either as collateral or rewards)
         assertGt(balance, 0, "User should have COMP position");
-        
+
         // Verify that the balance is at least the collateral amount
         assertGe(uint256(balance), collateral, "Oracle balance should be at least the collateral amount");
     }
-    
+
     function test_getOracleBalanceForAsset_comp() public view {
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
         // User should have no USDC position (neither lending nor borrowing)
         assertEq(balanceUsdc, 0, "User should have no USDC position");
-        
+
         int256 balanceComp = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
         // User should have COMP rewards
         assertGt(balanceComp, 0, "User should have COMP rewards");
     }
-    
+
     function test_getOracleBalanceForAsset_only_comp_in_given_comet() public {
         deal(REWARD_TOKEN, COMP_ONLY_USER, 1 ether);
-        
+
         int256 balanceUsdc = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
         // User should have no USDC position (neither lending nor borrowing)
         assertEq(balanceUsdc, 0, "User should have no USDC position");
-        
+
         int256 balanceComp = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
         // User should have COMP rewards (note: deal() gives user tokens, but oracle only reports protocol positions)
         // The balance should still reflect the unclaimed rewards from the protocol
         assertGt(balanceComp, 0, "User should have COMP rewards from protocol");
     }
-    
+
     // ============================================
     // Position Aggregation Tests
     // ============================================
-    
+
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(LEND_USER);
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(LEND_USER);
+
         // Should have at least USDC and COMP positions
         assertGe(assets.length, 2, "Should have multiple positions");
         assertEq(assets.length, balances.length, "Arrays should match length");
     }
-    
+
     function test_getOraclePositions_returnsCorrectPositions() public {
         // Use same fork and oracle as setUp so state is consistent
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_getSupportedAssets());
-        oracle = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            address(balances)
-        );
+        oracle =
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
 
-        INAVCalculator.PositionBalance[] memory positions =
-            oracle.getOraclePositions(LEND_USER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(LEND_USER, address(0));
 
         assertGe(positions.length, 1, "Should have at least one position");
 

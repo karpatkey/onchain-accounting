@@ -57,7 +57,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param protocol_ Protocol identifier (e.g., "Balancer v3").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     /// @dev Validates that the gauge's LP token matches the pool address
-    constructor(address pool_, address gauge_, address balancerMinter_, string memory protocol_, address navCalculator_) {
+    constructor(
+        address pool_,
+        address gauge_,
+        address balancerMinter_,
+        string memory protocol_,
+        address navCalculator_
+    ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
         }
@@ -360,11 +366,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for zero account or invalid asset (adapter convention)
         if (account == address(0) || asset == address(0)) {
             return 0;
@@ -463,8 +465,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
         // lp token
         // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-        balance = poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset) + gaugeRewards(account, underlyingAsset)
-            + claimableTokens(underlyingAsset, account);
+        balance = poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset)
+            + gaugeRewards(account, underlyingAsset) + claimableTokens(underlyingAsset, account);
     }
 
     //
@@ -582,7 +584,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }

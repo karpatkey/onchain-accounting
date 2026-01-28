@@ -30,50 +30,48 @@ contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
             address(balances)
         );
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_unsupported_address() public view {
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(alice, address(0));
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_incorrect_token() public {
         address incorrectToken = makeAddr("incorrectToken");
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(alice, incorrectToken);
         assertEq(balance, 0);
     }
-    
+
     // ============================================
     // Supported Assets Tests
     // ============================================
-    
+
     function test_underlyingAssetsSupported() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], address(mockUnderlying));
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions = 
-            oracle.getOraclePositions(address(0), address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+
         assertEq(positions.length, 0);
     }
 }

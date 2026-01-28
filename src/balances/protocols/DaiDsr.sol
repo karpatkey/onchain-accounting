@@ -74,7 +74,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
         if (dai_ == address(0) || dsrManager_ == address(0)) revert InvalidArguments();
         require(dsrManager_.code.length > 0, "DSRManager must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        
+
         DAI = dai_;
         DSR_MANAGER = DsrManager(dsrManager_);
         POT = DSR_MANAGER.pot();
@@ -192,11 +192,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         // Return zero for unsupported or invalid tokens (adapter convention)
         if (asset == address(0) || asset != DAI) {
             return 0;
@@ -239,7 +235,6 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
             balances[i] = tempBalances[i];
         }
     }
-
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's DAI DSR positions
@@ -303,7 +298,8 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
                         amount = uint256(balance);
                         isDebt = false;
                     }
-                    tempData[count] = AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                    tempData[count] =
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
                 }
             }

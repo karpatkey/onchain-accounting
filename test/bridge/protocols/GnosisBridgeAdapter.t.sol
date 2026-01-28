@@ -11,15 +11,17 @@ import "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
+import "src/errors.sol";
 
 /// @title GnosisBridgeAdapterTest
 /// @notice Test suite for Gnosis Omnibridge Adapter
-contract GnosisBridgeAdapterTest is BridgeTestBase {
+contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     GnosisBridgeAdapter public adapter;
     MockOmnibridge public omnibridge;
     MockAMB public amb;
@@ -163,56 +165,75 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Simulate Gnosis delivering tokens
-        usdc.mint(address(destAdapter), amount);
+        // Operator fallback: tokens already at escrow (e.g. delivered via callback path earlier or manual transfer)
+        usdc.mint(address(destBridgeEscrow), amount);
 
-        // Verify invoice is not completed before completion
-        // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        // Note: Tokens arrive at adapter, not BridgeEscrow
-        // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
-        assertEq(usdc.balanceOf(address(destAdapter)), amount, "Adapter should have tokens before completion");
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance before completion (tokens at adapter)"
-        );
-
-        // Get initial balances
         uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
-        uint256 initialAdapterBalance = usdc.balanceOf(address(destAdapter));
 
-        // Protocol data is optional for Gnosis
-        bytes memory protocolData = "";
-
-        // Complete bridge
         vm.prank(operator);
-        destAdapter.completeBridge(messagePayload, protocolData);
+        destAdapter.completeBridge(messagePayload, "");
 
-        // Verify tokens were released
         assertEq(
             usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
         );
-
-        // Verify tokens were transferred from adapter to BridgeEscrow, then released
-        // Adapter should have 0 balance (transferred to escrow)
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after transfer to escrow");
-        // Escrow should have 0 balance (released to portfolio safe)
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance after release to portfolio safe"
-        );
-
-        // Verify invoice is marked as completed
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+    }
 
-        // Note: In-transit balance is only tracked on source chain
-        // On destination chain, there are no invoices, so in-transit balance is always 0
+    /// @notice Full round-trip: depositAndBridge on source → payload from omnibridge → deliver only via deliverTokens → completeBridge
+    function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaGnosis() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(portfolioSafe);
+        bridgeEscrow.depositAndBridge(GNOSIS_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        (bytes memory messagePayload, uint256 relayAmount) = omnibridge.getLastRelayData();
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        assertGt(messagePayload.length, 0, "messagePayload from source");
+        assertEq(relayAmount, amount, "relay value equals amount");
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+
+        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(GNOSIS_CHAIN_ID);
+        MockOmnibridge destOmnibridge = new MockOmnibridge();
+        MockAMB destAmb = new MockAMB();
+
+        address destAdapterImpl = address(new GnosisBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    GnosisBridgeAdapter.initialize,
+                    (admin, address(destBridgeEscrow), address(destOmnibridge), address(destAmb), "1.0.0")
+                )
+            ));
+        GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
+
+        _registerCallbackModule(destBridgeEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
+
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destBridgeEscrow), amount, messagePayload);
+
+        bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertEq(
+            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
+            amount,
+            "portfolio safe received bridged amount"
+        );
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -281,28 +302,39 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
         destAdapter.completeBridge(messagePayload, "");
     }
 
-    // ============ Token Transfer Callback Tests ============
+    // ============ Token Transfer Callback Tests (delivery goes to escrow → module → adapter) ============
 
+    /// @notice When delivery goes to escrow, escrow fallback forwards onTokenTransfer to adapter; adapter stores payload and releases
     function test_onTokenTransfer_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to adapter first (simulating Omnibridge transfer)
-        usdc.mint(address(adapter), amount);
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(GNOSIS_CHAIN_ID);
+        MockOmnibridge destOmnibridge = new MockOmnibridge();
+        MockAMB destAmb = new MockAMB();
+        address destAdapterImpl = address(new GnosisBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    GnosisBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destOmnibridge), address(destAmb), "1.0.0")
+                )
+            ));
+        GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
+        vm.startPrank(admin);
+        destEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
 
-        // Call onTokenTransfer (Omnibridge calls this)
-        bytes32 valueBytes32 = bytes32(amount);
-        vm.prank(address(omnibridge));
-        bool result = adapter.onTokenTransfer(address(omnibridge), valueBytes32, messagePayload);
+        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
 
-        assertTrue(result, "onTokenTransfer should return true");
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
 
-        // Verify messagePayload was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
     }
 
     function test_onTokenTransfer_storesTransactionHash() public {
@@ -311,38 +343,54 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Set a mock transaction hash
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(GNOSIS_CHAIN_ID);
+        MockOmnibridge destOmnibridge = new MockOmnibridge();
+        MockAMB destAmb = new MockAMB();
         bytes32 txHash = keccak256("test-transaction-hash");
-        amb.setTransactionHash(txHash);
+        destAmb.setTransactionHash(txHash);
 
-        // Transfer tokens to adapter
-        usdc.mint(address(adapter), amount);
+        address destAdapterImpl = address(new GnosisBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    GnosisBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destOmnibridge), address(destAmb), "1.0.0")
+                )
+            ));
+        GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
+        vm.startPrank(admin);
+        destEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
 
-        // Call onTokenTransfer via Omnibridge (simulating real flow)
-        bytes32 valueBytes32 = bytes32(amount);
-        vm.prank(address(omnibridge));
-        adapter.onTokenTransfer(address(omnibridge), valueBytes32, messagePayload);
+        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
 
-        // Verify transaction hash mapping was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes32 storedTxHash = adapter.getTransactionHashByInvoiceId(invoiceId);
-        assertEq(storedTxHash, txHash, "Transaction hash should be stored");
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
 
-        // Verify invoiceId mapping
-        bytes32 storedInvoiceId = adapter.getInvoiceIdByTransactionHash(txHash);
-        assertEq(storedInvoiceId, invoiceId, "InvoiceId mapping should be stored");
+        assertEq(
+            destAdapter.getTransactionHashByInvoiceId(invoiceData.invoiceId),
+            txHash,
+            "Transaction hash should be stored"
+        );
+        assertEq(
+            destAdapter.getInvoiceIdByTransactionHash(txHash),
+            invoiceData.invoiceId,
+            "InvoiceId mapping should be stored"
+        );
     }
 
-    function test_onTokenTransfer_revertsIfNotOmnibridge() public {
+    /// @notice Adapter's onTokenTransfer reverts when not called by escrow, so only escrow fallback → adapter path is used
+    function test_onTokenTransfer_revertsWhenCalledOnAdapter() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
         bytes32 valueBytes32 = bytes32(amount);
-        vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not Omnibridge
-        adapter.onTokenTransfer(unauthorized, valueBytes32, messagePayload);
+
+        vm.prank(address(omnibridge));
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
+        adapter.onTokenTransfer(address(usdc), valueBytes32, messagePayload);
     }
 
     // ============ Configuration Tests ============
@@ -387,14 +435,28 @@ contract GnosisBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Store payload via onTokenTransfer
-        usdc.mint(address(adapter), amount);
-        bytes32 valueBytes32 = bytes32(amount);
-        vm.prank(address(omnibridge));
-        adapter.onTokenTransfer(address(omnibridge), valueBytes32, messagePayload);
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(GNOSIS_CHAIN_ID);
+        MockOmnibridge destOmnibridge = new MockOmnibridge();
+        MockAMB destAmb = new MockAMB();
+        address destAdapterImpl = address(new GnosisBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    GnosisBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destOmnibridge), address(destAmb), "1.0.0")
+                )
+            ));
+        GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
+        vm.startPrank(admin);
+        destEscrow.authorizeAdapter(address(destAdapter));
+        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
+        vm.stopPrank();
 
-        // Retrieve payload
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceData.invoiceId);
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
+
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
     }
 

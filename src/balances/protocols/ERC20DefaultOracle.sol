@@ -105,21 +105,17 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        public
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) public view returns (int256 balance) {
         // Return zero for zero address
         if (asset == address(0)) {
             return 0;
         }
-        
+
         // Only return balance for registered assets
         if (!_isAssetRegistered(asset)) {
             return 0;
         }
-        
+
         return _getBalanceForAsset(account, asset);
     }
 

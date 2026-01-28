@@ -17,73 +17,67 @@ contract StakeWiseV3VaultBalanceOracleTest is BalanceAdapterTestBase {
     MockBalances public mockBalances;
     MockContract public mockUnderlying;
     MockContract public mockVault;
-    
+
     function setUp() public override {
         super.setUp();
         mockBalances = new MockBalances();
         mockUnderlying = new MockContract();
         mockVault = new MockContract();
         oracle = new StakeWiseV3VaultBalanceOracle(
-            address(mockUnderlying),
-            address(mockVault),
-            "Stakewise v3",
-            "Some vault",
-            address(balances)
+            address(mockUnderlying), address(mockVault), "Stakewise v3", "Some vault", address(balances)
         );
     }
-    
+
     // ============================================
     // Constructor Tests
     // ============================================
-    
+
     function test_constructor_reverts_on_zero_address() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3VaultBalanceOracle(address(0), address(0), "Stakewise v3", "Some vault", address(mockBalances));
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
-        
+
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
         int256 balance = oracle.getOracleBalanceForAsset(address(0), address(usdc));
         assertEq(balance, 0);
     }
-    
+
     // ============================================
     // Supported Assets Tests
     // ============================================
-    
+
     function test_underlyingAssetsSupported() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], address(mockUnderlying));
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions = 
-            oracle.getOraclePositions(address(0), address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+
         assertEq(positions.length, 0);
     }
 }

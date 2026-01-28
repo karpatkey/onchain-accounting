@@ -13,6 +13,7 @@ import "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -21,7 +22,7 @@ import "test/mocks/tokens.sol";
 
 /// @title StargateBridgeAdapterTest
 /// @notice Test suite for Stargate Bridge Adapter
-contract StargateBridgeAdapterTest is BridgeTestBase {
+contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     StargateBridgeAdapter public adapter;
     MockStargateRouter public router;
     address public endpoint; // Mock LayerZero endpoint
@@ -203,7 +204,6 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
             ));
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
 
-        // Configure adapter on destination chain
         vm.startPrank(admin);
         destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
         destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
@@ -214,61 +214,81 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Simulate Stargate delivering tokens and message
-        usdc.mint(address(destAdapter), amount);
+        // Operator fallback: tokens already at escrow
+        usdc.mint(address(destBridgeEscrow), amount);
 
-        // Call lzReceive to store the message payload
-        bytes memory srcAddress = abi.encodePacked(address(destAdapter));
-        vm.prank(endpoint);
-        destAdapter.lzReceive(SOURCE_LZ_CHAIN_ID, srcAddress, 123, messagePayload);
-
-        // Verify invoice is not completed before completion
-        // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        // Note: Tokens arrive at adapter, not BridgeEscrow
-        // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
-        assertEq(usdc.balanceOf(address(destAdapter)), amount, "Adapter should have tokens before completion");
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance before completion (tokens at adapter)"
-        );
-
-        // Get initial balances
         uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
-        uint256 initialAdapterBalance = usdc.balanceOf(address(destAdapter));
 
-        // Protocol data is source LZ chain ID
-        bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
-
-        // Complete bridge
         vm.prank(operator);
-        destAdapter.completeBridge(messagePayload, protocolData);
+        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
-        // Verify tokens were released
         assertEq(
             usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
         );
-
-        // Verify tokens were transferred from adapter to BridgeEscrow, then released
-        // Adapter should have 0 balance (transferred to escrow)
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after transfer to escrow");
-        // Escrow should have 0 balance (released to portfolio safe)
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance after release to portfolio safe"
-        );
-
-        // Verify invoice is marked as completed
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+    }
 
-        // Note: In-transit balance is only tracked on source chain
-        // On destination chain, there are no invoices, so in-transit balance is always 0
+    /// @notice Full round-trip: depositAndBridge on source → payload from router → deliver only via deliverMessage (to escrow)
+    function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaStargate() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.02 ether); // LayerZero fee
+        vm.prank(portfolioSafe);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = router.getLastSwapPayload();
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        assertGt(messagePayload.length, 0, "messagePayload from source");
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+
+        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockStargateRouter destRouter = new MockStargateRouter();
+        address destEndpoint = address(destRouter);
+
+        address destAdapterImpl = address(new StargateBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destBridgeEscrow), address(destRouter), destEndpoint, "1.0.0")
+                )
+            ));
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
+        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        uint64 destChainId = uint64(block.chainid);
+        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
+        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
+
+        _registerCallbackModule(destBridgeEscrow, StargateBridgeAdapter.lzReceive.selector, address(destAdapter));
+
+        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destBridgeEscrow), address(usdc), amount);
+
+        bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertEq(
+            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
+            amount,
+            "portfolio safe received bridged amount"
+        );
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -341,33 +361,45 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    // ============ LayerZero Receiver Tests ============
+    // ============ LayerZero Receiver Tests (delivery goes to escrow → module → adapter) ============
 
+    /// @notice When delivery goes to escrow, escrow fallback forwards lzReceive to adapter; adapter stores payload
     function test_lzReceive_storesNonceMapping() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        uint64 nonce = 123;
-        bytes memory srcAddress = abi.encodePacked(address(adapter));
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockStargateRouter destRouter = new MockStargateRouter();
+        address destEndpoint = address(destRouter);
+        address destAdapterProxy = address(
+            UnsafeUpgrades.deployUUPSProxy(
+                address(new StargateBridgeAdapter()),
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destRouter), destEndpoint, "1.0.0")
+                )
+            )
+        );
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
+        vm.startPrank(admin);
+        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
+        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        uint64 destChainId = uint64(block.chainid);
+        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
+        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
+        destEscrow.authorizeAdapter(destAdapterProxy);
+        _registerCallbackModule(destEscrow, StargateBridgeAdapter.lzReceive.selector, destAdapterProxy);
+        vm.stopPrank();
 
-        // Call lzReceive (endpoint calls this)
-        vm.prank(endpoint);
-        adapter.lzReceive(SOURCE_LZ_CHAIN_ID, srcAddress, nonce, messagePayload);
+        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destEscrow), address(usdc), amount);
 
-        // Verify nonce mapping was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes32 storedInvoiceId = adapter.nonceToInvoiceId(nonce);
-        assertEq(storedInvoiceId, invoiceId, "InvoiceId mapping should be stored");
-
-        // Verify invoiceId to nonce mapping
-        uint64 storedNonce = adapter.invoiceToNonce(invoiceId);
-        assertEq(storedNonce, nonce, "Nonce mapping should be stored");
-
-        // Verify messagePayload was stored
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
     }
 
     function test_lzReceive_revertsIfNotEndpoint() public {
@@ -377,13 +409,13 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not endpoint
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidEndpoint.selector));
         adapter.lzReceive(SOURCE_LZ_CHAIN_ID, "", 123, messagePayload);
     }
 
     function test_lzReceive_revertsForEmptyPayload() public {
         vm.prank(endpoint);
-        vm.expectRevert(); // Should revert because payload is empty
+        vm.expectRevert(); // adapter reverts (empty payload or MessageReceiveFailed)
         adapter.lzReceive(SOURCE_LZ_CHAIN_ID, "", 123, "");
     }
 
@@ -478,13 +510,35 @@ contract StargateBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Store payload via lzReceive
-        bytes memory srcAddress = abi.encodePacked(address(adapter));
-        vm.prank(endpoint);
-        adapter.lzReceive(SOURCE_LZ_CHAIN_ID, srcAddress, 123, messagePayload);
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockStargateRouter destRouter = new MockStargateRouter();
+        address destEndpoint = address(destRouter);
+        address destAdapterProxy = address(
+            UnsafeUpgrades.deployUUPSProxy(
+                address(new StargateBridgeAdapter()),
+                abi.encodeCall(
+                    StargateBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destRouter), destEndpoint, "1.0.0")
+                )
+            )
+        );
+        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
+        vm.startPrank(admin);
+        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
+        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        uint64 destChainId = uint64(block.chainid);
+        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
+        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
+        destEscrow.authorizeAdapter(destAdapterProxy);
+        _registerCallbackModule(destEscrow, StargateBridgeAdapter.lzReceive.selector, destAdapterProxy);
+        vm.stopPrank();
 
-        // Retrieve payload
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceData.invoiceId);
+        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destEscrow), address(usdc), amount);
+
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
     }
 

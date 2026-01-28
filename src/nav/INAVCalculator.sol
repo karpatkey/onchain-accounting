@@ -39,7 +39,7 @@ interface INAVCalculator {
 
     /// @notice The complete NAV snapshot
     /// @param value Total value in quoteAsset
-    /// @param quoteAsset The quote currency (must have PriceFeedConfig configured)
+    /// @param quoteAsset The quote currency (address(0) denotes USD; otherwise must have a price feed when used in getters)
     /// @param timestamp Block timestamp this reading refers to
     /// @param stalePriceAssets Array of assets with stale prices
     /// @param sequencerDown Whether the L2 sequencer is down
@@ -86,12 +86,12 @@ interface INAVCalculator {
     /// @param nativeTokenSymbol The symbol of the chain's native token
     event NativeTokenSymbolSet(string indexed nativeTokenSymbol);
 
-    /// @notice Event emitted when the Chainlink uptime feed is updated by a call to `setChainlinkUptimeFeed`
+    /// @notice Event emitted when the Chainlink L2 sequencer uptime feed is updated by a call to `setChainlinkL2SequencerUptimeFeed`
     /// @param oldChainlinkUptimeFeed The address of the old Chainlink uptime feed
     /// @param newChainlinkUptimeFeed The address of the new Chainlink uptime feed
     event ChainlinkUptimeFeedUpdated(address indexed oldChainlinkUptimeFeed, address indexed newChainlinkUptimeFeed);
 
-    /// @notice Event emitted when the L2 sequencer grace period is updated by a call to `setSequencerGracePeriod`
+    /// @notice Event emitted when the L2 sequencer grace period is updated by a call to `setChainlinkL2SequencerGracePeriod`
     /// @param oldSequencerGracePeriod The old sequencer grace period in seconds
     /// @param newSequencerGracePeriod The new sequencer grace period in seconds
     event L2SequencerGracePeriodUpdated(uint256 oldSequencerGracePeriod, uint256 newSequencerGracePeriod);
@@ -109,9 +109,10 @@ interface INAVCalculator {
     // Errors
     //
 
-    /// @notice Emitted when an asset is not found
+    /// @notice Reverted when an asset is not registered (see errors.sol AssetNotFound).
+    /// @dev Used by view and mutating functions that look up an asset by address.
 
-    /// @notice Emitted when 'setSequencerGracePeriod' is called and 'chainlinkUptimeFeed' is the zero address
+    /// @notice Reverted when setChainlinkL2SequencerGracePeriod is called and the L2 sequencer uptime feed is the zero address.
     error UptimeFeedNotSet();
 
     /// @notice Registers an asset with its price feed.
@@ -128,8 +129,8 @@ interface INAVCalculator {
     function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Adds a balance oracle globally.
-    /// @dev The oracle will return positions for all registered assets. Replaces any existing oracle with the same address.
+    /// @notice Adds a balance oracle to the global registry.
+    /// @dev Reverts with DuplicateBalanceOracle if the oracle is already registered. The oracle will be queried for all accounts when computing NAV.
     function addBalanceOracle(address oracle) external;
 
     /// @notice Unsets the price feed for a given asset.
@@ -137,12 +138,12 @@ interface INAVCalculator {
     function unsetPriceFeed(address underlyingAsset) external;
 
     /// @notice Removes a balance oracle from the global registry.
-    /// @dev The oracle is removed globally and will no longer return positions for any asset.
+    /// @dev The oracle will no longer be queried when computing NAV.
     function removeBalanceOracle(address oracle) external;
 
-    /// @notice Unregisters an asset, removing all oracles and the asset itself.
+    /// @notice Unregisters an asset from the registry.
     /// @param underlyingAsset The address of the asset to unregister.
-    /// @dev This is a shortcut that unsets price and balance oracles, then removes the asset.
+    /// @dev Unsets the price feed for the asset (if set) and removes the asset from the asset registry. Balance oracles are global and are not removed.
     function unregisterAsset(address underlyingAsset) external;
 
     /// @notice Sets the symbol of the native token used for display purposes (e.g. "xDAI")
@@ -167,7 +168,7 @@ interface INAVCalculator {
 
     /// @notice Gets NAV for an account in the specified quoteAsset (quote currency)
     /// @param account The address of the account to calculate for
-    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). When not address(0), must have a price feed configured.
     /// @return nav The NAV of the account in the specified quote currency
     function getAccountNav(address account, address quoteAsset) external view returns (NAV memory nav);
 
@@ -175,7 +176,7 @@ interface INAVCalculator {
     /// @param account The address of the account to calculate for
     /// @param from Starting asset index (inclusive, from asset enumeration)
     /// @param to Ending asset index (inclusive, from asset enumeration)
-    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). When not address(0), must have a price feed configured.
     /// @dev Validates that from <= to and both indices are within asset count bounds
     /// @dev Reverts with InvalidArguments if indices are out of range or from > to
     /// @return nav The NAV of the account for the specified asset range in the quote currency
@@ -186,7 +187,7 @@ interface INAVCalculator {
 
     /// @notice Gets all positions for a given account with pricing in the specified quote currency
     /// @param account The address of the account to calculate for
-    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). When not address(0), must have a price feed configured.
     /// @return positions Array of enriched Position structs with pricing information
     /// @dev This method aggregates balance-only PositionBalance data from oracles and enriches them with pricing
     function getAccountPositions(address account, address quoteAsset)
@@ -197,7 +198,7 @@ interface INAVCalculator {
     /// @notice Gets positions for a specific asset for a given account
     /// @param account The address of the account to calculate for
     /// @param asset The specific asset to filter by (must be registered)
-    /// @param quoteAsset The quote currency address (address(0) for USD). Must have PriceFeedConfig configured.
+    /// @param quoteAsset The quote currency address (address(0) for USD). When not address(0), must have a price feed configured.
     /// @return positions Array of enriched Position structs with pricing information for the specified asset
     /// @dev This method aggregates balance-only PositionBalance data from oracles and enriches them with pricing
     function getAccountPositionsForAsset(address account, address asset, address quoteAsset)

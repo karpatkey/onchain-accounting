@@ -110,11 +110,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
             revert UnsupportedChain(uint64(data.destinationChainId));
         }
 
-        // Use bridgeEscrow as receiver - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
-        // Note: Gnosis requires receiver to implement onTokenTransfer callback, so we use adapter address
-        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
-        address receiver = address(this);
+        // Recipient is BridgeEscrow; escrow fallback forwards onTokenTransfer to this adapter
+        address receiver = bridgeEscrow;
 
         // messagePayload already contains invoiceId + amount + timestamp + checksum, so we send it as-is
         bytes memory messageData = messagePayload;
@@ -147,96 +144,43 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Receives AMB message and processes it
-    /// @notice On Gnosis Chain: Tokens are automatically transferred via onTokenTransfer callback.
-    ///         On Mainnet: Tokens need to be manually claimed from Omnibridge first (AMB message must be processed).
+    /// @dev Completes bridge on destination chain (operator fallback when callback path not used).
+    ///      When recipient is BridgeEscrow, tokens are delivered to escrow; we only record and release.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
-        // Validate messagePayload is not empty
-        if (messagePayload.length == 0) {
-            revert InvalidCompletionData();
-        }
-
-        // Decode messagePayload into invoice data struct
+        if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
-        // No need to validate here to avoid redundant gas costs
-
-        // Get asset address from registry
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-
-        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
-        // Gnosis sends tokens to receiver (adapter) via onTokenTransfer callback
-        // Gnosis only supports ERC20 tokens (not native)
-        if (!_isNativeToken(asset)) {
-            // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
-            // On Mainnet, if tokens aren't available, this will revert
-            // Operator must ensure AMB message is processed before calling completeBridge
-            // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
-            _transferTokensToEscrow(data.invoiceId, asset, data.amount);
-        }
-
-        // Get AMB transaction hash if available
         bytes32 transactionHash = bytes32(0);
         try amb.transactionHash() returns (bytes32 txHash) {
             transactionHash = txHash;
-            // Store mapping for correlation
             transactionHashToInvoiceId[transactionHash] = data.invoiceId;
             invoiceToTransactionHash[data.invoiceId] = transactionHash;
-        } catch {
-            // Transaction hash not available, continue without it
-        }
+        } catch {}
 
-        // Store messagePayload if provided
-        if (messagePayload.length > 0) {
-            messagePayloads[data.invoiceId] = messagePayload;
-        }
-
+        if (messagePayload.length > 0) messagePayloads[data.invoiceId] = messagePayload;
         emit GnosisBridgeCompleted(data.invoiceId, uint64(data.sourceChainId), transactionHash);
     }
 
-    //
-    // Receiver Function (for ERC677 tokens)
-    //
-
     /// @inheritdoc IGnosisBridgeAdapter
-    function onTokenTransfer(address from, bytes32 value, bytes memory data) external returns (bool) {
-        // Verify caller is Omnibridge
-        if (msg.sender != address(omnibridge)) {
-            revert InvalidOmnibridge();
-        }
-
-        // Extract messagePayload from data (exactly 96 bytes = 3 slots)
-        if (data.length >= 96) {
-            InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.decode(data);
-
-            // Validate checksum (value is the amount received)
-            if (!IBridgeEscrow(bridgeEscrow)
-                    .validateInvoiceIdChecksum(
-                        invoiceData.invoiceId, invoiceData.amount, invoiceData.timestamp, invoiceData.checksum24
-                    )) {
-                revert InvalidInvoice();
-            }
-
-            // Store invoiceId mapping and messagePayload
-            messagePayloads[invoiceData.invoiceId] = data;
-
-            // Get transaction hash if available
-            bytes32 transactionHash = bytes32(0);
-            try amb.transactionHash() returns (bytes32 txHash) {
-                transactionHash = txHash;
-                transactionHashToInvoiceId[transactionHash] = invoiceData.invoiceId;
-                invoiceToTransactionHash[invoiceData.invoiceId] = transactionHash;
-            } catch {
-                // Transaction hash not available
-            }
-        }
-
-        // Note: On Gnosis Chain, tokens are automatically transferred to this contract by Omnibridge
-        //       via the ERC677 onTokenTransfer callback. On Mainnet, tokens need to be manually claimed
-        //       from Omnibridge first (AMB message must be processed).
-        //       The operator still needs to call completeBridge to release funds from BridgeEscrow
+    /// @dev When called by BridgeEscrow (escrow fallback forwards here), completes delivery.
+    ///      When called directly on the adapter, reverts.
+    function onTokenTransfer(address, bytes32 value, bytes memory data) external returns (bool) {
+        if (msg.sender != bridgeEscrow) revert NotAuthorized();
+        _completeDelivery(data);
         return true;
+    }
+
+    function _completeDelivery(bytes memory messagePayload) internal {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+        if (messagePayload.length >= 96) {
+            InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+            messagePayloads[data.invoiceId] = messagePayload;
+            try amb.transactionHash() returns (bytes32 txHash) {
+                transactionHashToInvoiceId[txHash] = data.invoiceId;
+                invoiceToTransactionHash[data.invoiceId] = txHash;
+            } catch {}
+        }
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
     }
 
     /// @inheritdoc IGnosisBridgeAdapter
@@ -283,5 +227,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
 
         return adapterBalance >= data.amount;
+    }
+
+    /// @notice Checks if the contract supports an interface
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 }

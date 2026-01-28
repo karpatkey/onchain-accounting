@@ -63,7 +63,13 @@ contract MockCometMinimal {
     function userBasic(address)
         external
         pure
-        returns (int104 principal, uint64 baseTrackingIndex, uint64 baseTrackingAccrued, uint16 assetsIn, uint8 reserved)
+        returns (
+            int104 principal,
+            uint64 baseTrackingIndex,
+            uint64 baseTrackingAccrued,
+            uint16 assetsIn,
+            uint8 reserved
+        )
     {
         return (0, 0, 0, 0, 0);
     }
@@ -141,69 +147,68 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
             address(balances)
         );
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_unsupportedToken() public {
         address unsupportedToken = address(1);
-        
+
         // getOracleBalanceForAsset returns 0 for unsupported tokens
         int256 balance = oracle.getOracleBalanceForAsset(address(this), unsupportedToken);
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_userWithoutPosition() public view {
         address user = address(1);
         int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
         assertEq(balance, 0);
     }
-    
+
     // ============================================
     // Edge Case Tests (Using Mocks)
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_edgeCase_MaxPrincipal() public {
         address user = address(1);
-        
+
         int104 maxPositivePrincipal = type(int104).max;
         vm.mockCall(
             address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
             abi.encode(maxPositivePrincipal, 0, 0, 0, 0)
         );
-        
+
         int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
         assertGt(balance, 0, "Balance should be positive (credit)");
     }
-    
+
     function test_getOracleBalanceForAsset_edgeCase_MinimalPrincipal() public {
         address user = address(1);
-        
+
         int104 maxNegativePrincipal = type(int104).min;
         vm.mockCall(
             address(mockComet),
             abi.encodeWithSelector(CometExtInterface.userBasic.selector, user),
             abi.encode(maxNegativePrincipal, 0, 0, 0, 0)
         );
-        
+
         int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
         assertLt(balance, 0, "Balance should be negative (debt)");
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public {
         // Note: This test verifies interface compliance
         // Actual position testing is done in fork tests

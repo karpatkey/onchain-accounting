@@ -50,11 +50,7 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
-        external
-        view
-        returns (int256 balance)
-    {
+    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
         (uint256 amount, bool isDebt_) = this.balanceOf(asset, account);
         if (isDebt_) {
             balance = -int256(amount);

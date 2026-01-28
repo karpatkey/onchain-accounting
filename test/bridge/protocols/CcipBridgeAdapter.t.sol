@@ -3,12 +3,13 @@ pragma solidity ^0.8.0;
 
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
-
 import {CcipBridgeAdapter} from "src/bridge/adapters/CcipBridgeAdapter.sol";
+import {ICcipBridgeAdapter} from "src/bridge/adapters/interfaces/ICcipBridgeAdapter.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol";
+import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -17,7 +18,7 @@ import "test/mocks/tokens.sol";
 
 /// @title CcipBridgeAdapterTest
 /// @notice Test suite for CCIP Bridge Adapter
-contract CcipBridgeAdapterTest is BridgeTestBase {
+contract CcipBridgeAdapterTest is BridgeScenarioHelper {
     CcipBridgeAdapter public adapter;
     MockCcipRouter public router;
     Mock_ERC20 public link; // Fee token
@@ -218,7 +219,6 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
 
-        // Configure adapter on destination chain
         vm.startPrank(admin);
         destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
         destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
@@ -226,68 +226,32 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Simulate CCIP delivering tokens and message
-        usdc.mint(address(destAdapter), amount);
+        // Operator fallback: tokens already at escrow
+        usdc.mint(address(destBridgeEscrow), amount);
 
-        // Create mock CCIP Any2EVMMessage
-        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
-            messageId: bytes32(uint256(123)),
-            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: abi.encode(address(destAdapter)),
-            data: messagePayload,
-            destTokenAmounts: new Client.EVMTokenAmount[](0)
-        });
-
-        // Call ccipReceive to store the message
-        vm.prank(address(router));
-        destAdapter.ccipReceive(ccipMessage);
-
-        // Verify invoice is not completed before completion
-        // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        // Note: Tokens arrive at adapter, not BridgeEscrow
-        // They will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
-        assertEq(usdc.balanceOf(address(destAdapter)), amount, "Adapter should have tokens before completion");
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance before completion (tokens at adapter)"
-        );
-
-        // Get initial balances
         uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
-        uint256 initialAdapterBalance = usdc.balanceOf(address(destAdapter));
 
-        bytes memory protocolData = abi.encode(ccipMessage);
-
-        // Complete bridge
+        // _completeBridge decodes protocolData as Any2EVMMessage; pass minimal struct with data
+        Client.Any2EVMMessage memory minimalMessage = Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
+            sender: "",
+            data: messagePayload,
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
         vm.prank(operator);
-        destAdapter.completeBridge(messagePayload, protocolData);
+        destAdapter.completeBridge(messagePayload, abi.encode(minimalMessage));
 
-        // Verify tokens were released
         assertEq(
             usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
         );
-
-        // Verify tokens were transferred from adapter to BridgeEscrow, then released
-        // Adapter should have 0 balance (transferred to escrow)
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after transfer to escrow");
-        // Escrow should have 0 balance (released to portfolio safe)
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow should have zero balance after release to portfolio safe"
-        );
-
-        // Verify invoice is marked as completed
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
-
-        // Note: In-transit balance is only tracked on source chain
-        // On destination chain, there are no invoices, so in-transit balance is always 0
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -376,41 +340,100 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
+    /// @notice Full round-trip: depositAndBridge on source → payload from router → deliver only via deliverMessage → completeBridge
+    function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaCcip() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(portfolioSafe);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = router.getLastMessageData();
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        assertGt(messagePayload.length, 0, "messagePayload from source");
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+
+        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockCcipRouter destRouter = new MockCcipRouter();
+        Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
+
+        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
+            destAdapterImpl,
+            abi.encodeCall(
+                CcipBridgeAdapter.initialize,
+                (admin, address(destBridgeEscrow), address(destRouter), address(destLink), "1.0.0")
+            )
+        );
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
+        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        vm.stopPrank();
+
+        _registerCallbackModule(destBridgeEscrow, CcipBridgeAdapter.ccipReceive.selector, address(destAdapter));
+
+        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destBridgeEscrow));
+
+        bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertEq(
+            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
+            amount,
+            "portfolio safe received bridged amount"
+        );
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
+    }
+
+    /// @notice When delivery goes to escrow, escrow fallback forwards ccipReceive to adapter; adapter stores payload
     function test_ccipReceive_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Create CCIP message
-        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
-            messageId: bytes32(uint256(123)),
-            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: abi.encode(address(adapter)),
-            data: messagePayload,
-            destTokenAmounts: new Client.EVMTokenAmount[](0)
-        });
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockCcipRouter destRouter = new MockCcipRouter();
+        Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
+        address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
+            address(new CcipBridgeAdapter()),
+            abi.encodeCall(
+                CcipBridgeAdapter.initialize,
+                (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
+            )
+        );
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        vm.startPrank(admin);
+        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
+        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        destEscrow.authorizeAdapter(destAdapterProxy);
+        vm.stopPrank();
 
-        // Call ccipReceive (router calls this)
-        vm.prank(address(router));
-        adapter.ccipReceive(ccipMessage);
+        _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
 
-        // Verify messageId mapping was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes32 storedInvoiceId = adapter.messageIdToInvoiceId(ccipMessage.messageId);
-        assertEq(storedInvoiceId, invoiceId, "InvoiceId mapping should be stored");
+        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destEscrow));
 
-        // Verify messagePayload was stored
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
     }
 
-    function test_ccipReceive_revertsIfNotRouter() public {
+    /// @notice Adapter's ccipReceive reverts when not called by escrow, so only escrow fallback → adapter path is used
+    function test_ccipReceive_revertsWhenCalledOnAdapter() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
         Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
             messageId: bytes32(uint256(123)),
             sourceChainSelector: SOURCE_CHAIN_SELECTOR,
@@ -419,8 +442,8 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
 
-        vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not router
+        vm.prank(address(router));
+        vm.expectRevert(abi.encodeWithSelector(ICcipBridgeAdapter.InvalidBridgeData.selector));
         adapter.ccipReceive(ccipMessage);
     }
 
@@ -510,20 +533,30 @@ contract CcipBridgeAdapterTest is BridgeTestBase {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Store payload via ccipReceive
-        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
-            messageId: bytes32(uint256(123)),
-            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: abi.encode(address(adapter)),
-            data: messagePayload,
-            destTokenAmounts: new Client.EVMTokenAmount[](0)
-        });
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockCcipRouter destRouter = new MockCcipRouter();
+        Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
+        address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
+            address(new CcipBridgeAdapter()),
+            abi.encodeCall(
+                CcipBridgeAdapter.initialize,
+                (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
+            )
+        );
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        vm.startPrank(admin);
+        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
+        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        destEscrow.authorizeAdapter(destAdapterProxy);
+        _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
+        vm.stopPrank();
 
-        vm.prank(address(router));
-        adapter.ccipReceive(ccipMessage);
+        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
+        usdc.mint(address(destRouter), amount);
+        destRouter.deliverMessage(msgId, address(destEscrow));
 
-        // Retrieve payload
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceData.invoiceId);
+        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
     }
 

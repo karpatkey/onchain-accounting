@@ -12,33 +12,33 @@ import {IBalances} from "src/balances/IBalances.sol";
 abstract contract BalanceAdapterTestBase is Test {
     // Balances contract for unit tests
     BalancesHarness public balances;
-    
+
     // Common test tokens
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
     Mock_ERC20 public weth;
-    
+
     // Test accounts
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
     address public admin = makeAddr("admin");
-    
+
     function setUp() public virtual {
         _setupBalances();
         _setupTokens();
     }
-    
+
     /// @notice Sets up the Balances contract
     function _setupBalances() internal {
         balances = new BalancesHarness();
     }
-    
+
     /// @notice Sets up common test tokens
     function _setupTokens() internal {
         usdc = new Mock_ERC20("USDC", 6);
         dai = new Mock_ERC20("DAI", 18);
         weth = new Mock_ERC20("WETH", 18);
-        
+
         // Register tokens in Balances
         balances.registerAssetForTest(address(usdc), 6);
         balances.registerAssetForTest(address(dai), 18);
@@ -47,7 +47,7 @@ abstract contract BalanceAdapterTestBase is Test {
         balances.setAssetSymbolForTest(address(dai), "DAI");
         balances.setAssetSymbolForTest(address(weth), "WETH");
     }
-    
+
     /// @notice Creates and registers a new test token
     /// @param name Token name
     /// @param decimals Token decimals

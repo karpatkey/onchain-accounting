@@ -13,7 +13,7 @@ import "src/errors.sol";
 
 /// @title AcrossBridgeAdapter
 /// @notice Bridge adapter for Across Protocol cross-chain bridge
-/// @dev Enables bridging tokens and messages between chains using Across Protocol
+/// @dev Recipient is always BridgeEscrow; escrow fallback forwards protocol callbacks (e.g. handleAcrossMessage) to this adapter.
 /// @author kpk
 contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -115,11 +115,8 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
             IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
         }
 
-        // Get recipient address - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
-        // Note: Across requires recipient to implement handleAcrossMessage callback, so we use adapter address
-        // Tokens will be transferred to bridgeEscrow in _completeBridge before calling releaseByInvoiceId
-        address recipient = address(this);
+        // Recipient is BridgeEscrow; escrow fallback forwards handleAcrossMessage to this adapter
+        address recipient = bridgeEscrow;
 
         // Approve SpokePool to spend tokens (if ERC20)
         if (!isNative) {
@@ -164,50 +161,24 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Completes bridge on destination chain
+    /// @dev Completes bridge on destination chain (operator fallback when callback path not used)
+    ///      When recipient is BridgeEscrow, tokens are already at escrow; we only trigger release.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
-        // Validate messagePayload is not empty
-        if (messagePayload.length == 0) {
-            revert InvalidCompletionData();
-        }
-
-        // Decode messagePayload into invoice data struct
+        if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-
-        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
-        // No need to validate here to avoid redundant gas costs
-
-        // Store message payload if provided
         if (messagePayload.length > 0) {
             messagePayloads[data.invoiceId] = messagePayload;
         }
-
-        // Transfer tokens from adapter to BridgeEscrow if they arrived at adapter
-        // Across sends tokens to recipient (bridgeEscrow), but if callback is required, tokens may be at adapter
-        // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
-
-        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
-        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
-        _transferTokensToEscrow(data.invoiceId, asset, data.amount);
-
-        // Get deposit ID from protocol data if available
         uint32 depositId = 0;
         uint256 sourceChainId = 0;
         if (protocolData.length >= 36) {
-            // Decode depositId (uint32) and sourceChainId (uint256)
             (depositId, sourceChainId) = abi.decode(protocolData, (uint32, uint256));
         }
-
         emit AcrossBridgeCompleted(data.invoiceId, sourceChainId, depositId);
     }
 
-    //
-    // Across Receiver Implementation
-    //
-
-    /// @inheritdoc IAcrossReceiver
-    /// @dev Receives messages from Across Protocol when deposit is filled
+    /// @dev IAcrossReceiver: when called by BridgeEscrow (escrow fallback forwards here), completes delivery.
+    ///      When called directly on the adapter, reverts so the protocol must call the escrow.
     function handleAcrossMessage(
         address,
         /* tokenSent */
@@ -222,39 +193,17 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         external
         override
     {
-        // Verify caller is the SpokePool
-        if (msg.sender != address(spokePool)) {
-            revert InvalidSpokePool();
+        if (msg.sender != bridgeEscrow) revert MessageReceiveFailed();
+        _completeDelivery(message);
+    }
+
+    function _completeDelivery(bytes memory messagePayload) internal {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+        if (messagePayload.length >= 96) {
+            InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+            messagePayloads[data.invoiceId] = messagePayload;
         }
-
-        // Verify message is not empty
-        if (message.length == 0) {
-            revert MessageReceiveFailed();
-        }
-
-        // Verify message payload is at least 96 bytes (invoiceId + amount + meta)
-        if (message.length < 96) {
-            revert InvalidCompletionData();
-        }
-
-        // Extract messagePayload from message
-        bytes memory messagePayload = message;
-
-        // Decode invoice data
-        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-
-        // Try to extract deposit ID from event logs or use a mapping
-        // Note: We can't directly get depositId from handleAcrossMessage parameters
-        // We'll need to track it via events or use a different approach
-        // For now, we'll store the messagePayload and let the operator provide depositId in completeBridge
-
-        // Store invoiceId mapping and messagePayload
-        messagePayloads[data.invoiceId] = messagePayload;
-
-        // Tokens are automatically transferred by Across relayer before this callback
-        // The operator will need to call completeBridge() with the messagePayload
-        // We emit an event here to signal that the message was received
-        emit AcrossBridgeCompleted(data.invoiceId, 0, 0);
+        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
     }
 
     //

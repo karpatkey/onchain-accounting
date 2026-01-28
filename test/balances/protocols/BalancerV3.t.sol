@@ -31,7 +31,7 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     MockContract public mockPool;
     MockBalancerGauge public mockGauge;
     MockContract public mockMinter;
-    
+
     function setUp() public override {
         super.setUp();
         mockBalances = new MockBalances();
@@ -39,70 +39,68 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
         mockGauge = new MockBalancerGauge(address(mockPool));
         mockMinter = new MockContract();
         oracle = new BalancerV3PoolBalanceOracle(
-            address(mockPool),
-            address(mockGauge),
-            address(mockMinter),
-            "Balancer v3",
-            address(balances)
+            address(mockPool), address(mockGauge), address(mockMinter), "Balancer v3", address(balances)
         );
     }
-    
+
     // ============================================
     // Constructor Tests
     // ============================================
-    
+
     function test_constructor() public view {
         assertEq(address(oracle.POOL()), address(mockPool));
         assertEq(address(oracle.GAUGE()), address(mockGauge));
     }
-    
+
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(address(0), address(mockGauge), address(mockMinter), "Balancer v3", address(mockBalances));
+        new BalancerV3PoolBalanceOracle(
+            address(0), address(mockGauge), address(mockMinter), "Balancer v3", address(mockBalances)
+        );
     }
-    
+
     function test_constructor_reverts_zeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(address(mockPool), address(0), address(mockMinter), "Balancer v3", address(mockBalances));
+        new BalancerV3PoolBalanceOracle(
+            address(mockPool), address(0), address(mockMinter), "Balancer v3", address(mockBalances)
+        );
     }
-    
+
     // ============================================
     // Error Handling Tests
     // ============================================
-    
+
     function test_getOracleBalanceForAsset_returns_zero_for_nonPoolToken() public {
         address randomToken = address(0x1234);
-        
+
         int256 balance = oracle.getOracleBalanceForAsset(alice, randomToken);
         assertEq(balance, 0);
     }
-    
+
     function test_getOracleBalanceForAsset_returns_zero_when_noBpt() public {
         address deadAddress = address(0xdead);
-        
+
         int256 balance1 = oracle.getOracleBalanceForAsset(deadAddress, address(usdc));
         assertEq(balance1, 0);
-        
+
         int256 balance2 = oracle.getOracleBalanceForAsset(deadAddress, address(dai));
         assertEq(balance2, 0);
     }
-    
+
     // ============================================
     // Interface Compliance Tests
     // ============================================
-    
+
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = 
-            oracle.getOracleBalance(address(0));
-        
+        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+
         assertEq(assets.length, 0);
         assertEq(balances.length, 0);
     }
-    
+
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public {
-        INAVCalculator.PositionBalance[] memory positions = 
-            oracle.getOraclePositions(address(0), address(0));
-        
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+
         assertEq(positions.length, 0);
     }
 }

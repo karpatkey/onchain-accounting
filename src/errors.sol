@@ -23,4 +23,5 @@ error AssetHasActiveInvoices(bytes6 symbol);
 // NAV Calculator / registry errors
 error PriceFeedNotSet(address asset);
 error AssetNotFound();
+error OnlyNAVCalculator();
 

@@ -86,14 +86,13 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (always positive for osToken)
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return balance The calculated balance as uint256 (always non-negative for osToken)
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (uint256 balance) {
         if (underlyingAsset != UNDERLYING_TOKEN) {
             revert InvalidArguments();
         }
         uint256 sharesAmount = IERC20(OS_TOKEN).balanceOf(account);
-        uint256 underlyingAmount = OS_TOKEN_VAULT_CONTROLLER.convertToAssets(sharesAmount);
-        return int256(underlyingAmount); // osToken is always credit (positive)
+        return OS_TOKEN_VAULT_CONTROLLER.convertToAssets(sharesAmount); // osToken is always credit (positive)
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -118,8 +117,8 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         if (asset == address(0) || asset != UNDERLYING_TOKEN) {
             return 0;
         }
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+        // Cast uint256 to int256 for interface (always positive for this oracle)
+        return int256(_calculateBalance(asset, account));
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -132,7 +131,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             return (new address[](0), new int256[](0));
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        int256 balance = this.getOracleBalanceForAsset(account, supportedAssets[0]);
+        uint256 balance = _calculateBalance(supportedAssets[0], account);
 
         if (balance == 0) {
             return (new address[](0), new int256[](0));
@@ -141,7 +140,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         assets = new address[](1);
         balances = new int256[](1);
         assets[0] = supportedAssets[0];
-        balances[0] = balance;
+        balances[0] = int256(balance);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -168,20 +167,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
+                    uint256 balance = _calculateBalance(assetFilter, account);
                     if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: balance, isDebt: false});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -194,20 +183,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
+                uint256 balance = _calculateBalance(registeredSupportedAssets[i], account);
                 if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
                     tempData[count] =
-                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: balance, isDebt: false});
                     count++;
                 }
             }

@@ -5,6 +5,7 @@ import "test/SuperTest.sol";
 import {console2} from "forge-std/console2.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address safe, address chainlinkUptimeFeed) {
@@ -422,6 +423,114 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // ============================================
+    // Default oracle inclusion list (exclude / include)
+    // ============================================
+
+    function test_registerAsset_addsAssetToDefaultOracleInclusionList() public {
+        Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
+        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
+
+        vm.prank(navCalculatorManager);
+        nav.registerAsset(address(newToken), address(newTokenOracle), IPrices.PriceType.Custom, type(uint256).max);
+
+        address defaultOracle = nav.erc20DefaultOracle();
+        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        bool found = false;
+        for (uint256 i = 0; i < supported.length; i++) {
+            if (supported[i] == address(newToken)) found = true;
+        }
+        assertTrue(found, "Default oracle should support newly registered asset");
+
+        address[] memory oracles = nav.getOraclesForAsset(address(newToken));
+        bool defaultFound = false;
+        for (uint256 i = 0; i < oracles.length; i++) {
+            if (oracles[i] == defaultOracle) defaultFound = true;
+        }
+        assertTrue(defaultFound, "getOraclesForAsset should include default oracle for new asset");
+    }
+
+    function test_excludeAssetFromDefaultOracle_removesFromInclusionList() public {
+        address defaultOracle = nav.erc20DefaultOracle();
+        address[] memory oraclesBefore = nav.getOraclesForAsset(address(usdc));
+        bool hadDefaultBefore = false;
+        for (uint256 i = 0; i < oraclesBefore.length; i++) {
+            if (oraclesBefore[i] == defaultOracle) hadDefaultBefore = true;
+        }
+        assertTrue(hadDefaultBefore, "Default oracle should support USDC before exclude");
+
+        vm.prank(navCalculatorManager);
+        nav.excludeAssetFromDefaultOracle(address(usdc));
+
+        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        for (uint256 i = 0; i < supported.length; i++) {
+            assertTrue(supported[i] != address(usdc), "USDC should not be in default oracle after exclude");
+        }
+        address[] memory oraclesAfter = nav.getOraclesForAsset(address(usdc));
+        for (uint256 i = 0; i < oraclesAfter.length; i++) {
+            assertTrue(oraclesAfter[i] != defaultOracle, "Default oracle should not support USDC after exclude");
+        }
+    }
+
+    function test_includeAssetInDefaultOracle_addsBack() public {
+        vm.prank(navCalculatorManager);
+        nav.excludeAssetFromDefaultOracle(address(usdc));
+
+        vm.prank(navCalculatorManager);
+        nav.includeAssetInDefaultOracle(address(usdc));
+
+        address defaultOracle = nav.erc20DefaultOracle();
+        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        bool found = false;
+        for (uint256 i = 0; i < supported.length; i++) {
+            if (supported[i] == address(usdc)) found = true;
+        }
+        assertTrue(found, "USDC should be in default oracle after include");
+        address[] memory oracles = nav.getOraclesForAsset(address(usdc));
+        bool defaultFound = false;
+        for (uint256 i = 0; i < oracles.length; i++) {
+            if (oracles[i] == defaultOracle) defaultFound = true;
+        }
+        assertTrue(defaultFound, "getOraclesForAsset should include default oracle after include");
+    }
+
+    function test_excludeAssetFromDefaultOracle_notAuthorized() public {
+        vm.prank(alice);
+        vm.expectRevert(NotAuthorized.selector);
+        nav.excludeAssetFromDefaultOracle(address(usdc));
+    }
+
+    function test_includeAssetInDefaultOracle_notAuthorized() public {
+        vm.prank(alice);
+        vm.expectRevert(NotAuthorized.selector);
+        nav.includeAssetInDefaultOracle(address(usdc));
+    }
+
+    function test_includeAssetInDefaultOracle_revertsForUnregisteredAsset() public {
+        address unregisteredAsset = makeAddr("unregistered");
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(AssetNotFound.selector);
+        nav.includeAssetInDefaultOracle(unregisteredAsset);
+    }
+
+    function test_unregisterAsset_removesFromDefaultOracleInclusionList() public {
+        address defaultOracle = nav.erc20DefaultOracle();
+        address[] memory supportedBefore = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        uint256 countBefore = 0;
+        for (uint256 i = 0; i < supportedBefore.length; i++) {
+            if (supportedBefore[i] == address(usdc)) countBefore++;
+        }
+        assertEq(countBefore, 1, "USDC should be in default oracle before unregister");
+
+        vm.prank(navCalculatorManager);
+        nav.unregisterAsset(address(usdc));
+
+        address[] memory supportedAfter = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        for (uint256 i = 0; i < supportedAfter.length; i++) {
+            assertTrue(supportedAfter[i] != address(usdc), "USDC should not be in default oracle after unregister");
+        }
+    }
+
+    // ============================================
     // Native Token Symbol Tests
     // ============================================
 
@@ -535,7 +644,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_getPriceData() public {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
-        assertTrue(priceFeed.oracle != address(0));
+        assertTrue(priceFeed.priceFeed != address(0));
         assertTrue(priceFeed.price > 0);
         assertTrue(priceFeed.decimals > 0);
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
@@ -544,7 +653,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_getPriceData_chainlinkOracle() public {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(dai));
 
-        assertTrue(priceFeed.oracle != address(0));
+        assertTrue(priceFeed.priceFeed != address(0));
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Chainlink));
         assertTrue(priceFeed.updatedAt > 0); // Chainlink should have updatedAt
     }

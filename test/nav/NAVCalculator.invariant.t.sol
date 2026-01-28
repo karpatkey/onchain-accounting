@@ -215,7 +215,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         assertEq(feed1.price, feed2.price, "Price should be consistent");
         assertEq(feed1.decimals, feed2.decimals, "Decimals should be consistent");
         assertEq(feed1.stale, feed2.stale, "Staleness should be consistent");
-        assertEq(feed1.oracle, feed2.oracle, "Oracle should be consistent");
+        assertEq(feed1.priceFeed, feed2.priceFeed, "Price feed should be consistent");
     }
 
     // ============================================

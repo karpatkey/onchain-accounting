@@ -12,7 +12,7 @@ import {IPriceFeedCustom} from "./IPriceFeedCustom.sol";
 import "src/errors.sol";
 
 /// @title Prices
-/// @notice This contract manages the price oracles for different tokens.
+/// @notice This contract manages the price feeds for different tokens.
 /// @author kpk
 abstract contract Prices is IPrices, Initializable {
     //
@@ -26,8 +26,8 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Uptime feed for L2 sequencer
     AggregatorV3Interface public chainlinkL2SequencerUptimeFeed;
 
-    /// @notice Price feed configurations by address (mapping name kept for backward compatibility)
-    mapping(address asset => PriceFeedConfig oracle) public priceOracles;
+    /// @notice Price feed configurations by asset address
+    mapping(address asset => PriceFeedConfig config) public priceOracles;
 
     /// @notice Initializer for UUPS proxy
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the Chainlink feed for the L2 sequencer
@@ -52,31 +52,31 @@ abstract contract Prices is IPrices, Initializable {
     /// @return decimals The amount of decimal places the price is represented with
     /// @return stale COMPLETE ME
     function _latestPrice(address token) internal view returns (uint256 price, uint8 decimals, bool stale) {
-        PriceFeedConfig storage oracle = priceOracles[token];
+        PriceFeedConfig storage config = priceOracles[token];
         stale = false;
 
-        if (oracle.oracle == address(0)) {
+        if (config.priceFeed == address(0)) {
             revert PriceFeedNotSet(token);
         }
 
-        if (oracle.priceType == PriceType.Chainlink) {
-            AggregatorV3Interface chainlinkOracle = AggregatorV3Interface(oracle.oracle);
-            (, int256 chainlinkPrice,, uint256 updatedAt,) = chainlinkOracle.latestRoundData();
+        if (config.priceType == PriceType.Chainlink) {
+            AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
+            (, int256 chainlinkPrice,, uint256 updatedAt,) = chainlinkFeed.latestRoundData();
 
             if (chainlinkPrice <= 0) {
-                return (0, oracle.decimals, true);
+                return (0, config.decimals, true);
             }
 
-            if (block.timestamp - updatedAt > oracle.chainlinkHeartbeat) stale = true;
+            if (block.timestamp - updatedAt > config.chainlinkHeartbeat) stale = true;
 
             price = uint256(chainlinkPrice);
         } else {
             bool customStale = false;
-            (price, customStale) = IPriceFeedCustom(oracle.oracle).getLatestPrice();
+            (price, customStale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
             stale = stale || customStale;
         }
 
-        decimals = oracle.decimals;
+        decimals = config.decimals;
     }
 
     /// @inheritdoc IPrices
@@ -99,46 +99,46 @@ abstract contract Prices is IPrices, Initializable {
     }
 
     /// @inheritdoc IPrices
-    function checkPriceOracleSupport(address token, address oracle, PriceType priceType) public view {
-        if (oracle == address(0) || token == address(0)) {
+    function checkPriceOracleSupport(address token, address priceFeed, PriceType priceType) public view {
+        if (priceFeed == address(0) || token == address(0)) {
             revert InvalidPriceOracle();
         }
 
         if (priceType == PriceType.Custom) {
-            if (!oracle.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
+            if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
                 revert InvalidPriceOracle();
             }
         } else if (priceType == PriceType.Chainlink) {
-            AggregatorV3Interface(oracle).latestRoundData();
+            AggregatorV3Interface(priceFeed).latestRoundData();
         } else {
             revert InvalidPriceOracleType();
         }
 
-        // Allow replacing existing price oracle (no revert)
+        // Allow replacing existing price feed (no revert)
     }
 
     /// @notice Sets the price feed for a given token.
     /// @param token The address of the token.
-    /// @param oracle The address of the oracle.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This parameter is ignored for
-    /// non-Chainlink oracles.
-    /// @param priceType The type of the oracle.
-    function _setPriceFeed(address token, address oracle, uint256 chainlinkHeartbeat, PriceType priceType) internal {
-        checkPriceOracleSupport(token, oracle, priceType);
+    /// @param priceFeed The address of the price feed.
+    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This parameter is ignored for
+    /// non-Chainlink price feeds.
+    /// @param priceType The type of the price feed.
+    function _setPriceFeed(address token, address priceFeed, uint256 chainlinkHeartbeat, PriceType priceType) internal {
+        checkPriceOracleSupport(token, priceFeed, priceType);
 
         uint8 decimals;
         if (priceType == PriceType.Chainlink) {
             if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
-            decimals = AggregatorV3Interface(oracle).decimals();
+            decimals = AggregatorV3Interface(priceFeed).decimals();
         } else {
-            decimals = IPriceFeedCustom(oracle).decimals();
+            decimals = IPriceFeedCustom(priceFeed).decimals();
         }
 
         priceOracles[token] = PriceFeedConfig({
-            oracle: oracle, priceType: priceType, decimals: decimals, chainlinkHeartbeat: chainlinkHeartbeat
+            priceFeed: priceFeed, priceType: priceType, decimals: decimals, chainlinkHeartbeat: chainlinkHeartbeat
         });
 
-        emit PriceFeedSet(token, oracle, chainlinkHeartbeat, priceType);
+        emit PriceFeedSet(token, priceFeed, chainlinkHeartbeat, priceType);
     }
 
     /// @notice Unsets the price feed for a given token.

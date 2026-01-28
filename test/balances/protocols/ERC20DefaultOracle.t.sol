@@ -13,6 +13,8 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
 contract ERC20DefaultOracleTest is TestEnvConfigurator {
     NAVCalculator public navCalculator;
@@ -171,5 +173,84 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         assertEq(positions.length, 1);
         assertEq(positions[0].protocol, "wallet");
         assertEq(positions[0].positionDetail, "Holding");
+    }
+
+    // ============================================
+    // Inclusion list: addSupportedAsset / removeSupportedAsset
+    // ============================================
+
+    function test_addSupportedAsset_onlyNAVCalculatorCanCall() public {
+        address random = makeAddr("random");
+        vm.prank(random);
+        vm.expectRevert(OnlyNAVCalculator.selector);
+        oracle.addSupportedAsset(address(usdc));
+    }
+
+    function test_removeSupportedAsset_onlyNAVCalculatorCanCall() public {
+        address random = makeAddr("random");
+        vm.prank(random);
+        vm.expectRevert(OnlyNAVCalculator.selector);
+        oracle.removeSupportedAsset(address(usdc));
+    }
+
+    function test_removeSupportedAsset_assetDisappearsFromInclusionList() public {
+        address user = makeAddr("user");
+        usdc.mint(user, 1000e6);
+
+        assertTrue(oracle.isSupportedByDefault(address(usdc)));
+        assertEq(oracle.underlyingAssetsSupported().length, 4);
+
+        vm.prank(manager);
+        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+
+        assertFalse(oracle.isSupportedByDefault(address(usdc)));
+        address[] memory supported = oracle.underlyingAssetsSupported();
+        assertEq(supported.length, 3);
+        for (uint256 i = 0; i < supported.length; i++) {
+            assertTrue(supported[i] != address(usdc));
+        }
+        assertEq(oracle.getOracleBalanceForAsset(user, address(usdc)), 0);
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
+        assertEq(positions.length, 0);
+        positions = oracle.getOraclePositions(user, address(0));
+        assertEq(positions.length, 0);
+    }
+
+    function test_includeAssetInDefaultOracle_assetReappears() public {
+        vm.prank(manager);
+        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+
+        assertFalse(oracle.isSupportedByDefault(address(usdc)));
+
+        vm.prank(manager);
+        navCalculator.includeAssetInDefaultOracle(address(usdc));
+
+        assertTrue(oracle.isSupportedByDefault(address(usdc)));
+        address[] memory assets = oracle.underlyingAssetsSupported();
+        assertEq(assets.length, 4);
+        bool found = false;
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i] == address(usdc)) found = true;
+        }
+        assertTrue(found);
+
+        address user = makeAddr("user");
+        usdc.mint(user, 500e6);
+        assertEq(oracle.getOracleBalanceForAsset(user, address(usdc)), 500e6);
+    }
+
+    function test_removeSupportedAsset_idempotent() public {
+        vm.startPrank(manager);
+        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+        vm.stopPrank();
+        assertFalse(oracle.isSupportedByDefault(address(usdc)));
+    }
+
+    function test_isSupportedByDefault() public view {
+        assertTrue(oracle.isSupportedByDefault(address(usdc)));
+        assertTrue(oracle.isSupportedByDefault(address(dai)));
+        assertTrue(oracle.isSupportedByDefault(NATIVE_ADDRESS));
+        assertFalse(oracle.isSupportedByDefault(address(0x1234)));
     }
 }

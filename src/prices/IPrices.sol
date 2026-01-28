@@ -2,23 +2,23 @@
 pragma solidity ^0.8;
 
 /// @title IPrices Interface
-/// @notice Interface for managing price oracles for different tokens.
+/// @notice Interface for managing price feeds for different tokens.
 /// @author kpk
 interface IPrices {
-    /// @notice Enum representing the type of oracle.
+    /// @notice Enum representing the type of price feed.
     enum PriceType {
         Chainlink,
         Custom
     }
 
-    /// @notice Struct representing a price feed configuration (stored oracle configuration).
-    /// @param oracle The address of the oracle contract.
-    /// @param decimals The number of decimal places the oracle uses.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
-    /// oracles.
-    /// @param priceType The type of the oracle (Chainlink or Custom).
+    /// @notice Struct representing a price feed configuration (stored price feed configuration).
+    /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
+    /// @param decimals The number of decimal places the price feed uses.
+    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This is relevant only for Chainlink
+    /// price feeds.
+    /// @param priceType The type of the price feed (Chainlink or Custom).
     struct PriceFeedConfig {
-        address oracle;
+        address priceFeed;
         uint8 decimals;
         uint256 chainlinkHeartbeat;
         PriceType priceType;
@@ -26,12 +26,12 @@ interface IPrices {
 
     /// @notice Emitted when a price feed is set for a token.
     /// @param underlyingAsset The address of the token.
-    /// @param oracle The address of the oracle.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
-    /// oracles.
-    /// @param priceType The type of the oracle.
+    /// @param priceFeed The address of the price feed.
+    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This is relevant only for Chainlink
+    /// price feeds.
+    /// @param priceType The type of the price feed.
     event PriceFeedSet(
-        address indexed underlyingAsset, address indexed oracle, uint256 chainlinkHeartbeat, PriceType priceType
+        address indexed underlyingAsset, address indexed priceFeed, uint256 chainlinkHeartbeat, PriceType priceType
     );
 
     /// @notice Emitted when a price feed is removed for a token.
@@ -46,10 +46,10 @@ interface IPrices {
     /// @param asset The address of the asset
     error PriceFeedNotSet(address asset);
 
-    /// @notice Error when the price oracle is invalid
+    /// @notice Error when the price feed is invalid
     error InvalidPriceOracle();
 
-    /// @notice Error when the price oracle type is not valid
+    /// @notice Error when the price feed type is not valid
     error InvalidPriceOracleType();
 
     /// @notice Returns the latest price for a given token while checking if the price is stale.
@@ -65,9 +65,9 @@ interface IPrices {
     /// @return stale True if the L2 sequencer is down or if it is within the grace period.
     function checkL2SequencerUptime() external view returns (bool stale);
 
-    /// @notice Checks if the oracle supports the given oracle type.
+    /// @notice Checks if the price feed supports the given price feed type.
     /// @param underlyingAsset The address of the token.
-    /// @param oracle The address of the oracle.
-    /// @param priceType The type of the oracle.
-    function checkPriceOracleSupport(address underlyingAsset, address oracle, PriceType priceType) external view;
+    /// @param priceFeed The address of the price feed.
+    /// @param priceType The type of the price feed.
+    function checkPriceOracleSupport(address underlyingAsset, address priceFeed, PriceType priceType) external view;
 }

@@ -84,6 +84,8 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `protocol`       | `string` | Protocol name (e.g. `"wallet"`, `"Compound v3 USDC"`). |
 | `positionDetail` | `string` | Short label (e.g. `"Holding"`, `"Collateral"`, `"Borrow"`). |
 
+**Credits-only oracles** (e.g. ERC20DefaultOracle, DaiDsr, AaveV3SafetyModule, StakeWiseV3OsToken, SkySavingsUsds) use `uint256` internally for balances and always report `isDebt: false`; they cast to `int256` only at the adapter interface boundary.
+
 Pricing is **not** in this struct; NAVCalculator adds it when building full `Position` and NAV.
 
 ### 3.2 Asset

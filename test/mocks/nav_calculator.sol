@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 
 /// @title Mock_NAVCalculator
 /// @notice Mock implementation of INAVCalculator for adapter testing
@@ -19,11 +20,22 @@ contract Mock_NAVCalculator is INAVCalculator {
     AssetInfo[] private _assets;
     mapping(address => bool) private _isRegistered;
 
+    /// @notice Optional default oracle; when set, registering an asset also adds it to this oracle's inclusion list
+    address public defaultOracle;
+
+    /// @notice Set the default oracle so that registerAsset* also add assets to it (for adapter tests)
+    function setDefaultOracle(address defaultOracle_) external {
+        defaultOracle = defaultOracle_;
+    }
+
     /// @notice Register an asset
     function registerAsset(address asset, uint8 decimals, string memory symbol) external {
         require(!_isRegistered[asset], "Asset already registered");
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
+        if (defaultOracle != address(0)) {
+            ERC20DefaultOracle(defaultOracle).addSupportedAsset(asset);
+        }
     }
 
     /// @notice Register an asset using ERC20 metadata
@@ -33,6 +45,9 @@ contract Mock_NAVCalculator is INAVCalculator {
         string memory symbol = IERC20Metadata(asset).symbol();
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
+        if (defaultOracle != address(0)) {
+            ERC20DefaultOracle(defaultOracle).addSupportedAsset(asset);
+        }
     }
 
     /// @notice Unregister an asset (helper method, not part of interface)
@@ -107,6 +122,14 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     function removeBalanceOracle(address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function excludeAssetFromDefaultOracle(address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function includeAssetInDefaultOracle(address) external pure override {
         revert("Not implemented in mock");
     }
 

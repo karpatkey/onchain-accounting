@@ -27,6 +27,8 @@ contract BalancesHarness is Balances {
     // Expose internal functions for testing
     function registerAssetForTest(address asset, uint8 decimals) public {
         _registerAsset(asset, decimals);
+        // Mirror NAVCalculator behavior: registering an asset should add it to the default oracle inclusion list
+        defaultOracle.addSupportedAsset(asset);
     }
 
     function setAssetSymbolForTest(address asset, string memory symbol) public {

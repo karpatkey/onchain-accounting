@@ -59,16 +59,16 @@ interface INAVCalculator {
     }
 
     /// @notice Comprehensive price feed query result for a token
-    /// @param oracle The address of the price oracle
-    /// @param priceType The type of oracle (Chainlink or Custom)
+    /// @param priceFeed The address of the price feed
+    /// @param priceType The type of price feed (Chainlink or Custom)
     /// @param price The current price
-    /// @param decimals The decimals used by the oracle
+    /// @param decimals The decimals used by the price feed
     /// @param chainlinkHeartbeat The heartbeat interval (Chainlink only)
     /// @param updatedAt The timestamp when price was last updated (Chainlink only, 0 for custom)
     /// @param stale Whether the price is stale (asset-specific, e.g., heartbeat timeout)
     /// @param sequencerDown Whether L2 sequencer is down (L2 only, false on L1)
     struct PriceFeedData {
-        address oracle;
+        address priceFeed;
         IPrices.PriceType priceType;
         uint256 price;
         uint8 decimals;
@@ -118,15 +118,15 @@ interface INAVCalculator {
     /// @notice Registers an asset with its price feed.
     /// @dev The asset must be registered with a price feed. Cannot register an asset without a price feed.
     /// @param asset The address of the asset to register
-    /// @param oracle The address of the price oracle
-    /// @param priceType The type of the price oracle
-    /// @param chainlinkHeartbeat The heartbeat interval for Chainlink oracles (ignored for custom oracles)
-    function registerAsset(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    /// @param priceFeed The address of the price feed
+    /// @param priceType The type of the price feed
+    /// @param chainlinkHeartbeat The heartbeat interval for Chainlink price feeds (ignored for custom price feeds)
+    function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
     /// @notice Sets the price feed for an existing asset.
-    /// @dev Cannot be called before registering the asset. Replaces any existing price oracle.
-    function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    /// @dev Cannot be called before registering the asset. Replaces any existing price feed.
+    function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
     /// @notice Adds a balance oracle to the global registry.
@@ -140,6 +140,14 @@ interface INAVCalculator {
     /// @notice Removes a balance oracle from the global registry.
     /// @dev The oracle will no longer be queried when computing NAV.
     function removeBalanceOracle(address oracle) external;
+
+    /// @notice Removes an asset from the default oracle's inclusion list so it is no longer reported as wallet balance (e.g. to avoid double accounting with a custom oracle).
+    /// @param asset The asset address to exclude from the default oracle
+    function excludeAssetFromDefaultOracle(address asset) external;
+
+    /// @notice Adds an asset back to the default oracle's inclusion list so wallet balances are reported again.
+    /// @param asset The asset address (must be registered)
+    function includeAssetInDefaultOracle(address asset) external;
 
     /// @notice Unregisters an asset from the registry.
     /// @param underlyingAsset The address of the asset to unregister.
@@ -221,7 +229,7 @@ interface INAVCalculator {
 
     /// @notice Returns comprehensive price feed query result for a given token
     /// @param underlyingAsset The address of the token
-    /// @return priceFeedData The complete price information including oracle details, price, staleness, and sequencer status
+    /// @return priceFeedData The complete price information including price feed details, price, staleness, and sequencer status
     function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
     /// @notice Returns overall health status

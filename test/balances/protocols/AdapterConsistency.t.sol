@@ -31,12 +31,15 @@ contract AdapterConsistencyTest is Test {
         // Create ERC20DefaultOracle with mock NAVCalculator
         erc20DefaultOracle = new ERC20DefaultOracle(address(mockNav));
 
+        // So that registerAsset also adds assets to the default oracle's inclusion list
+        mockNav.setDefaultOracle(address(erc20DefaultOracle));
+
         customOracle = new Mock_CustomBalanceOracle();
 
         usdc = new Mock_ERC20("USDC", 6);
         dai = new Mock_ERC20("DAI", 18);
 
-        // Register assets in mock NAVCalculator
+        // Register assets in mock NAVCalculator (also adds them to ERC20DefaultOracle)
         mockNav.registerAsset(address(usdc), 6, "USDC");
         mockNav.registerAsset(address(dai), 18, "DAI");
         mockNav.registerAsset(NATIVE_ADDRESS, 18, "ETH");

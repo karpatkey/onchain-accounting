@@ -20,7 +20,7 @@ import "src/errors.sol";
 import "src/constants.sol";
 
 /// @title NAV Calculator
-/// @notice Calculates NAV based on on-chain balances and price oracles.
+/// @notice Calculates NAV based on on-chain balances and price feeds.
 /// @author kpk
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
@@ -71,14 +71,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     //
 
     /// @inheritdoc INAVCalculator
-    function registerAsset(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external
     {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
         if (asset == address(0)) {
             revert InvalidArguments();
         }
-        if (oracle == address(0)) {
+        if (priceFeed == address(0)) {
             revert InvalidArguments();
         }
 
@@ -106,23 +106,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _setAssetSymbol(asset, symbol);
 
         // Set price feed as part of registration
-        _setPriceFeed(asset, oracle, chainlinkHeartbeat, priceType);
+        _setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
+
+        // Add asset to default oracle's inclusion list so wallet balances are reported
+        ERC20DefaultOracle(erc20DefaultOracle).addSupportedAsset(asset);
 
         emit AssetRegistered(asset, decimals);
     }
 
     /// @inheritdoc INAVCalculator
-    function setPriceFeed(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external
     {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
-        if (oracle == address(0)) {
+        if (priceFeed == address(0)) {
             revert InvalidArguments();
         }
 
         _requireAssetExists(asset);
 
-        _setPriceFeed(asset, oracle, chainlinkHeartbeat, priceType);
+        _setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
     }
 
     /// @inheritdoc INAVCalculator
@@ -153,15 +156,32 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function excludeAssetFromDefaultOracle(address asset) external {
+        if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
+        _requireAssetExists(asset);
+        ERC20DefaultOracle(erc20DefaultOracle).removeSupportedAsset(asset);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function includeAssetInDefaultOracle(address asset) external {
+        if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
+        _requireAssetExists(asset);
+        ERC20DefaultOracle(erc20DefaultOracle).addSupportedAsset(asset);
+    }
+
+    /// @inheritdoc INAVCalculator
     function unregisterAsset(address underlyingAsset) external {
         if (!hasRole(MANAGER, msg.sender)) revert NotAuthorized();
 
         _requireAssetExists(underlyingAsset);
 
         // Unset price feed if it exists
-        if (priceOracles[underlyingAsset].oracle != address(0)) {
+        if (priceOracles[underlyingAsset].priceFeed != address(0)) {
             _unsetPriceFeed(underlyingAsset);
         }
+
+        // Remove from default oracle's inclusion list (idempotent if not present)
+        ERC20DefaultOracle(erc20DefaultOracle).removeSupportedAsset(underlyingAsset);
 
         // Remove the asset itself
         _unregisterAsset(underlyingAsset);
@@ -796,22 +816,22 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _requireAssetExists(underlyingAsset);
 
-        IPrices.PriceFeedConfig storage oracle = priceOracles[underlyingAsset];
+        IPrices.PriceFeedConfig storage config = priceOracles[underlyingAsset];
         _requirePriceFeedExists(underlyingAsset);
 
         (uint256 price, uint8 decimals, bool stale) = _latestPrice(underlyingAsset);
 
-        priceFeedData.oracle = oracle.oracle;
-        priceFeedData.priceType = oracle.priceType;
+        priceFeedData.priceFeed = config.priceFeed;
+        priceFeedData.priceType = config.priceType;
         priceFeedData.price = price;
         priceFeedData.decimals = decimals;
-        priceFeedData.chainlinkHeartbeat = oracle.chainlinkHeartbeat;
+        priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
         priceFeedData.stale = stale;
 
         // Get Chainlink-specific data
-        if (oracle.priceType == IPrices.PriceType.Chainlink) {
-            AggregatorV3Interface chainlinkOracle = AggregatorV3Interface(oracle.oracle);
-            (,,, uint256 roundUpdatedAt,) = chainlinkOracle.latestRoundData();
+        if (config.priceType == IPrices.PriceType.Chainlink) {
+            AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
+            (,,, uint256 roundUpdatedAt,) = chainlinkFeed.latestRoundData();
             priceFeedData.updatedAt = roundUpdatedAt;
         }
 
@@ -1058,7 +1078,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @notice Validates that a price feed exists for an asset, reverts if not
     /// @param underlyingAsset The asset to validate
     function _requirePriceFeedExists(address underlyingAsset) internal view {
-        if (priceOracles[underlyingAsset].oracle == address(0)) {
+        if (priceOracles[underlyingAsset].priceFeed == address(0)) {
             revert PriceFeedNotSet(underlyingAsset);
         }
     }
@@ -1066,7 +1086,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @notice Validates that a price feed is configured for an asset (quoteAsset validation)
     /// @param quoteAsset The quote asset to validate
     function _requirePriceFeedConfig(address quoteAsset) internal view {
-        if (priceOracles[quoteAsset].oracle == address(0)) {
+        if (priceOracles[quoteAsset].priceFeed == address(0)) {
             revert PriceFeedNotSet(quoteAsset);
         }
     }

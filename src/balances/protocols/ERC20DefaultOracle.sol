@@ -2,8 +2,12 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalances} from "../IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
 /// @title ERC20DefaultOracle
 /// @notice Default oracle that automatically handles all ERC20 and Native balances
@@ -11,8 +15,13 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 contract ERC20DefaultOracle is IBalanceOracleAdapter {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Inclusion list: only assets in this set are reported by this oracle
+    EnumerableSet.AddressSet private _supportedAssets;
 
     /// @notice ERC-7528 convention for ETH address representation
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
@@ -30,13 +39,37 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     }
 
     //
+    // Inclusion list (callable only by NAVCalculator)
+    //
+
+    /// @notice Add an asset to the default oracle's inclusion list so it reports wallet balances for it
+    /// @param asset The asset address (must be registered in NAVCalculator)
+    function addSupportedAsset(address asset) external {
+        if (msg.sender != address(NAV_CALCULATOR)) revert OnlyNAVCalculator();
+        if (!IBalances(address(NAV_CALCULATOR)).isAssetRegistered(asset)) revert AssetNotFound();
+        _supportedAssets.add(asset);
+    }
+
+    /// @notice Remove an asset from the default oracle's inclusion list (e.g. to avoid double accounting with a custom oracle)
+    /// @param asset The asset address to remove
+    function removeSupportedAsset(address asset) external {
+        if (msg.sender != address(NAV_CALCULATOR)) revert OnlyNAVCalculator();
+        _supportedAssets.remove(asset);
+    }
+
+    /// @notice Returns whether the default oracle reports balances for this asset
+    function isSupportedByDefault(address asset) external view returns (bool) {
+        return _supportedAssets.contains(asset);
+    }
+
+    //
     // IBalanceOracleAdapter Implementation
     //
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Returns balance-only positions for the account's ERC20 and native token balances
     /// @dev Returns PositionBalance structs containing wallet balances.
-    /// @dev Only returns positions for assets that are registered in NAVCalculator.
+    /// @dev Only returns positions for assets in the inclusion list (_supportedAssets).
     /// @dev Pricing information is added by NAVCalculator when these positions are enriched.
     function getOraclePositions(address account, address assetFilter)
         external
@@ -44,25 +77,15 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        // Get all registered assets from NAVCalculator
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
-
         address[] memory assetsToProcess;
         if (assetFilter != address(0)) {
-            // Check if assetFilter is in the registered assets
-            for (uint256 i = 0; i < registeredAssets.length; i++) {
-                if (registeredAssets[i] == assetFilter) {
-                    assetsToProcess = new address[](1);
-                    assetsToProcess[0] = assetFilter;
-                    break;
-                }
-            }
-            // If assetFilter not found, return empty array
-            if (assetsToProcess.length == 0) {
+            if (!_supportedAssets.contains(assetFilter)) {
                 return new INAVCalculator.PositionBalance[](0);
             }
+            assetsToProcess = new address[](1);
+            assetsToProcess[0] = assetFilter;
         } else {
-            assetsToProcess = registeredAssets;
+            assetsToProcess = _getSupportedAssetsArray();
         }
 
         positions = _buildPositions(account, assetsToProcess);
@@ -74,20 +97,17 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, int256[] memory balances)
     {
-        // Get all registered assets from NAVCalculator
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
-        uint256 assetCount = registeredAssets.length;
+        address[] memory supportedList = _getSupportedAssetsArray();
+        uint256 assetCount = supportedList.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempBalances = new uint256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
-            address assetAddr = registeredAssets[i];
-            int256 balance = _getBalanceForAsset(account, assetAddr);
+            address assetAddr = supportedList[i];
+            uint256 balance = _getBalanceForAsset(account, assetAddr);
 
-            // Only include non-zero balances
             if (balance != 0) {
                 tempAssets[count] = assetAddr;
                 tempBalances[count] = balance;
@@ -95,33 +115,28 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
         balances = new int256[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            balances[i] = int256(tempBalances[i]);
         }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset) public view returns (int256 balance) {
-        // Return zero for zero address
         if (asset == address(0)) {
             return 0;
         }
-
-        // Only return balance for registered assets
-        if (!_isAssetRegistered(asset)) {
+        if (!_supportedAssets.contains(asset)) {
             return 0;
         }
-
-        return _getBalanceForAsset(account, asset);
+        return int256(_getBalanceForAsset(account, asset));
     }
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view returns (address[] memory underlyingAssets) {
-        return NAV_CALCULATOR.assets();
+        return _getSupportedAssetsArray();
     }
 
     //
@@ -137,17 +152,14 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     // Internal Functions
     //
 
-    /// @notice Checks if an asset is registered in NAVCalculator
-    /// @param asset The asset address to check
-    /// @return registered True if the asset is registered
-    function _isAssetRegistered(address asset) internal view returns (bool registered) {
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
-        for (uint256 i = 0; i < registeredAssets.length; i++) {
-            if (registeredAssets[i] == asset) {
-                return true;
-            }
+    /// @notice Returns the inclusion list as an address array (for enumeration)
+    function _getSupportedAssetsArray() internal view returns (address[] memory) {
+        uint256 len = _supportedAssets.length();
+        address[] memory arr = new address[](len);
+        for (uint256 i = 0; i < len; i++) {
+            arr[i] = _supportedAssets.at(i);
         }
-        return false;
+        return arr;
     }
 
     /// @notice Gets asset information from NAVCalculator by iterating through registered assets
@@ -186,8 +198,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
 
-            // Get balance for this asset directly (avoid recursion)
-            int256 balance = _getBalanceForAsset(account, asset);
+            // Get balance for this asset (always non-negative for this oracle)
+            uint256 balance = _getBalanceForAsset(account, asset);
 
             // Only include non-zero balances
             if (balance != 0) {
@@ -195,23 +207,12 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
                 INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
                 // Build position (balance-only, pricing will be added by NAVCalculator)
-                // ERC20DefaultOracle always returns credit positions (isDebt = false)
-                // Convert int256 balance to uint256 amount and isDebt flag
-                uint256 amount;
-                bool isDebt;
-                if (balance < 0) {
-                    amount = uint256(-balance);
-                    isDebt = true;
-                } else {
-                    amount = uint256(balance);
-                    isDebt = false;
-                }
-
+                // ERC20DefaultOracle always returns credit positions: isDebt = false, amount in uint256
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
-                    amount: amount,
-                    isDebt: isDebt,
+                    amount: balance,
+                    isDebt: false,
                     protocol: PROTOCOL,
                     positionDetail: "Holding"
                 });
@@ -230,11 +231,11 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to get balance for a specific asset (avoids recursion)
     /// @param account The account to query
     /// @param asset The asset address
-    /// @return balance The balance for this asset (always positive for ERC20DefaultOracle)
-    function _getBalanceForAsset(address account, address asset) internal view returns (int256 balance) {
+    /// @return balance The balance for this asset as uint256 (always non-negative for ERC20DefaultOracle)
+    function _getBalanceForAsset(address account, address asset) internal view returns (uint256 balance) {
         // Handle native address (ETH)
         if (asset == NATIVE_ADDRESS) {
-            return int256(account.balance); // Native balance is always credit (positive)
+            return account.balance;
         }
 
         // Try to call balanceOf using low-level staticcall
@@ -261,7 +262,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
         // Note: This means deal() won't work for non-contract addresses,
         // but that's acceptable as tests should use mock contracts
         if (success) {
-            return int256(tokenBalance); // ERC20 balance is always credit (positive)
+            return tokenBalance;
         }
 
         return 0;

@@ -8,7 +8,7 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 /// @title Aave v3 Safety Module Balance Oracle
 /// @author kpk
@@ -184,7 +184,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         }
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
         // Apply asset filter if specified
         address[] memory filteredAssets;

@@ -56,32 +56,28 @@ abstract contract Prices is IPrices, Initializable {
     /// @return stale COMPLETE ME
     function _latestPrice(address token) internal view returns (int256 price, uint8 decimals, bool stale) {
         PriceFeedConfig storage config = priceOracles[token];
-        stale = false;
 
         if (config.priceFeed == address(0)) {
             revert PriceFeedNotSet(token);
         }
+
+        decimals = config.decimals;
 
         if (config.priceType == PriceType.Chainlink) {
             AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
             (, int256 chainlinkPrice,, uint256 updatedAt,) = chainlinkFeed.latestRoundData();
 
             if (chainlinkPrice <= 0) {
-                return (0, config.decimals, true);
+                return (0, decimals, true);
             }
 
-            if (block.timestamp - updatedAt > config.chainlinkHeartbeat) stale = true;
-
             price = chainlinkPrice;
+            stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
         } else {
-            bool customStale = false;
             uint256 customPrice;
-            (customPrice, customStale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+            (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
             price = customPrice.toInt256();
-            stale = stale || customStale;
         }
-
-        decimals = config.decimals;
     }
 
     /// @inheritdoc IPrices
@@ -105,21 +101,14 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @inheritdoc IPrices
     function checkPriceOracleSupport(address token, address priceFeed, PriceType priceType) public view {
-        if (priceFeed == address(0) || token == address(0)) {
-            revert InvalidPriceOracle();
-        }
-
+        if (priceFeed == address(0) || token == address(0)) revert InvalidPriceOracle();
         if (priceType == PriceType.Custom) {
-            if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
-                revert InvalidPriceOracle();
-            }
+            if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
         } else if (priceType == PriceType.Chainlink) {
             AggregatorV3Interface(priceFeed).latestRoundData();
         } else {
             revert InvalidPriceOracleType();
         }
-
-        // Allow replacing existing price feed (no revert)
     }
 
     /// @notice Sets the price feed for a given token.
@@ -152,7 +141,4 @@ abstract contract Prices is IPrices, Initializable {
         delete priceOracles[token];
         emit PriceFeedUnset(token);
     }
-
-    /// @notice Gap for upgradeability
-    uint256[50] private _gap;
 }

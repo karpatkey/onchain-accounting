@@ -281,10 +281,8 @@ contract NAVCalculatorPrecisionTest is SuperTest {
 
         token.mint(safe, 1000 * 10 ** assetDecimals);
 
-        // Getting NAV should revert with InvalidArgumentsWithContext
-        vm.expectRevert(
-            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "decimals + usdRateDecimals < NAV_DECIMALS")
-        );
+        // Getting NAV should revert with InvalidAssetDecimals
+        vm.expectRevert(InvalidAssetDecimals.selector);
         nav.getAccountNav(safe, address(0));
     }
 
@@ -303,9 +301,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
 
         token.mint(safe, 1000 * 10 ** assetDecimals);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "denominator > MAX_DECIMAL_EXPONENT_INT256")
-        );
+        vm.expectRevert(InvalidDecimalExponent.selector);
         nav.getAccountNav(safe, address(0));
     }
 
@@ -325,9 +321,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         // Mint 1 wei to avoid overflow (10**132 would exceed uint256)
         token.mint(safe, 1);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "denominator > MAX_DECIMAL_EXPONENT")
-        );
+        vm.expectRevert(InvalidDecimalExponent.selector);
         nav.getAccountNav(safe, address(0));
     }
 
@@ -347,9 +341,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         dai.mint(safe, 1e18);
         quoteToken.mint(safe, 1e18);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "totalDecimals > MAX_DECIMAL_EXPONENT_INT256")
-        );
+        vm.expectRevert(InvalidDecimalExponent.selector);
         nav.getAccountNav(safe, address(quoteToken));
     }
 

@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 
 /// @title StakeWise osToken Balance Oracle
@@ -181,7 +181,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         }
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
         AssetBalanceData[] memory assetBalanceData;
         if (registeredSupportedAssets.length == 0) {

@@ -244,13 +244,11 @@ contract NAVCalculatorInvariantTest is SuperTest {
         // Verify all registered assets can be queried
         INAVCalculator.Asset[] memory registeredAssets = nav.getRegisteredAssets();
         for (uint256 i = 0; i < registeredAssets.length; i++) {
-            address asset = registeredAssets[i].asset;
-
-            // Should be able to get decimals
-            uint8 decimals = nav.getAssetDecimals(asset);
+            // Asset struct already contains decimals and symbol
+            uint8 decimals = registeredAssets[i].decimals;
             assertTrue(decimals <= 255, "Decimals should be valid");
 
-            assertTrue(bytes(nav.getAssetSymbol(asset)).length >= 0, "symbol queryable");
+            assertTrue(bytes(registeredAssets[i].symbol).length >= 0, "symbol queryable");
         }
     }
 
@@ -338,61 +336,6 @@ contract NAVCalculatorInvariantTest is SuperTest {
                 assertTrue(allOracles[i] != allOracles[j], "No duplicate oracles in registry");
             }
         }
-    }
-
-    // ============================================
-    // Range Query Completeness Invariant
-    // ============================================
-
-    /// @notice Test that sum of range queries equals full query
-    function test_invariant_rangeQueryCompleteness() public {
-        // Setup: Create positions with multiple assets
-        usdc.mint(safe, 10 ** usdc.decimals());
-        dai.mint(safe, 10 ** dai.decimals());
-        weth.mint(safe, 10 ** weth.decimals());
-
-        uint256 assetCount = nav.getAssetCount();
-        assertGe(assetCount, 3, "Should have at least 3 assets");
-
-        // Get full NAV
-        INAVCalculator.NAV memory fullNav = nav.getAccountNav(safe, address(0));
-
-        // Split into ranges and sum
-        int256 rangeSum = 0;
-        uint256 rangeSize = 1; // Query one asset at a time
-
-        for (uint256 i = 0; i < assetCount; i += rangeSize) {
-            uint256 to = i + rangeSize - 1;
-            if (to >= assetCount) {
-                to = assetCount - 1;
-            }
-
-            INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(safe, i, to, address(0));
-            rangeSum += rangeNav.value;
-        }
-
-        // Allow small rounding differences
-        assertApproxEqAbs(fullNav.value, rangeSum, 1, "Sum of range queries should equal full query");
-    }
-
-    /// @notice Test that overlapping ranges don't double-count
-    function test_invariant_rangeQueryCompleteness_noDoubleCount() public {
-        usdc.mint(safe, 10 ** usdc.decimals());
-
-        uint256 assetCount = nav.getAssetCount();
-        if (assetCount < 2) return; // Skip if not enough assets
-
-        // Get NAV for overlapping ranges
-        INAVCalculator.NAV memory nav1 = nav.getAccountNavForRange(safe, 0, 1, address(0));
-        INAVCalculator.NAV memory nav2 = nav.getAccountNavForRange(safe, 1, 2, address(0));
-
-        // Get full NAV
-        INAVCalculator.NAV memory fullNav = nav.getAccountNav(safe, address(0));
-
-        // Overlapping ranges should not double-count
-        // nav1 + nav2 might have overlap, but should be >= fullNav (if overlap exists)
-        // In practice, we test non-overlapping ranges, so this is more of a sanity check
-        assertGe(nav1.value + nav2.value, fullNav.value, "Overlapping ranges should not undercount");
     }
 
     // ============================================

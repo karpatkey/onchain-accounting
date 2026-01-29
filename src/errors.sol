@@ -24,4 +24,7 @@ error AssetHasActiveInvoices(bytes6 symbol);
 error PriceFeedNotSet(address asset);
 error AssetNotFound();
 error OnlyNAVCalculator();
+error ArrayLengthMismatch();
+error InvalidAssetDecimals();
+error InvalidDecimalExponent();
 

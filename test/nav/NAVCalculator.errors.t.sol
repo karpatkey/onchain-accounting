@@ -360,7 +360,7 @@ contract NAVCalculatorErrorTest is SuperTest {
         assets[1] = address(dai);
         amounts[0] = 1e18;
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "arrays.length mismatch"));
+        vm.expectRevert(ArrayLengthMismatch.selector);
         nav.calculateValue(assets, amounts, address(0));
     }
 }

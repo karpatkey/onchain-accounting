@@ -532,51 +532,6 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // ============================================
-    // Range Query Tests
-    // ============================================
-
-    function test_getAccountNavForRange() public {
-        usdc.mint(safe, 10 ** usdc.decimals());
-        dai.mint(safe, 10 ** dai.decimals());
-        weth.mint(safe, 10 ** weth.decimals());
-
-        // Get NAV for range [0, 1] (first two assets)
-        INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(safe, 0, 1, address(0));
-
-        // Get full NAV for comparison
-        INAVCalculator.NAV memory fullNav = nav.getAccountNav(safe, address(0));
-
-        // Range NAV should be less than or equal to full NAV
-        assertTrue(rangeNav.value <= fullNav.value);
-        assertEq(rangeNav.timestamp, block.timestamp);
-    }
-
-    function test_getAccountNavForRange_invalidRange() public {
-        usdc.mint(safe, 10 ** usdc.decimals());
-
-        vm.expectRevert(abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "from > to"));
-        nav.getAccountNavForRange(safe, 2, 1, address(0));
-    }
-
-    function test_getAccountNavForRange_outOfBounds() public {
-        usdc.mint(safe, 10 ** usdc.decimals());
-
-        uint256 assetCount = nav.assetCount();
-        vm.expectRevert(abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "to >= totalAssets"));
-        nav.getAccountNavForRange(safe, 0, assetCount, address(0));
-    }
-
-    function test_getAccountNavForRange_emptyRange() public {
-        usdc.mint(safe, 10 ** usdc.decimals());
-
-        // Get NAV for single asset range [0, 0]
-        INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(safe, 0, 0, address(0));
-
-        assertTrue(rangeNav.value >= 0);
-        assertEq(rangeNav.timestamp, block.timestamp);
-    }
-
-    // ============================================
     // Asset-Specific Query Tests
     // ============================================
 
@@ -784,20 +739,34 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     function test_getAssetDecimals() public view {
-        uint8 decimals = nav.getAssetDecimals(address(usdc));
-        assertEq(decimals, usdc.decimals());
+        // Get asset info from registered assets
+        INAVCalculator.Asset[] memory assets = nav.getRegisteredAssets();
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i].asset == address(usdc)) {
+                assertEq(assets[i].decimals, usdc.decimals());
+                return;
+            }
+        }
+        revert("Asset not found");
     }
 
     function test_getAssetDecimals_invalidAsset() public {
         address unregisteredAsset = makeAddr("unregistered");
 
-        vm.expectRevert(AssetNotFound.selector);
-        nav.getAssetDecimals(unregisteredAsset);
+        // Check asset is not registered
+        assertFalse(nav.isAssetRegistered(unregisteredAsset));
     }
 
     function test_getAssetSymbol() public view {
-        string memory symbol = nav.getAssetSymbol(address(usdc));
-        assertEq(symbol, "USDC");
+        // Get asset info from registered assets
+        INAVCalculator.Asset[] memory assets = nav.getRegisteredAssets();
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i].asset == address(usdc)) {
+                assertEq(assets[i].symbol, "USDC");
+                return;
+            }
+        }
+        revert("Asset not found");
     }
 
     function test_isAssetRegistered() public {
@@ -1717,7 +1686,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[1] = address(dai);
         amounts[0] = 10 ** usdc.decimals();
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "arrays.length mismatch"));
+        vm.expectRevert(ArrayLengthMismatch.selector);
         nav.calculateValue(assets, amounts, address(0));
     }
 

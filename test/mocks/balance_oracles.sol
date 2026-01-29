@@ -136,17 +136,23 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 uint8 decimals;
                 string memory symbol;
                 if (address(balances) != address(0)) {
-                    try INAVCalculator(address(balances)).getAssetDecimals(asset) returns (uint8 dec) {
-                        decimals = dec;
-                    } catch {
+                    // Check if asset is registered
+                    if (!INAVCalculator(address(balances)).isAssetRegistered(asset)) {
                         // Asset not registered, skip it (NAVCalculator will filter anyway)
                         continue;
                     }
-                    try INAVCalculator(address(balances)).getAssetSymbol(asset) returns (string memory sym) {
-                        symbol = sym;
-                    } catch {
-                        symbol = "";
+                    // Get asset info from registered assets
+                    INAVCalculator.Asset[] memory assets = INAVCalculator(address(balances)).getRegisteredAssets();
+                    bool found = false;
+                    for (uint256 j = 0; j < assets.length; j++) {
+                        if (assets[j].asset == asset) {
+                            decimals = assets[j].decimals;
+                            symbol = assets[j].symbol;
+                            found = true;
+                            break;
+                        }
                     }
+                    if (!found) continue;
                 } else {
                     // Fallback to ERC20 metadata if balances not set
                     try IERC20Metadata(asset).decimals() returns (uint8 dec) {

@@ -89,7 +89,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         return _assets.length;
     }
 
-    function getAssetDecimals(address asset) external view override returns (uint8) {
+    function getAssetDecimals(address asset) external view returns (uint8) {
         require(_isRegistered[asset], "Asset not registered");
         for (uint256 i = 0; i < _assets.length; i++) {
             if (_assets[i].asset == asset) return _assets[i].decimals;
@@ -97,7 +97,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Asset not registered");
     }
 
-    function getAssetSymbol(address asset) external view override returns (string memory) {
+    function getAssetSymbol(address asset) external view returns (string memory) {
         require(_isRegistered[asset], "Asset not registered");
         for (uint256 i = 0; i < _assets.length; i++) {
             if (_assets[i].asset == asset) return _assets[i].symbol;
@@ -129,10 +129,6 @@ contract Mock_NAVCalculator is INAVCalculator {
 
     // Stub implementations for other INAVCalculator methods (not used by adapters)
     function getAccountNav(address, address) external pure override returns (NAV memory) {
-        revert("Not implemented in mock");
-    }
-
-    function getAccountNavForRange(address, uint256, uint256, address) external pure override returns (NAV memory) {
         revert("Not implemented in mock");
     }
 

@@ -8,7 +8,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
@@ -536,7 +536,7 @@ contract Aura is IBalanceOracleAdapter {
         }
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
         // Apply asset filter if specified
         address[] memory filteredAssets;

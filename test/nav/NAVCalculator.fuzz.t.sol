@@ -198,63 +198,6 @@ contract NAVCalculatorFuzzTest is SuperTest {
     }
 
     // ============================================
-    // Fuzz Tests for Range Queries
-    // ============================================
-
-    /// @notice Fuzz test for range queries with random boundaries
-    function testFuzz_rangeQueries(address account, uint256 fromSeed, uint256 toSeed) public view {
-        vm.assume(account != address(0));
-
-        uint256 assetCount = nav.getAssetCount();
-        if (assetCount == 0) return; // Skip if no assets
-
-        // Bound from and to to valid range
-        uint256 from = bound(fromSeed, 0, assetCount - 1);
-        uint256 to = bound(toSeed, from, assetCount - 1);
-
-        // Get range NAV
-        INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(account, from, to, address(0));
-
-        // Verify basic properties
-        assertEq(rangeNav.timestamp, block.timestamp, "Timestamp should match");
-        assertEq(rangeNav.quoteAsset.asset, address(0), "Quote asset should be USD");
-
-        // Value should be reasonable
-        assertTrue(
-            rangeNav.value >= type(int128).min && rangeNav.value <= type(int128).max, "Value should be reasonable"
-        );
-    }
-
-    /// @notice Fuzz test for range query completeness
-    function testFuzz_rangeQueries_completeness(address account, uint256 chunkSizeSeed) public view {
-        vm.assume(account != address(0));
-
-        uint256 assetCount = nav.getAssetCount();
-        if (assetCount == 0) return;
-
-        // Get full NAV
-        INAVCalculator.NAV memory fullNav = nav.getAccountNav(account, address(0));
-
-        // Bound chunk size
-        uint256 chunkSize = bound(chunkSizeSeed, 1, assetCount);
-
-        // Split into chunks and sum
-        int256 rangeSum = 0;
-        for (uint256 i = 0; i < assetCount; i += chunkSize) {
-            uint256 to = i + chunkSize - 1;
-            if (to >= assetCount) {
-                to = assetCount - 1;
-            }
-
-            INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(account, i, to, address(0));
-            rangeSum += rangeNav.value;
-        }
-
-        // Sum should equal full NAV (within rounding)
-        assertApproxEqAbs(fullNav.value, rangeSum, 1, "Sum of ranges should equal full NAV");
-    }
-
-    // ============================================
     // Fuzz Tests for Edge Cases
     // ============================================
 

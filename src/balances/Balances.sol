@@ -7,6 +7,7 @@ import {IBalances} from "./IBalances.sol";
 import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
 
@@ -126,38 +127,25 @@ abstract contract Balances is IBalances, Initializable {
     /// @inheritdoc IBalances
     function getOraclesForAsset(address asset) public view override returns (address[] memory) {
         uint256 oracleCount = _globalOracles.length;
-        bool[] memory supportsAsset = new bool[](oracleCount);
+        address[] memory temp = new address[](oracleCount);
         uint256 count = 0;
 
-        // Single pass: check which oracles support this asset
         for (uint256 i = 0; i < oracleCount; i++) {
-            address oracle = _globalOracles[i];
-            try IBalanceOracleAdapter(oracle).underlyingAssetsSupported() returns (address[] memory supportedAssets) {
-                // Check if asset is in the supported assets list
+            try IBalanceOracleAdapter(_globalOracles[i]).underlyingAssetsSupported() returns (
+                address[] memory supportedAssets
+            ) {
                 for (uint256 j = 0; j < supportedAssets.length; j++) {
                     if (supportedAssets[j] == asset) {
-                        supportsAsset[i] = true;
-                        count++;
-                        break; // Found it, move to next oracle
+                        temp[count++] = _globalOracles[i];
+                        break;
                     }
                 }
             } catch {
-                // If the call fails, skip this oracle (supportsAsset[i] remains false)
                 continue;
             }
         }
 
-        // Create array with the correct length and populate with supporting oracles
-        address[] memory supportingOracles = new address[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < oracleCount; i++) {
-            if (supportsAsset[i]) {
-                supportingOracles[index] = _globalOracles[i];
-                index++;
-            }
-        }
-
-        return supportingOracles;
+        return ArrayLib.copySliceAddress(temp, count);
     }
 
     //
@@ -218,8 +206,4 @@ abstract contract Balances is IBalances, Initializable {
         // Emit event with address(0) for underlyingAsset since oracles are global
         emit BalanceOracleRemoved(address(0), oracle);
     }
-
-    /// @notice Gap for upgradeability
-    // forge-lint: disable-next-line(mixed-case-variable)
-    uint256[50] private __gap;
 }

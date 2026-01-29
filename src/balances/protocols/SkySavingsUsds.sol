@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
 
@@ -177,7 +177,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         }
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
         AssetBalanceData[] memory assetBalanceData;
         if (registeredSupportedAssets.length == 0) {

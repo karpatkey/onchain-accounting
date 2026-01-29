@@ -8,7 +8,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -398,7 +398,7 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
         }
 
         // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
         AssetBalanceData[] memory assetBalanceData;
         if (registeredSupportedAssets.length == 0) {

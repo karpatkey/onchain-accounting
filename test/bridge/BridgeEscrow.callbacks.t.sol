@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {BridgeEscrowTestBase} from "test/bridge/BridgeEscrowTestBase.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
 import {BridgeAdapter} from "src/bridge/BridgeAdapter.sol";

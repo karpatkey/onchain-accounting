@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
@@ -17,52 +16,74 @@ import "src/errors.sol";
 contract BalancesHarness is Balances {
     ERC20DefaultOracle public defaultOracle;
 
+    /// @notice Test-only: track assets "registered" so ERC20DefaultOracle.addSupportedAsset (which checks isAssetRegistered) succeeds.
+    address[] private _testRegisteredList;
+    mapping(address => bool) private _testRegistered;
+
     constructor() initializer {
         __Balances_init();
         // Set up ERC20DefaultOracle for native address support
-        defaultOracle = new ERC20DefaultOracle(address(this));
+        defaultOracle = new ERC20DefaultOracle(address(this), new address[](0));
         _setErc20DefaultOracle(address(defaultOracle));
     }
 
-    // Expose internal functions for testing
-    function registerAssetForTest(address asset, uint8 decimals) public {
-        _registerAsset(asset, decimals);
-        // Mirror NAVCalculator behavior: registering an asset should add it to the default oracle inclusion list
+    /// @notice Adds an asset to the default oracle's inclusion list (for testing). Marks asset as registered so addSupportedAsset succeeds.
+    function addSupportedAssetForTest(address asset) public {
+        _testRegistered[asset] = true;
+        _testRegisteredList.push(asset);
         defaultOracle.addSupportedAsset(asset);
     }
 
-    function setAssetSymbolForTest(address asset, string memory symbol) public {
-        _setAssetSymbol(asset, symbol);
+    /// @notice Stub for adapter tests that pass this contract as INAVCalculator (asset registry lives in NAVCalculator).
+    function getRegisteredAssets() external view returns (INAVCalculator.Asset[] memory) {
+        uint256 n = _testRegisteredList.length;
+        INAVCalculator.Asset[] memory out = new INAVCalculator.Asset[](n);
+        for (uint256 i = 0; i < n; i++) {
+            address a = _testRegisteredList[i];
+            out[i] = INAVCalculator.Asset({asset: a, symbol: "", decimals: 18});
+        }
+        return out;
     }
 
-    function addBalanceOracleDirect(address underlyingAsset, address oracle, IBalances.OracleType oracleType) public {
+    function getAssetCount() external view returns (uint256) {
+        return _testRegisteredList.length;
+    }
+
+    function isAssetRegistered(address asset) external view returns (bool) {
+        return _testRegistered[asset];
+    }
+
+    function getAssetDecimals(address asset) external view returns (uint8) {
+        if (!_testRegistered[asset]) revert AssetNotFound();
+        return 18;
+    }
+
+    function getAssetSymbol(address asset) external view returns (string memory) {
+        if (!_testRegistered[asset]) return "";
+        return "";
+    }
+
+    function addBalanceOracleDirect(
+        address,
+        /* underlyingAsset */
+        address oracle,
+        IBalances.OracleType /* oracleType */
+    )
+        public
+    {
         // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
         _addBalanceOracle(oracle);
     }
 
-    function unsetBalanceOracle(address underlyingAsset, address oracle) public {
+    function unsetBalanceOracle(
+        address,
+        /* underlyingAsset */
+        address oracle
+    )
+        public
+    {
         // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
         _removeBalanceOracle(oracle);
-    }
-
-    // Compatibility methods for ERC20DefaultOracle which expects NAVCalculator interface
-    function assets() external view returns (address[] memory) {
-        return getAssets();
-    }
-
-    function assetCount() external view returns (uint256) {
-        return getAssetCount();
-    }
-
-    function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory a) {
-        address[] memory allAssets = getAssets();
-        if (idx >= allAssets.length) {
-            revert AssetNotFound();
-        }
-        address asset = allAssets[idx];
-        a.asset = asset;
-        a.decimals = getAssetDecimals(asset);
-        a.symbol = getAssetSymbol(asset);
     }
 }
 
@@ -79,10 +100,7 @@ contract BalancesTest is Test {
     function setUp() public {
         vm.startPrank(admin);
         balances = new BalancesHarness();
-        // Set up native address - ERC20DefaultOracle is already registered in constructor
-        balances.registerAssetForTest(balances.NATIVE_ADDRESS(), 18);
-        balances.setAssetSymbolForTest(balances.NATIVE_ADDRESS(), "ETH");
-        // ERC20DefaultOracle is already registered, no need to add it again
+        balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
         usdc = new Mock_ERC20("USDC", 6);
         customOracle = new Mock_CustomBalanceOracle();
         customOracle.setBalances(balances);
@@ -109,9 +127,7 @@ contract BalancesTest is Test {
 
     function test_setAndGetERC20BalanceOracle() public {
         vm.startPrank(admin);
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
-        // ERC20DefaultOracle is already registered, no need to add it again
+        balances.addSupportedAssetForTest(address(usdc));
         vm.stopPrank();
 
         usdc.mint(alice, 1000);
@@ -121,9 +137,10 @@ contract BalancesTest is Test {
         assertGt(oracles.length, 0, "Should have at least one oracle supporting USDC");
 
         // Get balance from ERC20DefaultOracle
-        int256 balance =
+        (uint256 amount, bool isDebt) =
             IBalanceOracleAdapter(balances.erc20DefaultOracle()).getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balance, 1000);
+        assertEq(amount, 1000);
+        assertFalse(isDebt);
     }
 
     function test_setAndGetCustomBalanceOracle() public {
@@ -134,9 +151,10 @@ contract BalancesTest is Test {
         customOracle.setBalance(address(customOracle), alice, 2000, false);
 
         // Get balance from custom oracle
-        int256 balance =
+        (uint256 amount, bool isDebt) =
             IBalanceOracleAdapter(address(customOracle)).getOracleBalanceForAsset(alice, address(customOracle));
-        assertEq(balance, 2000);
+        assertEq(amount, 2000);
+        assertFalse(isDebt);
     }
 
     function test_setAndGetCustomBalanceOracleDebtPosition() public {
@@ -147,9 +165,10 @@ contract BalancesTest is Test {
         customOracle.setBalance(address(customOracle), alice, 2000, true);
 
         // Get balance from custom oracle
-        int256 balance =
+        (uint256 amount, bool isDebt) =
             IBalanceOracleAdapter(address(customOracle)).getOracleBalanceForAsset(alice, address(customOracle));
-        assertEq(balance, -2000);
+        assertEq(amount, 2000);
+        assertTrue(isDebt);
     }
 
     function test_addBalanceOracle_nativeAddress() public {
@@ -164,15 +183,15 @@ contract BalancesTest is Test {
         deal(alice, 1337);
 
         // Get balance from ERC20DefaultOracle for native address
-        int256 balance = IBalanceOracleAdapter(balances.erc20DefaultOracle())
+        (uint256 amount, bool isDebt) = IBalanceOracleAdapter(balances.erc20DefaultOracle())
             .getOracleBalanceForAsset(alice, balances.NATIVE_ADDRESS());
-        assertEq(balance, 1337);
+        assertEq(amount, 1337);
+        assertFalse(isDebt);
     }
 
     function test_removeBalanceOracle() public {
         vm.startPrank(admin);
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
+        balances.addSupportedAssetForTest(address(usdc));
         // Add a custom oracle for USDC
         balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
         // Remove the custom oracle
@@ -245,45 +264,6 @@ contract BalancesTest is Test {
 
         // Random address should not be registered
         assertFalse(balances.isOracleRegistered(makeAddr("random")));
-    }
-
-    // ============================================
-    // Asset Registry Tests
-    // ============================================
-
-    function test_getAssets() public {
-        address[] memory assets = balances.getAssets();
-
-        assertEq(assets.length, balances.getAssetCount());
-        assertTrue(assets.length > 0);
-    }
-
-    function test_getAssetCount() public {
-        uint256 count = balances.getAssetCount();
-
-        assertTrue(count >= 1); // At least native address
-    }
-
-    function test_getAssetDecimals() public {
-        uint8 decimals = balances.getAssetDecimals(balances.NATIVE_ADDRESS());
-        assertEq(decimals, 18);
-    }
-
-    function test_getAssetDecimals_invalidAsset() public {
-        address unregisteredAsset = makeAddr("unregistered");
-
-        vm.expectRevert(AssetNotFound.selector);
-        balances.getAssetDecimals(unregisteredAsset);
-    }
-
-    function test_getAssetSymbol() public {
-        string memory symbol = balances.getAssetSymbol(balances.NATIVE_ADDRESS());
-        assertEq(symbol, "ETH");
-    }
-
-    function test_isAssetRegistered() public {
-        assertTrue(balances.isAssetRegistered(balances.NATIVE_ADDRESS()));
-        assertFalse(balances.isAssetRegistered(makeAddr("unregistered")));
     }
 
     // ============================================
@@ -366,8 +346,7 @@ contract BalancesTest is Test {
 
     function test_getOraclesForAsset() public {
         vm.startPrank(admin);
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
+        balances.addSupportedAssetForTest(address(usdc));
         // Add custom oracle that supports USDC
         balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
         vm.stopPrank();

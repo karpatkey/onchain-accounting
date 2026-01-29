@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -214,13 +213,10 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         uint64 timestamp = uint64(block.timestamp);
         bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
 
-        // casting to 'uint24' is safe because chain IDs are always within uint24 range
-        // forge-lint: disable-next-line(unsafe-typecast)
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
-            sourceChainId: uint24(sourceChainId),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            destinationChainId: uint24(destChainId),
+            sourceChainId: SafeCast.toUint24(sourceChainId),
+            destinationChainId: SafeCast.toUint24(destChainId),
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
             amount: amount,
@@ -236,10 +232,8 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         returns (bytes32)
     {
         // Pack: sourceChainId (3 bytes) + destChainId (3 bytes) + safe (20 bytes) + assetSymbol (6 bytes) = 32 bytes
-        // casting to 'uint24' is safe because chain IDs are always within uint24 range
-        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes32(
-            (uint256(uint24(sourceChainId)) << 232) | (uint256(uint24(destChainId)) << 208)
+            (uint256(SafeCast.toUint24(sourceChainId)) << 232) | (uint256(SafeCast.toUint24(destChainId)) << 208)
                 | (uint256(uint160(safe)) << 48) | uint256(uint48(assetSymbol))
         );
     }

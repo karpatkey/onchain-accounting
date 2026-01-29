@@ -84,11 +84,11 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        nav.registerAsset(usdc, ChainlinkPriceFeeds.USDC_USD_OPTIMISM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(usdt, ChainlinkPriceFeeds.USDT_USD_OPTIMISM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(native, ChainlinkPriceFeeds.ETH_USD_OPTIMISM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(weth, ChainlinkPriceFeeds.ETH_USD_OPTIMISM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(compound, ChainlinkPriceFeeds.COMP_USD_OPTIMISM(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {

@@ -20,16 +20,13 @@
       "rev": "7117c90c8cf6c68e5acce4f09a6b24715cea4de6"
     }
   },
+  "lib/gmx-contracts": {
+    "rev": "fe55c4ba8911ae2378b50bfb9bece5ee50cf2af8"
+  },
   "lib/morpho-blue": {
     "tag": {
       "name": "v1.0.0",
       "rev": "55d2d99304fb3fb930c688462ae2ccabb1d533ad"
-    }
-  },
-  "lib/omnibridge": {
-    "tag": {
-      "name": "1.1.0",
-      "rev": "c814f686487c50462b132b9691fd77cc2de237d3"
     }
   },
   "lib/openzeppelin-contracts-upgradeable": {
@@ -45,9 +42,6 @@
     }
   },
   "lib/optimism": {
-    "tag": {
-      "name": "v1.7.0",
-      "rev": "f707883038d527cbf1e9f8ea513fe33255deadbc"
-    }
+    "rev": "096942479b8a2434bb63458e661cf467ed5d41ba"
   }
 }

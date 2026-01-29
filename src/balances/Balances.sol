@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IBalances} from "./IBalances.sol";
@@ -9,7 +8,7 @@ import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
-import "src/errors.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @title Balances
 /// @author kpk
@@ -51,12 +50,6 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Quick lookup for oracle registration
     mapping(address oracle => bool) private _isOracleRegistered;
 
-    /// @notice Asset registry - decimals for each registered asset
-    EnumerableMap.AddressToUintMap private _assetDecimals;
-
-    /// @notice Asset registry - symbols for each registered asset
-    mapping(address asset => string) private _assetSymbols;
-
     /// @notice ERC20Default oracle singleton (automatically registered)
     /// @dev Set during initialization by derived contract
     address public erc20DefaultOracle;
@@ -70,7 +63,13 @@ abstract contract Balances is IBalances, Initializable {
     // solhint-disable-next-line func-name-mixedcase
     // forge-lint: disable-next-line(mixed-case-function)
     function __Balances_init() internal onlyInitializing {
-        _nativeTokenSymbol = "ETH"; // Default value, can be overridden by derived contracts
+        _nativeTokenSymbol = "ETH"; // Default value; override via _setNativeTokenSymbol in derived init
+    }
+
+    /// @notice Sets the native token symbol (e.g. "ETH", "xDAI"). Call from derived contract's initializer.
+    /// @param symbol The native token symbol
+    function _setNativeTokenSymbol(string memory symbol) internal {
+        _nativeTokenSymbol = symbol;
     }
 
     /// @notice Internal function to set and register the ERC20Default oracle
@@ -161,37 +160,6 @@ abstract contract Balances is IBalances, Initializable {
         return supportingOracles;
     }
 
-    /// @inheritdoc IBalances
-    function isAssetRegistered(address asset) public view override returns (bool) {
-        return _assetDecimals.contains(asset);
-    }
-
-    /// @inheritdoc IBalances
-    function getAssets() public view override returns (address[] memory) {
-        return _assetDecimals.keys();
-    }
-
-    /// @inheritdoc IBalances
-    function getAssetCount() public view override returns (uint256) {
-        return _assetDecimals.length();
-    }
-
-    /// @inheritdoc IBalances
-    function getAssetDecimals(address asset) public view override returns (uint8) {
-        (bool contains, uint256 decimals) = _assetDecimals.tryGet(asset);
-        if (!contains) {
-            revert AssetNotFound();
-        }
-        // casting to 'uint8' is safe because ERC20 decimals are always in range 0-255
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint8(decimals);
-    }
-
-    /// @inheritdoc IBalances
-    function getAssetSymbol(address asset) public view override returns (string memory) {
-        return _assetSymbols[asset];
-    }
-
     //
     // Internal API
     //
@@ -249,54 +217,6 @@ abstract contract Balances is IBalances, Initializable {
 
         // Emit event with address(0) for underlyingAsset since oracles are global
         emit BalanceOracleRemoved(address(0), oracle);
-    }
-
-    /// @notice Registers an asset in the asset registry
-    /// @param asset The asset address
-    /// @param decimals The number of decimals for the asset
-    function _registerAsset(address asset, uint8 decimals) internal {
-        if (_assetDecimals.contains(asset)) {
-            revert InvalidArguments(); // Asset already registered
-        }
-        _assetDecimals.set(asset, decimals);
-    }
-
-    /// @notice Unregisters an asset from the asset registry
-    /// @param asset The asset address
-    function _unregisterAsset(address asset) internal {
-        bool removed = _assetDecimals.remove(asset);
-        if (!removed) {
-            revert AssetNotFound();
-        }
-        // Clear symbol mapping
-        delete _assetSymbols[asset];
-    }
-
-    /// @notice Gets asset decimals from registry
-    /// @param asset The asset address
-    /// @return decimals The number of decimals
-    function _getAssetDecimals(address asset) internal view virtual returns (uint8) {
-        (bool contains, uint256 decimals) = _assetDecimals.tryGet(asset);
-        if (!contains) {
-            revert AssetNotFound();
-        }
-        // casting to 'uint8' is safe because ERC20 decimals are always in range 0-255
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return uint8(decimals);
-    }
-
-    /// @notice Sets asset symbol in registry
-    /// @param asset The asset address
-    /// @param symbol The asset symbol
-    function _setAssetSymbol(address asset, string memory symbol) internal {
-        _assetSymbols[asset] = symbol;
-    }
-
-    /// @notice Gets asset symbol from registry
-    /// @param asset The asset address
-    /// @return symbol The asset symbol
-    function _getAssetSymbol(address asset) internal view returns (string memory) {
-        return _assetSymbols[asset];
     }
 
     /// @notice Gap for upgradeability

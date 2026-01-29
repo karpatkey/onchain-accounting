@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -242,18 +243,15 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         }
     }
 
-    /// @notice Test MAX_DECIMAL_EXPONENT boundary
+    /// @notice Test MAX_DECIMAL_EXPONENT_INT256 boundary (10^denominator must fit in int256)
     function test_precision_maxDecimalExponent() public {
-        // Test with decimals that approach MAX_DECIMAL_EXPONENT (255)
-        // But ensure denominator (assetDecimals + priceDecimals - NAV_DECIMALS) doesn't cause 10**denominator to overflow uint256
-        // 10**77 is approximately the max that fits in uint256, so denominator should be <= 77
-        // For denominator = 77: assetDecimals + priceDecimals - 8 = 77
-        // So assetDecimals + priceDecimals = 85
+        // denominator = assetDecimals + priceDecimals - NAV_DECIMALS; 10^denominator is cast to int256 in _toUsd.
+        // int256 max ~5.7e76, so denominator must be <= 76 (MAX_DECIMAL_EXPONENT_INT256).
 
-        uint8 assetDecimals = 42;
+        uint8 assetDecimals = 41;
         uint8 priceDecimals = 43;
+        // denominator = 41 + 43 - 8 = 76 (10**76 fits in int256)
 
-        // This should work: 42 + 43 = 85, denominator = 85 - 8 = 77 (10**77 fits in uint256)
         Mock_ERC20 token = new Mock_ERC20("TEST", assetDecimals);
         Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TEST", address(token), 1e8, priceDecimals);
 
@@ -261,10 +259,8 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         nav.registerAsset(address(token), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
-        // Mint tokens
         token.mint(safe, 1000 * 10 ** assetDecimals);
 
-        // Should work without reverting
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         assertGe(navResult.value, 0, "Should handle high decimal values");
     }
@@ -292,6 +288,71 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         nav.getAccountNav(safe, address(0));
     }
 
+    /// @notice Revert when denominator (assetDecimals + priceDecimals - NAV_DECIMALS) > MAX_DECIMAL_EXPONENT_INT256
+    function test_precision_revert_denominatorOverMaxInt256() public {
+        uint8 assetDecimals = 42;
+        uint8 priceDecimals = 43;
+        // denominator = 42 + 43 - 8 = 77 > MAX_DECIMAL_EXPONENT_INT256 (76)
+
+        Mock_ERC20 token = new Mock_ERC20("TEST", assetDecimals);
+        Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TEST", address(token), 1e8, priceDecimals);
+
+        vm.startPrank(navCalculatorManager);
+        nav.registerAsset(address(token), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        token.mint(safe, 1000 * 10 ** assetDecimals);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "denominator > MAX_DECIMAL_EXPONENT_INT256")
+        );
+        nav.getAccountNav(safe, address(0));
+    }
+
+    /// @notice Revert when denominator > MAX_DECIMAL_EXPONENT (255)
+    function test_precision_revert_denominatorOverMaxExponent() public {
+        uint8 assetDecimals = 132;
+        uint8 priceDecimals = 132;
+        // denominator = 132 + 132 - 8 = 256 > MAX_DECIMAL_EXPONENT (255)
+
+        Mock_ERC20 token = new Mock_ERC20("TEST", assetDecimals);
+        Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TEST", address(token), 1e8, priceDecimals);
+
+        vm.startPrank(navCalculatorManager);
+        nav.registerAsset(address(token), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        // Mint 1 wei to avoid overflow (10**132 would exceed uint256)
+        token.mint(safe, 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "denominator > MAX_DECIMAL_EXPONENT")
+        );
+        nav.getAccountNav(safe, address(0));
+    }
+
+    /// @notice Revert when getAccountNav(quoteAsset) uses _fromUsd with totalDecimals > MAX_DECIMAL_EXPONENT_INT256
+    function test_precision_revert_fromUsdTotalDecimalsOverMaxInt256() public {
+        uint8 quoteDecimals = 38;
+        uint8 priceDecimals = 39;
+        // totalDecimals = 38 + 39 = 77 > MAX_DECIMAL_EXPONENT_INT256 (76)
+
+        Mock_ERC20 quoteToken = new Mock_ERC20("QUOTE", quoteDecimals);
+        Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("QUOTE", address(quoteToken), 1e8, priceDecimals);
+
+        vm.startPrank(navCalculatorManager);
+        nav.registerAsset(address(quoteToken), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        dai.mint(safe, 1e18);
+        quoteToken.mint(safe, 1e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(InvalidArgumentsWithContext.selector, "totalDecimals > MAX_DECIMAL_EXPONENT_INT256")
+        );
+        nav.getAccountNav(safe, address(quoteToken));
+    }
+
     /// @notice Test precision in currency conversions
     function test_precision_currencyConversion() public {
         usdc.mint(safe, 10 ** usdc.decimals()); // 1 USDC
@@ -303,7 +364,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         INAVCalculator.NAV memory navDai = nav.getAccountNav(safe, address(dai));
 
         // Get prices for conversion
-        (uint256 daiPrice, uint8 daiPriceDecimals,) = nav.latestPrice(address(dai));
+        (int256 daiPrice, uint8 daiPriceDecimals,) = nav.latestPrice(address(dai));
 
         // Convert DAI NAV back to USD
         // navDai.value is in DAI with 18 decimals

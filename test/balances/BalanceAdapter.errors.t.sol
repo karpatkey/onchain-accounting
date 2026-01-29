@@ -38,18 +38,23 @@ contract Mock_RevertingBalanceAdapter is IBalanceOracleAdapter {
         return new INAVCalculator.PositionBalance[](0);
     }
 
-    function getOracleBalance(address) external view override returns (address[] memory, int256[] memory) {
+    function getOracleBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
         if (shouldRevert) {
             revert("Adapter revert");
         }
-        return (new address[](0), new int256[](0));
+        return (new address[](0), new uint256[](0), new bool[](0));
     }
 
-    function getOracleBalanceForAsset(address, address) external view override returns (int256) {
+    function getOracleBalanceForAsset(address, address) external view override returns (uint256, bool) {
         if (shouldRevert) {
             revert("Adapter revert");
         }
-        return 0;
+        return (0, false);
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
@@ -76,7 +81,7 @@ contract BalanceAdapterErrorTest is Test {
         customOracle.setBalances(balances);
 
         usdc = new Mock_ERC20("USDC", 6);
-        balances.registerAssetForTest(address(usdc), 6);
+        balances.addSupportedAssetForTest(address(usdc));
 
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
@@ -104,8 +109,8 @@ contract BalanceAdapterErrorTest is Test {
         revertingAdapter.setShouldRevert(false);
 
         // Second query - adapter should work now
-        int256 balance = revertingAdapter.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balance, 0, "Should return zero after recovery");
+        (uint256 amount,) = revertingAdapter.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 0, "Should return zero after recovery");
     }
 
     // ============================================
@@ -113,10 +118,10 @@ contract BalanceAdapterErrorTest is Test {
     // ============================================
 
     /// @notice Test that zero address asset returns zero balance
-    function test_RevertWhen_zeroAddressAsset() public {
+    function test_RevertWhen_zeroAddressAsset() public view {
         // Zero address should return zero balance, not revert
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(0));
-        assertEq(balance, 0, "Zero address should return zero balance");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(0));
+        assertEq(amount, 0, "Zero address should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 0, "Zero address should return no positions");
@@ -127,8 +132,8 @@ contract BalanceAdapterErrorTest is Test {
         address unregisteredAsset = makeAddr("unregistered");
 
         // Unregistered asset should return zero balance, not revert
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(alice, unregisteredAsset);
-        assertEq(balance, 0, "Unregistered asset should return zero balance");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, unregisteredAsset);
+        assertEq(amount, 0, "Unregistered asset should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
             erc20DefaultOracle.getOraclePositions(alice, unregisteredAsset);
@@ -140,10 +145,10 @@ contract BalanceAdapterErrorTest is Test {
     // ============================================
 
     /// @notice Test that zero address account returns zero balance
-    function test_RevertWhen_zeroAddressAccount() public {
+    function test_RevertWhen_zeroAddressAccount() public view {
         // Zero address account should return zero balance, not revert
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(address(0), address(usdc));
-        assertEq(balance, 0, "Zero address account should return zero balance");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(amount, 0, "Zero address account should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
             erc20DefaultOracle.getOraclePositions(address(0), address(0));
@@ -162,9 +167,9 @@ contract BalanceAdapterErrorTest is Test {
         usdc.mint(alice, largeAmount);
 
         // Should handle large balance without reverting
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(uint256(balance), uint256(largeAmount), "Should handle large balance");
-        assertGt(balance, 0, "Should be positive balance");
+        (uint256 amount, bool isDebt) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, uint256(largeAmount), "Should handle large balance");
+        assertFalse(isDebt);
     }
 
     /// @notice Test that extreme debt positions are handled
@@ -174,8 +179,9 @@ contract BalanceAdapterErrorTest is Test {
         customOracle.setBalance(address(usdc), alice, extremeDebt, true);
 
         // Should handle extreme debt
-        int256 balance = customOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balance, -int256(extremeDebt), "Should handle extreme debt amount (negative balance)");
+        (uint256 amount, bool isDebt) = customOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, extremeDebt, "Should handle extreme debt amount");
+        assertTrue(isDebt);
     }
 
     // ============================================
@@ -211,9 +217,9 @@ contract BalanceAdapterErrorTest is Test {
         balances.addBalanceOracleDirect(address(0), address(customOracle), IBalances.OracleType.Custom);
 
         // Query from custom oracle - should work despite reverting adapter
-        int256 balance = customOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(uint256(balance), 1000 * 10 ** usdc.decimals(), "Valid adapter should work");
-        assertGt(balance, 0, "Should be positive balance");
+        (uint256 amount, bool isDebt) = customOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 1000 * 10 ** usdc.decimals(), "Valid adapter should work");
+        assertFalse(isDebt);
 
         // Query from reverting adapter - should revert
         vm.expectRevert("Adapter revert");
@@ -243,8 +249,8 @@ contract BalanceAdapterErrorTest is Test {
         assertFalse(balances.isOracleRegistered(address(revertingAdapter)), "Adapter should be removed");
 
         // ERC20DefaultOracle should still work
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(uint256(balance), 1000 * 10 ** usdc.decimals(), "ERC20DefaultOracle should still work");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 1000 * 10 ** usdc.decimals(), "ERC20DefaultOracle should still work");
     }
 
     // ============================================
@@ -264,8 +270,8 @@ contract BalanceAdapterErrorTest is Test {
         // Don't mint any tokens (so ERC20DefaultOracle has no positions)
 
         // Query from ERC20DefaultOracle - should return zero, not revert
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balance, 0, "Should return zero balance when no positions");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 0, "Should return zero balance when no positions");
 
         INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 0, "Should return no positions");
@@ -286,9 +292,11 @@ contract BalanceAdapterErrorTest is Test {
         address emptyAccount = makeAddr("empty");
 
         // Should return empty arrays, not revert
-        (address[] memory assets, int256[] memory balances) = erc20DefaultOracle.getOracleBalance(emptyAccount);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            erc20DefaultOracle.getOracleBalances(emptyAccount);
 
         assertEq(assets.length, 0, "Empty account should return empty assets");
-        assertEq(balances.length, 0, "Empty account should return empty balances");
+        assertEq(amounts.length, 0, "Empty account should return empty amounts");
+        assertEq(isDebt.length, 0, "Empty account should return empty isDebt");
     }
 }

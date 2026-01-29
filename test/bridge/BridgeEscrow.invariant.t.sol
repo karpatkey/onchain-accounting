@@ -2,7 +2,6 @@
 pragma solidity ^0.8;
 
 import {BridgeEscrowTestBase} from "test/bridge/BridgeEscrowTestBase.sol";
-import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 
 /// @title BridgeEscrow Invariant Tests
 /// @notice Critical invariants for BridgeEscrow accounting and state

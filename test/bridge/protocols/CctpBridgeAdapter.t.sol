@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
@@ -9,7 +8,6 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -306,8 +304,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+        (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
         MockMessageTransmitter destMessageTransmitter = new MockMessageTransmitter(DEST_DOMAIN, address(usdc));

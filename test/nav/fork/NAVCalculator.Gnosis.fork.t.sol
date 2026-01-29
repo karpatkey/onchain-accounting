@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {console2} from "forge-std/console2.sol";
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRatePriceAdapter.sol";
@@ -15,7 +14,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public savingsXDaiContract = address(0xaf204776c7245bF4147c2612BF6e5972Ee483701);
     address public xdai = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
     address public wxdai = address(0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d);
-    address public USD_Prime_Fund = address(0xCE74fa7A7dEe1d7640540bd752Bee784BE831b4F);
+    address public usdPrimeFund = address(0xCE74fa7A7dEe1d7640540bd752Bee784BE831b4F);
 
     // Chainlink price feeds (Gnosis Chain)
     address public daiToUsdChainlink = address(0x678df3415fc31947dA4324eC63212874be5a82f8); // xDAI/DAI
@@ -60,7 +59,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     /// @notice Log all positions found for the Gnosis treasury (0x458c...F5e6f)
-    function test_gnosisFork_treasuryPositions() public {
+    function test_gnosisFork_treasuryPositions() public view {
         address account = GNOSIS_TREASURY;
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(account, address(0));
@@ -73,9 +72,9 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         assertEq(navTotal.value, sum, "NAV should equal sum of position values");
     }
 
-    function test_gnosisFork_getAllPositions() public {
-        INAVCalculator.Position[] memory positions = nav.getAccountPositions(USD_Prime_Fund, address(0));
-        INAVCalculator.NAV memory navTotal = nav.getAccountNav(USD_Prime_Fund, address(0));
+    function test_gnosisFork_getAllPositions() public view {
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(usdPrimeFund, address(0));
+        INAVCalculator.NAV memory navTotal = nav.getAccountNav(usdPrimeFund, address(0));
 
         assertTrue(navTotal.value > 0);
 
@@ -98,8 +97,8 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         );
 
         // Only register assets that have a matching price feed (custom or Chainlink from above).
-        // xDAI / native — daiToUsdChainlink
-        nav.registerAsset(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        // xDAI / native — pre-registered in initialize; set price feed only
+        nav.setPriceFeed(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
         // sXDAI — custom (uses daiToUsdChainlink)
         nav.registerAsset(address(savingsXDaiContract), address(savingsXdaiPrice), IPrices.PriceType.Custom, heartbeat);

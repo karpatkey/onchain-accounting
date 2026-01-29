@@ -2,13 +2,10 @@
 pragma solidity ^0.8;
 
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
-import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {BridgeEscrowTestBase} from "test/bridge/BridgeEscrowTestBase.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
-import "test/mocks/tokens.sol";
+import {NotAuthorized, InvalidArguments, InvoiceNotFound, AssetHasActiveInvoices} from "src/errors.sol";
 
 /// @title BridgeEscrow Error Tests
 /// @notice Revert and authorization tests for BridgeEscrow
@@ -83,8 +80,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     }
 
     function test_RevertWhen_releaseByInvoiceId_invalidChecksum() public {
-        (BridgeEscrow destEscrow, bytes memory _payload, MockBridgeAdapter destMock) =
-            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
         InvoiceDataLib.InvoiceData memory data =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, 1000e6);
         data.checksum24 = bytes24(uint192(uint256(uint192(data.checksum24)) ^ 1)); // corrupt

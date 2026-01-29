@@ -1,17 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/adapters/AcrossBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/adapters/interfaces/IAcrossInterfaces.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/IBridgeEscrow.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/BridgeScenarioHelper.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title AcrossBridgeAdapterTest
@@ -65,7 +73,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
         vm.prank(portfolioSafe);
-        usdc.transfer(address(bridgeEscrow), amount);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
@@ -269,8 +277,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+        (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
         address destAdapterImpl = address(new AcrossBridgeAdapter());
@@ -467,7 +474,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ ERC165 Tests ============
 
-    function test_supportsInterface_returnsTrueForIAcrossReceiver() public {
+    function test_supportsInterface_returnsTrueForIAcrossReceiver() public view {
         bytes4 interfaceId = type(IAcrossReceiver).interfaceId;
         assertTrue(adapter.supportsInterface(interfaceId), "Should support IAcrossReceiver");
     }

@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {IPrices} from "src/prices/Prices.sol";
 import {IBalances} from "src/balances/IBalances.sol";
+import {IPrices} from "src/prices/Prices.sol";
 
 /// @title INAVCalculator Interface
 /// @notice Interface for NAVCalculator contract
 /// @author kpk
-interface INAVCalculator {
+interface INAVCalculator is IBalances {
+    /// @notice Registered asset metadata (address, symbol, decimals) — used by NAV/Pricing and balance oracles
+    struct Asset {
+        address asset;
+        string symbol;
+        uint8 decimals;
+    }
+
     /// @notice Balance-only position data returned by balance oracles
     /// @dev Balance oracles return this struct without pricing information
     /// @dev NAVCalculator enriches these with pricing to create Position structs
@@ -30,7 +37,7 @@ interface INAVCalculator {
         bool isDebt; // true = debt (subtract from NAV), false = credit (add to NAV)
         Asset quoteAsset;
         int256 value; // Can be negative for debt positions (calculated from amount, isDebt, and price)
-        uint256 price;
+        int256 price;
         uint8 priceDecimals;
         bool stale;
         string protocol;
@@ -52,12 +59,6 @@ interface INAVCalculator {
         bool sequencerDown;
     }
 
-    struct Asset {
-        address asset;
-        string symbol;
-        uint8 decimals;
-    }
-
     /// @notice Comprehensive price feed query result for a token
     /// @param priceFeed The address of the price feed
     /// @param priceType The type of price feed (Chainlink or Custom)
@@ -70,7 +71,7 @@ interface INAVCalculator {
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
-        uint256 price;
+        int256 price;
         uint8 decimals;
         uint256 chainlinkHeartbeat;
         uint256 updatedAt; // For Chainlink: timestamp from latestRoundData, for Custom: 0
@@ -81,10 +82,6 @@ interface INAVCalculator {
     //
     // Events
     //
-
-    /// @notice Event emitted when the string for the native token symbol is set
-    /// @param nativeTokenSymbol The symbol of the chain's native token
-    event NativeTokenSymbolSet(string indexed nativeTokenSymbol);
 
     /// @notice Event emitted when the Chainlink L2 sequencer uptime feed is updated by a call to `setChainlinkL2SequencerUptimeFeed`
     /// @param oldChainlinkUptimeFeed The address of the old Chainlink uptime feed
@@ -154,11 +151,6 @@ interface INAVCalculator {
     /// @dev Unsets the price feed for the asset (if set) and removes the asset from the asset registry. Balance oracles are global and are not removed.
     function unregisterAsset(address underlyingAsset) external;
 
-    /// @notice Sets the symbol of the native token used for display purposes (e.g. "xDAI")
-    /// @dev This function can only be called by the manager role
-    /// @param nativeTokenSymbol The symbol of the native token
-    function setNativeTokenSymbol(string memory nativeTokenSymbol) external;
-
     /// @notice Update the Chainlink L2 sequencer uptime feed address
     /// @param newChainlinkL2UptimeFeed The new Chainlink L2 sequencer uptime feed address
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
@@ -170,6 +162,21 @@ interface INAVCalculator {
     /// @notice Counts the number of assets known by this calculator.
     /// @return the number of assets known by this calculator.
     function assetCount() external view returns (uint256);
+
+    /// @notice Checks if an asset is registered (required for NAV/Pricing and balance oracles).
+    function isAssetRegistered(address asset) external view returns (bool);
+
+    /// @notice Returns all registered assets with their metadata (address, symbol, decimals).
+    function getRegisteredAssets() external view returns (Asset[] memory assets);
+
+    /// @notice Returns the total number of registered assets.
+    function getAssetCount() external view returns (uint256);
+
+    /// @notice Returns the decimals for a registered asset.
+    function getAssetDecimals(address asset) external view returns (uint8);
+
+    /// @notice Returns the symbol for a registered asset.
+    function getAssetSymbol(address asset) external view returns (string memory);
 
     /// @notice Returns the current initialization version as tracked by OpenZeppelin's Initializable storage
     function version() external view returns (uint64);
@@ -217,15 +224,6 @@ interface INAVCalculator {
     /// @notice The amount of decimals returned with each USD value
     /// @return The amount of decimals
     function usdDecimals() external view returns (uint8);
-
-    /// @notice Returns the asset at a given index
-    /// @param idx The index of the asset
-    /// @return The asset at the given index
-    function assetAt(uint256 idx) external view returns (Asset memory);
-
-    /// @notice Returns the assets for this calculator
-    /// @return The assets known by this calculator
-    function assets() external view returns (address[] memory);
 
     /// @notice Returns comprehensive price feed query result for a given token
     /// @param underlyingAsset The address of the token

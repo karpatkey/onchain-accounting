@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {StargateBridgeAdapter} from "src/bridge/adapters/StargateBridgeAdapter.sol";
@@ -12,9 +11,7 @@ import "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
 import "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
-import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -297,8 +294,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+        (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain (simplified setup)
         address destAdapterImpl = address(new StargateBridgeAdapter());
@@ -542,7 +538,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
     }
 
-    function test_quoteLayerZeroFee_returnsFee() public {
+    function test_quoteLayerZeroFee_returnsFee() public view {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);

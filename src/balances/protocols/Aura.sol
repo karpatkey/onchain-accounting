@@ -146,9 +146,7 @@ contract Aura is IBalanceOracleAdapter {
             uint256 earned = previewEarned(AURA_REWARDS, safe);
             uint256 claimed = auraMintAmountConversion(rewardClaimed(address(AURA_REWARDS), earned));
 
-            // casting to 'int256' is safe because claimed is a reward amount that will never exceed int256 max
-            // forge-lint: disable-next-line(unsafe-typecast)
-            total += int256(claimed);
+            total += claimed.toInt256();
         }
         // getRewards()
 
@@ -162,9 +160,7 @@ contract Aura is IBalanceOracleAdapter {
                 uint256 earned = previewEarned(pool, safe);
                 uint256 claimed = auraMintAmountConversion(rewardClaimed(address(pool), earned));
 
-                // casting to 'int256' is safe because claimed is a reward amount that will never exceed int256 max
-                // forge-lint: disable-next-line(unsafe-typecast)
-                total += int256(claimed);
+                total += claimed.toInt256();
             }
         }
     }
@@ -179,9 +175,7 @@ contract Aura is IBalanceOracleAdapter {
 
         uint256 earned = previewEarned(pool, safe);
 
-        // casting to 'int256' is safe because earned is a reward amount that will never exceed int256 max
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return int256(earned);
+        return earned.toInt256();
     }
 
     /// @notice Previews the earned rewards for a given pool and account
@@ -477,43 +471,46 @@ contract Aura is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
+            (uint256 amt, bool debt) = _calculateBalance(asset, account);
+            if (amt != 0) {
                 tempAssets[count] = asset;
-                tempBalances[count] = balance;
+                tempAmounts[count] = amt;
+                tempIsDebt[count] = debt;
                 count++;
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
         }
     }
 
@@ -532,7 +529,11 @@ contract Aura is IBalanceOracleAdapter {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
 
         // Get registered assets from NAVCalculator
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -561,20 +562,8 @@ contract Aura is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < filteredAssets.length; i++) {
             address asset = filteredAssets[i];
-            int256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                uint256 amount;
-                bool isDebt;
-                if (balance < 0) {
-                    amount = uint256(-balance);
-                    isDebt = true;
-                } else {
-                    amount = uint256(balance);
-                    isDebt = false;
-                }
+            (uint256 amount, bool isDebt) = _calculateBalance(asset, account);
+            if (amount != 0) {
                 assetBalanceData[count] = AssetBalanceData({asset: asset, amount: amount, isDebt: isDebt});
                 count++;
             }
@@ -597,11 +586,18 @@ contract Aura is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param token The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
-    function _calculateBalance(address token, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address token, address account) internal view returns (uint256 amount, bool isDebt) {
         uint256 userGaugeBalance = AURA_REWARDS.balanceOf(account);
-
-        balance = poolBalanceOf(userGaugeBalance, token) + rewards(token, account);
+        int256 balance = poolBalanceOf(userGaugeBalance, token) + rewards(token, account);
+        if (balance < 0) {
+            return (SafeCast.toUint256(-balance), true);
+        }
+        if (balance > 0) {
+            return (SafeCast.toUint256(balance), false);
+        }
+        return (0, false);
     }
 
     //
@@ -612,11 +608,10 @@ contract Aura is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

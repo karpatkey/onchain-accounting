@@ -6,6 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title StakeWise Vault Balance Oracle
@@ -84,8 +85,13 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (underlyingAsset != address(UNDERLYING_TOKEN)) {
             revert InvalidArguments();
         }
@@ -96,8 +102,11 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         uint256 vaultAssets = VAULT.convertToAssets(directBalance);
         uint256 mintedOs = VAULT.convertToAssets(osTokenPosition);
 
-        // Calculate net: vaultAssets - mintedOs (can be negative)
-        balance = int256(vaultAssets) - int256(mintedOs);
+        // Net: vaultAssets - mintedOs (can be negative)
+        if (vaultAssets >= mintedOs) {
+            return (vaultAssets - mintedOs, false);
+        }
+        return (mintedOs - vaultAssets, true);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -117,35 +126,53 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Return zero for unsupported or invalid tokens (adapter convention)
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (asset == address(0) || asset != address(UNDERLYING_TOKEN)) {
-            return 0;
+            return (0, false);
         }
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         if (account == address(0)) {
-            return (new address[](0), new int256[](0));
+            return (new address[](0), new uint256[](0), new bool[](0));
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        int256 balance = this.getOracleBalanceForAsset(account, supportedAssets[0]);
+        uint256 assetCount = supportedAssets.length;
 
-        if (balance == 0) {
-            return (new address[](0), new int256[](0));
+        address[] memory tempAssets = new address[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            (uint256 amount, bool isDebt_) = _calculateBalance(asset, account);
+            if (amount != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
+                count++;
+            }
         }
 
-        assets = new address[](1);
-        balances = new int256[](1);
-        assets[0] = supportedAssets[0];
-        balances[0] = balance;
+        assets = new address[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -160,7 +187,11 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -172,18 +203,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
-                    if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
+                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
+                    if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
@@ -198,18 +219,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
-                if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
+                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
+                if (amount != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
@@ -233,11 +244,10 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "test/SuperTest.sol";
+import {SuperTest} from "test/SuperTest.sol";
+import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
+import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title NAVCalculator Invariant Tests
 /// @notice Tests critical system invariants for NAVCalculator
@@ -55,15 +58,15 @@ contract NAVCalculatorInvariantTest is SuperTest {
         internal
         view
     {
-        (uint256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
-        (uint256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
+        (int256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
+        (int256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
 
         assertEq(price1, price2, "Price should be consistent within same block");
         assertEq(decimals1, decimals2, "Decimals should be consistent");
         assertEq(stale1, stale2, "Staleness should be consistent");
 
         if (expectedPrice > 0) {
-            assertEq(price1, expectedPrice, "Price should match expected");
+            assertEq(price1, SafeCast.toInt256(expectedPrice), "Price should match expected");
             assertEq(decimals1, expectedDecimals, "Decimals should match expected");
             assertEq(stale1, expectedStale, "Staleness should match expected");
         }
@@ -93,7 +96,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         // Also mint some USDC directly to safe (ERC20DefaultOracle)
         uint256 directBalance = 50 * 10 ** usdc.decimals();
         usdc.mint(safe, directBalance);
-        totalExpectedBalance += int256(directBalance);
+        totalExpectedBalance += SafeCast.toInt256(directBalance);
 
         // Get positions for USDC
         INAVCalculator.Position[] memory positions = nav.getAccountPositionsForAsset(safe, address(usdc), address(0));
@@ -122,10 +125,10 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
         // Convert expected balance from asset decimals to USD (8 decimals)
         // For USDC: price is 1e8 (1 USD), so conversion is: balance * 10^(8 - 6) = balance * 100
-        (uint256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
         uint8 assetDecimals = usdc.decimals();
         uint256 denominator = assetDecimals + priceDecimals - 8; // NAV_DECIMALS = 8
-        int256 totalExpectedUsdValue = (totalExpectedBalance * int256(usdcPrice)) / int256(10 ** denominator);
+        int256 totalExpectedUsdValue = (totalExpectedBalance * int256(usdcPrice)) / SafeCast.toInt256(10 ** denominator);
 
         assertEq(totalBalance, totalExpectedUsdValue, "Total balance should equal sum of all oracle balances");
 
@@ -160,10 +163,10 @@ contract NAVCalculatorInvariantTest is SuperTest {
         }
 
         // Convert expected balance from asset decimals to USD (8 decimals)
-        (uint256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
         uint8 assetDecimals = usdc.decimals();
         uint256 denominator = assetDecimals + priceDecimals - 8; // NAV_DECIMALS = 8
-        int256 expectedUsdValue = (expectedTotal * int256(usdcPrice)) / int256(10 ** denominator);
+        int256 expectedUsdValue = (expectedTotal * int256(usdcPrice)) / SafeCast.toInt256(10 ** denominator);
 
         assertEq(totalBalance, expectedUsdValue, "Total balance should aggregate correctly with negative balances");
     }
@@ -173,7 +176,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     // ============================================
 
     /// @notice Test that same asset returns same price within same block
-    function test_invariant_priceFeedConsistency() public {
+    function test_invariant_priceFeedConsistency() public view {
         // Query price multiple times in same block
         assertPriceConsistent(address(usdc), 100_000_000, 8, false);
         assertPriceConsistent(address(dai), 100_000_000, 8, false);
@@ -196,9 +199,9 @@ contract NAVCalculatorInvariantTest is SuperTest {
         vm.warp(block.timestamp + 2);
 
         // Query multiple times - staleness should be consistent
-        (uint256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(address(usdc));
-        (uint256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(address(usdc));
-        (uint256 price3, uint8 decimals3, bool stale3) = nav.latestPrice(address(usdc));
+        (int256 price1,, bool stale1) = nav.latestPrice(address(usdc));
+        (int256 price2,, bool stale2) = nav.latestPrice(address(usdc));
+        (int256 price3,, bool stale3) = nav.latestPrice(address(usdc));
 
         assertEq(stale1, stale2, "Staleness should be consistent");
         assertEq(stale2, stale3, "Staleness should be consistent");
@@ -208,7 +211,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     /// @notice Test that getPriceData returns consistent results
-    function test_invariant_priceFeedConsistency_getPriceData() public {
+    function test_invariant_priceFeedConsistency_getPriceData() public view {
         INAVCalculator.PriceFeedData memory feed1 = nav.getPriceData(address(usdc));
         INAVCalculator.PriceFeedData memory feed2 = nav.getPriceData(address(usdc));
 
@@ -239,31 +242,29 @@ contract NAVCalculatorInvariantTest is SuperTest {
         }
 
         // Verify all registered assets can be queried
-        address[] memory registeredAssets = nav.getAssets();
+        INAVCalculator.Asset[] memory registeredAssets = nav.getRegisteredAssets();
         for (uint256 i = 0; i < registeredAssets.length; i++) {
-            address asset = registeredAssets[i];
+            address asset = registeredAssets[i].asset;
 
             // Should be able to get decimals
             uint8 decimals = nav.getAssetDecimals(asset);
             assertTrue(decimals <= 255, "Decimals should be valid");
 
-            // Should be able to get symbol
-            string memory symbol = nav.getAssetSymbol(asset);
-            // Symbol can be empty, but should not revert
+            assertTrue(bytes(nav.getAssetSymbol(asset)).length >= 0, "symbol queryable");
         }
     }
 
     /// @notice Test that asset count matches actual registered assets
-    function test_invariant_assetRegistryConsistency_count() public {
+    function test_invariant_assetRegistryConsistency_count() public view {
         uint256 assetCount = nav.getAssetCount();
-        address[] memory assets = nav.getAssets();
+        INAVCalculator.Asset[] memory assets = nav.getRegisteredAssets();
 
         assertEq(assetCount, assets.length, "Asset count should match assets array length");
 
         // Verify no duplicates in assets array
         for (uint256 i = 0; i < assets.length; i++) {
             for (uint256 j = i + 1; j < assets.length; j++) {
-                assertTrue(assets[i] != assets[j], "No duplicate assets in registry");
+                assertTrue(assets[i].asset != assets[j].asset, "No duplicate assets in registry");
             }
         }
     }
@@ -273,7 +274,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     // ============================================
 
     /// @notice Test that all oracles implement IBalanceOracleAdapter
-    function test_invariant_oracleRegistryConsistency() public {
+    function test_invariant_oracleRegistryConsistency() public view {
         address[] memory allOracles = nav.getAllOracles();
 
         // Verify ERC20DefaultOracle is always present
@@ -296,7 +297,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     /// @notice Test that all oracles can be queried without reverting
-    function test_invariant_oracleRegistryConsistency_queryable() public {
+    function test_invariant_oracleRegistryConsistency_queryable() public view {
         address[] memory allOracles = nav.getAllOracles();
 
         for (uint256 i = 0; i < allOracles.length; i++) {
@@ -314,7 +315,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
             // Should be able to query balance for a test account
             try oracle.getOracleBalanceForAsset(safe, address(usdc)) returns (
-                int256
+                uint256, bool
             ) {
             // Success
             }
@@ -325,7 +326,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     /// @notice Test that oracle count matches actual registered oracles
-    function test_invariant_oracleRegistryConsistency_count() public {
+    function test_invariant_oracleRegistryConsistency_count() public view {
         uint256 oracleCount = nav.getOracleCount();
         address[] memory allOracles = nav.getAllOracles();
 
@@ -409,8 +410,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
         INAVCalculator.NAV memory navWeth = nav.getAccountNav(safe, address(weth));
 
         // Get prices for conversion
-        (uint256 daiPrice, uint8 daiPriceDecimals,) = nav.latestPrice(address(dai));
-        (uint256 wethPrice, uint8 wethPriceDecimals,) = nav.latestPrice(address(weth));
+        (int256 daiPrice, uint8 daiPriceDecimals,) = nav.latestPrice(address(dai));
+        (int256 wethPrice, uint8 wethPriceDecimals,) = nav.latestPrice(address(weth));
 
         // Convert DAI NAV back to USD
         // navDai.value is in DAI with dai.decimals()

@@ -92,7 +92,7 @@ contract Mock_ChainlinkL2SequencerUptimeFeed is Mock_PriceOracleChainlink {
 
     function latestRoundData()
         external
-        view
+        pure
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
@@ -105,7 +105,7 @@ contract Mock_ChainlinkL2SequencerUptimeFeedDown is Mock_PriceOracleChainlink {
 
     function latestRoundData()
         external
-        view
+        pure
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {

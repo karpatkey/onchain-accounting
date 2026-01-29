@@ -2,9 +2,10 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
-import {StakeWiseV3VaultBalanceOracle, IStakeWiseVault} from "src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 interface IEthGenesisVault {
     function burnOsToken(uint128 osTokenShares) external returns (uint256 assets);
@@ -54,8 +55,9 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
-        assertGt(balance, 0, "User should have GNO position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
+        assertGt(amount, 0, "User should have GNO position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_gnosis_osGNO_TEST_USER2() public {
@@ -66,8 +68,9 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
-        assertGt(balance, 0, "User should have GNO position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
+        assertGt(amount, 0, "User should have GNO position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_gnosis_staked() public {
@@ -78,9 +81,9 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
-
-        uint256 balanceBefore = IERC20(GNO).balanceOf(TEST_USER2);
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
+        assertGt(amount, 0, "user has balance before exit");
+        assertFalse(isDebt);
 
         vm.startPrank(TEST_USER2);
         uint256 shares = vaultContract.getShares(TEST_USER2);
@@ -95,8 +98,8 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
         // After entering exit queue, the balance should be 0 (shares are in exit queue)
         // Note: We can't test claimExitedAssets in a fork because it requires actual
         // validator exits from the beacon chain, which can't be simulated
-        int256 newBalance = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
-        assertEq(newBalance, 0, "Balance should be 0 after entering exit queue");
+        (uint256 newAmount,) = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
+        assertEq(newAmount, 0, "Balance should be 0 after entering exit queue");
     }
 
     function test_getOracleBalanceForAsset_gnosis_osGNO_stake_and_osToken() public {
@@ -107,9 +110,9 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
-        int256 initialBalance = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
+        (uint256 initialAmount,) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
+        assertGt(initialAmount, 0, "user has initial balance");
 
-        uint256 gnoBalanceBefore = IERC20(GNO).balanceOf(TEST_USER);
         uint256 osTokenShares = vaultContract.osTokenPositions(TEST_USER);
         uint256 osTokenGnoValue = vaultContract.convertToAssets(osTokenShares);
 
@@ -120,13 +123,13 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
         if (osTokenShares > 0) {
             // Deal exact amount of osGNO tokens to test user so he can burn its whole position
             deal(OS_GNO, TEST_USER, osTokenShares);
-            vaultContract.burnOsToken(uint128(osTokenShares));
+            vaultContract.burnOsToken(SafeCast.toUint128(osTokenShares));
         }
 
-        int256 afterBurnBalance = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
+        (uint256 afterBurnAmount,) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
 
         // After burning osTokens, balance should increase by the osToken value
-        assertEq(initialBalance, afterBurnBalance - int256(osTokenGnoValue));
+        assertEq(initialAmount, afterBurnAmount - osTokenGnoValue);
 
         // Now that we don't have any osTokens, we can enter exit queue
         uint256 positionTicket = vaultContract.enterExitQueue(vaultContract.getShares(TEST_USER), TEST_USER);
@@ -137,8 +140,8 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
         // After entering exit queue, balance should be 0
         // Note: We can't test claimExitedAssets in a fork because it requires actual
         // validator exits from the beacon chain, which can't be simulated
-        int256 currentBalance = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
-        assertEq(currentBalance, 0, "Balance should be 0 after entering exit queue");
+        (uint256 currentAmount,) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
+        assertEq(currentAmount, 0, "Balance should be 0 after entering exit queue");
     }
 
     function test_getOracleBalanceForAsset_gnosis_osGNO_holds_osToken_butDidNotLendTheTokens() public {
@@ -149,12 +152,12 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
 
         address user = 0x564E604edA8c878021126C06084a4dA4E1A960Cb;
-        int256 balance = oracle.getOracleBalanceForAsset(user, GNO);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, GNO);
 
-        uint256 balanceOsGNO = IERC20(OS_GNO).balanceOf(user);
+        uint256 balanceOsGno = IERC20(OS_GNO).balanceOf(user);
 
-        assertEq(balance, 0);
-        assertEq(balanceOsGNO, 392_839_159_609_003_939_803);
+        assertEq(amount, 0);
+        assertEq(balanceOsGno, 392_839_159_609_003_939_803);
     }
 
     // ============================================
@@ -168,11 +171,11 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
         oracle =
             new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, "Stakewise v3", "Some vault", address(balances));
 
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(TEST_USER);
 
         // Should have at least GNO position
         assertGe(assets.length, 1, "Should have at least one position");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public {

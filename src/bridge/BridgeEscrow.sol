@@ -11,6 +11,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {InvoiceDataLib} from "./InvoiceDataLib.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -193,11 +194,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         // Create InvoiceData struct with all components
         InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
-            // casting to 'uint24' is safe because chain IDs are always within uint24 range
-            // forge-lint: disable-next-line(unsafe-typecast)
-            sourceChainId: uint24(chainId),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            destinationChainId: uint24(destinationChainId),
+            sourceChainId: SafeCast.toUint24(chainId),
+            destinationChainId: SafeCast.toUint24(destinationChainId),
             portfolioSafe: msg.sender,
             assetSymbol: assetSymbol,
             amount: amount,
@@ -714,11 +712,9 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         bytes6 assetSymbol
     ) internal pure returns (bytes32) {
         // Pack data: 3 + 3 + 20 + 6 = 32 bytes exactly
-        // casting to 'uint24' is safe because chain IDs are always within uint24 range
-        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes32(
-            (uint256(uint24(sourceChainId)) << 232) // Bits 232-255 (3 bytes)
-                | (uint256(uint24(destinationChainId)) << 208) // Bits 208-231 (3 bytes)
+            (uint256(SafeCast.toUint24(sourceChainId)) << 232) // Bits 232-255 (3 bytes)
+                | (uint256(SafeCast.toUint24(destinationChainId)) << 208) // Bits 208-231 (3 bytes)
                 | (uint256(uint160(portfolioSafe)) << 48) // Bits 48-207 (20 bytes)
                 | (uint256(uint48(assetSymbol))) // Bits 0-47 (6 bytes)
         );
@@ -763,10 +759,12 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     {
         uint256 id = uint256(invoiceId);
 
-        sourceChainId = uint24(id >> 232); // Bits 232-255 (3 bytes)
-        destinationChainId = uint24(id >> 208); // Bits 208-231 (3 bytes)
-        portfolioSafe = address(uint160(id >> 48)); // Bits 48-207 (20 bytes)
-        assetSymbol = bytes6(uint48(id)); // Bits 0-47 (6 bytes)
+        sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
+        destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit overflow
+        portfolioSafe = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
+        // casting to uint48/bytes6 is safe: id & type(uint48).max keeps only low 48 bits, so no truncation
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assetSymbol = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
     }
 
     /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload

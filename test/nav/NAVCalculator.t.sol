@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
-import {console2} from "forge-std/console2.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
-    constructor(address admin, address safe, address chainlinkUptimeFeed) {
-        NAVCalculator.initialize(admin, safe, chainlinkUptimeFeed);
+    constructor(address admin, address safe, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
+        NAVCalculator.initialize(admin, safe, chainlinkUptimeFeed, nativeTokenSymbol);
     }
 }
 
@@ -43,7 +44,7 @@ contract NAVCalculatorTest is SuperTest {
         string memory protocol,
         string memory position
     ) internal {
-        // Set BALANCES reference if nav is available
+        // Set balances reference if nav is available
         mockBalanceOracle.setBalances(IBalances(address(nav)));
 
         // Set underlying assets supported
@@ -53,9 +54,9 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < assets.length; i++) {
             int256 balance = balances.length > i ? balances[i] : int256(0);
             if (balance >= 0) {
-                mockBalanceOracle.setBalance(assets[i], safe, uint256(balance), false);
+                mockBalanceOracle.setBalance(assets[i], safe, SafeCast.toUint256(balance), false);
             } else {
-                mockBalanceOracle.setBalance(assets[i], safe, uint256(-balance), true);
+                mockBalanceOracle.setBalance(assets[i], safe, SafeCast.toUint256(-balance), true);
             }
         }
 
@@ -109,18 +110,18 @@ contract NAVCalculatorTest is SuperTest {
         vm.deal(safe, 11 ether);
         assertEq(address(safe).balance, 11 ether);
 
-        address[] memory assets = nav.assets();
-        assertEq(assets.length, 4);
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        assertEq(registered.length, 4);
         // Assets can be in any order, so we check by searching
         bool foundUsdc = false;
         bool foundDai = false;
         bool foundWeth = false;
         bool foundNative = false;
-        for (uint256 i = 0; i < assets.length; i++) {
-            if (assets[i] == address(usdc)) foundUsdc = true;
-            if (assets[i] == address(dai)) foundDai = true;
-            if (assets[i] == address(weth)) foundWeth = true;
-            if (assets[i] == nav.NATIVE_ADDRESS()) foundNative = true;
+        for (uint256 i = 0; i < registered.length; i++) {
+            if (registered[i].asset == address(usdc)) foundUsdc = true;
+            if (registered[i].asset == address(dai)) foundDai = true;
+            if (registered[i].asset == address(weth)) foundWeth = true;
+            if (registered[i].asset == nav.NATIVE_ADDRESS()) foundNative = true;
         }
         assertTrue(foundUsdc, "USDC should be registered");
         assertTrue(foundDai, "DAI should be registered");
@@ -531,27 +532,6 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // ============================================
-    // Native Token Symbol Tests
-    // ============================================
-
-    function test_setNativeTokenSymbol() public {
-        vm.startPrank(navCalculatorManager);
-        nav.setNativeTokenSymbol("xDAI");
-
-        // Verify symbol is set (indirectly through assetAt)
-        INAVCalculator.Asset memory nativeAsset = nav.assetAt(3); // Native is 4th asset in setup
-        // Note: We can't directly check _nativeTokenSymbol, but we can verify it's used
-        vm.stopPrank();
-    }
-
-    function test_setNativeTokenSymbol_notAuthorized() public {
-        vm.startPrank(alice);
-        vm.expectRevert(NotAuthorized.selector);
-        nav.setNativeTokenSymbol("xDAI");
-        vm.stopPrank();
-    }
-
-    // ============================================
     // Range Query Tests
     // ============================================
 
@@ -631,7 +611,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.getAccountPositionsForAsset(safe, address(usdc), invalidQuote);
     }
 
-    function test_getAccountPositionsForAsset_emptyAccount() public {
+    function test_getAccountPositionsForAsset_emptyAccount() public view {
         // Account with no positions for the asset
         INAVCalculator.Position[] memory positions = nav.getAccountPositionsForAsset(safe, address(usdc), address(0));
         assertEq(positions.length, 0);
@@ -641,7 +621,7 @@ contract NAVCalculatorTest is SuperTest {
     // Price Data Tests
     // ============================================
 
-    function test_getPriceData() public {
+    function test_getPriceData() public view {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertTrue(priceFeed.priceFeed != address(0));
@@ -650,7 +630,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
     }
 
-    function test_getPriceData_chainlinkOracle() public {
+    function test_getPriceData_chainlinkOracle() public view {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(dai));
 
         assertTrue(priceFeed.priceFeed != address(0));
@@ -658,7 +638,7 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(priceFeed.updatedAt > 0); // Chainlink should have updatedAt
     }
 
-    function test_getPriceData_customOracle() public {
+    function test_getPriceData_customOracle() public view {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
@@ -704,29 +684,24 @@ contract NAVCalculatorTest is SuperTest {
     // Asset Enumeration Tests
     // ============================================
 
-    function test_assetAt() public {
-        INAVCalculator.Asset memory asset = nav.assetAt(0);
+    function test_getRegisteredAssets_firstAsset() public view {
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        assertTrue(registered.length > 0);
 
+        INAVCalculator.Asset memory asset = registered[0];
         assertTrue(asset.asset != address(0));
+        assertTrue(asset.asset == address(nav.NATIVE_ADDRESS()));
         assertTrue(bytes(asset.symbol).length > 0);
         assertTrue(asset.decimals > 0);
     }
 
-    function test_assetAt_invalidIndex() public {
-        uint256 assetCount = nav.assetCount();
-
-        vm.expectRevert(AssetNotFound.selector);
-        nav.assetAt(assetCount);
+    function test_getRegisteredAssets_lengthMatchesAssetCount() public view {
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        assertEq(registered.length, nav.getAssetCount());
+        assertTrue(registered.length > 0);
     }
 
-    function test_assets() public {
-        address[] memory assets = nav.assets();
-
-        assertEq(assets.length, nav.assetCount());
-        assertTrue(assets.length > 0);
-    }
-
-    function test_assetCount() public {
+    function test_assetCount() public view {
         uint256 count = nav.assetCount();
 
         // Should have at least the assets from setup (usdc, dai, weth, native)
@@ -737,17 +712,17 @@ contract NAVCalculatorTest is SuperTest {
     // Utility Function Tests
     // ============================================
 
-    function test_version() public {
+    function test_version() public view {
         uint64 version = nav.version();
         assertTrue(version > 0);
     }
 
-    function test_usdDecimals() public {
+    function test_usdDecimals() public view {
         uint8 decimals = nav.usdDecimals();
         assertEq(decimals, 8); // NAV_DECIMALS
     }
 
-    function test_assetRecoverer() public {
+    function test_assetRecoverer() public view {
         address recoverer = nav.assetRecoverer();
         assertEq(recoverer, safe);
     }
@@ -756,14 +731,14 @@ contract NAVCalculatorTest is SuperTest {
     // Global Oracle Registry Tests
     // ============================================
 
-    function test_getAllOracles() public {
+    function test_getAllOracles() public view {
         address[] memory oracles = nav.getAllOracles();
 
         assertTrue(oracles.length > 0);
         assertEq(oracles.length, nav.getOracleCount());
     }
 
-    function test_getOracleCount() public {
+    function test_getOracleCount() public view {
         uint256 count = nav.getOracleCount();
 
         assertTrue(count > 0);
@@ -779,7 +754,7 @@ contract NAVCalculatorTest is SuperTest {
         assertFalse(nav.isOracleRegistered(makeAddr("random")));
     }
 
-    function test_getOracleType() public {
+    function test_getOracleType() public view {
         IBalances.OracleType oracleType = nav.getOracleType(nav.erc20DefaultOracle());
         assertEq(uint8(oracleType), uint8(IBalances.OracleType.Default));
     }
@@ -795,20 +770,20 @@ contract NAVCalculatorTest is SuperTest {
     // Asset Registry Tests (from Balances)
     // ============================================
 
-    function test_getAssets() public {
-        address[] memory assets = nav.getAssets();
+    function test_getRegisteredAssets() public view {
+        INAVCalculator.Asset[] memory assets = nav.getRegisteredAssets();
 
-        assertEq(assets.length, nav.assetCount());
+        assertEq(assets.length, nav.getAssetCount());
         assertTrue(assets.length > 0);
     }
 
-    function test_getAssetCount() public {
+    function test_getAssetCount() public view {
         uint256 count = nav.getAssetCount();
 
         assertTrue(count >= 4); // At least usdc, dai, weth, native
     }
 
-    function test_getAssetDecimals() public {
+    function test_getAssetDecimals() public view {
         uint8 decimals = nav.getAssetDecimals(address(usdc));
         assertEq(decimals, usdc.decimals());
     }
@@ -820,7 +795,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.getAssetDecimals(unregisteredAsset);
     }
 
-    function test_getAssetSymbol() public {
+    function test_getAssetSymbol() public view {
         string memory symbol = nav.getAssetSymbol(address(usdc));
         assertEq(symbol, "USDC");
     }
@@ -1345,7 +1320,7 @@ contract NAVCalculatorTest is SuperTest {
         // Convert ETH value back to USD using the rate
         // ethValue is in ETH with 18 decimals, we need to convert back
         // Get ETH price
-        (uint256 ethPrice, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 ethPrice, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
         // Convert: ethValue * ethPrice / 10^(18 + ethPriceDecimals - 8)
         int256 convertedBack = (ethValue * int256(ethPrice)) / int256(10 ** (18 + ethPriceDecimals - 8));
 
@@ -1608,7 +1583,7 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position[] memory usdPositions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory usdPos = usdPositions[0];
         assertEq(usdPos.underlyingAsset.asset, address(usdc));
-        (uint256 priceInUsd, uint8 usdPriceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 priceInUsd, uint8 usdPriceDecimals,) = nav.latestPrice(address(usdc));
         assertEq(usdPos.price, priceInUsd);
         assertEq(usdPos.priceDecimals, usdPriceDecimals);
 
@@ -1632,7 +1607,9 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.Position[] memory ethPositions = nav.getAccountPositions(safe, nav.NATIVE_ADDRESS());
         INAVCalculator.Position memory ethPos = ethPositions[0];
-        (uint256 priceInEth, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 priceInEth, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        assertGe(priceInEth, 0, "price non-negative");
+        assertLe(ethPriceDecimals, 255, "decimals valid");
 
         // Verify underlying asset is still USDC (what we hold)
         assertEq(ethPos.underlyingAsset.asset, address(usdc));
@@ -1687,7 +1664,7 @@ contract NAVCalculatorTest is SuperTest {
     // H. calculateValue Tests (positive balances only)
     // ============================================
 
-    function test_calculateValue_singleAsset_usd() public {
+    function test_calculateValue_singleAsset_usd() public view {
         address[] memory assets = new address[](1);
         uint256[] memory amounts = new uint256[](1);
         assets[0] = address(usdc);
@@ -1697,7 +1674,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(value, 1e8); // 1 USDC = 1 USD (8 decimals)
     }
 
-    function test_calculateValue_multipleAssets_usd() public {
+    function test_calculateValue_multipleAssets_usd() public view {
         address[] memory assets = new address[](3);
         uint256[] memory amounts = new uint256[](3);
         assets[0] = address(usdc);
@@ -1711,7 +1688,7 @@ contract NAVCalculatorTest is SuperTest {
         assertApproxEqRel(value, 3242e8, 0.01 ether);
     }
 
-    function test_calculateValue_quoteAsset() public {
+    function test_calculateValue_quoteAsset() public view {
         address[] memory assets = new address[](1);
         uint256[] memory amounts = new uint256[](1);
         assets[0] = address(usdc);
@@ -1721,7 +1698,7 @@ contract NAVCalculatorTest is SuperTest {
         assertApproxEqRel(valueInDai, int256(10 ** dai.decimals()), 0.01 ether);
     }
 
-    function test_calculateValue_zeroAmountsSkipped() public {
+    function test_calculateValue_zeroAmountsSkipped() public view {
         address[] memory assets = new address[](2);
         uint256[] memory amounts = new uint256[](2);
         assets[0] = address(usdc);
@@ -1769,7 +1746,7 @@ contract NAVCalculatorTest is SuperTest {
     // ============================================
 
     // Test getAssetsWithPositions_emptyAccount
-    function test_getAssetsWithPositions_emptyAccount() public {
+    function test_getAssetsWithPositions_emptyAccount() public view {
         address[] memory assets = nav.getAssetsWithPositions(safe);
         assertEq(assets.length, 0);
     }
@@ -1993,7 +1970,7 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // Test gas optimization: empty account should be very cheap
-    function test_getAccountPositions_gasOptimization_emptyAccount() public {
+    function test_getAccountPositions_gasOptimization_emptyAccount() public view {
         uint256 gasBefore = gasleft();
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         uint256 gasUsed = gasBefore - gasleft();

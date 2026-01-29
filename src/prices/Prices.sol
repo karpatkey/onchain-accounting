@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {IPrices} from "./IPrices.sol";
@@ -19,6 +20,7 @@ abstract contract Prices is IPrices, Initializable {
     // Libraries
     //
     using ERC165Checker for address;
+    using SafeCast for uint256;
 
     /// @notice Grace period for L2 sequencer downtime
     uint256 public chainlinkL2SequencerGracePeriod;
@@ -34,13 +36,14 @@ abstract contract Prices is IPrices, Initializable {
     /// uptime. If this is run on a chain without the need of an uptime feed (e.g. L1), this parameter
     /// should be set to 0.
     // solhint-disable-next-line func-name-mixedcase
+    // forge-lint: disable-next-line(mixed-case-function)
     function __Prices_init(address chainlinkL2SequencerUptimeFeed_) internal onlyInitializing {
         chainlinkL2SequencerUptimeFeed = AggregatorV3Interface(chainlinkL2SequencerUptimeFeed_);
         chainlinkL2SequencerGracePeriod = 1 hours; // This is initialised with 1 hour by default.
     }
 
     /// @inheritdoc IPrices
-    function latestPrice(address token) external view returns (uint256 price, uint8 decimals, bool stale) {
+    function latestPrice(address token) external view returns (int256 price, uint8 decimals, bool stale) {
         (price, decimals, stale) = _latestPrice(token);
 
         stale = checkL2SequencerUptime() || stale;
@@ -48,10 +51,10 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @notice Returns the latest price for a given token without checking the uptime of the sequencer.
     /// @param token The address of the token.
-    /// @return price The latest price of the token.
+    /// @return price The latest price of the token (int256; Chainlink returned as-is, custom cast from uint256).
     /// @return decimals The amount of decimal places the price is represented with
     /// @return stale COMPLETE ME
-    function _latestPrice(address token) internal view returns (uint256 price, uint8 decimals, bool stale) {
+    function _latestPrice(address token) internal view returns (int256 price, uint8 decimals, bool stale) {
         PriceFeedConfig storage config = priceOracles[token];
         stale = false;
 
@@ -69,10 +72,12 @@ abstract contract Prices is IPrices, Initializable {
 
             if (block.timestamp - updatedAt > config.chainlinkHeartbeat) stale = true;
 
-            price = uint256(chainlinkPrice);
+            price = chainlinkPrice;
         } else {
             bool customStale = false;
-            (price, customStale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+            uint256 customPrice;
+            (customPrice, customStale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+            price = customPrice.toInt256();
             stale = stale || customStale;
         }
 
@@ -149,5 +154,5 @@ abstract contract Prices is IPrices, Initializable {
     }
 
     /// @notice Gap for upgradeability
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

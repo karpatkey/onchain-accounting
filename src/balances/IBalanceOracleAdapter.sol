@@ -22,14 +22,22 @@ interface IBalanceOracleAdapter is IERC165 {
     /// @notice Get balances from this oracle for an account
     /// @param account The account to query
     /// @return assets Array of asset addresses
-    /// @return balances Array of net balances (positive for credits, negative for debts)
-    function getOracleBalance(address account) external view returns (address[] memory assets, int256[] memory balances);
+    /// @return amounts Array of balance amounts (always non-negative magnitude)
+    /// @return isDebt Array of debt flags (true = debt, false = credit)
+    function getOracleBalances(address account)
+        external
+        view
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt);
 
     /// @notice Get single balance for a specific asset (gas-optimized version)
     /// @param account The account to query
     /// @param asset The asset address
-    /// @return balance The net balance for this asset from this oracle (positive for credits, negative for debts)
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance);
+    /// @return amount Balance amount (non-negative magnitude)
+    /// @return isDebt True if debt, false if credit
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt);
 
     /// @notice Returns the list of all the underlying assets supported by this oracle
     /// @dev The returned list may be empty if the oracle cannot determine or provide the supported assets

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
-import {MockContract} from "test/mocks/MockContract.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @notice Mock stake token that returns reward/staked token addresses (required by AaveV3SafetyModule constructor)
@@ -54,16 +53,16 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     function test_getOracleBalanceForAsset_returns_zero_for_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, invalidToken);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
-        int256 balance1 = oracle.getOracleBalanceForAsset(address(0), address(usdc));
-        assertEq(balance1, 0);
+        (uint256 amount1,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(amount1, 0);
 
-        int256 balance2 = oracle.getOracleBalanceForAsset(address(0), address(dai));
-        assertEq(balance2, 0);
+        (uint256 amount2,) = oracle.getOracleBalanceForAsset(address(0), address(dai));
+        assertEq(amount2, 0);
     }
 
     // ============================================
@@ -76,10 +75,10 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {

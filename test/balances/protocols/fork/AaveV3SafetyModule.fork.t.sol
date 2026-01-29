@@ -76,19 +76,20 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalanceForAsset_stk_gho_stakedTokenBalance() public {
-        int256 ghoBalance = ghoOracle.getOracleBalanceForAsset(TEST_USER, GHO);
+        (uint256 amount, bool isDebt) = ghoOracle.getOracleBalanceForAsset(TEST_USER, GHO);
 
         vm.startPrank(TEST_USER);
         uint256 stkGhoBalance = STK_GHO.balanceOf(TEST_USER);
         uint256 previewRedeem = STK_GHO.previewRedeem(stkGhoBalance);
         vm.stopPrank();
 
-        assertEq(uint256(ghoBalance), previewRedeem, "Oracle balance should match preview redeem");
-        assertGt(ghoBalance, 0, "User should have positive staked GHO position");
+        assertEq(amount, previewRedeem, "Oracle balance should match preview redeem");
+        assertGt(amount, 0, "User should have positive staked GHO position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_stk_gho_rewardTokenBalance() public {
-        int256 rewardBalance = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 amount, bool isDebt) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         // Get actual claimable rewards
         vm.startPrank(TEST_USER);
@@ -99,12 +100,13 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         uint256 claimedRewards = aaveBalanceAfter - aaveBalanceBefore;
 
-        assertEq(uint256(rewardBalance), claimedRewards, "Oracle rewards should match actual claimed rewards");
-        assertGt(rewardBalance, 0, "User should have positive AAVE rewards");
+        assertEq(amount, claimedRewards, "Oracle rewards should match actual claimed rewards");
+        assertGt(amount, 0, "User should have positive AAVE rewards");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_stk_aave_stakedAndRewardBalance() public {
-        int256 aaveBalance = aaveOracle.getOracleBalanceForAsset(AAVE_USER, AAVE);
+        (uint256 amount, bool isDebt) = aaveOracle.getOracleBalanceForAsset(AAVE_USER, AAVE);
 
         uint256 stkAaveBalance = STK_AAVE.balanceOf(AAVE_USER);
 
@@ -118,8 +120,9 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         uint256 claimedRewards = aaveBalanceAfter - aaveBalanceBefore;
 
-        assertEq(uint256(aaveBalance), previewRedeem + claimedRewards, "Oracle balance should match staked + rewards");
-        assertGt(aaveBalance, 0, "User should have positive AAVE position");
+        assertEq(amount, previewRedeem + claimedRewards, "Oracle balance should match staked + rewards");
+        assertGt(amount, 0, "User should have positive AAVE position");
+        assertFalse(isDebt);
     }
 
     // ============================================
@@ -142,16 +145,16 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalanceForAsset_rewardsWithZeroTotalSupply() public view {
-        int256 rewards = ghoOracle.getOracleBalanceForAsset(address(0xdead), AAVE);
-        assertEq(rewards, 0);
+        (uint256 amount,) = ghoOracle.getOracleBalanceForAsset(address(0xdead), AAVE);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_rewardsCalculation() public {
-        int256 initialRewards = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 initialAmount,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         vm.warp(block.timestamp + 365 days);
 
-        int256 newRewards = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 newAmount,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         vm.startPrank(TEST_USER);
         uint256 aaveBalanceBefore = IERC20(AAVE).balanceOf(TEST_USER);
@@ -161,29 +164,29 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         uint256 actualRewards = aaveBalanceAfter - aaveBalanceBefore;
 
-        assertEq(uint256(newRewards), actualRewards, "Oracle rewards should match actual claimed rewards");
-        assertGt(newRewards, initialRewards, "New rewards should be bigger than initial rewards");
+        assertEq(newAmount, actualRewards, "Oracle rewards should match actual claimed rewards");
+        assertGt(newAmount, initialAmount, "New rewards should be bigger than initial rewards");
     }
 
     function test_getOracleBalanceForAsset_rewardsAfterDistributionEnd() public {
-        int256 initialRewards = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 initialAmount,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         uint256 distributionEnd = STK_GHO.distributionEnd();
 
         // Move to before exact distribution end and get rewards
         vm.warp(distributionEnd - 1);
-        int256 rewardsBeforeEnd = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 rewardsBeforeEnd,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         // Move to exact distribution end and get rewards
         vm.warp(distributionEnd);
-        int256 rewardsAtEnd = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 rewardsAtEnd,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
         // Move past distribution end
         vm.warp(distributionEnd + 100 days);
-        int256 rewardsAfterEnd = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
+        (uint256 rewardsAfterEnd,) = ghoOracle.getOracleBalanceForAsset(TEST_USER, AAVE);
 
-        assertGt(rewardsBeforeEnd, initialRewards, "Rewards should accrue until distribution end");
-        assertGt(rewardsAtEnd, initialRewards, "Rewards should accrue until distribution end");
+        assertGt(rewardsBeforeEnd, initialAmount, "Rewards should accrue until distribution end");
+        assertGt(rewardsAtEnd, initialAmount, "Rewards should accrue until distribution end");
         assertLe(rewardsBeforeEnd, rewardsAtEnd, "Rewards should accrue until distribution end");
         assertEq(rewardsAfterEnd, rewardsAtEnd, "Rewards should not increase after distribution end");
     }
@@ -193,11 +196,11 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = ghoOracle.getOracleBalance(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts,) = ghoOracle.getOracleBalances(TEST_USER);
 
         // Should have at least GHO and AAVE positions
         assertGe(assets.length, 2, "Should have multiple positions");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public view {

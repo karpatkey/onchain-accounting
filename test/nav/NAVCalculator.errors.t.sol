@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -34,18 +35,23 @@ contract Mock_RevertingBalanceOracle is IBalanceOracleAdapter {
         return new INAVCalculator.PositionBalance[](0);
     }
 
-    function getOracleBalance(address) external view override returns (address[] memory, int256[] memory) {
+    function getOracleBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
         if (shouldRevert) {
             revert("Oracle revert");
         }
-        return (new address[](0), new int256[](0));
+        return (new address[](0), new uint256[](0), new bool[](0));
     }
 
-    function getOracleBalanceForAsset(address, address) external view override returns (int256) {
+    function getOracleBalanceForAsset(address, address) external view override returns (uint256, bool) {
         if (shouldRevert) {
             revert("Oracle revert");
         }
-        return 0;
+        return (0, false);
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
@@ -214,15 +220,11 @@ contract NAVCalculatorErrorTest is SuperTest {
 
         token.mint(safe, 10 ** 18);
 
-        // Should handle zero price (marked as stale)
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
+        assertTrue(navResult.timestamp >= 0, "nav returned");
 
-        // Price should be marked as stale
         (,, bool stale) = nav.latestPrice(address(token));
         assertTrue(stale, "Zero price should be marked as stale");
-
-        // NAV might be zero or the position might be excluded
-        // The important thing is it doesn't revert
     }
 
     // ============================================

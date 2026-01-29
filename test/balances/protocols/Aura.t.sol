@@ -244,14 +244,9 @@ contract AuraTest is TestEnvConfigurator, TestSetupHelpers {
 
         // Get oracle balances and token balances before redemption
         for (uint256 i = 0; i < tokens.length; i++) {
-            int256 balance = oracle.getOracleBalanceForAsset(user, tokens[i]);
-            if (balance < 0) {
-                amounts[i] = uint256(-balance);
-                isDebt[i] = true;
-            } else {
-                amounts[i] = uint256(balance);
-                isDebt[i] = false;
-            }
+            (uint256 amount, bool isDebt_) = oracle.getOracleBalanceForAsset(user, tokens[i]);
+            amounts[i] = amount;
+            isDebt[i] = isDebt_;
             beforeBalances[i] = IERC20(tokens[i]).balanceOf(user);
         }
 

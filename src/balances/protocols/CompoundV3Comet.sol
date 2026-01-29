@@ -7,6 +7,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ArrayUtils} from "src/utils/ArrayUtils.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title CompoundV3Comet
@@ -86,8 +87,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     // Errors
     //
 
-    /// @notice Indicates that the provided arguments are invalid.
-    error InvalidTimestamp();
+    /// @notice Indicates timestamp overflow in reward accrual (Comet protocol constraint).
+    error InvalidTimestampCompound();
 
     /// @param compoundRewards_ The address of the Compound rewards contract.
     /// @param comet_ The address of the Comet contract we want to get the balance of.
@@ -147,30 +148,39 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
-    /// @dev For BASE_TOKEN, this returns net balance (positive for supply, negative for borrow)
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    /// @dev For BASE_TOKEN, net can be supply (credit) or borrow (debt)
+    function _calculateBalance(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (underlyingAsset != address(REWARD_TOKEN) && underlyingAsset != BASE_TOKEN && !isCollateral[underlyingAsset])
         {
             revert InvalidArguments();
         }
 
-        int256 total = 0;
-
         if (underlyingAsset == address(REWARD_TOKEN)) {
-            total += int256(_getRewardOwed(account));
+            return (_getRewardOwed(account), false);
         }
 
         if (underlyingAsset == BASE_TOKEN) {
-            // BASE_TOKEN can be negative (borrow) or positive (supply)
-            return getUnderlying(COMET, account);
+            int256 baseBal = getUnderlying(COMET, account);
+            if (baseBal < 0) {
+                return (SafeCast.toUint256(-baseBal), true);
+            }
+            if (baseBal > 0) {
+                return (SafeCast.toUint256(baseBal), false);
+            }
+            return (0, false);
         }
 
         if (isCollateral[underlyingAsset]) {
-            total += int256(CometExtInterface(COMET).collateralBalanceOf(account, underlyingAsset));
+            return (CometExtInterface(COMET).collateralBalanceOf(account, underlyingAsset), false);
         }
 
-        return total; // Collateral and rewards are always credit (positive)
+        revert InvalidArguments();
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -269,7 +279,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     /// @notice The current timestamp
     /// @return The current timestamp
     function _getNowInternal() internal view virtual returns (uint40) {
-        if (block.timestamp >= 2 ** 40) revert InvalidTimestamp();
+        if (block.timestamp >= 2 ** 40) revert InvalidTimestampCompound();
         return uint40(block.timestamp);
     }
 
@@ -369,19 +379,14 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
 
         if (principal >= 0) {
             uint256 indexDelta = uint256(trackingSupplyIndex - baseTrackingIndex);
-
-            // casting to 'uint104' is safe because principal is int104 and we've checked it's >= 0
-            // forge-lint: disable-next-line(unsafe-typecast)
-            baseTrackingAccrued += (uint104(principal)
+            baseTrackingAccrued += (SafeCast.toUint104(SafeCast.toUint256(int256(principal)))
                 * indexDelta
                 / COMET_EXT_INTERFACE.trackingIndexScale()
                 / ACCRUAL_DESCALE_FACTOR)
             .toUint64();
         } else {
             uint256 indexDelta = uint256(trackingBorrowIndex - baseTrackingIndex);
-            // casting to 'uint104' is safe because -principal is positive when principal < 0, and principal is int104
-            // forge-lint: disable-next-line(unsafe-typecast)
-            baseTrackingAccrued += (uint104(-principal)
+            baseTrackingAccrued += (SafeCast.toUint104(SafeCast.toUint256(-int256(principal)))
                 * indexDelta
                 / COMET_EXT_INTERFACE.trackingIndexScale()
                 / ACCRUAL_DESCALE_FACTOR)
@@ -430,53 +435,55 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Return zero for zero account or unsupported/invalid tokens (adapter convention)
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (account == address(0) || asset == address(0)) {
-            return 0;
+            return (0, false);
         }
         if (asset != address(REWARD_TOKEN) && asset != BASE_TOKEN && !isCollateral[asset]) {
-            return 0;
+            return (0, false);
         }
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         if (account == address(0)) {
-            return (new address[](0), new int256[](0));
+            return (new address[](0), new uint256[](0), new bool[](0));
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            int256 balance = this.getOracleBalanceForAsset(account, asset);
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                tempAssets[count] = asset;
-                tempBalances[count] = balance;
+            address assetAddr = supportedAssets[i];
+            (uint256 amount, bool isDebt_) = this.getOracleBalanceForAsset(account, assetAddr);
+            if (amount != 0) {
+                tempAssets[count] = assetAddr;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
                 count++;
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
         }
     }
 
@@ -495,7 +502,11 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -507,18 +518,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
-                    if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
+                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
+                    if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
@@ -533,18 +534,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
-                if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
+                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
+                if (amount != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
@@ -568,11 +559,10 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

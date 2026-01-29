@@ -7,9 +7,10 @@ import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {BridgeEscrowTestBase} from "test/bridge/BridgeEscrowTestBase.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
-import "test/mocks/tokens.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @title BridgeEscrowTest
 /// @notice Unit tests for BridgeEscrow success paths and view helpers
@@ -248,11 +249,11 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(active[0].amount, BRIDGE_AMOUNT, "Amount should match");
     }
 
-    function test_decodeInvoiceId_roundtrip() public {
+    function test_decodeInvoiceId_roundtrip() public view {
         bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL);
         (uint24 src, uint24 dest, address safe, bytes6 symbol) = bridgeEscrow.decodeInvoiceId(invoiceId);
-        assertEq(src, uint24(SOURCE_CHAIN_ID), "Source chain");
-        assertEq(dest, uint24(DEST_CHAIN_ID), "Dest chain");
+        assertEq(src, SafeCast.toUint24(SOURCE_CHAIN_ID), "Source chain");
+        assertEq(dest, SafeCast.toUint24(DEST_CHAIN_ID), "Dest chain");
         assertEq(safe, portfolioSafe, "Safe");
         assertEq(symbol, USDC_SYMBOL, "Symbol");
     }

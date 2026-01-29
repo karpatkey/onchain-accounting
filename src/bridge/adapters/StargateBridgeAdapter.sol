@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {ILayerZeroReceiver, ILayerZeroEndpoint, IStargateRouter} from "./interfaces/IStargateInterfaces.sol";
+import {ILayerZeroReceiver, IStargateRouter} from "./interfaces/IStargateInterfaces.sol";
 import {IStargateBridgeAdapter} from "./interfaces/IStargateBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -74,12 +74,8 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         address endpoint_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "Stargate";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "Stargate", version_);
 
         if (router_ == address(0)) revert InvalidRouter();
         if (endpoint_ == address(0)) revert InvalidEndpoint();

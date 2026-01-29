@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
@@ -10,6 +9,7 @@ import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Id, MarketParams, Market, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @notice Mock Morpho that returns a single market's params, zero position, and zero market state for unit tests (no fork).
@@ -80,8 +80,9 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
         balances = deployBalancesInFork(assets);
 
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, "Morpho - wstETH/USDC", address(balances));
-        int256 balance = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
-        assertGt(balance, 0, "User should have USDC supply position (positive balance)");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(supplyUsdcUser, usdc);
+        assertGt(amount, 0, "User should have USDC supply position (positive balance)");
+        assertFalse(isDebt, "Supply should be credit");
     }
 
     function test_mainnet_balanceOf_borrowUsdc() public {
@@ -98,8 +99,9 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
 
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho - USDC/DAI/MKR", address(balances));
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(borrowUsdcUser, usdc);
-        assertLt(balanceUsdc, 0, "User should have USDC borrow position (negative balance)");
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(borrowUsdcUser, usdc);
+        assertGt(amountUsdc, 0, "User should have USDC borrow amount");
+        assertTrue(isDebtUsdc, "User should have USDC borrow position (debt)");
     }
 
     function test_mainnet_balanceOf_collateralMKR() public {
@@ -116,8 +118,9 @@ contract MorphoMarketTest is TestEnvConfigurator, TestSetupHelpers {
 
         oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, "Morpho - USDC/DAI/MKR", address(balances));
 
-        int256 balanceMkr = oracle.getOracleBalanceForAsset(borrowUsdcUser, mkr);
-        assertGt(balanceMkr, 0, "User should have MKR collateral position (positive balance)");
+        (uint256 amountMkr, bool isDebtMkr) = oracle.getOracleBalanceForAsset(borrowUsdcUser, mkr);
+        assertGt(amountMkr, 0, "User should have MKR collateral position (positive balance)");
+        assertFalse(isDebtMkr, "Collateral should be credit");
     }
 
     function test_mainnet_balanceOf_unsupportedToken() public {
@@ -192,8 +195,8 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
-        int256 balance = oracle.getOracleBalanceForAsset(address(0), address(usdc));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_unsupportedToken_reverts() public {
@@ -203,10 +206,10 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalanceForAsset_zeroPosition_returnsZero() public view {
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balanceUsdc, 0);
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(alice, address(weth));
-        assertEq(balanceWeth, 0);
+        (uint256 amountUsdc,) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amountUsdc, 0);
+        (uint256 amountWeth,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amountWeth, 0);
     }
 
     function test_underlyingAssetsSupported() public view {
@@ -222,7 +225,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory amounts) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
     }

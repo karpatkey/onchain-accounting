@@ -79,8 +79,9 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
             MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), "Morpho - wstETH/USDC", address(balances)
         );
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_USDC_USER, USDC);
-        assertGt(balance, 0, "User should have USDC supply position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_USDC_USER, USDC);
+        assertGt(amount, 0, "User should have USDC supply position");
+        assertFalse(isDebt);
     }
 
     // ============================================
@@ -100,8 +101,9 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
             MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
         );
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, USDC);
-        assertLt(balanceUsdc, 0, "User should have USDC borrow position (negative balance)");
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, USDC);
+        assertTrue(isDebtUsdc, "User should have USDC borrow position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt amount");
     }
 
     function test_getOracleBalanceForAsset_collateral_mkr() public {
@@ -117,8 +119,9 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
             MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
         );
 
-        int256 balanceMkr = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, MKR);
-        assertGt(balanceMkr, 0, "User should have MKR collateral position");
+        (uint256 amountMkr, bool isDebtMkr) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, MKR);
+        assertGt(amountMkr, 0, "User should have MKR collateral position");
+        assertFalse(isDebtMkr);
     }
 
     // ============================================
@@ -180,11 +183,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
             MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
         );
 
-        (address[] memory resultAssets, int256[] memory balances) = oracle.getOracleBalance(BORROW_USDC_USER);
+        (address[] memory resultAssets, uint256[] memory amounts,) = oracle.getOracleBalances(BORROW_USDC_USER);
 
         // Should have at least USDC and MKR positions
         assertGe(resultAssets.length, 2, "Should have multiple positions");
-        assertEq(resultAssets.length, balances.length, "Arrays should match length");
+        assertEq(resultAssets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public {

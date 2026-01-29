@@ -5,10 +5,11 @@ import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {BridgeAdapter} from "src/bridge/BridgeAdapter.sol";
-import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title BridgeEscrowTestBase
 /// @notice Base for BridgeEscrow test suites (unit, errors, fuzz, invariant)
@@ -34,7 +35,11 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
     }
 
     /// @notice Destination chain + valid payload for releaseByInvoiceId tests
-    function _setupDestinationAndValidPayload(address asset, uint256 amount)
+    function _setupDestinationAndValidPayload(
+        address,
+        /* asset */
+        uint256 amount
+    )
         internal
         returns (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock)
     {
@@ -67,13 +72,13 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         bytes6 assetSymbol,
         uint256 amount,
         uint64 timestamp
-    ) internal view returns (InvoiceDataLib.InvoiceData memory) {
+    ) internal pure returns (InvoiceDataLib.InvoiceData memory) {
         bytes32 invoiceId = _generateInvoiceId(sourceChainId, destChainId, safe, assetSymbol);
         bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
-            sourceChainId: uint24(sourceChainId),
-            destinationChainId: uint24(destChainId),
+            sourceChainId: SafeCast.toUint24(sourceChainId),
+            destinationChainId: SafeCast.toUint24(destChainId),
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
             amount: amount,

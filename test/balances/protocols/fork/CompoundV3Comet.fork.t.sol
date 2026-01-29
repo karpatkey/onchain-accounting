@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test, console2} from "forge-std/Test.sol";
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
@@ -110,34 +108,38 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalanceForAsset_lend() public view {
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(LEND_USER, address(USDC));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(LEND_USER, address(USDC));
         // User should have a positive lending position
-        assertGt(balanceUsdc, 0, "User should have a positive USDC lending position");
+        assertGt(amountUsdc, 0, "User should have a positive USDC lending position");
+        assertFalse(isDebtUsdc);
 
-        int256 balanceComp = oracle.getOracleBalanceForAsset(LEND_USER, REWARD_TOKEN);
+        (uint256 amountComp,) = oracle.getOracleBalanceForAsset(LEND_USER, REWARD_TOKEN);
         // User should have rewards
-        assertGt(balanceComp, 0, "User should have COMP rewards");
+        assertGt(amountComp, 0, "User should have COMP rewards");
     }
 
     function test_getOracleBalanceForAsset_borrow() public view {
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(BORROW_USER, address(USDC));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(BORROW_USER, address(USDC));
         // User should have a debt position
-        assertLt(balanceUsdc, 0, "User should have a USDC borrowing position (negative balance)");
+        assertTrue(isDebtUsdc, "User should have a USDC borrowing position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt");
 
-        int256 balanceComp = oracle.getOracleBalanceForAsset(BORROW_USER, REWARD_TOKEN);
+        (uint256 amountComp,) = oracle.getOracleBalanceForAsset(BORROW_USER, REWARD_TOKEN);
         // User should have rewards
-        assertGt(balanceComp, 0, "User should have COMP rewards");
+        assertGt(amountComp, 0, "User should have COMP rewards");
 
-        int256 balanceWbtc = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
+        (uint256 amountWbtc, bool isDebtWbtc) = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
         // User should have WBTC collateral
-        assertGt(balanceWbtc, 0, "User should have WBTC collateral");
+        assertGt(amountWbtc, 0, "User should have WBTC collateral");
+        assertFalse(isDebtWbtc);
     }
 
     function test_getOracleBalanceForAsset_singleCollaterals() public view {
-        int256 balance = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(BORROW_USER, WBTC);
 
         // User should have WBTC collateral
-        assertGt(balance, 0, "User should have WBTC collateral position");
+        assertGt(amount, 0, "User should have WBTC collateral position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_multiCollaterals() public view {
@@ -145,59 +147,61 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
         bool hasCollateral = false;
         for (uint8 i = 0; i < numAssets; i++) {
             (, address asset,,,,,,) = comet.getAssetInfo(i);
-            int256 balance = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, asset);
-            if (balance != 0) {
+            (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, asset);
+            if (amount != 0) {
                 hasCollateral = true;
                 // If it's the reward token, it should be positive (rewards + collateral)
                 if (asset == REWARD_TOKEN) {
-                    assertGt(balance, 0, "Reward token balance should be positive");
+                    assertGt(amount, 0, "Reward token balance should be positive");
                 } else {
                     // Other collaterals should be positive
-                    assertGt(balance, 0, "Collateral balance should be positive");
+                    assertGt(amount, 0, "Collateral balance should be positive");
                 }
+                assertFalse(isDebt);
             }
         }
 
         assertTrue(hasCollateral, "User should have at least one collateral position");
 
         // User should have a borrowing position (debt USDC position)
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, address(USDC));
-        assertLt(balanceUsdc, 0, "User should have a USDC borrowing position (negative balance)");
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, address(USDC));
+        assertTrue(isDebtUsdc, "User should have a USDC borrowing position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt");
     }
 
     function test_getOracleBalanceForAsset_compAsRewardAndCollateral() public view {
         uint256 collateral = comet.collateralBalanceOf(MULTI_COLLATERAL_USER, REWARD_TOKEN);
 
-        int256 balance = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, REWARD_TOKEN);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(MULTI_COLLATERAL_USER, REWARD_TOKEN);
 
         // User should have COMP position (either as collateral or rewards)
-        assertGt(balance, 0, "User should have COMP position");
+        assertGt(amount, 0, "User should have COMP position");
 
         // Verify that the balance is at least the collateral amount
-        assertGe(uint256(balance), collateral, "Oracle balance should be at least the collateral amount");
+        assertGe(amount, collateral, "Oracle balance should be at least the collateral amount");
     }
 
     function test_getOracleBalanceForAsset_comp() public view {
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
+        (uint256 amountUsdc,) = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
         // User should have no USDC position (neither lending nor borrowing)
-        assertEq(balanceUsdc, 0, "User should have no USDC position");
+        assertEq(amountUsdc, 0, "User should have no USDC position");
 
-        int256 balanceComp = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
+        (uint256 amountComp,) = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
         // User should have COMP rewards
-        assertGt(balanceComp, 0, "User should have COMP rewards");
+        assertGt(amountComp, 0, "User should have COMP rewards");
     }
 
     function test_getOracleBalanceForAsset_only_comp_in_given_comet() public {
         deal(REWARD_TOKEN, COMP_ONLY_USER, 1 ether);
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
+        (uint256 amountUsdc,) = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, address(USDC));
         // User should have no USDC position (neither lending nor borrowing)
-        assertEq(balanceUsdc, 0, "User should have no USDC position");
+        assertEq(amountUsdc, 0, "User should have no USDC position");
 
-        int256 balanceComp = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
+        (uint256 amountComp,) = oracle.getOracleBalanceForAsset(COMP_ONLY_USER, REWARD_TOKEN);
         // User should have COMP rewards (note: deal() gives user tokens, but oracle only reports protocol positions)
         // The balance should still reflect the unclaimed rewards from the protocol
-        assertGt(balanceComp, 0, "User should have COMP rewards from protocol");
+        assertGt(amountComp, 0, "User should have COMP rewards from protocol");
     }
 
     // ============================================
@@ -205,11 +209,11 @@ contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(LEND_USER);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(LEND_USER);
 
         // Should have at least USDC and COMP positions
         assertGe(assets.length, 2, "Should have multiple positions");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public {

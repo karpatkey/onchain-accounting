@@ -66,11 +66,11 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        nav.registerAsset(usdc, ChainlinkPriceFeeds.USDC_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(cbbtc, ChainlinkPriceFeeds.CBBTC_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(compound, ChainlinkPriceFeeds.COMP_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(native, ChainlinkPriceFeeds.ETH_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(weth, ChainlinkPriceFeeds.ETH_USD_BASE(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(cbbtc, ChainlinkPriceFeeds.cbbtcUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {

@@ -119,20 +119,20 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        sdaiPriceOracle = new sDAI_PriceOracle(sdai, dsrManager, ChainlinkPriceFeeds.DAI_USD_ETH_MAINNET(), heartbeat);
+        sdaiPriceOracle = new sDAI_PriceOracle(sdai, dsrManager, ChainlinkPriceFeeds.daiUsdEthMainnet(), heartbeat);
         susdsPriceOracle = new sUSDS_PriceOracle(susds, usdsUsdChainlink, susdsHeartbeat);
 
-        nav.registerAsset(usdc, ChainlinkPriceFeeds.USDC_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(usdt, ChainlinkPriceFeeds.USDT_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(dai, ChainlinkPriceFeeds.DAI_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(dai, ChainlinkPriceFeeds.daiUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(sdai, address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
         nav.registerAsset(susds, address(susdsPriceOracle), IPrices.PriceType.Custom, susdsHeartbeat);
-        nav.registerAsset(aave, ChainlinkPriceFeeds.AAVE_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(compound, ChainlinkPriceFeeds.COMP_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(gho, ChainlinkPriceFeeds.GHO_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(native, ChainlinkPriceFeeds.ETH_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(weth, ChainlinkPriceFeeds.ETH_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(wbtc, ChainlinkPriceFeeds.BTC_USD_ETH_MAINNET(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(aave, ChainlinkPriceFeeds.aaveUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(gho, ChainlinkPriceFeeds.ghoUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(wbtc, ChainlinkPriceFeeds.btcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {

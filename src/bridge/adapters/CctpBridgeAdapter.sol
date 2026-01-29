@@ -9,7 +9,7 @@ import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 import {ICctpBridgeAdapter} from "./interfaces/ICctpBridgeAdapter.sol";
-import {InvalidArguments, NotAuthorized, TransferFailed, InvalidInvoice} from "src/errors.sol";
+import {InvalidArguments, InvalidInvoice} from "src/errors.sol";
 
 /// @title CctpBridgeAdapter
 /// @notice Bridge adapter for Circle's Cross-Chain Transfer Protocol (CCTP)
@@ -65,12 +65,8 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         address messageTransmitter_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "CCTP";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "CCTP", version_);
 
         // Initialize CCTP-specific contracts
         tokenMessenger = ITokenMessenger(tokenMessenger_);

@@ -4,52 +4,57 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {Balances} from "src/balances/Balances.sol";
-import {IBalances} from "src/balances/IBalances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @notice Balances harness for fork tests
-/// @dev This contract extends Balances and exposes internal functions for testing.
-///      Implements INAVCalculator view methods (assets, assetCount, assetAt) so adapters'
-///      getOraclePositions() work when this contract is passed as "NAVCalculator".
+/// @dev Extends Balances and implements a minimal asset registry so it can stand in for NAVCalculator.
+///      Adapters call getRegisteredAssets() etc.; this harness maintains its own _registeredAssets.
 contract BalancesHarnessForFork is Balances {
     ERC20DefaultOracle public defaultOracle;
 
+    INAVCalculator.Asset[] private _registeredAssets;
+    mapping(address => uint256) private _assetIndex;
+
     constructor() initializer {
         __Balances_init();
-        // Set up ERC20DefaultOracle
-        defaultOracle = new ERC20DefaultOracle(address(this));
+        defaultOracle = new ERC20DefaultOracle(address(this), new address[](0));
         _setErc20DefaultOracle(address(defaultOracle));
     }
 
-    // Expose internal functions for testing
-    function registerAssetForTest(address asset, uint8 decimals) public {
-        _registerAsset(asset, decimals);
+    function registerAssetForTest(address asset, uint8 decimals, string memory symbol) public {
+        if (_assetIndex[asset] != 0) return;
+        _registeredAssets.push(INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals}));
+        _assetIndex[asset] = _registeredAssets.length;
+        if (address(defaultOracle) != address(0)) {
+            defaultOracle.addSupportedAsset(asset);
+        }
     }
 
-    function setAssetSymbolForTest(address asset, string memory symbol) public {
-        _setAssetSymbol(asset, symbol);
+    function getRegisteredAssets() external view returns (INAVCalculator.Asset[] memory) {
+        return _registeredAssets;
     }
 
-    /// @notice INAVCalculator.assets() compatibility for getOraclePositions in fork tests
-    function assets() external view returns (address[] memory) {
-        return getAssets();
+    function getAssetCount() external view returns (uint256) {
+        return _registeredAssets.length;
     }
 
-    /// @notice INAVCalculator.assetCount() compatibility for getOraclePositions in fork tests
-    /// @dev Returns getAssets().length so iteration 0..assetCount()-1 is always valid for assetAt(i)
-    function assetCount() external view returns (uint256) {
-        return getAssets().length;
+    function isAssetRegistered(address asset) external view returns (bool) {
+        return _assetIndex[asset] != 0;
     }
 
-    /// @notice INAVCalculator.assetAt() compatibility for getOraclePositions in fork tests
-    function assetAt(uint256 idx) external view returns (INAVCalculator.Asset memory) {
-        address[] memory assts = getAssets();
-        require(idx < assts.length, "assetAt: index out of range");
-        address asset = assts[idx];
-        return INAVCalculator.Asset({asset: asset, symbol: getAssetSymbol(asset), decimals: getAssetDecimals(asset)});
+    function getAssetDecimals(address asset) external view returns (uint8) {
+        uint256 idx = _assetIndex[asset];
+        require(idx != 0, "AssetNotFound");
+        return _registeredAssets[idx - 1].decimals;
+    }
+
+    function getAssetSymbol(address asset) external view returns (string memory) {
+        uint256 idx = _assetIndex[asset];
+        require(idx != 0, "AssetNotFound");
+        return _registeredAssets[idx - 1].symbol;
     }
 }
 
@@ -241,14 +246,12 @@ abstract contract TestSetupHelpers is Test {
 
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
-            try IERC20Metadata(asset).decimals() returns (uint8 decimals) {
-                balancesInstance.registerAssetForTest(asset, decimals);
-            } catch {
-                balancesInstance.registerAssetForTest(asset, 18);
-            }
-
             string memory symbol = _safeTokenSymbol(asset);
-            balancesInstance.setAssetSymbolForTest(asset, symbol);
+            try IERC20Metadata(asset).decimals() returns (uint8 decimals) {
+                balancesInstance.registerAssetForTest(asset, decimals, symbol);
+            } catch {
+                balancesInstance.registerAssetForTest(asset, 18, symbol);
+            }
         }
 
         return balancesInstance;
@@ -266,12 +269,12 @@ abstract contract TestSetupHelpers is Test {
             if (b == 0) return "";
             uint256 len;
             for (uint256 i = 0; i < 32; i++) {
-                if (uint8(uint256(b) >> (248 - i * 8)) == 0) break;
+                if (((uint256(b) >> (248 - i * 8)) & 0xFF) == 0) break;
                 len++;
             }
             bytes memory s = new bytes(len);
             for (uint256 i = 0; i < len; i++) {
-                s[i] = bytes1(uint8(uint256(b) >> (248 - i * 8)));
+                s[i] = bytes1(uint8((uint256(b) >> (248 - i * 8)) & 0xFF));
             }
             return string(s);
         }

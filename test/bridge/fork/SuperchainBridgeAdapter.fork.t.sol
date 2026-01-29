@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapter.sol";
@@ -278,8 +277,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
             _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, portfolioSafe, WETH_SYMBOL, amount);
 
         vm.prank(portfolioSafe);
-        bytes32 invoiceHash =
-            l2BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l2Adapter));
+        l2BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l2Adapter));
 
         // Get withdrawal hash
         bytes32 withdrawalHash = l2Adapter.getWithdrawalHashByInvoiceId(invoiceData.invoiceId);

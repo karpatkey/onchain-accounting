@@ -1,7 +1,7 @@
 [profile.default]
 src = "src"
 out = "out"
-libs = ["lib"]
+
 fs_permissions = [
   { access = "read-write", path = "script" },
   { access = "read-write", path = "out" },
@@ -16,6 +16,13 @@ optimizer = true
 optimizer_runs = 2000
 via_ir = true
 
+# Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.
+# See: https://book.getfoundry.sh/reference/config/solidity-compiler
+deny = "warnings"
+ignored_warnings_from = ["lib"]
+
+# Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.
+[lint]
 no_match_test = "upgrade"
 
 [profile.coverage]

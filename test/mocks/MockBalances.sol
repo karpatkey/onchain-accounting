@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalances} from "src/balances/IBalances.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AssetNotFound} from "src/errors.sol";
 
 /// @title MockBalances
@@ -62,8 +63,8 @@ contract MockBalances is IBalances {
         return false;
     }
 
-    function getAssets() external pure returns (address[] memory) {
-        return new address[](0);
+    function getRegisteredAssets() external pure returns (INAVCalculator.Asset[] memory) {
+        return new INAVCalculator.Asset[](0);
     }
 
     function getAssetCount() external pure returns (uint256) {

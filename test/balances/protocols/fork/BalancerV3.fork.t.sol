@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title BalancerV3PoolBalanceOracleForkTest
@@ -39,9 +38,9 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     address public constant USER_TENDERLY = 0xC01318baB7ee1f5ba734172bF7718b5DC6Ec90E1;
 
     // Expected oracle balances at FORK_BLOCK_TENDERLY for USER_TENDERLY (Tenderly simulation)
-    int256 public constant EXPECTED_USDT = 1_148_397; // 6 decimals
-    int256 public constant EXPECTED_USDC = 3_714_973; // 6 decimals
-    int256 public constant EXPECTED_GHO = 5_135_070_405_257_166_097; // 18 decimals
+    uint256 public constant EXPECTED_USDT = 1_148_397; // 6 decimals
+    uint256 public constant EXPECTED_USDC = 3_714_973; // 6 decimals
+    uint256 public constant EXPECTED_GHO = 5_135_070_405_257_166_097; // 18 decimals
 
     function setUp() public override {
         super.setUp();
@@ -80,13 +79,16 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
         balances = _deployBalancesForOracle(_getSupportedAssets());
         oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
 
-        int256 balanceUsdt = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDT);
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDC);
-        int256 balanceGho = oracle.getOracleBalanceForAsset(USER_TENDERLY, GHO);
+        (uint256 amountUsdt, bool isDebtUsdt) = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDT);
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDC);
+        (uint256 amountGho, bool isDebtGho) = oracle.getOracleBalanceForAsset(USER_TENDERLY, GHO);
 
-        assertEq(balanceUsdt, EXPECTED_USDT, "USDT balance should match Tenderly");
-        assertEq(balanceUsdc, EXPECTED_USDC, "USDC balance should match Tenderly");
-        assertEq(balanceGho, EXPECTED_GHO, "GHO balance should match Tenderly");
+        assertEq(amountUsdt, EXPECTED_USDT, "USDT balance should match Tenderly");
+        assertFalse(isDebtUsdt);
+        assertEq(amountUsdc, EXPECTED_USDC, "USDC balance should match Tenderly");
+        assertFalse(isDebtUsdc);
+        assertEq(amountGho, EXPECTED_GHO, "GHO balance should match Tenderly");
+        assertFalse(isDebtGho);
     }
 
     function test_getOracleBalanceForAsset_mainnet_staked_gauge() public {
@@ -119,20 +121,32 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
     function _assertOracleBalancesMatchRedemption(address user) internal view {
         // Get oracle balances before redemption
-        int256 balanceUsdt = oracle.getOracleBalanceForAsset(user, USDT);
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(user, USDC);
-        int256 balanceGho = oracle.getOracleBalanceForAsset(user, GHO);
-        int256 balanceBal = oracle.getOracleBalanceForAsset(user, BAL);
+        (uint256 amountUsdt, bool isDebtUsdt) = oracle.getOracleBalanceForAsset(user, USDT);
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(user, USDC);
+        (uint256 amountGho, bool isDebtGho) = oracle.getOracleBalanceForAsset(user, GHO);
+        (uint256 amountBal, bool isDebtBal) = oracle.getOracleBalanceForAsset(user, BAL);
 
         // Check that user has at least one non-zero position
-        bool hasPosition = balanceUsdt != 0 || balanceUsdc != 0 || balanceGho != 0 || balanceBal != 0;
+        bool hasPosition = amountUsdt != 0 || amountUsdc != 0 || amountGho != 0 || amountBal != 0;
         assertTrue(hasPosition, "User should have at least one non-zero position");
 
         // All positions should be credit (no debt in Balancer pools)
-        if (balanceUsdt > 0) assertGt(balanceUsdt, 0, "USDT should be credit (positive)");
-        if (balanceUsdc > 0) assertGt(balanceUsdc, 0, "USDC should be credit (positive)");
-        if (balanceGho > 0) assertGt(balanceGho, 0, "GHO should be credit (positive)");
-        if (balanceBal > 0) assertGt(balanceBal, 0, "BAL should be credit (positive)");
+        if (amountUsdt > 0) {
+            assertGt(amountUsdt, 0, "USDT should be credit (positive)");
+            assertFalse(isDebtUsdt);
+        }
+        if (amountUsdc > 0) {
+            assertGt(amountUsdc, 0, "USDC should be credit (positive)");
+            assertFalse(isDebtUsdc);
+        }
+        if (amountGho > 0) {
+            assertGt(amountGho, 0, "GHO should be credit (positive)");
+            assertFalse(isDebtGho);
+        }
+        if (amountBal > 0) {
+            assertGt(amountBal, 0, "BAL should be credit (positive)");
+            assertFalse(isDebtBal);
+        }
     }
 
     // ============================================
@@ -140,11 +154,11 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(MAINNET_STAKED_USER);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(MAINNET_STAKED_USER);
 
         // Should have at least one position
         assertGe(assets.length, 1, "Should have at least one position");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public view {

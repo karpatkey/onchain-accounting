@@ -192,20 +192,23 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         // Return zero for unsupported or invalid tokens (adapter convention)
         if (asset == address(0) || asset != DAI) {
-            return 0;
+            return (0, false);
         }
-        // Cast uint256 to int256 for interface (always positive for this oracle)
-        return int256(_calculateBalance(asset, account));
+        return (_calculateBalance(asset, account), false); // DSR is always credit
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
@@ -227,12 +230,14 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
             }
         }
 
-        // Resize to actual count; cast to int256 for interface (always positive for this oracle)
+        // Resize to actual count (DSR is always credit)
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = int256(tempBalances[i]);
+            amounts[i] = tempBalances[i];
+            isDebt[i] = false;
         }
     }
 
@@ -248,7 +253,11 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -301,11 +310,10 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

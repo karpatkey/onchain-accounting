@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BridgeAdapter} from "src/bridge/BridgeAdapter.sol";
 import {IBridgeAdapter} from "src/bridge/IBridgeAdapter.sol";
-import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title BridgeAdapterTest
@@ -56,7 +55,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     function test_bridge_successWhenCalledByEscrow() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(portfolioSafe);
-        usdc.transfer(address(bridgeEscrow), BRIDGE_AMOUNT);
+        require(usdc.transfer(address(bridgeEscrow), BRIDGE_AMOUNT), "transfer failed");
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(adapter), BRIDGE_AMOUNT);
 

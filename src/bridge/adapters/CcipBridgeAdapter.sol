@@ -11,6 +11,7 @@ import {IAny2EVMMessageReceiver} from "@chainlink/src/v0.8/ccip/interfaces/IAny2
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ICcipBridgeAdapter} from "./interfaces/ICcipBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title CcipBridgeAdapter
@@ -74,12 +75,8 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         address feeToken_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "CCIP";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "CCIP", version_);
 
         if (router_ == address(0)) revert InvalidRouter();
         router = IRouterClient(router_);

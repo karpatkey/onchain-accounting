@@ -79,31 +79,4 @@ interface IBalances {
     /// @param asset The asset address to check
     /// @return oracles Array of oracle addresses that support the asset
     function getOraclesForAsset(address asset) external view returns (address[] memory oracles);
-
-    //
-    // Asset Registry (shared with Prices and NAVCalculator)
-    //
-
-    /// @notice Checks if an asset is registered
-    /// @param asset The asset address to check
-    /// @return registered True if the asset is registered
-    function isAssetRegistered(address asset) external view returns (bool registered);
-
-    /// @notice Returns all registered assets
-    /// @return assets Array of all registered asset addresses
-    function getAssets() external view returns (address[] memory assets);
-
-    /// @notice Returns the total number of registered assets
-    /// @return count Total number of assets
-    function getAssetCount() external view returns (uint256 count);
-
-    /// @notice Returns the decimals for a registered asset
-    /// @param asset The asset address
-    /// @return decimals The number of decimals for the asset
-    function getAssetDecimals(address asset) external view returns (uint8 decimals);
-
-    /// @notice Returns the symbol for a registered asset
-    /// @param asset The asset address
-    /// @return symbol The asset symbol
-    function getAssetSymbol(address asset) external view returns (string memory symbol);
 }

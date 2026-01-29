@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {IBalances} from "src/balances/IBalances.sol";
 
 /// @title BalanceAdapterTestBase
 /// @notice Base test contract for unit/implementation balance adapter tests
@@ -39,13 +38,10 @@ abstract contract BalanceAdapterTestBase is Test {
         dai = new Mock_ERC20("DAI", 18);
         weth = new Mock_ERC20("WETH", 18);
 
-        // Register tokens in Balances
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.registerAssetForTest(address(dai), 18);
-        balances.registerAssetForTest(address(weth), 18);
-        balances.setAssetSymbolForTest(address(usdc), "USDC");
-        balances.setAssetSymbolForTest(address(dai), "DAI");
-        balances.setAssetSymbolForTest(address(weth), "WETH");
+        // Add tokens to default oracle supported list (asset registry is in NAVCalculator)
+        balances.addSupportedAssetForTest(address(usdc));
+        balances.addSupportedAssetForTest(address(dai));
+        balances.addSupportedAssetForTest(address(weth));
     }
 
     /// @notice Creates and registers a new test token
@@ -54,8 +50,7 @@ abstract contract BalanceAdapterTestBase is Test {
     /// @return token The created token
     function _createAndRegisterToken(string memory name, uint8 decimals) internal returns (Mock_ERC20 token) {
         token = new Mock_ERC20(name, decimals);
-        balances.registerAssetForTest(address(token), decimals);
-        balances.setAssetSymbolForTest(address(token), name);
+        balances.addSupportedAssetForTest(address(token));
         return token;
     }
 }

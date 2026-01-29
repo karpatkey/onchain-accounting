@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IPoolDataProvider} from "aave-v3-core/interfaces/IPoolDataProvider.sol";
 
 /// @title SparkLendBalanceOracleForkTest
 /// @notice Fork tests for SparkLendBalanceOracle using real mainnet contracts
@@ -57,8 +56,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
-        assertGt(balance, 0, "User should have DAI supply position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
+        assertGt(amount, 0, "User should have DAI supply position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_supply_wbtc() public {
@@ -73,8 +73,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
-        assertGt(balance, 0, "User should have WBTC supply position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
+        assertGt(amount, 0, "User should have WBTC supply position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_borrow_weth() public {
@@ -89,8 +90,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
-        assertLt(balance, 0, "User should have WETH borrow position (negative balance)");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
+        assertTrue(isDebt, "User should have WETH borrow position (negative balance)");
+        assertGt(amount, 0, "User should have WETH debt amount");
     }
 
     // ============================================
@@ -107,8 +109,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
-        assertGt(balance, 0, "User should have GNO supply position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
+        assertGt(amount, 0, "User should have GNO supply position");
+        assertFalse(isDebt);
     }
 
     function test_getOracleBalanceForAsset_debt_dai() public {
@@ -121,8 +124,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
-        assertLt(balance, 0, "User should have DAI debt position (negative balance)");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
+        assertTrue(isDebt, "User should have DAI debt position (negative balance)");
+        assertGt(amount, 0, "User should have DAI debt amount");
     }
 
     // ============================================
@@ -136,8 +140,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        int256 balance = oracle.getOracleBalanceForAsset(REWARD_STETH_USER, STETH);
-        assertGt(balance, 0, "User should have stETH reward position");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(REWARD_STETH_USER, STETH);
+        assertGt(amount, 0, "User should have stETH reward position");
+        assertFalse(isDebt);
     }
 
     // ============================================
@@ -156,12 +161,12 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
 
-        (address[] memory resultAssets, int256[] memory balances) =
-            oracle.getOracleBalance(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
+        (address[] memory resultAssets, uint256[] memory amounts,) =
+            oracle.getOracleBalances(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
 
         // Should have at least DAI, WBTC, and WETH positions
         assertGe(resultAssets.length, 3, "Should have multiple positions");
-        assertEq(resultAssets.length, balances.length, "Arrays should match length");
+        assertEq(resultAssets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public {

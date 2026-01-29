@@ -67,10 +67,10 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     /// @inheritdoc INAVCalculator
-    function assets() external view override returns (address[] memory) {
-        address[] memory result = new address[](_assets.length);
+    function getRegisteredAssets() external view override returns (Asset[] memory) {
+        Asset[] memory result = new Asset[](_assets.length);
         for (uint256 i = 0; i < _assets.length; i++) {
-            result[i] = _assets[i].asset;
+            result[i] = Asset({asset: _assets[i].asset, symbol: _assets[i].symbol, decimals: _assets[i].decimals});
         }
         return result;
     }
@@ -80,16 +80,51 @@ contract Mock_NAVCalculator is INAVCalculator {
         return _assets.length;
     }
 
-    /// @inheritdoc INAVCalculator
-    function assetAt(uint256 idx) external view override returns (Asset memory) {
-        require(idx < _assets.length, "Index out of bounds");
-        AssetInfo memory info = _assets[idx];
-        return Asset({asset: info.asset, symbol: info.symbol, decimals: info.decimals});
+    /// @notice Check if an asset is registered (IBalances)
+    function isAssetRegistered(address asset) external view override returns (bool) {
+        return _isRegistered[asset];
     }
 
-    /// @notice Check if an asset is registered
-    function isAssetRegistered(address asset) external view returns (bool) {
-        return _isRegistered[asset];
+    function getAssetCount() external view override returns (uint256) {
+        return _assets.length;
+    }
+
+    function getAssetDecimals(address asset) external view override returns (uint8) {
+        require(_isRegistered[asset], "Asset not registered");
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i].asset == asset) return _assets[i].decimals;
+        }
+        revert("Asset not registered");
+    }
+
+    function getAssetSymbol(address asset) external view override returns (string memory) {
+        require(_isRegistered[asset], "Asset not registered");
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i].asset == asset) return _assets[i].symbol;
+        }
+        revert("Asset not registered");
+    }
+
+    function checkBalanceOracleSupport(address) external pure override {}
+
+    function getAllOracles() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function getOracleCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function isOracleRegistered(address) external pure override returns (bool) {
+        return false;
+    }
+
+    function getOracleType(address) external pure override returns (OracleType) {
+        return OracleType.Default;
+    }
+
+    function getOraclesForAsset(address) external pure override returns (address[] memory) {
+        return new address[](0);
     }
 
     // Stub implementations for other INAVCalculator methods (not used by adapters)
@@ -166,10 +201,6 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     function unregisterAsset(address) external pure override {
-        revert("Not implemented in mock");
-    }
-
-    function setNativeTokenSymbol(string memory) external pure override {
         revert("Not implemented in mock");
     }
 

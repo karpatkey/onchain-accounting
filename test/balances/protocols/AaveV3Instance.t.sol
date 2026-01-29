@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title Mock Aave Protocol Data Provider
@@ -29,9 +29,13 @@ contract MockAaveProtocolDataProvider {
         return reserveData[asset];
     }
 
-    function getUserReserveData(address asset, address user)
+    function getUserReserveData(
+        address,
+        /* asset */
+        address /* user */
+    )
         external
-        view
+        pure
         returns (
             uint256 currentATokenBalance,
             uint256 currentStableDebt,
@@ -112,16 +116,16 @@ contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
         address invalidToken = makeAddr("invalidToken");
 
         // getOracleBalanceForAsset should return 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, invalidToken);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address_account() public {
         address invalidToken = makeAddr("invalidToken");
 
         // Zero address account should return zero
-        int256 balance = oracle.getOracleBalanceForAsset(address(0), invalidToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), invalidToken);
+        assertEq(amount, 0);
     }
 
     // ============================================
@@ -130,17 +134,14 @@ contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_underlyingAssetsSupported_returnsArray() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
-
-        // Should return an array (may be empty in unit tests without fork)
-        // The actual assets are tested in fork tests
-        assertTrue(true, "underlyingAssetsSupported should not revert");
+        assertGe(assets.length, 0, "returns array");
     }
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {

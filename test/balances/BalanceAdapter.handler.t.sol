@@ -9,6 +9,7 @@ import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Balance Adapter Handler for Stateful Invariant Testing
 /// @notice Handler contract that manages stateful operations for invariant testing
@@ -23,9 +24,9 @@ contract BalanceAdapterHandler is Test {
     address internal currentActor;
 
     // Ghost variables for tracking state
-    uint256 public ghost_totalBalances;
-    uint256 public ghost_positionCount;
-    uint256 public ghost_adapterCount;
+    uint256 public ghostTotalBalances;
+    uint256 public ghostPositionCount;
+    uint256 public ghostAdapterCount;
 
     modifier useActor(uint256 actorSeed) {
         currentActor = actors[bound(actorSeed, 0, actors.length - 1)];
@@ -44,7 +45,7 @@ contract BalanceAdapterHandler is Test {
         }
 
         // Store initial state
-        ghost_adapterCount = balances.getOracleCount();
+        ghostAdapterCount = balances.getOracleCount();
     }
 
     /// @notice Add a custom oracle
@@ -61,7 +62,7 @@ contract BalanceAdapterHandler is Test {
         tokens.push(token);
 
         // Register asset
-        balances.registerAssetForTest(address(token), decimals);
+        balances.addSupportedAssetForTest(address(token));
 
         // Set supported assets
         address[] memory assets = new address[](1);
@@ -74,7 +75,7 @@ contract BalanceAdapterHandler is Test {
 
         // Add oracle
         balances.addBalanceOracleDirect(address(0), address(oracle), IBalances.OracleType.Custom);
-        ghost_adapterCount = balances.getOracleCount();
+        ghostAdapterCount = balances.getOracleCount();
     }
 
     /// @notice Remove a custom oracle
@@ -90,7 +91,7 @@ contract BalanceAdapterHandler is Test {
         }
 
         balances.unsetBalanceOracle(address(0), oracle);
-        ghost_adapterCount = balances.getOracleCount();
+        ghostAdapterCount = balances.getOracleCount();
     }
 
     /// @notice Mint tokens to an actor
@@ -152,7 +153,8 @@ contract BalanceAdapterHandler is Test {
         uint256 assetIndex = bound(assetSeed, 0, supportedAssets.length - 1);
         address asset = supportedAssets[assetIndex];
 
-        balance = adapter.getOracleBalanceForAsset(account, asset);
+        (uint256 amount, bool isDebt) = adapter.getOracleBalanceForAsset(account, asset);
+        balance = isDebt ? -SafeCast.toInt256(amount) : SafeCast.toInt256(amount);
     }
 
     /// @notice Get positions for an actor
@@ -222,7 +224,9 @@ contract BalanceAdapterHandlerTest is Test {
                 IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[j]);
 
                 // Get balance via getOracleBalance - use try-catch to handle potential reverts
-                try adapter.getOracleBalance(account) returns (address[] memory assets, int256[] memory balances) {
+                try adapter.getOracleBalances(account) returns (
+                    address[] memory, /* assets */ uint256[] memory amounts, bool[] memory isDebt
+                ) {
                     // Get positions
                     INAVCalculator.PositionBalance[] memory positions = adapter.getOraclePositions(account, address(0));
 
@@ -236,10 +240,14 @@ contract BalanceAdapterHandlerTest is Test {
                         }
                     }
 
-                    // Sum balances (already signed)
+                    // Sum balances (amount + isDebt)
                     int256 balanceSum = 0;
-                    for (uint256 k = 0; k < balances.length; k++) {
-                        balanceSum += balances[k];
+                    for (uint256 k = 0; k < amounts.length; k++) {
+                        if (isDebt[k]) {
+                            balanceSum -= int256(amounts[k]);
+                        } else {
+                            balanceSum += int256(amounts[k]);
+                        }
                     }
 
                     // Should match (allow small rounding differences)
@@ -412,7 +420,7 @@ contract BalanceAdapterHandlerTest is Test {
                 // Should be able to query balance (may be zero, that's fine)
                 // All supported assets must be queryable
                 try adapter.getOracleBalanceForAsset(testAccount, asset) returns (
-                    int256
+                    uint256, bool
                 ) {
                 // Success
                 }

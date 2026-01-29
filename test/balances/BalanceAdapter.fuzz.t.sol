@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
@@ -30,9 +29,9 @@ contract BalanceAdapterFuzzTest is Test {
         usdc = new Mock_ERC20("USDC", 6);
         dai = new Mock_ERC20("DAI", 18);
 
-        balances.registerAssetForTest(address(usdc), 6);
-        balances.registerAssetForTest(address(dai), 18);
-        balances.registerAssetForTest(balances.NATIVE_ADDRESS(), 18);
+        balances.addSupportedAssetForTest(address(usdc));
+        balances.addSupportedAssetForTest(address(dai));
+        balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
 
         address[] memory assets = new address[](2);
         assets[0] = address(usdc);
@@ -72,7 +71,7 @@ contract BalanceAdapterFuzzTest is Test {
         uint96 amount = uint96(bound(amountSeed, 0, type(uint96).max / 2));
 
         // Try to get balance - should not revert
-        int256 balance1 = erc20DefaultOracle.getOracleBalanceForAsset(account, asset);
+        (uint256 amount1,) = erc20DefaultOracle.getOracleBalanceForAsset(account, asset);
 
         // If asset is registered, mint tokens and check again
         if (asset == address(usdc) || asset == address(dai)) {
@@ -82,11 +81,12 @@ contract BalanceAdapterFuzzTest is Test {
                 dai.mint(account, amount);
             }
 
-            int256 balance2 = erc20DefaultOracle.getOracleBalanceForAsset(account, asset);
+            (uint256 amount2, bool isDebt2) = erc20DefaultOracle.getOracleBalanceForAsset(account, asset);
 
             // Balance should have increased (and should still be credit/positive)
-            assertGe(balance2, balance1, "Balance should increase after minting");
-            assertGt(balance2, 0, "ERC20DefaultOracle should return positive balances");
+            assertGe(amount2, amount1, "Balance should increase after minting");
+            assertFalse(isDebt2, "ERC20DefaultOracle should return credit (not debt)");
+            assertGt(amount2, 0, "ERC20DefaultOracle should return positive amounts");
         }
     }
 
@@ -111,12 +111,9 @@ contract BalanceAdapterFuzzTest is Test {
         customOracle.setBalance(asset, account, amount, isDebt);
 
         // Get balance - should match
-        int256 retrievedBalance = customOracle.getOracleBalanceForAsset(account, asset);
-        if (isDebt) {
-            assertEq(retrievedBalance, -int256(amount), "Debt balance should be negative");
-        } else {
-            assertEq(retrievedBalance, int256(amount), "Credit balance should be positive");
-        }
+        (uint256 retrievedAmount, bool retrievedIsDebt) = customOracle.getOracleBalanceForAsset(account, asset);
+        assertEq(retrievedAmount, amount, "Amount should match");
+        assertEq(retrievedIsDebt, isDebt, "isDebt should match");
     }
 
     /// @notice Fuzz test for getOracleBalanceForAsset with debt positions
@@ -129,9 +126,10 @@ contract BalanceAdapterFuzzTest is Test {
         // Set debt position (isDebt = true)
         customOracle.setBalance(address(usdc), account, amount, true);
 
-        // Get balance - should be debt (negative)
-        int256 retrievedBalance = customOracle.getOracleBalanceForAsset(account, address(usdc));
-        assertEq(retrievedBalance, -int256(amount), "Debt balance should be negative");
+        // Get balance - should be debt
+        (uint256 retrievedAmount, bool retrievedIsDebt) = customOracle.getOracleBalanceForAsset(account, address(usdc));
+        assertEq(retrievedAmount, amount, "Amount should match");
+        assertTrue(retrievedIsDebt, "Debt balance should have isDebt true");
     }
 
     // ============================================
@@ -139,7 +137,7 @@ contract BalanceAdapterFuzzTest is Test {
     // ============================================
 
     /// @notice Fuzz test for getOraclePositions with random accounts and asset filters
-    function testFuzz_getOraclePositions(address account, uint256 filterSeed) public {
+    function testFuzz_getOraclePositions(address account, uint256 filterSeed) public view {
         vm.assume(account != address(0));
 
         // Get valid asset filter (or zero for all)
@@ -196,7 +194,7 @@ contract BalanceAdapterFuzzTest is Test {
     // ============================================
 
     /// @notice Fuzz test for getOracleBalance with random accounts
-    function testFuzz_getOracleBalance(address account, uint256 amountSeed1, uint256 amountSeed2) public {
+    function testFuzz_getOracleBalances(address account, uint256 amountSeed1, uint256 amountSeed2) public {
         vm.assume(account != address(0));
 
         // Bound amounts
@@ -212,14 +210,16 @@ contract BalanceAdapterFuzzTest is Test {
         }
 
         // Get balance
-        (address[] memory assets, int256[] memory balances) = erc20DefaultOracle.getOracleBalance(account);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            erc20DefaultOracle.getOracleBalances(account);
 
         // Arrays should have same length
-        assertEq(assets.length, balances.length, "Assets and balances arrays should have same length");
+        assertEq(assets.length, amounts.length, "Assets and amounts arrays should have same length");
+        assertEq(amounts.length, isDebt.length, "Amounts and isDebt arrays should have same length");
 
-        // Verify no zero balances
-        for (uint256 i = 0; i < balances.length; i++) {
-            assertTrue(balances[i] != 0, "No zero balances should be returned");
+        // Verify no zero amounts
+        for (uint256 i = 0; i < amounts.length; i++) {
+            assertTrue(amounts[i] != 0, "No zero amounts should be returned");
         }
 
         // Verify consistency with getOraclePositions
@@ -227,8 +227,12 @@ contract BalanceAdapterFuzzTest is Test {
 
         int256 positionsSum = sumPositionBalances(positions);
         int256 balanceSum = 0;
-        for (uint256 i = 0; i < balances.length; i++) {
-            balanceSum += balances[i];
+        for (uint256 i = 0; i < amounts.length; i++) {
+            if (isDebt[i]) {
+                balanceSum -= int256(amounts[i]);
+            } else {
+                balanceSum += int256(amounts[i]);
+            }
         }
 
         assertEq(positionsSum, balanceSum, "Sum of positions should equal sum of balances");
@@ -239,7 +243,7 @@ contract BalanceAdapterFuzzTest is Test {
     // ============================================
 
     /// @notice Fuzz test for underlyingAssetsSupported consistency
-    function testFuzz_underlyingAssetsSupported_consistency() public {
+    function testFuzz_underlyingAssetsSupported_consistency() public view {
         // Query multiple times - should be consistent
         address[] memory assets1 = erc20DefaultOracle.underlyingAssetsSupported();
         address[] memory assets2 = erc20DefaultOracle.underlyingAssetsSupported();
@@ -301,18 +305,20 @@ contract BalanceAdapterFuzzTest is Test {
         customOracle.setBalance(address(usdc), account, customAmount, false);
 
         // Get balances from both
-        int256 erc20Balance = erc20DefaultOracle.getOracleBalanceForAsset(account, address(usdc));
-        int256 customBalance = customOracle.getOracleBalanceForAsset(account, address(usdc));
+        (uint256 erc20Amount_, bool erc20IsDebt) = erc20DefaultOracle.getOracleBalanceForAsset(account, address(usdc));
+        (uint256 customAmount_, bool customIsDebt) = customOracle.getOracleBalanceForAsset(account, address(usdc));
 
-        // Both should be credit positions (positive)
-        assertGt(erc20Balance, 0, "ERC20DefaultOracle should return positive balance");
-        assertGt(customBalance, 0, "Custom oracle should return positive balance");
+        // Both should be credit positions (positive amount, not debt)
+        assertGt(erc20Amount_, 0, "ERC20DefaultOracle should return positive balance");
+        assertFalse(erc20IsDebt, "ERC20DefaultOracle should be credit");
+        assertGt(customAmount_, 0, "Custom oracle should return positive balance");
+        assertFalse(customIsDebt, "Custom oracle should be credit");
 
         // ERC20DefaultOracle should match minted amount
-        assertEq(uint256(erc20Balance), erc20Amount, "ERC20DefaultOracle should match minted amount");
+        assertEq(erc20Amount_, erc20Amount, "ERC20DefaultOracle should match minted amount");
 
         // Custom oracle should match set amount
-        assertEq(uint256(customBalance), customAmount, "Custom oracle should match set amount");
+        assertEq(customAmount_, customAmount, "Custom oracle should match set amount");
     }
 
     // ============================================
@@ -320,10 +326,10 @@ contract BalanceAdapterFuzzTest is Test {
     // ============================================
 
     /// @notice Fuzz test for zero address account
-    function testFuzz_zeroAddressAccount(address asset) public {
+    function testFuzz_zeroAddressAccount(address asset) public view {
         // Zero address should return zero balance
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(address(0), asset);
-        assertEq(balance, 0, "Zero address should return zero balance");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(address(0), asset);
+        assertEq(amount, 0, "Zero address should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
             erc20DefaultOracle.getOraclePositions(address(0), address(0));
@@ -331,7 +337,7 @@ contract BalanceAdapterFuzzTest is Test {
     }
 
     /// @notice Fuzz test for unregistered asset
-    function testFuzz_unregisteredAsset(address account, address unregisteredAsset) public {
+    function testFuzz_unregisteredAsset(address account, address unregisteredAsset) public view {
         vm.assume(account != address(0));
         vm.assume(unregisteredAsset != address(0));
         vm.assume(unregisteredAsset != address(usdc));
@@ -339,8 +345,8 @@ contract BalanceAdapterFuzzTest is Test {
         vm.assume(unregisteredAsset != balances.NATIVE_ADDRESS());
 
         // Unregistered asset should return zero balance
-        int256 balance = erc20DefaultOracle.getOracleBalanceForAsset(account, unregisteredAsset);
-        assertEq(balance, 0, "Unregistered asset should return zero balance");
+        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(account, unregisteredAsset);
+        assertEq(amount, 0, "Unregistered asset should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
             erc20DefaultOracle.getOraclePositions(account, unregisteredAsset);
@@ -357,8 +363,9 @@ contract BalanceAdapterFuzzTest is Test {
         usdc.mint(account, amount);
 
         // Should handle large balances without reverting
-        int256 retrievedBalance = erc20DefaultOracle.getOracleBalanceForAsset(account, address(usdc));
-        assertEq(uint256(retrievedBalance), amount, "Should handle large balances");
-        assertGt(retrievedBalance, 0, "Should be positive balance");
+        (uint256 retrievedAmount, bool retrievedIsDebt) =
+            erc20DefaultOracle.getOracleBalanceForAsset(account, address(usdc));
+        assertEq(retrievedAmount, amount, "Should handle large balances");
+        assertFalse(retrievedIsDebt, "Should be credit (not debt)");
     }
 }

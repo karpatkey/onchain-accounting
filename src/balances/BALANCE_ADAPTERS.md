@@ -133,7 +133,7 @@ Every balance oracle must implement this interface and ERC165.
 | Method | Purpose |
 |--------|--------|
 | `getOraclePositions(account, assetFilter)` | Returns `PositionBalance[]` for the account. `assetFilter == address(0)` means all supported assets; otherwise only that asset (or empty). |
-| `getOracleBalance(account)` | Returns `(assets[], balances[])` — net balances (positive = credit, negative = debt). Optional for NAV path but part of the interface. |
+| `getOracleBalances(account)` | Returns `(assets[], amounts[], isDebt[])` — per-asset balance magnitudes and debt flags. Optional for NAV path but part of the interface. |
 | `getOracleBalanceForAsset(account, asset)` | Net balance for one asset (gas-optimized). |
 | `underlyingAssetsSupported()` | Returns `address[]` of underlying assets this oracle can report. Used by `getOraclesForAsset(asset)`. |
 | `supportsInterface(interfaceId)` | Must return true for `IBalanceOracleAdapter.interfaceId` (and `IERC165.interfaceId`). |
@@ -200,7 +200,7 @@ Protocol adapters typically take a **NAVCalculator** (or equivalent) in the cons
      - `positionDetail`: e.g. `"Collateral"`, `"Borrow"`, `"Rewards"`.
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
    - You may return only assets that are registered in NAVCalculator (like ERC20DefaultOracle) to avoid unnecessary work; unregistered positions are dropped by NAVCalculator anyway.
-4. Implement **`getOracleBalance`** and **`getOracleBalanceForAsset`** (net balances, signed: positive = credit, negative = debt). These can derive from the same data as `getOraclePositions` or be implemented with a simpler path.
+4. Implement **`getOracleBalances`** and **`getOracleBalanceForAsset`** (per-asset amounts and debt flags). Return `(assets[], amounts[], isDebt[])` from `getOracleBalances` and `(amount, isDebt)` from `getOracleBalanceForAsset`. Iterate over all `underlyingAssetsSupported()` and include only non-zero amounts. These can derive from the same data as `getOraclePositions` or be implemented with a simpler path.
 5. Implement **`underlyingAssetsSupported()`**: return the list of underlying token addresses this oracle can report (e.g. base + collaterals + reward token for a Comet).
 6. Implement **`supportsInterface(bytes4)`**: return `true` for `type(IBalanceOracleAdapter).interfaceId` and `type(IERC165).interfaceId`.
 

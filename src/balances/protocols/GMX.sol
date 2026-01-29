@@ -137,7 +137,6 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
     /// @dev Position value calculation breakdown:
     /// 1. Net Value Formula:
     ///    Net Value = Initial Collateral + PnL - Borrow Fee - Negative Funding Fee - Close Fee
@@ -165,9 +164,15 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
     ///
     /// Reference:
     /// https://github.com/gmx-io/gmx-synthetics/blob/66b5d7dbd4684d7612c9db6f6a3000be84fa2ff7/contracts/position/PositionUtils.sol#L189
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (underlyingAsset == address(0) || account == address(0)) {
-            return 0;
+            return (0, false);
         }
 
         IGMXReader.MarketPrices[] memory marketPrices = getMarketPrices();
@@ -205,7 +210,13 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
                 ));
         }
 
-        return total;
+        if (total < 0) {
+            return (SafeCast.toUint256(-total), true);
+        }
+        if (total > 0) {
+            return (SafeCast.toUint256(total), false);
+        }
+        return (0, false);
     }
 
     /// @notice Get market prices for the GMX market
@@ -250,9 +261,7 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
         }
 
         (, int256 price,,,) = tokenPricefeed.latestRoundData();
-        // casting to 'uint256' is safe because Chainlink prices are always positive
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return (uint256(price), tokenPricefeed.decimals());
+        return (SafeCast.toUint256(price), tokenPricefeed.decimals());
     }
 
     /// @notice Get position information for a safe
@@ -295,6 +304,7 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
         pure
         returns (bytes32)
     {
+        // forge-lint: disable-next-line(asm-keccak256) -- Solidity keccak256(abi.encode(...)) is standard and readable
         bytes32 key = keccak256(abi.encode(account, market, collateralToken, isLong));
         return key;
     }
@@ -326,43 +336,46 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
+            (uint256 amount, bool isDebt_) = _calculateBalance(asset, account);
+            if (amount != 0) {
                 tempAssets[count] = asset;
-                tempBalances[count] = balance;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
                 count++;
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
         }
     }
 
@@ -378,7 +391,11 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -390,18 +407,8 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
             // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
-                    if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
+                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
+                    if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
                     } else {
@@ -416,18 +423,8 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
-                if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
+                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
+                if (amount != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
@@ -451,11 +448,10 @@ contract GmxBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

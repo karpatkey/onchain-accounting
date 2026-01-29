@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
 /// @title InvoiceDataLib
 /// @notice Library for encoding and decoding invoice message payloads
 /// @dev Provides a standardized way to encode/decode invoice data across bridge components
@@ -30,22 +32,18 @@ library InvoiceDataLib {
         // timestamp is in the first 8 bytes (bits 0-63, shifted right by 192 to get first 8 bytes)
         data.timestamp = uint64(uint256(meta) >> 192);
         // checksum24 is in the last 24 bytes (bits 0-191)
+        // Truncation to 24 bytes by design (checksum layout)
+        // forge-lint: disable-next-line(unsafe-typecast)
         data.checksum24 = bytes24(uint192(uint256(meta)));
 
         // Decode invoiceId into its components
         uint256 id = uint256(data.invoiceId);
-        // casting to 'uint24' is safe because chain IDs are always within uint24 range
+        data.sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
+        data.destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit value overflowing uint24
+        data.portfolioSafe = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
+        // casting to uint48/bytes6 is safe: id & type(uint48).max keeps only low 48 bits, so no truncation
         // forge-lint: disable-next-line(unsafe-typecast)
-        data.sourceChainId = uint24(id >> 232); // Bits 232-255 (3 bytes)
-        // casting to 'uint24' is safe because chain IDs are always within uint24 range
-        // forge-lint: disable-next-line(unsafe-typecast)
-        data.destinationChainId = uint24(id >> 208); // Bits 208-231 (3 bytes)
-        // casting to 'address' (uint160) is safe because addresses are 20 bytes
-        // forge-lint: disable-next-line(unsafe-typecast)
-        data.portfolioSafe = address(uint160(id >> 48)); // Bits 48-207 (20 bytes)
-        // casting to 'bytes6' (uint48) is safe because asset symbols are 6 bytes
-        // forge-lint: disable-next-line(unsafe-typecast)
-        data.assetSymbol = bytes6(uint48(id)); // Bits 0-47 (6 bytes)
+        data.assetSymbol = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
     }
 
     /// @notice Encodes an InvoiceData struct into a message payload

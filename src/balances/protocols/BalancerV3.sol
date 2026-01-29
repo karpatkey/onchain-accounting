@@ -195,10 +195,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @return The new checkpoint
     function calculateIntegrateFraction(address user, IGaugeV3 gauge) public view returns (uint256) {
         uint256 period = gauge.period().toUint256();
-        // casting to 'uint128' is safe because period is a small value that fits in uint128
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint256 periodTime = gauge.period_timestamp(uint256(uint128(period)));
-        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(uint128(period)));
+        uint128 period128 = period.toUint128();
+        uint256 periodTime = gauge.period_timestamp(uint256(period128));
+        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
         uint256 rate = gauge.inflation_rate();
         uint256 prevFutureEpoch = gauge.future_epoch_time();
         uint256 newRate = rate;
@@ -366,12 +365,14 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Return zero for zero account or invalid asset (adapter convention)
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         if (account == address(0) || asset == address(0)) {
-            return 0;
+            return (0, false);
         }
-        // Check if asset is supported (try/catch for unit tests with minimal pool mocks)
         try this.underlyingAssetsSupported() returns (address[] memory supported) {
             bool isSupported = false;
             for (uint256 i = 0; i < supported.length; i++) {
@@ -381,50 +382,49 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
                 }
             }
             if (!isSupported) {
-                return 0;
+                return (0, false);
             }
         } catch {
-            return 0;
+            return (0, false);
         }
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         if (account == address(0)) {
-            return (new address[](0), new int256[](0));
+            return (new address[](0), new uint256[](0), new bool[](0));
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            int256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                tempAssets[count] = asset;
-                tempBalances[count] = balance;
+            address assetAddr = supportedAssets[i];
+            (uint256 amount, bool isDebt_) = _calculateBalance(assetAddr, account);
+            if (amount != 0) {
+                tempAssets[count] = assetAddr;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
                 count++;
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
         }
     }
 
@@ -436,11 +436,10 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");
@@ -453,8 +452,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         uint256 userBalance = POOL.balanceOf(account);
         // Gauge token to lp token is 1 to 1
         uint256 userGaugeBalance = GAUGE.balanceOf(account);
@@ -465,8 +469,15 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         // If we do two conversions the value will be less then the one if we unstake the gauge position and redeem the
         // lp token
         // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-        balance = poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset)
+        int256 balance = poolBalanceOf(userBalance + userGaugeBalance, underlyingAsset)
             + gaugeRewards(account, underlyingAsset) + claimableTokens(underlyingAsset, account);
+        if (balance < 0) {
+            return (SafeCast.toUint256(-balance), true);
+        }
+        if (balance > 0) {
+            return (SafeCast.toUint256(balance), false);
+        }
+        return (0, false);
     }
 
     //
@@ -534,7 +545,11 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -543,25 +558,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         if (registeredSupportedAssets.length == 0) {
             assetBalanceData = new AssetBalanceData[](0);
         } else if (assetFilter != address(0)) {
-            // Check if assetFilter is in the registered supported assets
+            assetBalanceData = new AssetBalanceData[](0);
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
-                    if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
+                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
+                    if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
-                    } else {
-                        assetBalanceData = new AssetBalanceData[](0);
                     }
                     break;
                 }
@@ -572,18 +575,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
-                if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
+                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
+                if (amount != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
@@ -645,6 +638,7 @@ interface IGaugeV3 is IERC20 {
     function is_killed() external view returns (bool);
     /// @notice the current working supply
     /// @return The current working supply
+    // forge-lint: disable-next-line(mixed-case-function)
     function working_supply() external view returns (uint256);
     /// @notice Returns the gauge's relative weight, capped to its _relative_weight_cap attribute.
     /// @param time The time to get the weight for
@@ -653,13 +647,16 @@ interface IGaugeV3 is IERC20 {
     /// @notice Returns the integrate of the inverse supply for a user
     /// @param user The user to get the integrate for
     /// @return 1e18 * ∫(rate(t) / totalSupply(t) dt) from (last_action) till checkpoint
+    // forge-lint: disable-next-line(mixed-case-function)
     function integrate_inv_supply_of(address user) external view returns (uint256);
     /// @notice Returns the working balance of a user
     /// @param user The user to get the working balance for
     /// @return The working balance of the user
+    // forge-lint: disable-next-line(mixed-case-function)
     function working_balances(address user) external view returns (uint256);
     /// @notice Returns the future epoch time
     /// @return The future epoch time
+    // forge-lint: disable-next-line(mixed-case-function)
     function future_epoch_time() external view returns (uint256);
     /// @notice Returns the number of reward tokens on the gauge
     /// @return The number of reward tokens
@@ -808,5 +805,6 @@ interface ITokenAdmin {
     function rate() external view returns (uint256);
     /// @notice Gets the future epoch time
     /// @return Future epoch time
+    // forge-lint: disable-next-line(mixed-case-function)
     function future_epoch_time_write() external view returns (uint256);
 }

@@ -88,12 +88,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         address optimismPortal_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "Superchain";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "Superchain", version_);
         chainId = block.chainid;
 
         // On L1 (mainnet), only initialize L1 contracts
@@ -270,9 +266,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Withdraw ETH to L1
             // L2StandardBridge.withdrawTo signature: withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _minGasLimit, bytes calldata _extraData)
             // For ETH, _l2Token should be Predeploys.LEGACY_ERC20_ETH (0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000)
-            address LEGACY_ERC20_ETH = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
+            address legacyErc20Eth = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
             l2Bridge.withdrawTo{value: data.amount}(
-                LEGACY_ERC20_ETH, receiver, data.amount, defaultL1GasLimit, messagePayload
+                legacyErc20Eth, receiver, data.amount, defaultL1GasLimit, messagePayload
             );
         } else {
             // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
@@ -375,7 +371,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
 
         // Calculate withdrawal hash (matches Optimism's calculation)
-        // forge-lint: disable-next-line(asm-keccak256)
+        // forge-lint: disable-start(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
             abi.encodePacked(
                 withdrawalTx.nonce,
@@ -386,6 +382,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
                 withdrawalTx.data
             )
         );
+        // forge-lint: disable-end(asm-keccak256)
 
         // Verify withdrawal has been proven
         if (!optimismPortal.provenWithdrawals(withdrawalHash)) {
@@ -415,6 +412,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes[] calldata withdrawalProof
     ) external onlyRole(OPERATOR_ROLE) {
         // Calculate withdrawal hash
+        // forge-lint: disable-start(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
             abi.encodePacked(
                 withdrawalTx.nonce,
@@ -425,6 +423,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
                 withdrawalTx.data
             )
         );
+        // forge-lint: disable-end(asm-keccak256)
 
         // Prove the withdrawal
         optimismPortal.proveWithdrawalTransaction(withdrawalTx, l2OutputIndex, outputRootProof, withdrawalProof);
@@ -441,7 +440,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev This function should be called by an operator after the withdrawal is proven and challenge period has elapsed
     function finalizeWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external onlyRole(OPERATOR_ROLE) {
         // Calculate withdrawal hash
-        // forge-lint: disable-next-line(asm-keccak256)
+        // forge-lint: disable-start(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
             abi.encodePacked(
                 withdrawalTx.nonce,
@@ -452,6 +451,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
                 withdrawalTx.data
             )
         );
+        // forge-lint: disable-end(asm-keccak256)
 
         // Verify withdrawal has been proven
         if (!optimismPortal.provenWithdrawals(withdrawalHash)) {

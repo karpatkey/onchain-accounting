@@ -10,7 +10,6 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import "src/bridge/InvoiceDataLib.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -260,8 +259,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+        (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
         address destAdapterImpl = address(new CcipBridgeAdapter());
@@ -518,7 +516,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ View Function Tests ============
 
-    function test_getFee_returnsFee() public {
+    function test_getFee_returnsFee() public view {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
         tokenAmounts[0] = Client.EVMTokenAmount({token: address(usdc), amount: amount});
@@ -562,7 +560,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ ERC165 Tests ============
 
-    function test_supportsInterface_returnsTrueForIAny2EVMMessageReceiver() public {
+    function test_supportsInterface_returnsTrueForIAny2EVMMessageReceiver() public view {
         // Calculate interface ID from function selector
         bytes4 interfaceId = type(IAny2EVMMessageReceiver).interfaceId;
         assertTrue(adapter.supportsInterface(interfaceId), "Should support IAny2EVMMessageReceiver");

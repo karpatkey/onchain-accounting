@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
-import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @notice Mock Compound rewards that returns no reward config so _getRewardOwed returns 0
 contract MockCompoundRewardsMinimal {
@@ -23,7 +21,7 @@ contract MockCompoundRewardsMinimal {
 contract MockCometMinimal {
     address private _baseToken;
 
-    uint256 public constant baseScale = 1e6;
+    uint256 public constant BASE_SCALE = 1e6;
     /// @dev Match Comet BASE_INDEX_SCALE so principal * index / scale is correct
     uint64 private constant MOCK_BASE_INDEX = 1e15;
 
@@ -47,14 +45,14 @@ contract MockCometMinimal {
         external
         pure
         returns (
-            uint8 offset,
-            address asset,
-            address priceFeed,
-            uint64 scale,
-            uint64 borrowCollateralFactor,
-            uint64 liquidateCollateralFactor,
-            uint64 liquidationFactor,
-            uint128 supplyCap
+            uint8, /* offset */
+            address, /* asset */
+            address, /* priceFeed */
+            uint64, /* scale */
+            uint64, /* borrowCollateralFactor */
+            uint64, /* liquidateCollateralFactor */
+            uint64, /* liquidationFactor */
+            uint128 /* supplyCap */
         )
     {
         revert("unused in unit test");
@@ -94,6 +92,10 @@ contract MockCometMinimal {
     {
         // Use 1 for tracking indices so updateBasePrincipal(..., baseTrackingIndex=1, ...) does not underflow
         return (MOCK_BASE_INDEX, MOCK_BASE_INDEX, 1, 1, 0, 0, uint40(block.timestamp), 0);
+    }
+
+    function baseScale() external pure returns (uint256) {
+        return 1e6;
     }
 
     function baseMinForRewards() external pure returns (uint256) {
@@ -152,18 +154,18 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
     // Error Handling Tests
     // ============================================
 
-    function test_getOracleBalanceForAsset_unsupportedToken() public {
+    function test_getOracleBalanceForAsset_unsupportedToken() public view {
         address unsupportedToken = address(1);
 
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(address(this), unsupportedToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(this), unsupportedToken);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_userWithoutPosition() public view {
         address user = address(1);
-        int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        assertEq(amount, 0);
     }
 
     // ============================================
@@ -180,8 +182,9 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
             abi.encode(maxPositivePrincipal, 0, 0, 0, 0)
         );
 
-        int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
-        assertGt(balance, 0, "Balance should be positive (credit)");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        assertGt(amount, 0, "Balance should be positive (credit)");
+        assertFalse(isDebt, "Should be credit");
     }
 
     function test_getOracleBalanceForAsset_edgeCase_MinimalPrincipal() public {
@@ -194,8 +197,9 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
             abi.encode(maxNegativePrincipal, 0, 0, 0, 0)
         );
 
-        int256 balance = oracle.getOracleBalanceForAsset(user, address(usdc));
-        assertLt(balance, 0, "Balance should be negative (debt)");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        assertGt(amount, 0, "Amount should be positive");
+        assertTrue(isDebt, "Balance should be debt");
     }
 
     // ============================================
@@ -203,13 +207,13 @@ contract CompoundV3CometBalanceOracleTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
-    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public {
+    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public pure {
         // Note: This test verifies interface compliance
         // Actual position testing is done in fork tests
         assertTrue(true, "getOraclePositions should not revert for zero address");

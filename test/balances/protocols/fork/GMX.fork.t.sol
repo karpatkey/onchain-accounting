@@ -80,11 +80,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
+        (uint256 amountWeth, bool isDebtWeth) = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
 
-        assertGt(balanceUsdc, 0, "User should have positive USDC position");
-        assertLt(balanceWeth, 0, "User should have WETH debt position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have positive USDC position");
+        assertFalse(isDebtUsdc);
+        assertGt(amountWeth, 0, "User should have WETH debt amount");
+        assertTrue(isDebtWeth, "User should have WETH debt position (negative balance)");
     }
 
     function test_getOracleBalanceForAsset_WETH_WETH_Short_WithFees() public {
@@ -112,11 +114,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
+        (uint256 amountWeth, bool isDebtWeth) = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
 
-        assertGt(balanceUsdc, 0, "User should have positive USDC position");
-        assertLt(balanceWeth, 0, "User should have WETH debt position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have positive USDC position");
+        assertFalse(isDebtUsdc);
+        assertGt(amountWeth, 0, "User should have WETH debt amount");
+        assertTrue(isDebtWeth, "User should have WETH debt position (negative balance)");
     }
 
     // ============================================
@@ -148,11 +152,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
+        (uint256 amountWeth, bool isDebtWeth) = oracle.getOracleBalanceForAsset(TEST_USER, address(WETH));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(TEST_USER, address(USDC));
 
-        assertGt(balanceWeth, 0, "User should have positive WETH position");
-        assertLt(balanceUsdc, 0, "User should have USDC debt position (negative balance)");
+        assertGt(amountWeth, 0, "User should have positive WETH position");
+        assertFalse(isDebtWeth);
+        assertGt(amountUsdc, 0, "User should have USDC debt amount");
+        assertTrue(isDebtUsdc, "User should have USDC debt position (negative balance)");
     }
 
     function test_getOracleBalanceForAsset_WETH_USDC_Long_Whale1() public {
@@ -180,11 +186,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(WHALE_USER1, address(USDC));
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(WHALE_USER1, address(WETH));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(WHALE_USER1, address(USDC));
+        (uint256 amountWeth, bool isDebtWeth) = oracle.getOracleBalanceForAsset(WHALE_USER1, address(WETH));
 
-        assertLt(balanceUsdc, 0, "User should have USDC debt position (negative balance)");
-        assertGt(balanceWeth, 0, "User should have positive WETH position");
+        assertTrue(isDebtUsdc, "User should have USDC debt position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt amount");
+        assertGt(amountWeth, 0, "User should have positive WETH position");
+        assertFalse(isDebtWeth);
     }
 
     function test_getOracleBalanceForAsset_WETH_USDC_Long_Whale2() public {
@@ -212,11 +220,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(WHALE_USER2, address(USDC));
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(WHALE_USER2, address(WETH));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(WHALE_USER2, address(USDC));
+        (uint256 amountWeth, bool isDebtWeth) = oracle.getOracleBalanceForAsset(WHALE_USER2, address(WETH));
 
-        assertLt(balanceUsdc, 0, "User should have USDC debt position (negative balance)");
-        assertGt(balanceWeth, 0, "User should have positive WETH position");
+        assertTrue(isDebtUsdc, "User should have USDC debt position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt amount");
+        assertGt(amountWeth, 0, "User should have positive WETH position");
+        assertFalse(isDebtWeth);
     }
 
     // ============================================
@@ -250,11 +260,13 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceBTC = oracle.getOracleBalanceForAsset(BTC_USER, address(BTC));
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(BTC_USER, address(USDC));
+        (uint256 amountBtc, bool isDebtBtc) = oracle.getOracleBalanceForAsset(BTC_USER, address(BTC));
+        (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(BTC_USER, address(USDC));
 
-        assertGt(balanceBTC, 0, "User should have positive BTC position");
-        assertLt(balanceUsdc, 0, "User should have USDC debt position (negative balance)");
+        assertGt(amountBtc, 0, "User should have positive BTC position");
+        assertFalse(isDebtBtc);
+        assertTrue(isDebtUsdc, "User should have USDC debt position (negative balance)");
+        assertGt(amountUsdc, 0, "User should have USDC debt amount");
     }
 
     // ============================================
@@ -285,11 +297,11 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        int256 balanceWeth = oracle.getOracleBalanceForAsset(address(0), address(WETH));
-        assertEq(balanceWeth, 0);
+        (uint256 amountWeth,) = oracle.getOracleBalanceForAsset(address(0), address(WETH));
+        assertEq(amountWeth, 0);
 
-        int256 balanceUsdc = oracle.getOracleBalanceForAsset(address(0), address(USDC));
-        assertEq(balanceUsdc, 0);
+        (uint256 amountUsdc,) = oracle.getOracleBalanceForAsset(address(0), address(USDC));
+        assertEq(amountUsdc, 0);
     }
 
     // ============================================
@@ -321,11 +333,11 @@ contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
             address(balances)
         );
 
-        (address[] memory resultAssets, int256[] memory balances) = oracle.getOracleBalance(TEST_USER);
+        (address[] memory resultAssets, uint256[] memory amounts,) = oracle.getOracleBalances(TEST_USER);
 
         // Should have at least WETH and USDC positions
         assertGe(resultAssets.length, 2, "Should have multiple positions");
-        assertEq(resultAssets.length, balances.length, "Arrays should match length");
+        assertEq(resultAssets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public {

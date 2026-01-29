@@ -6,7 +6,7 @@ import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
-import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -128,8 +128,8 @@ abstract contract BridgeTestBase is Test {
 
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
-            sourceChainId: uint24(sourceChainId),
-            destinationChainId: uint24(destChainId),
+            sourceChainId: SafeCast.toUint24(sourceChainId),
+            destinationChainId: SafeCast.toUint24(destChainId),
             portfolioSafe: safe,
             assetSymbol: assetSymbol,
             amount: amount,
@@ -146,7 +146,7 @@ abstract contract BridgeTestBase is Test {
     {
         // Pack: sourceChainId (3 bytes) + destChainId (3 bytes) + safe (20 bytes) + assetSymbol (6 bytes) = 32 bytes
         return bytes32(
-            (uint256(uint24(sourceChainId)) << 232) | (uint256(uint24(destChainId)) << 208)
+            (uint256(SafeCast.toUint24(sourceChainId)) << 232) | (uint256(SafeCast.toUint24(destChainId)) << 208)
                 | (uint256(uint160(safe)) << 48) | uint256(uint48(assetSymbol))
         );
     }
@@ -154,6 +154,8 @@ abstract contract BridgeTestBase is Test {
     /// @notice Helper to calculate checksum (matches BridgeEscrow logic)
     function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp) internal pure returns (bytes24) {
         bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
+        // Truncation to 24 bytes by design (checksum layout)
+        // forge-lint: disable-next-line(unsafe-typecast)
         return bytes24(hash); // First 24 bytes
     }
 
@@ -207,30 +209,16 @@ abstract contract BridgeTestBase is Test {
     }
 
     /// @notice Creates an invoice on destination chain (simulating it was created on source chain)
-    /// @param destBridgeEscrow The BridgeEscrow on destination chain
     /// @param invoiceData The invoice data (from source chain perspective)
     /// @param assetAddress The asset address on destination chain
-    /// @dev This simulates the invoice existing on destination chain after being created on source chain
+    /// @dev This simulates the invoice existing on destination chain after being created on source chain. First param reserved for future use.
     function _createInvoiceOnDestinationChain(
-        BridgeEscrow destBridgeEscrow,
+        BridgeEscrow,
         InvoiceDataLib.InvoiceData memory invoiceData,
         address assetAddress
     ) internal {
-        // Calculate invoiceHash from checksum
-        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
-
-        // Create invoice struct (as it would exist on destination chain)
-        IBridgeEscrow.Invoice memory invoice = IBridgeEscrow.Invoice({
-            invoiceId: invoiceData.invoiceId,
-            sourceChainId: uint64(invoiceData.sourceChainId),
-            destinationChainId: uint64(invoiceData.destinationChainId),
-            portfolioSafe: invoiceData.portfolioSafe,
-            asset: assetAddress,
-            amount: invoiceData.amount,
-            timestamp: block.timestamp - 1, // Set in past
-            status: IBridgeEscrow.InvoiceStatus.BRIDGING,
-            adapter: address(0) // Not tracked on destination chain (invoices don't exist there)
-        });
+        // Reserved for storage manipulation: invoiceHash and invoice from invoiceData + assetAddress
+        (invoiceData, assetAddress); // silence unused (stub for future implementation)
 
         // Use storage manipulation to create invoice
         // We need to set: invoices[invoiceHash] = invoice
@@ -265,18 +253,17 @@ abstract contract BridgeTestBase is Test {
             // ERC20 token - mint and transfer to BridgeEscrow
             Mock_ERC20 token = Mock_ERC20(assetAddress);
             token.mint(address(this), amount);
-            token.transfer(address(destBridgeEscrow), amount);
+            require(token.transfer(address(destBridgeEscrow), amount), "transfer failed");
         }
     }
 
     /// @notice Complete helper to set up destination chain for completion testing
     /// @param invoiceData The invoice data from source chain
-    /// @param assetAddress The asset address on destination chain
     /// @return destBridgeEscrow The BridgeEscrow on destination chain
     /// @return messagePayload The encoded message payload
     /// @dev This sets up the full destination chain environment for testing completion
     ///      Creates invoice state on destination chain using storage manipulation
-    function _setupDestinationChainForCompletion(InvoiceDataLib.InvoiceData memory invoiceData, address assetAddress)
+    function _setupDestinationChainForCompletion(InvoiceDataLib.InvoiceData memory invoiceData, address)
         internal
         returns (BridgeEscrow destBridgeEscrow, bytes memory messagePayload)
     {

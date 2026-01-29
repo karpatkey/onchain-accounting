@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
 
 import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
-import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
@@ -72,7 +70,6 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
 
         // Get initial balances
         uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
-        uint256 initialTokenMessengerBalance = usdc.balanceOf(CCTP_TOKEN_MESSENGER);
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
@@ -94,8 +91,10 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
 
         // Verify invoiceId mapping was stored
         bytes32 invoiceId = invoiceData.invoiceId;
-        uint64 nonce =
-            ITokenMessenger(CCTP_TOKEN_MESSENGER).localMessageTransmitter() != address(0) ? _getLatestNonce() : 1; // Fallback if we can't get nonce
+        // Nonce tracking: TokenMessenger has localMessageTransmitter; fallback 1 if unavailable
+        if (ITokenMessenger(CCTP_TOKEN_MESSENGER).localMessageTransmitter() != address(0)) {
+            _getLatestNonce();
+        }
 
         // Verify invoice was created
         IBridgeEscrow.Invoice memory invoice = bridgeEscrow.getInvoice(invoiceHash);
@@ -136,7 +135,6 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, USDC_SYMBOL, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Initiate bridge
         vm.prank(portfolioSafe);
@@ -167,21 +165,18 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         vm.prank(portfolioSafe);
         bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
 
-        // Get the nonce from TokenMessenger (simplified - in real scenario we'd track this)
-        // For now, we verify the mapping exists by checking adapter state
-        // The actual nonce tracking would require event parsing or state inspection
-
-        // Verify adapter has the invoiceId stored (via messageToInvoiceId mapping)
-        // This is a simplified check - in practice we'd need to track the nonce
+        // Verify adapter may have invoiceId stored (messageToInvoiceId); nonce 1 is a placeholder.
         bytes32 storedInvoiceId = adapter.messageToInvoiceId(MAINNET_DOMAIN, 1);
-        // Note: This may be 0 if nonce tracking isn't perfect, but the invoice should exist in BridgeEscrow
+        if (storedInvoiceId != bytes32(0)) {
+            assertEq(storedInvoiceId, invoiceData.invoiceId, "invoiceId should match when mapping is set");
+        }
     }
 
     // ============ Helper Functions ============
 
     /// @notice Gets the latest nonce from TokenMessenger (simplified)
     /// @dev In practice, we'd need to track nonces from events or state
-    function _getLatestNonce() internal view returns (uint64) {
+    function _getLatestNonce() internal pure returns (uint64) {
         // This is a placeholder - in real tests we'd parse events or track state
         // For now, return 1 as a default
         return 1;

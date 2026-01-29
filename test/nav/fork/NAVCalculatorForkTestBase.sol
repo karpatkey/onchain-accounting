@@ -3,14 +3,11 @@ pragma solidity ^0.8.0;
 
 import {Options as UUPSDeployOptions} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
-import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IPrices} from "src/prices/IPrices.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
@@ -98,7 +95,7 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         nav = NAVCalculator(
             Upgrades.deployUUPSProxy(
                 "NAVCalculator.sol",
-                abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(0))),
+                abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(0), "ETH")),
                 unsafeDeployOpts()
             )
         );

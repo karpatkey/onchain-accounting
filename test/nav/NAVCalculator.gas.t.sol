@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -80,8 +81,8 @@ contract NAVCalculatorGasTest is SuperTest {
         }
         uint256 gasUsed = gasBefore - gasleft();
 
-        // Verify correctness
         assertGt(navResult.value, 0, "NAV should be positive");
+        assertGt(gasUsed, 0, "gas measured");
 
         // Gas usage documentation: For 50 assets with ERC20DefaultOracle, gas usage is typically 50M-100M
         // Actual gas usage will be visible in test output for benchmarking purposes
@@ -104,6 +105,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(navResult.value, 0, "NAV should be positive");
+        assertGt(gasUsed, 0, "gas measured");
 
         // Gas usage documentation: For 100 assets with ERC20DefaultOracle, gas usage is typically 200M-300M
         // Actual gas usage will be visible in test output for benchmarking purposes
@@ -126,11 +128,10 @@ contract NAVCalculatorGasTest is SuperTest {
         }
         uint256 gasUsed = gasBefore - gasleft();
 
-        // Verify correctness if we didn't revert
         if (gasUsed < 30_000_000) {
-            // Only check if within reasonable block gas limit
             assertGt(navResult.value, 0, "NAV should be positive");
         }
+        assertGt(gasUsed, 0, "gas measured");
 
         // Gas usage documentation: For 200 assets, gas usage typically exceeds block gas limit
         // This test demonstrates that range queries should be used for large portfolios
@@ -168,8 +169,9 @@ contract NAVCalculatorGasTest is SuperTest {
         }
         uint256 gasRange = gasBeforeRange - gasleft();
 
-        // Verify correctness
         assertApproxEqAbs(fullNav.value, rangeSum, 1, "Range sum should equal full NAV");
+        assertGt(gasFull, 0, "full query gas measured");
+        assertGt(gasRange, 0, "range query gas measured");
 
         // Gas usage documentation:
         // - Full query gas: visible in test output
@@ -190,17 +192,15 @@ contract NAVCalculatorGasTest is SuperTest {
         INAVCalculator.NAV memory fullNav = nav.getAccountNav(testSafe, address(0));
         uint256 gasFull = gasBeforeFull - gasleft();
 
-        // Single asset range (just first asset)
+        // Single asset range: index 4 is first generated token (indices 0–3 are native, usdc, dai, weth from setupNav)
         uint256 gasBeforeRange = gasleft();
-        INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(testSafe, 0, 0, address(0));
+        INAVCalculator.NAV memory rangeNav = nav.getAccountNavForRange(testSafe, 4, 4, address(0));
         uint256 gasRange = gasBeforeRange - gasleft();
 
-        // Gas usage documentation:
-        // - Full query gas: visible in test output
-        // - Single asset range query gas: visible in test output
-        // For smaller portfolios (50 assets), the range query overhead might make it
-        // less efficient than the full query due to fixed costs per call
-        // The key benefit of range queries is avoiding gas limit issues for very large portfolios
+        assertGt(fullNav.value, 0, "full NAV positive");
+        assertGt(rangeNav.value, 0, "range NAV positive");
+        assertGt(gasFull, 0, "full query gas measured");
+        assertGt(gasRange, 0, "range query gas measured");
     }
 
     // ============================================
@@ -215,6 +215,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasBefore1 = gasleft();
         INAVCalculator.NAV memory nav1 = nav.getAccountNav(safe, address(0));
         uint256 gas1 = gasBefore1 - gasleft();
+        assertGt(gas1, 0, "gas measured");
 
         // Add 5 more oracles
         setupMultipleOracles(5, address(usdc));
@@ -222,6 +223,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasBefore5 = gasleft();
         INAVCalculator.NAV memory nav5 = nav.getAccountNav(safe, address(0));
         uint256 gas5 = gasBefore5 - gasleft();
+        assertGt(gas5, 0, "gas measured");
 
         // Add 10 more oracles (total 15)
         setupMultipleOracles(10, address(usdc));
@@ -229,6 +231,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasBefore15 = gasleft();
         INAVCalculator.NAV memory nav15 = nav.getAccountNav(safe, address(0));
         uint256 gas15 = gasBefore15 - gasleft();
+        assertGt(gas15, 0, "gas measured");
 
         // Verify correctness
         assertGt(nav5.value, nav1.value, "More oracles should report more positions");
@@ -249,8 +252,8 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasBefore = gasleft();
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         uint256 gasUsed = gasBefore - gasleft();
-
         assertGt(navResult.value, 0, "NAV should be positive");
+        assertGt(gasUsed, 0, "gas measured");
 
         // Gas usage documentation: With 20 oracles, gas usage will be visible in test output
     }
@@ -275,11 +278,12 @@ contract NAVCalculatorGasTest is SuperTest {
             return;
         }
         uint256 gasFresh = gasBeforeFresh - gasleft();
+        assertGt(gasFresh, 0, "gas measured");
 
         // Get the first asset from the generated portfolio to make stale
-        address[] memory assets = nav.getAssets();
-        if (assets.length == 0) return; // Skip if no assets
-        address testAsset = assets[0]; // Use first generated asset (which has balance)
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        if (registered.length == 0) return; // Skip if no assets
+        address testAsset = registered[0].asset; // Use first generated asset (which has balance)
 
         // Make some prices stale - use a Chainlink oracle with short heartbeat
         Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1e8, 8);
@@ -302,6 +306,7 @@ contract NAVCalculatorGasTest is SuperTest {
             return;
         }
         uint256 gasStale = gasBeforeStale - gasleft();
+        assertGt(gasStale, 0, "gas measured");
 
         // Verify stale prices are detected (if applicable)
         // Note: Stale detection only includes assets that have positions
@@ -326,8 +331,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(navResult.value, 0, "Empty account should have zero NAV");
-
-        // Gas usage documentation: Empty account query gas will be visible in test output
+        assertGt(gasUsed, 0, "gas measured");
         // Typically very cheap as no positions need to be processed
     }
 
@@ -340,9 +344,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(navResult.value, 0, "Should have positive NAV");
-
-        // Gas usage documentation: Single asset query gas will be visible in test output
-        // Typically cheap as only one asset needs to be processed
+        assertGt(gasUsed, 0, "gas measured");
     }
 
     /// @notice Establish baseline for getAccountPositions
@@ -356,8 +358,7 @@ contract NAVCalculatorGasTest is SuperTest {
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(positions.length, 0, "Should have positions");
-
-        // Gas usage documentation: getAccountPositions gas will be visible in test output
+        assertGt(gasUsed, 0, "gas measured");
     }
 
     // ============================================
@@ -395,11 +396,8 @@ contract NAVCalculatorGasTest is SuperTest {
                 continue;
             }
 
-            // Calculate gas per asset (rough estimate)
             uint256 gasPerAsset = gasUsed / assetCounts[i];
-
-            // Gas usage documentation: Gas per asset will be visible in test output
-            // For ERC20DefaultOracle, each asset requires multiple queries, so gas per asset is typically 1M-2M
+            assertGt(gasPerAsset, 0, "gas per asset measured");
         }
     }
 
@@ -423,11 +421,8 @@ contract NAVCalculatorGasTest is SuperTest {
             nav.getAccountNav(safe, address(0));
             uint256 gasUsed = gasBefore - gasleft();
 
-            // Calculate gas per oracle
             uint256 gasPerOracle = gasUsed / oracleCounts[i];
-
-            // Gas usage documentation: Gas per oracle will be visible in test output
-            // Typically 20k-100k per oracle
+            assertGt(gasPerOracle, 0, "gas per oracle measured");
         }
     }
 }

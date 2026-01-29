@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -17,6 +16,7 @@ contract MockBalancerGauge {
         _lpToken = pool_;
     }
 
+    // forge-lint: disable-next-line(mixed-case-function)
     function lp_token() external view returns (address) {
         return _lpToken;
     }
@@ -70,21 +70,21 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     // Error Handling Tests
     // ============================================
 
-    function test_getOracleBalanceForAsset_returns_zero_for_nonPoolToken() public {
+    function test_getOracleBalanceForAsset_returns_zero_for_nonPoolToken() public view {
         address randomToken = address(0x1234);
 
-        int256 balance = oracle.getOracleBalanceForAsset(alice, randomToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, randomToken);
+        assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_returns_zero_when_noBpt() public {
+    function test_getOracleBalanceForAsset_returns_zero_when_noBpt() public view {
         address deadAddress = address(0xdead);
 
-        int256 balance1 = oracle.getOracleBalanceForAsset(deadAddress, address(usdc));
-        assertEq(balance1, 0);
+        (uint256 amount1,) = oracle.getOracleBalanceForAsset(deadAddress, address(usdc));
+        assertEq(amount1, 0);
 
-        int256 balance2 = oracle.getOracleBalanceForAsset(deadAddress, address(dai));
-        assertEq(balance2, 0);
+        (uint256 amount2,) = oracle.getOracleBalanceForAsset(deadAddress, address(dai));
+        assertEq(amount2, 0);
     }
 
     // ============================================
@@ -92,13 +92,13 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
-    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public {
+    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
 
         assertEq(positions.length, 0);

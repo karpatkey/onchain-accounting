@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
-import {DaiDsrBalanceOracle, PotLike, DsrManager} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DaiDsrBalanceOracleForkTest
@@ -54,8 +54,9 @@ contract DaiDsrBalanceOracleForkTest is BalanceAdapterForkTestBase {
         assertEq(rho, block.timestamp, "rho should equal block.timestamp after drip");
 
         // Calculate balance for test user - should use chi directly without compounding
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER, DAI);
-        assertGt(balance, 0, "Balance should be positive");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, DAI);
+        assertGt(amount, 0, "Balance should be positive");
+        assertFalse(isDebt);
     }
 
     /// @notice Tests balance calculation when rho hasn't been updated (rho < block.timestamp)
@@ -75,8 +76,9 @@ contract DaiDsrBalanceOracleForkTest is BalanceAdapterForkTestBase {
         assertLt(rho, block.timestamp, "rho should be less than block.timestamp when stale");
 
         // Calculate balance for test user - should apply compounding calculation
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER, DAI);
-        assertGt(balance, 0, "Balance should be positive");
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, DAI);
+        assertGt(amount, 0, "Balance should be positive");
+        assertFalse(isDebt);
 
         // Balance with stale rho should be higher than with current rho due to compounding
         // (though the difference may be small depending on the time elapsed)
@@ -87,18 +89,19 @@ contract DaiDsrBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_returnsCorrectBalance() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(TEST_USER);
 
         // Should have DAI position
         assertGe(assets.length, 1, "Should have at least one position");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
 
         // Verify DAI is present
         bool foundDai = false;
         for (uint256 i = 0; i < assets.length; i++) {
             if (assets[i] == DAI) {
                 foundDai = true;
-                assertGt(balances[i], 0, "DAI balance should be positive");
+                assertGt(amounts[i], 0, "DAI balance should be positive");
+                assertFalse(isDebt[i], "DAI should be credit");
             }
         }
 

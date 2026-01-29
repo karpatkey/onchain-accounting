@@ -8,6 +8,7 @@ import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {IOmnibridge, IAMB} from "./interfaces/IGnosisInterfaces.sol";
 import {IGnosisBridgeAdapter} from "./interfaces/IGnosisBridgeAdapter.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title GnosisBridgeAdapter
@@ -60,12 +61,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         address amb_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "Gnosis";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "Gnosis", version_);
 
         if (omnibridge_ == address(0)) revert InvalidOmnibridge();
         if (amb_ == address(0)) revert InvalidAMB();
@@ -146,7 +143,13 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @inheritdoc BridgeAdapter
     /// @dev Completes bridge on destination chain (operator fallback when callback path not used).
     ///      When recipient is BridgeEscrow, tokens are delivered to escrow; we only record and release.
-    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
+    function _completeBridge(
+        bytes calldata messagePayload,
+        bytes calldata /* protocolData */
+    )
+        internal
+        override
+    {
         if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
@@ -164,7 +167,15 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @inheritdoc IGnosisBridgeAdapter
     /// @dev When called by BridgeEscrow (escrow fallback forwards here), completes delivery.
     ///      When called directly on the adapter, reverts.
-    function onTokenTransfer(address, bytes32 value, bytes memory data) external returns (bool) {
+    function onTokenTransfer(
+        address,
+        bytes32,
+        /* value */
+        bytes memory data
+    )
+        external
+        returns (bool)
+    {
         if (msg.sender != bridgeEscrow) revert NotAuthorized();
         _completeDelivery(data);
         return true;

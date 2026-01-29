@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @notice Minimal mock for Pot contract (used by DaiDsrBalanceOracle)
@@ -33,10 +32,14 @@ contract MockPot {
 
 /// @notice Minimal mock for DsrManager (used by DaiDsrBalanceOracle)
 contract MockDsrManager {
-    MockPot public immutable pot;
+    MockPot public immutable POT;
 
     constructor() {
-        pot = new MockPot();
+        POT = new MockPot();
+    }
+
+    function pot() external view returns (PotLike) {
+        return PotLike(address(POT));
     }
 
     function pieOf(address) external pure returns (uint256) {
@@ -71,13 +74,13 @@ contract DaiDsrBalanceOracleTest is BalanceAdapterTestBase {
         address invalidToken = makeAddr("invalidToken");
 
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(alice, invalidToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, invalidToken);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
-        int256 balance = oracle.getOracleBalanceForAsset(address(0), address(usdc));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(amount, 0);
     }
 
     // ============================================
@@ -85,10 +88,10 @@ contract DaiDsrBalanceOracleTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {

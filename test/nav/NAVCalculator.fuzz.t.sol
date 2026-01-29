@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -49,15 +50,15 @@ contract NAVCalculatorFuzzTest is SuperTest {
 
     /// @notice Helper to get a valid quote asset from registered assets
     function getValidQuoteAsset(uint256 seed) internal view returns (address) {
-        address[] memory assets = nav.getAssets();
-        if (assets.length == 0) {
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        if (registered.length == 0) {
             return address(0); // USD
         }
-        uint256 index = bound(seed, 0, assets.length);
-        if (index == assets.length) {
+        uint256 index = bound(seed, 0, registered.length);
+        if (index == registered.length) {
             return address(0); // USD
         }
-        return assets[index];
+        return registered[index].asset;
     }
 
     // ============================================
@@ -65,7 +66,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
     // ============================================
 
     /// @notice Fuzz test for getAccountNav with random accounts and quote assets
-    function testFuzz_getAccountNav(address account, uint256 quoteAssetSeed) public {
+    function testFuzz_getAccountNav(address account, uint256 quoteAssetSeed) public view {
         // Bound account to non-zero address
         vm.assume(account != address(0));
 
@@ -125,7 +126,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
     // ============================================
 
     /// @notice Fuzz test for getAccountPositions with random quote currencies
-    function testFuzz_getAccountPositions(address account, uint256 quoteAssetSeed) public {
+    function testFuzz_getAccountPositions(address account, uint256 quoteAssetSeed) public view {
         vm.assume(account != address(0));
 
         // Get valid quote asset
@@ -201,7 +202,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
     // ============================================
 
     /// @notice Fuzz test for range queries with random boundaries
-    function testFuzz_rangeQueries(address account, uint256 fromSeed, uint256 toSeed) public {
+    function testFuzz_rangeQueries(address account, uint256 fromSeed, uint256 toSeed) public view {
         vm.assume(account != address(0));
 
         uint256 assetCount = nav.getAssetCount();
@@ -225,7 +226,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
     }
 
     /// @notice Fuzz test for range query completeness
-    function testFuzz_rangeQueries_completeness(address account, uint256 chunkSizeSeed) public {
+    function testFuzz_rangeQueries_completeness(address account, uint256 chunkSizeSeed) public view {
         vm.assume(account != address(0));
 
         uint256 assetCount = nav.getAssetCount();

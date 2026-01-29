@@ -61,7 +61,7 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
         vm.startPrank(alice);
-        (uint256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertFalse(stale);
@@ -80,7 +80,7 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
         vm.startPrank(alice);
-        (uint256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertTrue(stale);
@@ -100,7 +100,7 @@ contract PricesTest is Test {
         vm.warp(block.timestamp + 2);
 
         vm.startPrank(alice);
-        (uint256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertFalse(stale);
@@ -118,7 +118,7 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
         vm.startPrank(alice);
-        (uint256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertTrue(stale);
@@ -227,7 +227,7 @@ contract PricesTest is Test {
         Mock_PriceOracleChainlink zeroPriceOracle = new Mock_PriceOracleChainlink("Zero", 0, 8);
         manager.setPriceFeed(buidl, address(zeroPriceOracle), type(uint256).max, IPrices.PriceType.Chainlink);
 
-        (uint256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
+        (int256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
         assertEq(price, 0);
         assertEq(decimals, 8);
         assertTrue(stale); // Zero price should be marked as stale

@@ -29,7 +29,7 @@ contract AdapterConsistencyTest is Test {
         mockNav = new Mock_NAVCalculator();
 
         // Create ERC20DefaultOracle with mock NAVCalculator
-        erc20DefaultOracle = new ERC20DefaultOracle(address(mockNav));
+        erc20DefaultOracle = new ERC20DefaultOracle(address(mockNav), new address[](0));
 
         // So that registerAsset also adds assets to the default oracle's inclusion list
         mockNav.setDefaultOracle(address(erc20DefaultOracle));
@@ -133,9 +133,10 @@ contract AdapterConsistencyTest is Test {
         // Set debt position in custom oracle
         customOracle.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), true);
 
-        // Get balance - should be debt (negative)
-        int256 balance = customOracle.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(balance, -int256(1000 * 10 ** usdc.decimals()), "Debt balance should be negative");
+        // Get balance - should be debt
+        (uint256 amount, bool isDebt) = customOracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 1000 * 10 ** usdc.decimals(), "Amount should match");
+        assertTrue(isDebt, "Debt balance should have isDebt true");
 
         // Get positions - should include debt position
         INAVCalculator.PositionBalance[] memory positions = customOracle.getOraclePositions(alice, address(0));
@@ -212,11 +213,11 @@ contract AdapterConsistencyTest is Test {
         address invalidAsset = makeAddr("invalid");
 
         // Both adapters should return zero for invalid asset, not revert
-        int256 balance1 = erc20DefaultOracle.getOracleBalanceForAsset(alice, invalidAsset);
-        int256 balance2 = customOracle.getOracleBalanceForAsset(alice, invalidAsset);
+        (uint256 amount1,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, invalidAsset);
+        (uint256 amount2,) = customOracle.getOracleBalanceForAsset(alice, invalidAsset);
 
-        assertEq(balance1, 0, "ERC20DefaultOracle should return zero for invalid asset");
-        assertEq(balance2, 0, "CustomOracle should return zero for invalid asset");
+        assertEq(amount1, 0, "ERC20DefaultOracle should return zero for invalid asset");
+        assertEq(amount2, 0, "CustomOracle should return zero for invalid asset");
 
         // Both should return empty arrays for invalid asset filter
         INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, invalidAsset);
@@ -227,13 +228,13 @@ contract AdapterConsistencyTest is Test {
     }
 
     /// @notice Test that all adapters handle zero address account consistently
-    function test_consistency_zeroAddressAccount() public {
+    function test_consistency_zeroAddressAccount() public view {
         // Both adapters should return zero for zero address account
-        int256 balance1 = erc20DefaultOracle.getOracleBalanceForAsset(address(0), address(usdc));
-        int256 balance2 = customOracle.getOracleBalanceForAsset(address(0), address(usdc));
+        (uint256 amount1,) = erc20DefaultOracle.getOracleBalanceForAsset(address(0), address(usdc));
+        (uint256 amount2,) = customOracle.getOracleBalanceForAsset(address(0), address(usdc));
 
-        assertEq(balance1, 0, "ERC20DefaultOracle should return zero for zero address");
-        assertEq(balance2, 0, "CustomOracle should return zero for zero address");
+        assertEq(amount1, 0, "ERC20DefaultOracle should return zero for zero address");
+        assertEq(amount2, 0, "CustomOracle should return zero for zero address");
     }
 
     // ============================================
@@ -257,8 +258,8 @@ contract AdapterConsistencyTest is Test {
         for (uint256 i = 0; i < adapters.length; i++) {
             IBalanceOracleAdapter adapter = adapters[i];
 
-            // Get balance via getOracleBalance
-            (address[] memory assets, int256[] memory balances_) = adapter.getOracleBalance(alice);
+            (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getOracleBalances(alice);
+            assertEq(assets.length, amounts.length, "assets and amounts length match");
 
             // Get positions
             INAVCalculator.PositionBalance[] memory positions = adapter.getOraclePositions(alice, address(0));
@@ -273,10 +274,14 @@ contract AdapterConsistencyTest is Test {
                 }
             }
 
-            // Sum balances (already signed)
+            // Sum balances (amount + isDebt)
             int256 balanceSum = 0;
-            for (uint256 j = 0; j < balances_.length; j++) {
-                balanceSum += balances_[j];
+            for (uint256 j = 0; j < amounts.length; j++) {
+                if (isDebt[j]) {
+                    balanceSum -= int256(amounts[j]);
+                } else {
+                    balanceSum += int256(amounts[j]);
+                }
             }
 
             // Should match
@@ -312,7 +317,7 @@ contract AdapterConsistencyTest is Test {
 
                 // Should be able to query balance (may be zero, that's fine)
                 try adapter.getOracleBalanceForAsset(alice, asset) returns (
-                    int256
+                    uint256, bool
                 ) {
                 // Success
                 }

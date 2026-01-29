@@ -61,12 +61,8 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         int64 defaultRelayerFeePct_,
         string memory version_
     ) external initializer {
-        // Initialize parent BridgeAdapter
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        bridgeEscrow = bridgeEscrow_;
-        bridgeProviderName = "Across";
-        adapterVersion = version_;
+        // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
+        super.initialize(admin_, bridgeEscrow_, "Across", version_);
 
         if (spokePool_ == address(0)) revert InvalidSpokePool();
         if (defaultRelayerFeePct_ < 0 || defaultRelayerFeePct_ > 1e18) {

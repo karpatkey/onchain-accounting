@@ -47,9 +47,10 @@ contract StakeWiseV3OsTokenBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalanceForAsset_gnosisInstance() public view {
-        int256 balance = oracle.getOracleBalanceForAsset(OS_GNO_HOLDER, GNO);
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(OS_GNO_HOLDER, GNO);
 
-        assertEq(balance, 1_176_150_159_277_420_338_054);
+        assertEq(amount, 1_176_150_159_277_420_338_054);
+        assertFalse(isDebt);
     }
 
     // ============================================
@@ -57,11 +58,11 @@ contract StakeWiseV3OsTokenBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(OS_GNO_HOLDER);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(OS_GNO_HOLDER);
 
         // Should have at least GNO position
         assertGe(assets.length, 1, "Should have at least one position");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public view {

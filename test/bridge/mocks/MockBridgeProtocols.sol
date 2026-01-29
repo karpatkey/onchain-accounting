@@ -91,7 +91,14 @@ contract MockMessageTransmitter is IMessageTransmitter {
 
     event MessageReceived(bytes32 messageHash, uint32 sourceDomain, uint64 nonce);
 
-    function receiveMessage(bytes calldata message, bytes calldata attestation) external override returns (bool) {
+    function receiveMessage(
+        bytes calldata message,
+        bytes calldata /* attestation */
+    )
+        external
+        override
+        returns (bool)
+    {
         bytes32 messageHash = keccak256(message);
         require(!receivedMessages[messageHash], "Message already received");
 
@@ -204,9 +211,13 @@ contract MockCcipRouter is IRouterClient {
         return messageId;
     }
 
-    function getFee(uint64 destinationChainSelector, Client.EVM2AnyMessage memory message)
+    function getFee(
+        uint64,
+        /* destinationChainSelector */
+        Client.EVM2AnyMessage memory /* message */
+    )
         external
-        view
+        pure
         override
         returns (uint256)
     {
@@ -279,8 +290,10 @@ contract MockStargateRouter is IStargateRouter {
         address payable _refundAddress,
         uint256 _amountLd,
         uint256 _minAmountLd,
-        IStargateRouter.LzTxObj memory _lzTxParams,
-        bytes calldata _to,
+        IStargateRouter.LzTxObj memory,
+        /* _lzTxParams */
+        bytes calldata,
+        /* _to */
         bytes calldata _payload
     ) external payable override {
         messageId++;
@@ -325,12 +338,21 @@ contract MockStargateRouter is IStargateRouter {
     }
 
     function quoteLayerZeroFee(
-        uint16 _dstChainId,
-        uint8 _functionType,
-        bytes calldata _toAddress,
-        bytes calldata _transferAndCallPayload,
-        IStargateRouter.LzTxObj memory _lzTxParams
-    ) external pure override returns (uint256 nativeFee, uint256 zroFee) {
+        uint16,
+        /* _dstChainId */
+        uint8,
+        /* _functionType */
+        bytes calldata,
+        /* _toAddress */
+        bytes calldata,
+        /* _transferAndCallPayload */
+        IStargateRouter.LzTxObj memory /* _lzTxParams */
+    )
+        external
+        pure
+        override
+        returns (uint256 nativeFee, uint256 zroFee)
+    {
         // Return fixed fee for testing
         return (0.01 ether, 0);
     }
@@ -400,7 +422,7 @@ contract MockSpokePool {
         int64 relayerFeePct,
         uint32 quoteTimestamp,
         bytes memory message,
-        uint256 maxCount
+        uint256 /* maxCount */
     ) external payable {
         depositId++;
 
@@ -498,7 +520,16 @@ contract MockL1StandardBridge {
         address indexed l1Token, address indexed l2Token, address indexed from, address to, uint256 amount, bytes data
     );
 
-    function depositETHTo(address to, uint32 l2Gas, bytes calldata data) external payable {
+    // forge-lint: disable-next-line(mixed-case-function) -- matches Optimism L1StandardBridge ABI
+    function depositETHTo(
+        address to,
+        uint32,
+        /* l2Gas */
+        bytes calldata data
+    )
+        external
+        payable
+    {
         emit ETHDepositInitiated(msg.sender, to, msg.value, data);
     }
 
@@ -507,7 +538,8 @@ contract MockL1StandardBridge {
         address l2Token,
         address to,
         uint256 amount,
-        uint32 l2Gas,
+        uint32,
+        /* l2Gas */
         bytes calldata data
     ) external {
         IERC20(l1Token).safeTransferFrom(msg.sender, address(this), amount);
@@ -525,7 +557,14 @@ contract MockL2StandardBridge {
     );
 
     /// @dev IL2StandardBridge.withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _l1Gas, bytes _data)
-    function withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _l1Gas, bytes calldata _data)
+    function withdrawTo(
+        address _l2Token,
+        address _to,
+        uint256 _amount,
+        uint32,
+        /* _l1Gas */
+        bytes calldata _data
+    )
         external
         payable
     {

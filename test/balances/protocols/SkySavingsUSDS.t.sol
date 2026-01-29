@@ -39,7 +39,7 @@ contract SavingsUSDSTest is TestEnvConfigurator, TestSetupHelpers {
     }
 
     function test_MAINNET_balanceOf_TEST_USER() public {
-        int256 balance = oracle.getOracleBalanceForAsset(testUser, address(USDS));
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(testUser, address(USDS));
 
         vm.startPrank(testUser);
         uint256 previousBalance = USDS.balanceOf(testUser);
@@ -49,19 +49,20 @@ contract SavingsUSDSTest is TestEnvConfigurator, TestSetupHelpers {
 
         uint256 expected = newBalance - previousBalance;
 
-        assertEq(uint256(balance), expected, "Oracle balance should match redemption amount");
-        assertGt(balance, 0, "User should have positive USDS position");
+        assertEq(amount, expected, "Oracle balance should match redemption amount");
+        assertGt(amount, 0, "User should have positive USDS position");
+        assertFalse(isDebt);
     }
 
     function test_balanceOfZeroAddress() public view {
-        int256 balance = oracle.getOracleBalanceForAsset(address(0), address(USDS));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(USDS));
+        assertEq(amount, 0);
     }
 
     function test_returnsZeroOnInvalidToken() public view {
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(testUser, address(0xdead));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(testUser, address(0xdead));
+        assertEq(amount, 0);
     }
 
     function test_underlyingAssetsSupported() public view {

@@ -5,6 +5,7 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 
 /// @title BridgeScenarioHelper

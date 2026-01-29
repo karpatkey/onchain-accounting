@@ -48,18 +48,18 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0)))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0), "ETH"))
         );
         navCalculator = NAVCalculator(navProxy);
         navCalculator.grantRole(MANAGER, manager);
         vm.stopPrank();
 
-        // Register assets in NAVCalculator
+        // Register assets in NAVCalculator (native is pre-registered in initialize)
         vm.startPrank(manager);
+        navCalculator.setPriceFeed(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
-        navCalculator.registerAsset(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         // Create ERC20DefaultOracle (it's already created by NAVCalculator, but we can get it)
@@ -97,43 +97,44 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         assertTrue(foundNative, "Native address should be found");
     }
 
-    function test_underlyingAssetsSupported_returnsEmptyWhenNoAssets() public {
-        // Create a new NAVCalculator with no assets
+    function test_underlyingAssetsSupported_nativeOnlyWhenNoOtherAssets() public {
+        // A freshly initialized NAVCalculator has native pre-registered in the default oracle
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0)))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0), "ETH"))
         );
         NAVCalculator emptyNav = NAVCalculator(navProxy);
         vm.stopPrank();
 
         ERC20DefaultOracle emptyOracle = ERC20DefaultOracle(emptyNav.erc20DefaultOracle());
         address[] memory assets = emptyOracle.underlyingAssetsSupported();
-        assertEq(assets.length, 0);
+        assertEq(assets.length, 1, "Only native is in the default oracle before other assets are registered");
+        assertEq(assets[0], NATIVE_ADDRESS);
     }
 
     function test_getOracleBalanceForAsset_returnsZeroForUnregisteredAsset() public {
         address user = makeAddr("user");
         address unregisteredAsset = makeAddr("unregistered");
 
-        int256 balance = oracle.getOracleBalanceForAsset(user, unregisteredAsset);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, unregisteredAsset);
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_returnsZeroForZeroAddress() public {
         address user = makeAddr("user");
 
-        int256 balance = oracle.getOracleBalanceForAsset(user, address(0));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(0));
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalance_returnsEmptyWhenNoAssets() public {
         address user = makeAddr("user");
 
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(user);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(user);
         // Should return all registered assets, but with zero balances
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyWhenNoAssets() public {
@@ -209,7 +210,8 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
         for (uint256 i = 0; i < supported.length; i++) {
             assertTrue(supported[i] != address(usdc));
         }
-        assertEq(oracle.getOracleBalanceForAsset(user, address(usdc)), 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        assertEq(amount, 0);
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
         assertEq(positions.length, 0);
         positions = oracle.getOraclePositions(user, address(0));
@@ -236,7 +238,8 @@ contract ERC20DefaultOracleTest is TestEnvConfigurator {
 
         address user = makeAddr("user");
         usdc.mint(user, 500e6);
-        assertEq(oracle.getOracleBalanceForAsset(user, address(usdc)), 500e6);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        assertEq(amount, 500e6);
     }
 
     function test_removeSupportedAsset_idempotent() public {

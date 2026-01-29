@@ -99,8 +99,13 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance (positive for credit, negative for debt)
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (int256 balance) {
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
 
         Position memory position = MORPHO.position(MARKET_ID, account);
@@ -123,13 +128,16 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 borrowedAssets = totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating the debt
             }
 
-            // Calculate net: supplied - borrowed (can be negative)
-            balance = int256(suppliedAssets) - int256(borrowedAssets);
-        } else if (underlyingAsset == COLLATERAL_TOKEN) {
-            balance = int256(uint256(position.collateral)); // Collateral is always credit (positive)
-        } else {
-            revert InvalidArguments();
+            // Net: supplied - borrowed (can be negative)
+            if (suppliedAssets >= borrowedAssets) {
+                return (suppliedAssets - borrowedAssets, false);
+            }
+            return (borrowedAssets - suppliedAssets, true);
         }
+        if (underlyingAsset == COLLATERAL_TOKEN) {
+            return (uint256(position.collateral), false); // Collateral is always credit
+        }
+        revert InvalidArguments();
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -150,43 +158,46 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Optimized: directly calculate balance without building full Position structs
-        balance = _calculateBalance(asset, account);
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
+        return _calculateBalance(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            int256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
+            (uint256 amt, bool debt) = _calculateBalance(asset, account);
+            if (amt != 0) {
                 tempAssets[count] = asset;
-                tempBalances[count] = balance;
+                tempAmounts[count] = amt;
+                tempIsDebt[count] = debt;
                 count++;
             }
         }
 
-        // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
         }
     }
 
@@ -202,7 +213,11 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -211,25 +226,13 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         if (registeredSupportedAssets.length == 0) {
             assetBalanceData = new AssetBalanceData[](0);
         } else if (assetFilter != address(0)) {
-            // Check if assetFilter is in the registered supported assets
+            assetBalanceData = new AssetBalanceData[](0);
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    int256 balance = _calculateBalance(assetFilter, account);
-                    if (balance != 0) {
-                        // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                        uint256 amount;
-                        bool isDebt;
-                        if (balance < 0) {
-                            amount = uint256(-balance);
-                            isDebt = true;
-                        } else {
-                            amount = uint256(balance);
-                            isDebt = false;
-                        }
+                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
+                    if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
-                    } else {
-                        assetBalanceData = new AssetBalanceData[](0);
                     }
                     break;
                 }
@@ -240,18 +243,8 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                int256 balance = _calculateBalance(registeredSupportedAssets[i], account);
-                if (balance != 0) {
-                    // Convert int256 balance back to (uint256 amount, bool isDebt) for AssetBalanceData
-                    uint256 amount;
-                    bool isDebt;
-                    if (balance < 0) {
-                        amount = uint256(-balance);
-                        isDebt = true;
-                    } else {
-                        amount = uint256(balance);
-                        isDebt = false;
-                    }
+                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
+                if (amount != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
                     count++;
@@ -275,11 +268,10 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

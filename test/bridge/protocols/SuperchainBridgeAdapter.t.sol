@@ -6,7 +6,7 @@ import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapt
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {BridgeTestBase} from "test/bridge/BridgeTestBase.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 import {Types} from "@optimism/libraries/Types.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -140,7 +140,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(portfolioSafe);
-        usdc.transfer(address(bridgeEscrow), amount);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(l1Adapter), amount);
 

@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -29,10 +29,10 @@ contract NAVCalculatorHandler is Test {
     address internal currentActor;
 
     // Ghost variables for tracking state
-    uint256 public ghost_totalNav;
-    uint256 public ghost_positionCount;
-    uint256 public ghost_oracleCount;
-    uint256 public ghost_assetCount;
+    uint256 public ghostTotalNav;
+    uint256 public ghostPositionCount;
+    uint256 public ghostOracleCount;
+    uint256 public ghostAssetCount;
 
     // Track registered assets and oracles
     mapping(address => bool) public registeredAssets;
@@ -47,7 +47,12 @@ contract NAVCalculatorHandler is Test {
         vm.stopPrank();
     }
 
-    constructor(NAVCalculator _nav, address admin, address manager) {
+    constructor(
+        NAVCalculator _nav,
+        address,
+        /* admin */
+        address /* manager */
+    ) {
         nav = _nav;
 
         // Initialize actors
@@ -56,8 +61,8 @@ contract NAVCalculatorHandler is Test {
         }
 
         // Store initial state
-        ghost_oracleCount = nav.getOracleCount();
-        ghost_assetCount = nav.getAssetCount();
+        ghostOracleCount = nav.getOracleCount();
+        ghostAssetCount = nav.getAssetCount();
     }
 
     /// @notice Register a new asset with price feed
@@ -99,7 +104,7 @@ contract NAVCalculatorHandler is Test {
         // Register asset
         nav.registerAsset(address(token), address(priceOracle), IPrices.PriceType.Custom, type(uint256).max);
         registeredAssets[address(token)] = true;
-        ghost_assetCount = nav.getAssetCount();
+        ghostAssetCount = nav.getAssetCount();
     }
 
     /// @notice Add a balance oracle
@@ -118,14 +123,14 @@ contract NAVCalculatorHandler is Test {
         balanceOracles.push(oracle);
 
         // Set supported assets (use existing registered assets)
-        address[] memory assets = nav.getAssets();
-        if (assets.length > 0) {
-            uint256 assetCount = bound(oracleSeed, 1, assets.length);
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        if (registered.length > 0) {
+            uint256 assetCount = bound(oracleSeed, 1, registered.length);
             address[] memory supportedAssets = new address[](assetCount);
             for (uint256 i = 0; i < assetCount; i++) {
                 // Use addition instead of multiplication to avoid overflow
-                uint256 assetIndex = bound(oracleSeed + i * 1000, 0, assets.length - 1);
-                supportedAssets[i] = assets[assetIndex];
+                uint256 assetIndex = bound(oracleSeed + i * 1000, 0, registered.length - 1);
+                supportedAssets[i] = registered[assetIndex].asset;
             }
             oracle.setUnderlyingAssetsSupported(supportedAssets);
         }
@@ -133,7 +138,7 @@ contract NAVCalculatorHandler is Test {
         // Add oracle
         nav.addBalanceOracle(address(oracle));
         registeredOracles[address(oracle)] = true;
-        ghost_oracleCount = nav.getOracleCount();
+        ghostOracleCount = nav.getOracleCount();
     }
 
     /// @notice Remove a balance oracle
@@ -158,20 +163,20 @@ contract NAVCalculatorHandler is Test {
 
         nav.removeBalanceOracle(oracle);
         registeredOracles[oracle] = false;
-        ghost_oracleCount = nav.getOracleCount();
+        ghostOracleCount = nav.getOracleCount();
     }
 
     /// @notice Mint tokens to an actor
     function mintTokens(uint256 actorSeed, uint256 assetSeed, uint256 amountSeed) external useActor(actorSeed) {
-        address[] memory assets = nav.getAssets();
-        if (assets.length == 0) return;
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        if (registered.length == 0) return;
 
         // Bound seeds first to prevent overflow issues (use smaller bounds)
         assetSeed = bound(assetSeed, 0, type(uint64).max);
         amountSeed = bound(amountSeed, 0, type(uint64).max);
 
-        uint256 assetIndex = bound(assetSeed, 0, assets.length - 1);
-        address asset = assets[assetIndex];
+        uint256 assetIndex = bound(assetSeed, 0, registered.length - 1);
+        address asset = registered[assetIndex].asset;
 
         // Find token contract
         Mock_ERC20 token;
@@ -186,24 +191,26 @@ contract NAVCalculatorHandler is Test {
         // For simplicity, we'll use a try-catch approach
         try Mock_ERC20(asset).decimals() returns (uint8 decimals) {
             // Get price to calculate safe amount bound
-            (uint256 price,,) = nav.latestPrice(asset);
+            (int256 price,,) = nav.latestPrice(asset);
 
             // Bound amount to avoid overflow in amount * usdRate calculation
             // Need to ensure amount * price doesn't overflow uint256
             // Conservative bound: use smaller max to account for price multiplication
-            uint256 maxAmount;
+            int256 maxAmount;
             if (decimals <= 18) {
-                maxAmount = 1_000_000 * 10 ** decimals;
+                maxAmount = SafeCast.toInt256(uint256(1_000_000) * 10 ** decimals);
             } else {
                 // For very high decimals, use a more conservative bound
-                maxAmount = 1_000_000 * 10 ** 18; // Cap at 18 decimals worth
+                maxAmount = SafeCast.toInt256(uint256(1_000_000) * 10 ** 18); // Cap at 18 decimals worth
             }
-            // Also check against price-based limit
-            uint256 maxByPrice = type(uint256).max / price;
-            if (maxByPrice < maxAmount) {
-                maxAmount = maxByPrice;
+            // Also check against price-based limit (price is int256; use magnitude when positive)
+            if (price > 0) {
+                int256 maxByPrice = type(int256).max / price;
+                if (maxByPrice < maxAmount) {
+                    maxAmount = maxByPrice;
+                }
             }
-            uint256 amount = bound(amountSeed, 1, maxAmount);
+            uint256 amount = bound(amountSeed, 1, SafeCast.toUint256(maxAmount));
 
             // Try to mint (will fail if not a mock token, that's okay)
             try token.mint(currentActor, amount) {} catch {}
@@ -219,12 +226,12 @@ contract NAVCalculatorHandler is Test {
         address account = actors[bound(actorSeed, 0, actors.length - 1)];
 
         // Get valid quote asset
-        address[] memory assets = nav.getAssets();
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
         address quoteAsset = address(0); // Default to USD
-        if (assets.length > 0) {
-            uint256 index = bound(quoteAssetSeed, 0, assets.length);
-            if (index < assets.length) {
-                quoteAsset = assets[index];
+        if (registered.length > 0) {
+            uint256 index = bound(quoteAssetSeed, 0, registered.length);
+            if (index < registered.length) {
+                quoteAsset = registered[index].asset;
             }
         }
 
@@ -240,12 +247,12 @@ contract NAVCalculatorHandler is Test {
 
         address account = actors[bound(actorSeed, 0, actors.length - 1)];
 
-        address[] memory assets = nav.getAssets();
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
         address quoteAsset = address(0);
-        if (assets.length > 0) {
-            uint256 index = bound(quoteAssetSeed, 0, assets.length);
-            if (index < assets.length) {
-                quoteAsset = assets[index];
+        if (registered.length > 0) {
+            uint256 index = bound(quoteAssetSeed, 0, registered.length);
+            if (index < registered.length) {
+                quoteAsset = registered[index].asset;
             }
         }
 
@@ -254,6 +261,7 @@ contract NAVCalculatorHandler is Test {
     }
 }
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
 
 /// @title NAVCalculator Handler-Based Invariant Tests
@@ -357,16 +365,16 @@ contract NAVCalculatorHandlerTest is SuperTest {
 
     /// @notice Invariant: Prices consistent within block
     function invariant_priceConsistency() external view {
-        address[] memory assets = nav.getAssets();
-        if (assets.length == 0) return;
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        if (registered.length == 0) return;
 
         // Test a few assets
-        uint256 testCount = assets.length > 3 ? 3 : assets.length;
+        uint256 testCount = registered.length > 3 ? 3 : registered.length;
         for (uint256 i = 0; i < testCount; i++) {
-            address asset = assets[i];
+            address asset = registered[i].asset;
 
-            (uint256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
-            (uint256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
+            (int256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
+            (int256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
 
             assertEq(price1, price2, "Price should be consistent within block");
             assertEq(decimals1, decimals2, "Decimals should be consistent");
@@ -400,7 +408,7 @@ contract NAVCalculatorHandlerTest is SuperTest {
     /// @notice Invariant: Asset count matches registry
     function invariant_assetCountConsistency() external view {
         uint256 assetCount = nav.getAssetCount();
-        address[] memory allAssets = nav.getAssets();
+        INAVCalculator.Asset[] memory allAssets = nav.getRegisteredAssets();
 
         assertEq(assetCount, allAssets.length, "Asset count should match registry length");
     }

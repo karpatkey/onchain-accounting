@@ -6,10 +6,7 @@ import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {Balances} from "src/balances/Balances.sol";
-import {IBalances} from "src/balances/IBalances.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -93,7 +90,7 @@ abstract contract SuperTest is Test {
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(sequencerUptimeFeed)))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(sequencerUptimeFeed), "ETH"))
         );
         nav = NAVCalculator(navProxy);
 
@@ -103,8 +100,8 @@ abstract contract SuperTest is Test {
 
         vm.startPrank(navCalculatorManager);
 
-        // Register native address with price feed
-        nav.registerAsset(
+        // Native is pre-registered in initialize; set price feed only
+        nav.setPriceFeed(
             address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
         );
         // Note: The native address balance oracle is handled by ERC20DefaultOracle which is set up in initialize()
@@ -133,13 +130,14 @@ abstract contract SuperTest is Test {
         setupFund(ZERO_PERCENT, 100, 50, 1000); // 1% management, 0.5% redemption, 10% performance
     }
 
+    // forge-lint: disable-next-line(mixed-case-function) -- test helper; NAV in name is intentional
     function setupNAVCalculatorWithParams(address admin_, address safe_, address chainlinkUptimeFeed_)
         public
         returns (NAVCalculator)
     {
         address navCalculatorImpl = address(new NAVCalculator());
         address navCalculatorProxy = UnsafeUpgrades.deployUUPSProxy(
-            navCalculatorImpl, abi.encodeCall(NAVCalculator.initialize, (admin_, safe_, chainlinkUptimeFeed_))
+            navCalculatorImpl, abi.encodeCall(NAVCalculator.initialize, (admin_, safe_, chainlinkUptimeFeed_, "ETH"))
         );
 
         return NAVCalculator(navCalculatorProxy);
@@ -160,11 +158,13 @@ abstract contract SuperTest is Test {
     }
 
     ///  Returns the current NAV of the fund
+    // forge-lint: disable-next-line(mixed-case-function) -- test helper prefix t_
     function t_currentNav() public view returns (uint256 currentNav) {
         INAVCalculator.NAV memory navReading = nav.getAccountNav(address(safe), address(0));
         return uint256(navReading.value);
     }
 
+    // forge-lint: disable-next-line(mixed-case-function) -- test helper prefix t_
     function t_readNav() internal view returns (INAVCalculator.NAV memory navReading) {
         navReading = nav.getAccountNav(address(safe), address(0));
     }

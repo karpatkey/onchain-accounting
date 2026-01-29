@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
@@ -37,15 +36,15 @@ contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_getOracleBalanceForAsset_returns_zero_for_unsupported_address() public view {
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(alice, address(0));
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(0));
+        assertEq(amount, 0);
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_incorrect_token() public {
         address incorrectToken = makeAddr("incorrectToken");
         // getOracleBalanceForAsset returns 0 for unsupported tokens
-        int256 balance = oracle.getOracleBalanceForAsset(alice, incorrectToken);
-        assertEq(balance, 0);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, incorrectToken);
+        assertEq(amount, 0);
     }
 
     // ============================================
@@ -63,10 +62,10 @@ contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(address(0));
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
 
         assertEq(assets.length, 0);
-        assertEq(balances.length, 0);
+        assertEq(amounts.length, 0);
     }
 
     function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {

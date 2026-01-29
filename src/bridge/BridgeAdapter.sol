@@ -61,8 +61,9 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     /// @param bridgeEscrow_ The BridgeEscrow contract address
     /// @param providerName_ The bridge provider name
     /// @param version_ The adapter version
+    /// @dev Public (not external) so concrete adapters can call super.initialize() from their initialize()
     function initialize(address admin_, address bridgeEscrow_, string memory providerName_, string memory version_)
-        external
+        public
         initializer
     {
         __AccessControl_init();

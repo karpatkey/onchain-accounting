@@ -91,43 +91,68 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         return _getSupportedAssets();
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        // Return zero for zero address
-        if (asset == address(0)) {
-            return 0;
+    /// @notice Converts net balance (supply - debt + rewards) to (amount, isDebt)
+    function _netToAmountAndDebt(uint256 supply, uint256 debt, uint256 rewards)
+        internal
+        pure
+        returns (uint256 amount, bool isDebt)
+    {
+        if (supply + rewards >= debt) {
+            return (supply + rewards - debt, false);
         }
-
-        // Return zero for unsupported assets
-        if (!_isAssetSupported(asset)) {
-            return 0;
-        }
-
-        // Optimized: directly calculate net balance without building full Position structs
-        UserReserveData memory data = _getUserAssetData(account, asset);
-        balance = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
-            + data.rewardBalance.toInt256();
+        return (debt - supply - rewards, true);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalanceForAsset(address account, address asset)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (uint256 amount, bool isDebt)
+    {
+        if (asset == address(0)) {
+            return (0, false);
+        }
+        if (!_isAssetSupported(asset)) {
+            return (0, false);
+        }
+        UserReserveData memory data = _getUserAssetData(account, asset);
+        return _netToAmountAndDebt(data.currentATokenBalance, data.currentVariableDebt, data.rewardBalance);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalances(address account)
+        external
+        view
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         address[] memory supportedAssets = _getSupportedAssets();
-
-        // Only return assets and balances for tokens with non-zero balances
         UserReserveData[] memory userReserveData = _getUserReservesData(account, supportedAssets);
-        assets = new address[](userReserveData.length);
-        balances = new int256[](userReserveData.length);
+
+        address[] memory tempAssets = new address[](userReserveData.length);
+        uint256[] memory tempAmounts = new uint256[](userReserveData.length);
+        bool[] memory tempIsDebt = new bool[](userReserveData.length);
+        uint256 count = 0;
+
         for (uint256 i = 0; i < userReserveData.length; i++) {
-            assets[i] = userReserveData[i].asset;
-            UserReserveData memory data = _getUserAssetData(account, assets[i]);
-            balances[i] = (data.currentATokenBalance.toInt256() - data.currentVariableDebt.toInt256())
-                + data.rewardBalance.toInt256();
+            UserReserveData memory data = _getUserAssetData(account, userReserveData[i].asset);
+            (uint256 amount, bool isDebt_) =
+                _netToAmountAndDebt(data.currentATokenBalance, data.currentVariableDebt, data.rewardBalance);
+            if (amount != 0) {
+                tempAssets[count] = userReserveData[i].asset;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
+                count++;
+            }
         }
-        return (assets, balances);
+
+        assets = new address[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
+        }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -142,7 +167,11 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address[] memory supportedAssets = _getSupportedAssets();
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -173,11 +202,10 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

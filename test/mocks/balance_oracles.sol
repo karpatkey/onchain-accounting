@@ -13,12 +13,12 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     address[] public underlyingAassetsSupported;
     string internal _protocol;
     string internal _positionDetail;
-    IBalances public BALANCES;
+    IBalances public balances;
 
     constructor() {}
 
     function setBalances(IBalances balances_) external {
-        BALANCES = balances_;
+        balances = balances_;
     }
 
     function setBalance(address token, address account, uint256 amount, bool debt) external {
@@ -50,27 +50,27 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
-        (uint256 amount, bool isDebt_) = this.balanceOf(asset, account);
-        if (isDebt_) {
-            balance = -int256(amount);
-        } else {
-            balance = int256(amount);
-        }
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amountOut, bool isDebtOut)
+    {
+        (amountOut, isDebtOut) = this.balanceOf(asset, account);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amountsOut, bool[] memory isDebtOut)
     {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
         // Pre-allocate arrays
         address[] memory tempAssets = new address[](assetCount);
-        int256[] memory tempBalances = new int256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
@@ -80,21 +80,20 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
             // Only include non-zero balances
             if (amount != 0) {
                 tempAssets[count] = asset;
-                if (debt) {
-                    tempBalances[count] = -int256(amount);
-                } else {
-                    tempBalances[count] = int256(amount);
-                }
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = debt;
                 count++;
             }
         }
 
         // Resize to actual count
         assets = new address[](count);
-        balances = new int256[](count);
+        amountsOut = new uint256[](count);
+        isDebtOut = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = tempBalances[i];
+            amountsOut[i] = tempAmounts[i];
+            isDebtOut[i] = tempIsDebt[i];
         }
     }
 
@@ -136,20 +135,20 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 // Get asset info from registry (if registered) or from token directly
                 uint8 decimals;
                 string memory symbol;
-                if (address(BALANCES) != address(0)) {
-                    try BALANCES.getAssetDecimals(asset) returns (uint8 dec) {
+                if (address(balances) != address(0)) {
+                    try INAVCalculator(address(balances)).getAssetDecimals(asset) returns (uint8 dec) {
                         decimals = dec;
                     } catch {
                         // Asset not registered, skip it (NAVCalculator will filter anyway)
                         continue;
                     }
-                    try BALANCES.getAssetSymbol(asset) returns (string memory sym) {
+                    try INAVCalculator(address(balances)).getAssetSymbol(asset) returns (string memory sym) {
                         symbol = sym;
                     } catch {
                         symbol = "";
                     }
                 } else {
-                    // Fallback to ERC20 metadata if BALANCES not set
+                    // Fallback to ERC20 metadata if balances not set
                     try IERC20Metadata(asset).decimals() returns (uint8 dec) {
                         decimals = dec;
                     } catch {

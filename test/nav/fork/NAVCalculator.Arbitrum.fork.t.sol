@@ -62,13 +62,13 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        nav.registerAsset(usdc, ChainlinkPriceFeeds.USDC_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(usdt, ChainlinkPriceFeeds.USDT_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(wbtc, ChainlinkPriceFeeds.WBTC_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(arb, ChainlinkPriceFeeds.ARB_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(native, ChainlinkPriceFeeds.ETH_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(weth, ChainlinkPriceFeeds.ETH_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.registerAsset(compound, ChainlinkPriceFeeds.COMP_USD_ARBITRUM(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(wbtc, ChainlinkPriceFeeds.wbtcUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(arb, ChainlinkPriceFeeds.arbUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
     function setupBalanceOracle() internal override {

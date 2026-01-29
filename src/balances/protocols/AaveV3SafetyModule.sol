@@ -106,33 +106,35 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset) external view returns (int256 balance) {
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
         // Return zero for zero account or unsupported/invalid tokens (adapter convention)
         if (
             account == address(0) || asset == address(0)
                 || (asset != address(STAKED_TOKEN) && asset != address(REWARD_TOKEN))
         ) {
-            return 0;
+            return (0, false);
         }
-        // Cast uint256 to int256 for interface (always positive for this oracle)
-        return int256(_calculateBalance(asset, account));
+        return (_calculateBalance(asset, account), false); // Safety Module positions are always credit
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalance(address account)
+    function getOracleBalances(address account)
         external
         view
-        returns (address[] memory assets, int256[] memory balances)
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         if (account == address(0)) {
-            return (new address[](0), new int256[](0));
+            return (new address[](0), new uint256[](0), new bool[](0));
         }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
-        // Pre-allocate arrays (internal use uint256; cast to int256 for interface)
         address[] memory tempAssets = new address[](assetCount);
-        uint256[] memory tempBalances = new uint256[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
         uint256 count = 0;
 
         for (uint256 i = 0; i < assetCount; i++) {
@@ -142,17 +144,18 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
             // Only include non-zero balances
             if (balance != 0) {
                 tempAssets[count] = asset;
-                tempBalances[count] = balance;
+                tempAmounts[count] = balance;
                 count++;
             }
         }
 
-        // Resize to actual count; cast to int256 for interface (always positive for this oracle)
         assets = new address[](count);
-        balances = new int256[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             assets[i] = tempAssets[i];
-            balances[i] = int256(tempBalances[i]);
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = false;
         }
     }
 
@@ -174,7 +177,11 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         address[] memory supportedAssets = this.underlyingAssetsSupported();
 
         // Get registered assets from NAVCalculator
-        address[] memory registeredAssets = NAV_CALCULATOR.assets();
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
 
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayUtils.intersection(supportedAssets, registeredAssets);
@@ -233,11 +240,10 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        uint256 assetCount = NAV_CALCULATOR.assetCount();
-        for (uint256 i = 0; i < assetCount; i++) {
-            INAVCalculator.Asset memory a = NAV_CALCULATOR.assetAt(i);
-            if (a.asset == asset) {
-                return a;
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
             }
         }
         revert("Asset not found in NAVCalculator");

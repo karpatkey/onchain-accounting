@@ -7,6 +7,9 @@ uint8 constant NAV_DECIMALS = 8;
 // Used to prevent overflow in decimal exponentiation operations
 uint256 constant MAX_DECIMAL_EXPONENT = 255;
 
+// Maximum exponent such that 10^N fits in int256 (10^77 > type(int256).max)
+uint256 constant MAX_DECIMAL_EXPONENT_INT256 = 76;
+
 // Define the NAVCalculator contract MANAGER role ID
 bytes32 constant MANAGER = keccak256("MANAGER"); // 0xaf290d8680820aad922855f39b306097b20e28774d6c1ad35a20325630c3a02c
 

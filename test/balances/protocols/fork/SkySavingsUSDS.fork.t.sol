@@ -46,7 +46,7 @@ contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalanceForAsset_mainnet_testUser() public {
-        int256 balance = oracle.getOracleBalanceForAsset(TEST_USER, address(USDS));
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, address(USDS));
 
         vm.startPrank(TEST_USER);
         uint256 previousBalance = USDS.balanceOf(TEST_USER);
@@ -56,8 +56,9 @@ contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterForkTestBase {
 
         uint256 expected = newBalance - previousBalance;
 
-        assertEq(uint256(balance), expected, "Oracle balance should match redemption amount");
-        assertGt(balance, 0, "User should have positive USDS position");
+        assertEq(amount, expected, "Oracle balance should match redemption amount");
+        assertGt(amount, 0, "User should have positive USDS position");
+        assertFalse(isDebt);
     }
 
     // ============================================
@@ -84,11 +85,11 @@ contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterForkTestBase {
     // ============================================
 
     function test_getOracleBalance_aggregatesPositions() public view {
-        (address[] memory assets, int256[] memory balances) = oracle.getOracleBalance(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(TEST_USER);
 
         // Should have USDS position
         assertGe(assets.length, 1, "Should have at least one position");
-        assertEq(assets.length, balances.length, "Arrays should match length");
+        assertEq(assets.length, amounts.length, "Arrays should match length");
     }
 
     function test_getOraclePositions_returnsCorrectPositions() public view {

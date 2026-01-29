@@ -8,20 +8,47 @@ import {Test} from "forge-std/Test.sol";
 /// @notice Provides utilities for constructing RPC URLs and accessing environment configuration
 /// @notice Includes fork creation helpers with cadence control to prevent RPC rate limiting
 abstract contract TestEnvConfigurator is Test {
-    error AlchemyApiKeyNotSet();
+    error RpcUrlNotSet();
 
     // Storage slot for fork creation counter (helps with cadence tracking)
     uint256 private constant FORK_COUNTER_SLOT = uint256(keccak256("TestEnvConfigurator.forkCounter"));
 
-    /// @notice Constructs an Alchemy RPC URL for the given network
-    /// @param network The Alchemy network identifier (e.g., "eth-mainnet", "opt-mainnet", "base-mainnet", "arb-mainnet", "gnosis-mainnet")
-    /// @return url The full Alchemy RPC URL
+    /// @notice Returns the RPC URL for the given network.
+    /// @dev Prefer chain-specific env vars (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL), e.g. from CI
+    ///      (vars.KNODE_URL + /ethereum?key= + secrets.KNODE_API_KEY). If none set, builds Alchemy URL from
+    ///      ALCHEMY_API_KEY. Reverts if neither source is set.
+    /// @param network Alchemy network identifier (e.g. "eth-mainnet", "arb-mainnet", "base-mainnet", "opt-mainnet", "gnosis-mainnet")
+    /// @return url The RPC URL to use for forking
     function getAlchemyUrl(string memory network) internal view returns (string memory url) {
+        url = _getChainUrl(network);
+        if (bytes(url).length != 0) {
+            return url;
+        }
         string memory apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
         if (bytes(apiKey).length == 0) {
-            revert AlchemyApiKeyNotSet();
+            revert RpcUrlNotSet();
         }
-        url = string.concat("https://", network, ".g.alchemy.com/v2/", apiKey);
+        return string.concat("https://", network, ".g.alchemy.com/v2/", apiKey);
+    }
+
+    /// @notice Resolves chain-specific RPC URL from env (MAINNET_URL, ARBITRUM_URL, etc.). Returns empty if not set.
+    function _getChainUrl(string memory network) internal view returns (string memory) {
+        if (keccak256(bytes(network)) == keccak256("eth-mainnet")) {
+            return vm.envOr("MAINNET_URL", string(""));
+        }
+        if (keccak256(bytes(network)) == keccak256("arb-mainnet")) {
+            return vm.envOr("ARBITRUM_URL", string(""));
+        }
+        if (keccak256(bytes(network)) == keccak256("base-mainnet")) {
+            return vm.envOr("BASE_URL", string(""));
+        }
+        if (keccak256(bytes(network)) == keccak256("opt-mainnet")) {
+            return vm.envOr("OP_URL", string(""));
+        }
+        if (keccak256(bytes(network)) == keccak256("gnosis-mainnet")) {
+            return vm.envOr("GNOSIS_URL", string(""));
+        }
+        return "";
     }
 
     /// @notice Creates a fork with cadence control to reduce simultaneous RPC requests

@@ -144,7 +144,12 @@ contract MockCcipRouter is IRouterClient {
 
     mapping(uint64 => bool) public supportedChains;
     uint64 public messageId;
-    mapping(uint64 => Client.EVM2AnyMessage) public messages;
+
+    // Store message components separately to avoid dynamic array in storage
+    mapping(uint64 => bytes) public messageData;
+    mapping(uint64 => bytes) public messageReceiver;
+    mapping(uint64 => address) public messageToken;
+    mapping(uint64 => uint256) public messageAmount;
     mapping(uint64 => bool) public receivedMessages;
 
     event MessageSent(uint64 indexed messageId, address indexed sender);
@@ -172,7 +177,16 @@ contract MockCcipRouter is IRouterClient {
         require(supportedChains[destinationChainSelector], "Chain not supported");
 
         messageId++;
-        messages[messageId] = message;
+
+        // Store message components separately
+        messageData[messageId] = message.data;
+        messageReceiver[messageId] = message.receiver;
+
+        // For simplicity, only store first token amount (sufficient for tests)
+        if (message.tokenAmounts.length > 0) {
+            messageToken[messageId] = message.tokenAmounts[0].token;
+            messageAmount[messageId] = message.tokenAmounts[0].amount;
+        }
 
         // Transfer tokens from sender
         for (uint256 i = 0; i < message.tokenAmounts.length; i++) {
@@ -189,7 +203,7 @@ contract MockCcipRouter is IRouterClient {
     /// @notice Returns the data payload of the last sent message (for realistic tests: read from source)
     function getLastMessageData() external view returns (bytes memory) {
         require(messageId > 0, "BridgeScenario: no message");
-        return messages[messageId].data;
+        return messageData[messageId];
     }
 
     /// @notice Add a message on "destination" for realistic delivery via deliverMessage (simulates CCIP delivery)
@@ -199,15 +213,13 @@ contract MockCcipRouter is IRouterClient {
     /// @return msgId The message ID to pass to deliverMessage; caller must mint token to this contract first
     function addMessageForDelivery(bytes memory data, address token, uint256 amount) external returns (uint64 msgId) {
         messageId++;
-        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
-        tokenAmounts[0] = Client.EVMTokenAmount({token: token, amount: amount});
-        messages[messageId] = Client.EVM2AnyMessage({
-            receiver: abi.encode(address(0)),
-            data: data,
-            tokenAmounts: tokenAmounts,
-            feeToken: address(0),
-            extraArgs: ""
-        });
+
+        // Store message components separately
+        messageData[messageId] = data;
+        messageReceiver[messageId] = abi.encode(address(0));
+        messageToken[messageId] = token;
+        messageAmount[messageId] = amount;
+
         return messageId;
     }
 
@@ -230,22 +242,27 @@ contract MockCcipRouter is IRouterClient {
         require(!receivedMessages[msgId], "Message already delivered");
         receivedMessages[msgId] = true;
 
-        Client.EVM2AnyMessage memory message = messages[msgId];
+        // Retrieve message components
+        bytes memory data = messageData[msgId];
+        address token = messageToken[msgId];
+        uint256 amount = messageAmount[msgId];
 
         // Transfer tokens to receiver
-        for (uint256 i = 0; i < message.tokenAmounts.length; i++) {
-            if (message.tokenAmounts[i].token != address(0)) {
-                IERC20(message.tokenAmounts[i].token).safeTransfer(receiver, message.tokenAmounts[i].amount);
-            }
+        if (token != address(0) && amount > 0) {
+            IERC20(token).safeTransfer(receiver, amount);
         }
+
+        // Create token amounts array
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
+        tokenAmounts[0] = Client.EVMTokenAmount({token: token, amount: amount});
 
         // Create Any2EVMMessage for ccipReceive
         Client.Any2EVMMessage memory any2EvmMessage = Client.Any2EVMMessage({
             messageId: bytes32(uint256(msgId)),
             sourceChainSelector: 5009297550715157269, // Mock source chain
             sender: abi.encode(msg.sender),
-            data: message.data,
-            destTokenAmounts: message.tokenAmounts
+            data: data,
+            destTokenAmounts: tokenAmounts
         });
 
         // Call receiver's ccipReceive function

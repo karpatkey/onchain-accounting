@@ -152,19 +152,31 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
 
+        // Set up destination chain environment
+        (BridgeEscrow destBridgeEscrow, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest(invoiceData);
+
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // Execute completion and verify results
+        _executeAndVerifyCctpCompletion(destBridgeEscrow, destAdapter, invoiceData, messagePayload, amount);
+    }
+
+    /// @notice Helper to set up destination chain for CCTP test
+    function _setupDestinationChainForCctpTest(InvoiceDataLib.InvoiceData memory invoiceData)
+        internal
+        returns (BridgeEscrow destBridgeEscrow, CctpBridgeAdapter destAdapter)
+    {
         // Set up destination chain environment (without transferring tokens - CCTP will mint them)
         vm.chainId(uint256(invoiceData.destinationChainId));
-        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(uint64(invoiceData.destinationChainId));
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        destBridgeEscrow = _setupDestinationChainEscrow(uint64(invoiceData.destinationChainId));
 
         // Set up CCTP contracts on destination chain
         MockMessageTransmitter destMessageTransmitter = new MockMessageTransmitter(DEST_DOMAIN, address(usdc));
         MockTokenMessenger destTokenMessenger = new MockTokenMessenger(address(destMessageTransmitter));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CctpBridgeAdapter());
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            destAdapterImpl,
+            address(new CctpBridgeAdapter()),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
                 (
@@ -176,7 +188,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
                 )
             )
         );
-        CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
+        destAdapter = CctpBridgeAdapter(destAdapterProxy);
 
         // Configure adapter on destination chain
         vm.startPrank(admin);
@@ -185,71 +197,93 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
+    }
 
-        // Set up invoiceId mapping (simulating it was set on source chain)
+    /// @notice Helper to execute and verify CCTP completion
+    function _executeAndVerifyCctpCompletion(
+        BridgeEscrow destBridgeEscrow,
+        CctpBridgeAdapter destAdapter,
+        InvoiceDataLib.InvoiceData memory invoiceData,
+        bytes memory messagePayload,
+        uint256 amount
+    ) internal {
+        // Set up invoiceId mapping
         uint64 nonce = 123;
-        destAdapter.messageToInvoiceId(SOURCE_DOMAIN, nonce); // This will be 0, but that's OK for testing
+        destAdapter.messageToInvoiceId(SOURCE_DOMAIN, nonce);
 
-        // Create mock CCTP message
-        // Note: CCTP mints to BridgeEscrow, not directly to portfolio safe
+        // Create mock CCTP message and protocol data
         bytes memory cctpMessage = _createMockCctpMessage(
             SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, address(destBridgeEscrow), address(destAdapter)
         );
-        bytes memory attestation = "mock_attestation";
-
-        // Prepare protocol data
-        bytes memory protocolData = abi.encode(cctpMessage, attestation);
+        bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
         // Verify invoice is not completed before completion
-        // Note: Invoice doesn't exist on destination chain - it only exists on source chain for bookkeeping
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        // Get initial balances
-        // Note: CCTP will mint USDC to BridgeEscrow, so escrow balance starts at 0
+        // Get initial balance and verify escrow starts at zero
         uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
-        uint256 initialEscrowBalance = usdc.balanceOf(address(destBridgeEscrow));
-        assertEq(initialEscrowBalance, 0, "Escrow should start with zero balance (CCTP will mint)");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should start with zero balance (CCTP will mint)");
 
-        // Complete bridge - this should mint USDC and release to portfolio safe
+        // Complete bridge
         vm.prank(operator);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        // Verify USDC was minted to BridgeEscrow and then released to portfolio safe
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive minted USDC"
-        );
-        // CCTP mints to BridgeEscrow, then BridgeEscrow releases to portfolio safe
-        // So escrow balance should return to 0 after release
-        assertEq(
-            usdc.balanceOf(address(destBridgeEscrow)),
-            0,
-            "Escrow balance should be zero after release (CCTP minted, then released)"
-        );
+        // Verify balances after completion
+        _verifyCompletionBalances(destBridgeEscrow, initialPortfolioBalance, amount);
 
         // Verify invoice is marked as completed
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+    }
 
-        // Note: In-transit balance is only tracked on source chain
-        // On destination chain, there are no invoices, so in-transit balance is always 0
+    /// @notice Helper to verify balances after completion
+    function _verifyCompletionBalances(
+        BridgeEscrow destBridgeEscrow,
+        uint256 initialPortfolioBalance,
+        uint256 expectedAmount
+    ) internal view {
+        uint256 finalBalance = usdc.balanceOf(portfolioSafe);
+        assertEq(finalBalance - initialPortfolioBalance, expectedAmount, "Portfolio safe should receive minted USDC");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow balance should be zero after release");
     }
 
     /// @notice Full round-trip: depositAndBridge on source → payload from invoice → deliver via receiveMessage → completeBridge
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaCctp() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
+        // Execute source chain bridge
+        (bytes memory messagePayload, uint64 nonce, uint256 portfolioBalanceBeforeRelease) =
+            _executeCctpSourceChainBridge(amount);
+
+        // Execute destination chain completion and verify
+        _executeCctpDestinationCompletion(messagePayload, nonce, amount, portfolioBalanceBeforeRelease);
+    }
+
+    /// @notice Helper to execute source chain bridge for CCTP
+    function _executeCctpSourceChainBridge(uint256 amount)
+        internal
+        returns (bytes memory messagePayload, uint64 nonce, uint256 portfolioBalanceBeforeRelease)
+    {
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
         vm.prank(portfolioSafe);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
-        bytes memory messagePayload = _getMessagePayloadFromInvoiceHash(bridgeEscrow, invoiceHash);
-        uint64 nonce = tokenMessenger.nonce();
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        messagePayload = _getMessagePayloadFromInvoiceHash(bridgeEscrow, invoiceHash);
+        nonce = tokenMessenger.nonce();
+        portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
         assertGt(messagePayload.length, 0, "messagePayload from invoice");
+    }
 
+    /// @notice Helper to execute destination chain completion for CCTP
+    function _executeCctpDestinationCompletion(
+        bytes memory messagePayload,
+        uint64 nonce,
+        uint256 amount,
+        uint256 portfolioBalanceBeforeRelease
+    ) internal {
         // ---------- DESTINATION CHAIN ----------
         vm.chainId(uint256(DEST_CHAIN_ID));
 
@@ -257,21 +291,34 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         MockMessageTransmitter destMessageTransmitter = new MockMessageTransmitter(DEST_DOMAIN, address(usdc));
         MockTokenMessenger destTokenMessenger = new MockTokenMessenger(address(destMessageTransmitter));
 
-        address destAdapterImpl = address(new CctpBridgeAdapter());
+        CctpBridgeAdapter destAdapter = _deployAndConfigureCctpAdapter(
+            destBridgeEscrow, address(destTokenMessenger), address(destMessageTransmitter)
+        );
+
+        bytes memory protocolData =
+            _prepareCctpProtocolData(nonce, amount, address(destBridgeEscrow), address(destAdapter));
+
+        vm.prank(operator);
+        destAdapter.completeBridge(messagePayload, protocolData);
+
+        // Verify completion and balances
+        _verifyCctpCompletion(destBridgeEscrow, messagePayload, portfolioBalanceBeforeRelease, amount);
+    }
+
+    /// @notice Helper to deploy and configure CCTP adapter
+    function _deployAndConfigureCctpAdapter(
+        BridgeEscrow destBridgeEscrow,
+        address destTokenMessenger,
+        address destMessageTransmitter
+    ) internal returns (CctpBridgeAdapter destAdapter) {
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            destAdapterImpl,
+            address(new CctpBridgeAdapter()),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
-                (
-                    admin,
-                    address(destBridgeEscrow),
-                    address(destTokenMessenger),
-                    address(destMessageTransmitter),
-                    "1.0.0"
-                )
+                (admin, address(destBridgeEscrow), destTokenMessenger, destMessageTransmitter, "1.0.0")
             )
         );
-        CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
+        destAdapter = CctpBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
         destAdapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
@@ -279,21 +326,33 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
+    }
 
-        bytes memory cctpMessage = _createMockCctpMessage(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, address(destBridgeEscrow), address(destAdapter)
-        );
-        bytes memory attestation = "mock_attestation";
-        bytes memory protocolData = abi.encode(cctpMessage, attestation);
+    /// @notice Helper to prepare CCTP protocol data
+    function _prepareCctpProtocolData(uint64 nonce, uint256 amount, address destBridgeEscrow, address destAdapter)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        bytes memory cctpMessage =
+            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, destBridgeEscrow, destAdapter);
+        return abi.encode(cctpMessage, "mock_attestation");
+    }
 
-        vm.prank(operator);
-        destAdapter.completeBridge(messagePayload, protocolData);
-
+    /// @notice Helper to verify CCTP completion
+    function _verifyCctpCompletion(
+        BridgeEscrow destBridgeEscrow,
+        bytes memory messagePayload,
+        uint256 portfolioBalanceBeforeRelease,
+        uint256 expectedAmount
+    ) internal view {
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+
+        uint256 portfolioBalanceAfterRelease = usdc.balanceOf(portfolioSafe);
         assertEq(
-            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
-            amount,
+            portfolioBalanceAfterRelease - portfolioBalanceBeforeRelease,
+            expectedAmount,
             "portfolio safe received bridged amount"
         );
     }

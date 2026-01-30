@@ -174,59 +174,14 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         // Verify asset is registered (check registeredSymbols to distinguish unregistered from native ETH)
         if (!registeredSymbols[assetSymbol]) revert InvalidArguments(); // Asset not registered
 
-        // Generate invoice ID (32 bytes, excludes amount)
-        bytes32 invoiceId = _generateInvoiceId(chainId, destinationChainId, msg.sender, assetSymbol);
+        // Create and store invoice (returns invoiceHash, invoiceId, and messagePayload)
+        bytes32 invoiceId;
+        bytes memory messagePayload;
+        (invoiceHash, invoiceId, messagePayload) =
+            _createAndStoreInvoice(destinationChainId, msg.sender, assetSymbol, asset, amount, adapter);
 
-        // Use full uint64 timestamp (8 bytes) - no truncation needed
-        uint64 timestamp = uint64(block.timestamp);
-
-        // Calculate checksum for invoiceId + amount + timestamp (24 bytes)
-        bytes24 checksum24 = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
-
-        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
-        invoiceHash = bytes32(uint256(uint192(checksum24)));
-
-        // Check if invoice already exists (hash must be unique)
-        if (invoices[invoiceHash].invoiceId != bytes32(0)) {
-            revert InvoiceAlreadyExists();
-        }
-
-        // Create InvoiceData struct with all components
-        InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.InvoiceData({
-            invoiceId: invoiceId,
-            sourceChainId: SafeCast.toUint24(chainId),
-            destinationChainId: SafeCast.toUint24(destinationChainId),
-            portfolioSafe: msg.sender,
-            assetSymbol: assetSymbol,
-            amount: amount,
-            timestamp: timestamp,
-            checksum24: checksum24
-        });
-
-        // Encode to messagePayload for storage and interface compatibility
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
-        // Create invoice with BRIDGING status (since we bridge immediately)
-        Invoice memory invoice = Invoice({
-            invoiceId: invoiceId,
-            sourceChainId: chainId,
-            destinationChainId: destinationChainId,
-            portfolioSafe: msg.sender,
-            asset: asset,
-            amount: amount,
-            timestamp: block.timestamp,
-            status: InvoiceStatus.BRIDGING,
-            adapter: adapter
-        });
-
-        invoices[invoiceHash] = invoice;
-
-        // Add to active invoices (invoiceIds are unique, so no need to check for duplicates)
-        _activeInvoices[msg.sender].push(invoiceHash);
-        _activeInvoicesSet[msg.sender][invoiceHash] = true;
-
-        // Update in-transit balance cache (invoice is in BRIDGING status)
-        _updateInTransitBalance(msg.sender, asset, amount, true);
+        // Emit event after invoice creation
+        emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
 
         // Transfer assets from portfolio safe
         if (_isNativeToken(asset)) {
@@ -237,8 +192,6 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
             // ERC20 token
             IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
         }
-
-        emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
 
         emit AssetsDeposited(invoiceId, asset, amount);
 
@@ -780,6 +733,78 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     {
         bytes24 expectedChecksum = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
         return checksum24 == expectedChecksum;
+    }
+
+    /// @notice Creates and stores an invoice with all necessary bookkeeping
+    /// @param destinationChainId Destination chain ID
+    /// @param portfolioSafe Portfolio safe address
+    /// @param assetSymbol Asset symbol
+    /// @param asset Asset address
+    /// @param amount Amount to bridge
+    /// @param adapter Bridge adapter address
+    /// @return invoiceHash The invoice hash (checksum24 padded to bytes32)
+    /// @return invoiceId The invoice ID
+    /// @return messagePayload Encoded invoice data for bridge adapter
+    /// @dev This function handles invoice ID generation, checksum calculation, storage, and state updates
+    function _createAndStoreInvoice(
+        uint64 destinationChainId,
+        address portfolioSafe,
+        bytes6 assetSymbol,
+        address asset,
+        uint256 amount,
+        address adapter
+    ) internal returns (bytes32 invoiceHash, bytes32 invoiceId, bytes memory messagePayload) {
+        // Generate invoice ID (32 bytes, excludes amount)
+        invoiceId = _generateInvoiceId(chainId, destinationChainId, portfolioSafe, assetSymbol);
+
+        // Use full uint64 timestamp (8 bytes) - no truncation needed
+        uint64 timestamp = uint64(block.timestamp);
+
+        // Calculate checksum for invoiceId + amount + timestamp (24 bytes)
+        bytes24 checksum24 = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
+
+        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
+        invoiceHash = bytes32(uint256(uint192(checksum24)));
+
+        // Check if invoice already exists (hash must be unique)
+        if (invoices[invoiceHash].invoiceId != bytes32(0)) {
+            revert InvoiceAlreadyExists();
+        }
+
+        // Encode invoice data - do this first to avoid stack pressure
+        messagePayload = InvoiceDataLib.encode(
+            InvoiceDataLib.InvoiceData({
+                invoiceId: invoiceId,
+                sourceChainId: SafeCast.toUint24(chainId),
+                destinationChainId: SafeCast.toUint24(destinationChainId),
+                portfolioSafe: portfolioSafe,
+                assetSymbol: assetSymbol,
+                amount: amount,
+                timestamp: timestamp,
+                checksum24: checksum24
+            })
+        );
+
+        // Write invoice directly to storage to avoid creating memory struct
+        Invoice storage invoice = invoices[invoiceHash];
+        invoice.invoiceId = invoiceId;
+        invoice.sourceChainId = chainId;
+        invoice.destinationChainId = destinationChainId;
+        invoice.portfolioSafe = portfolioSafe;
+        invoice.asset = asset;
+        invoice.amount = amount;
+        invoice.timestamp = block.timestamp;
+        invoice.status = InvoiceStatus.BRIDGING;
+        invoice.adapter = adapter;
+
+        // Add to active invoices (invoiceIds are unique, so no need to check for duplicates)
+        _activeInvoices[portfolioSafe].push(invoiceHash);
+        _activeInvoicesSet[portfolioSafe][invoiceHash] = true;
+
+        // Update in-transit balance cache (invoice is in BRIDGING status)
+        _updateInTransitBalance(portfolioSafe, asset, amount, true);
+
+        return (invoiceHash, invoiceId, messagePayload);
     }
 
     /// @notice Internal function to authorize a portfolio safe

@@ -145,17 +145,66 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
         IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
+        // Prepare and execute the Stargate swap
+        _executeStargateSwap(
+            data.invoiceId, destinationLzChainId, asset, data.destinationChainId, data.amount, messagePayload
+        );
+    }
+
+    /// @notice Executes the Stargate swap with LayerZero
+    /// @param invoiceId The invoice ID
+    /// @param destinationLzChainId LayerZero destination chain ID
+    /// @param asset The asset address
+    /// @param destinationChainId Standard destination chain ID
+    /// @param amount The amount to bridge
+    /// @param messagePayload Encoded invoice data
+    function _executeStargateSwap(
+        bytes32 invoiceId,
+        uint16 destinationLzChainId,
+        address asset,
+        uint24 destinationChainId,
+        uint256 amount,
+        bytes memory messagePayload
+    ) internal {
         // Get pool IDs for source and destination chains
         uint256 srcPoolId = assetPoolId[asset][uint64(block.chainid)];
-        uint256 dstPoolId = assetPoolId[asset][uint64(data.destinationChainId)];
+        uint256 dstPoolId = assetPoolId[asset][uint64(destinationChainId)];
 
         if (srcPoolId == 0 || dstPoolId == 0) {
             revert InvalidPoolId();
         }
 
         // Approve router to spend tokens
-        IERC20(asset).forceApprove(address(router), data.amount);
+        IERC20(asset).forceApprove(address(router), amount);
 
+        // Calculate minimum amount with 5% slippage tolerance
+        uint256 minAmountLd = (amount * 95) / 100;
+
+        // Get LayerZero fee and execute swap
+        _quoteAndSwap(destinationLzChainId, srcPoolId, dstPoolId, amount, minAmountLd, messagePayload);
+
+        // Store the messagePayload for later correlation
+        messagePayloads[invoiceId] = messagePayload;
+
+        emit StargateBridgeInitiated(invoiceId, destinationLzChainId, srcPoolId, dstPoolId, amount);
+    }
+
+    /// @notice Quotes fee and executes the Stargate swap
+    /// @param destinationLzChainId LayerZero destination chain ID
+    /// @param srcPoolId Source pool ID
+    /// @param dstPoolId Destination pool ID
+    /// @param amount Amount to swap
+    /// @param minAmountLd Minimum amount with slippage
+    /// @param messagePayload Encoded invoice data
+    /// @return nativeFee The native fee paid
+    function _quoteAndSwap(
+        uint16 destinationLzChainId,
+        uint256 srcPoolId,
+        uint256 dstPoolId,
+        uint256 amount,
+        uint256 minAmountLd,
+        bytes memory messagePayload
+    ) internal returns (uint256 nativeFee) {
         // Prepare LayerZero transaction parameters
         IStargateRouter.LzTxObj memory lzTxParams = IStargateRouter.LzTxObj({
             dstGasForCall: defaultDstGasForCall, dstNativeAmount: 0, dstNativeAddr: bytes("")
@@ -165,7 +214,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         bytes memory toAddress = abi.encodePacked(bridgeEscrow);
 
         // Quote LayerZero fee
-        (uint256 nativeFee,) = router.quoteLayerZeroFee(
+        (nativeFee,) = router.quoteLayerZeroFee(
             destinationLzChainId,
             1, // functionType: 1 = swap
             toAddress,
@@ -179,19 +228,12 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             srcPoolId,
             dstPoolId,
             payable(address(this)), // refundAddress
-            data.amount,
-            (data.amount * 95) / 100, // minAmountLD: 5% slippage tolerance
+            amount,
+            minAmountLd,
             lzTxParams,
             toAddress,
             messagePayload
         );
-
-        // Note: LayerZero nonce is not available immediately after swap
-        // We'll store the mapping in lzReceive when the message arrives
-        // For now, we store the messagePayload for later correlation
-        messagePayloads[data.invoiceId] = messagePayload;
-
-        emit StargateBridgeInitiated(data.invoiceId, destinationLzChainId, srcPoolId, dstPoolId, data.amount);
     }
 
     /// @inheritdoc BridgeAdapter

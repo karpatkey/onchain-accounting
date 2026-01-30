@@ -71,20 +71,9 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         address[] memory tempAssets = new address[](assetCount);
         uint256[] memory tempAmounts = new uint256[](assetCount);
         bool[] memory tempIsDebt = new bool[](assetCount);
-        uint256 count = 0;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            (uint256 amount, bool debt) = this.balanceOf(asset, account);
-
-            // Only include non-zero balances
-            if (amount != 0) {
-                tempAssets[count] = asset;
-                tempAmounts[count] = amount;
-                tempIsDebt[count] = debt;
-                count++;
-            }
-        }
+        uint256 count =
+            _populateBalanceArrays(account, supportedAssets, assetCount, tempAssets, tempAmounts, tempIsDebt);
 
         // Resize to actual count
         assets = new address[](count);
@@ -94,6 +83,39 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
             assets[i] = tempAssets[i];
             amountsOut[i] = tempAmounts[i];
             isDebtOut[i] = tempIsDebt[i];
+        }
+    }
+
+    /// @notice Helper to populate balance arrays
+    /// @param account The account to query
+    /// @param supportedAssets Array of supported assets
+    /// @param assetCount Number of assets
+    /// @param tempAssets Temporary assets array
+    /// @param tempAmounts Temporary amounts array
+    /// @param tempIsDebt Temporary debt flags array
+    /// @return count The number of non-zero balances found
+    function _populateBalanceArrays(
+        address account,
+        address[] memory supportedAssets,
+        uint256 assetCount,
+        address[] memory tempAssets,
+        uint256[] memory tempAmounts,
+        bool[] memory tempIsDebt
+    ) internal view returns (uint256 count) {
+        count = 0;
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            // Directly access storage to avoid stack depth issues
+            uint256 amount = amounts[asset][account];
+            bool debt = isDebt[asset][account];
+
+            // Only include non-zero balances
+            if (amount != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = debt;
+                count++;
+            }
         }
     }
 
@@ -127,8 +149,9 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 continue;
             }
 
-            // Get balance for this asset
-            (uint256 amount, bool debt) = this.balanceOf(asset, account);
+            // Get balance for this asset (directly from storage to avoid stack depth)
+            uint256 amount = amounts[asset][account];
+            bool debt = isDebt[asset][account];
 
             // Only include non-zero amounts
             if (amount != 0) {

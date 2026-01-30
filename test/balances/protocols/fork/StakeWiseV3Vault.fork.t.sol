@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -19,7 +19,7 @@ interface IEthGenesisVault {
 /// @title StakeWiseV3VaultBalanceOracleForkTest
 /// @notice Fork tests for StakeWiseV3VaultBalanceOracle using real Gnosis chain contracts
 /// @dev Tests adapter behavior with real StakeWise V3 vault contracts and positions
-contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
     // Gnosis chain addresses
     address public constant GNO = 0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb;
     address public constant OS_GNO = 0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0;

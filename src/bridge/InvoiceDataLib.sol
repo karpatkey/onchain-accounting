@@ -13,7 +13,7 @@ library InvoiceDataLib {
         bytes32 invoiceId; // The full invoice ID (32 bytes)
         uint24 sourceChainId; // Source chain ID
         uint24 destinationChainId; // Destination chain ID
-        address portfolioSafe; // Portfolio safe address
+        address account; // Account address
         bytes6 assetSymbol; // Asset symbol
         uint256 amount; // Amount being bridged
         uint64 timestamp; // Timestamp (uint64, 8 bytes)
@@ -40,7 +40,7 @@ library InvoiceDataLib {
         uint256 id = uint256(data.invoiceId);
         data.sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
         data.destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit value overflowing uint24
-        data.portfolioSafe = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
+        data.account = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
         // casting to uint48/bytes6 is safe: id & type(uint48).max keeps only low 48 bits, so no truncation
         // forge-lint: disable-next-line(unsafe-typecast)
         data.assetSymbol = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)

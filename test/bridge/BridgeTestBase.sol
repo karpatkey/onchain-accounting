@@ -19,7 +19,7 @@ abstract contract BridgeTestBase is Test {
     // Test accounts
     address public admin = makeAddr("admin");
     address public operator = makeAddr("operator");
-    address public portfolioSafe = makeAddr("portfolioSafe");
+    address public account = makeAddr("account");
     address public unauthorized = makeAddr("unauthorized");
 
     // Contracts
@@ -50,10 +50,10 @@ abstract contract BridgeTestBase is Test {
         weth = new Mock_ERC20("WETH", 18);
         dai = new Mock_ERC20("DAI", 18);
 
-        // Mint tokens to portfolio safe
-        usdc.mint(portfolioSafe, INITIAL_BALANCE);
-        weth.mint(portfolioSafe, INITIAL_BALANCE);
-        dai.mint(portfolioSafe, INITIAL_BALANCE);
+        // Mint tokens to account
+        usdc.mint(account, INITIAL_BALANCE);
+        weth.mint(account, INITIAL_BALANCE);
+        dai.mint(account, INITIAL_BALANCE);
     }
 
     function _setupBridgeEscrow() internal {
@@ -62,7 +62,7 @@ abstract contract BridgeTestBase is Test {
 
         // Deploy proxy
         address[] memory initialSafes = new address[](1);
-        initialSafes[0] = portfolioSafe;
+        initialSafes[0] = account;
 
         address[] memory initialAdapters = new address[](0); // Will be added per test
 
@@ -94,7 +94,7 @@ abstract contract BridgeTestBase is Test {
         vm.label(address(dai), "DAI");
         vm.label(admin, "admin");
         vm.label(operator, "operator");
-        vm.label(portfolioSafe, "portfolioSafe");
+        vm.label(account, "account");
     }
 
     /// @notice Helper to authorize an adapter
@@ -130,7 +130,7 @@ abstract contract BridgeTestBase is Test {
             invoiceId: invoiceId,
             sourceChainId: SafeCast.toUint24(sourceChainId),
             destinationChainId: SafeCast.toUint24(destChainId),
-            portfolioSafe: safe,
+            account: safe,
             assetSymbol: assetSymbol,
             amount: amount,
             timestamp: timestamp,
@@ -161,7 +161,7 @@ abstract contract BridgeTestBase is Test {
 
     /// @notice Helper to approve token spending
     function _approveToken(address token, address spender, uint256 amount) internal {
-        vm.startPrank(portfolioSafe);
+        vm.startPrank(account);
         IERC20(token).approve(spender, amount);
         vm.stopPrank();
     }
@@ -183,7 +183,7 @@ abstract contract BridgeTestBase is Test {
 
         // Deploy proxy with destination chain ID
         address[] memory initialSafes = new address[](1);
-        initialSafes[0] = portfolioSafe;
+        initialSafes[0] = account;
 
         address[] memory initialAdapters = new address[](0);
 

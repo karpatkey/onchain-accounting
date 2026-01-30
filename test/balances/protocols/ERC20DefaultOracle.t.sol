@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
+import {Test} from "forge-std/Test.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
@@ -16,7 +16,7 @@ import "src/constants.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract ERC20DefaultOracleTest is TestEnvConfigurator {
+contract ERC20DefaultOracleTest is Test {
     NAVCalculator public navCalculator;
     ERC20DefaultOracle public oracle;
 

@@ -8,11 +8,11 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
-import {BridgeForkTestBase} from "test/bridge/fork/BridgeForkTestBase.sol";
+import {BridgeTestBase} from "test/bridge/fork/BridgeTestBase.fork.sol";
 
 /// @title SuperchainBridgeAdapterForkTest
 /// @notice Fork tests for Superchain Bridge Adapter using real mainnet and Optimism contracts
-contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
+contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
     SuperchainBridgeAdapter public l1Adapter;
     SuperchainBridgeAdapter public l2Adapter;
     BridgeEscrow public l1BridgeEscrow;
@@ -33,7 +33,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         // Setup L1 BridgeEscrow
         address l1EscrowImpl = address(new BridgeEscrow());
         address[] memory initialSafes = new address[](1);
-        initialSafes[0] = portfolioSafe;
+        initialSafes[0] = account;
         address[] memory initialAdapters = new address[](0);
 
         address payable l1EscrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
@@ -76,8 +76,8 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
 
         _authorizeAdapterForEscrow(address(l1Adapter), l1BridgeEscrow);
 
-        // Fund portfolio safe on L1
-        _fundAccountWithEth(portfolioSafe, TEST_ETH_AMOUNT * 2);
+        // Fund account on L1
+        _fundAccountWithEth(account, TEST_ETH_AMOUNT * 2);
 
         // Fund adapter with ETH for gas (needed for deposits)
         _fundAccountWithEth(address(l1Adapter), 1 ether);
@@ -89,7 +89,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         // Setup L2 BridgeEscrow
         address l2EscrowImpl = address(new BridgeEscrow());
         address[] memory initialSafes = new address[](1);
-        initialSafes[0] = portfolioSafe;
+        initialSafes[0] = account;
         address[] memory initialAdapters = new address[](0);
 
         address payable l2EscrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
@@ -132,8 +132,8 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
 
         _authorizeAdapterForEscrow(address(l2Adapter), l2BridgeEscrow);
 
-        // Fund portfolio safe on L2
-        _fundAccountWithEth(portfolioSafe, TEST_ETH_AMOUNT * 2);
+        // Fund account on L2
+        _fundAccountWithEth(account, TEST_ETH_AMOUNT * 2);
 
         // Fund adapter with ETH for gas (needed for withdrawals)
         _fundAccountWithEth(address(l2Adapter), 1 ether);
@@ -154,20 +154,20 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         uint64 destChainId = OPTIMISM_CHAIN_ID;
 
         // Get initial balances
-        uint256 initialL1Balance = portfolioSafe.balance;
+        uint256 initialL1Balance = account.balance;
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
 
         // Initiate bridge via BridgeEscrow
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             l1BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l1Adapter));
 
         // Verify ETH flow:
-        // 1. Portfolio safe balance decreased
-        assertEq(portfolioSafe.balance, initialL1Balance - amount, "Portfolio safe balance should decrease");
+        // 1. Account balance decreased
+        assertEq(account.balance, initialL1Balance - amount, "Account balance should decrease");
 
         // 2. For Optimism, ETH deposits go through OptimismPortal, not directly to L1StandardBridge
         // The bridge balance won't increase - instead, the deposit is recorded in the portal
@@ -202,10 +202,10 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         uint64 destChainId = OPTIMISM_CHAIN_ID;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             l1BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l1Adapter));
 
@@ -236,19 +236,19 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         uint64 destChainId = MAINNET_CHAIN_ID;
 
         // Get initial balances
-        uint256 initialL2Balance = portfolioSafe.balance;
+        uint256 initialL2Balance = account.balance;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
 
         // Initiate withdrawal via BridgeEscrow
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             l2BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l2Adapter));
 
         // Verify ETH flow:
-        // 1. Portfolio safe balance decreased
-        assertEq(portfolioSafe.balance, initialL2Balance - amount, "Portfolio safe balance should decrease");
+        // 1. Account balance decreased
+        assertEq(account.balance, initialL2Balance - amount, "Account balance should decrease");
 
         // 2. For Optimism L2 → L1 withdrawals, ETH goes through the withdrawal system
         // The bridge balance might not increase immediately - withdrawals are queued
@@ -274,9 +274,9 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         uint64 destChainId = MAINNET_CHAIN_ID;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         l2BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l2Adapter));
 
         // Get withdrawal hash
@@ -302,10 +302,10 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
 
         uint256 amount = TEST_ETH_AMOUNT;
         InvoiceDataLib.InvoiceData memory l1ToL2Data =
-            _createInvoiceData(MAINNET_CHAIN_ID, OPTIMISM_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, OPTIMISM_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory l1ToL2Payload = InvoiceDataLib.encode(l1ToL2Data);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         l1BridgeEscrow.depositAndBridge{value: amount}(OPTIMISM_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
 
         // Verify payload stored on L1
@@ -317,10 +317,10 @@ contract SuperchainBridgeAdapterForkTest is BridgeForkTestBase {
         _selectOptimismFork();
 
         InvoiceDataLib.InvoiceData memory l2ToL1Data =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, MAINNET_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, MAINNET_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory l2ToL1Payload = InvoiceDataLib.encode(l2ToL1Data);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         l2BridgeEscrow.depositAndBridge{value: amount}(MAINNET_CHAIN_ID, WETH_SYMBOL, amount, address(l2Adapter));
 
         // Verify payload stored on L2

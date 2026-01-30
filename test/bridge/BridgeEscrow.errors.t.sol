@@ -22,20 +22,20 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     function test_RevertWhen_depositAndBridge_adapterNotAuthorized() public {
         address unregisteredAdapter = makeAddr("unregisteredAdapter");
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, unregisteredAdapter);
     }
 
     function test_RevertWhen_depositAndBridge_amountZero() public {
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, 0, address(mockAdapter));
     }
 
     function test_RevertWhen_depositAndBridge_sameChain() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         bridgeEscrow.depositAndBridge(SOURCE_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
     }
@@ -43,7 +43,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     function test_RevertWhen_depositAndBridge_assetNotRegistered() public {
         bytes6 unknownSymbol = "UNK   ";
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, unknownSymbol, BRIDGE_AMOUNT, address(mockAdapter));
     }
@@ -52,7 +52,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.prank(admin);
         bridgeEscrow.pause();
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert();
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
     }
@@ -61,9 +61,9 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.startPrank(admin);
         bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
         vm.stopPrank();
-        vm.deal(portfolioSafe, 2 ether);
+        vm.deal(account, 2 ether);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         bridgeEscrow.depositAndBridge{value: 0.5 ether}(DEST_CHAIN_ID, WETH_SYMBOL, 1 ether, address(mockAdapter));
     }
@@ -82,7 +82,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     function test_RevertWhen_releaseByInvoiceId_invalidChecksum() public {
         (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, 1000e6);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, 1000e6);
         data.checksum24 = bytes24(uint192(uint256(uint192(data.checksum24)) ^ 1)); // corrupt
         bytes memory badPayload = InvoiceDataLib.encode(data);
         usdc.mint(address(destEscrow), 1000e6);
@@ -100,9 +100,8 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.authorizeAdapter(address(destMock));
 
         uint64 futureTs = uint64(block.timestamp + 1);
-        InvoiceDataLib.InvoiceData memory data = _createInvoiceDataWithTimestamp(
-            SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, 1000e6, futureTs
-        );
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceDataWithTimestamp(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, 1000e6, futureTs);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
         usdc.mint(address(destEscrow), 1000e6);
 
@@ -134,7 +133,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     function test_RevertWhen_cancelInvoice_notOperator() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
@@ -153,7 +152,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     function test_RevertWhen_markInvoiceCompleted_notOperator() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
@@ -172,7 +171,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     function test_RevertWhen_unregisterAsset_hasActiveInvoices() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
         vm.prank(admin);

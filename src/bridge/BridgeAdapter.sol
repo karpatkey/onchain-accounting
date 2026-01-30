@@ -188,7 +188,7 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     /// @notice Abstract function - implement bridge-specific completion logic
     /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
     /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
-    /// @dev All information (invoiceId, sourceChainId, portfolioSafe, asset, amount) can be derived
+    /// @dev All information (invoiceId, sourceChainId, account, asset, amount) can be derived
     ///      from messagePayload via decodeInvoiceId() if needed by the adapter
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal virtual;
 

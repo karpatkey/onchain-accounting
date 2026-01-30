@@ -50,7 +50,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         destEscrow.authorizeAdapter(address(destMock));
         vm.stopPrank();
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         messagePayload = InvoiceDataLib.encode(data);
         return (destEscrow, messagePayload, destMock);
     }
@@ -79,7 +79,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
             invoiceId: invoiceId,
             sourceChainId: SafeCast.toUint24(sourceChainId),
             destinationChainId: SafeCast.toUint24(destChainId),
-            portfolioSafe: safe,
+            account: safe,
             assetSymbol: assetSymbol,
             amount: amount,
             timestamp: timestamp,

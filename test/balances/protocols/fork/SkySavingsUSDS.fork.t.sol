@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {SkySavingsUsdsBalanceOracle} from "src/balances/protocols/SkySavingsUsds.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title SkySavingsUsdsBalanceOracleForkTest
 /// @notice Fork tests for SkySavingsUsdsBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Sky SavingsUSDS contracts and positions
-contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterTestBase {
     // Sky contract addresses (mainnet)
     IERC4626 public constant SAVINGS_USDS = IERC4626(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD);
     IERC20 public constant USDS = IERC20(0xdC035D45d973E3EC169d2276DDab16f1e407384F);
@@ -59,6 +61,25 @@ contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterForkTestBase {
         assertEq(amount, expected, "Oracle balance should match redemption amount");
         assertGt(amount, 0, "User should have positive USDS position");
         assertFalse(isDebt);
+    }
+
+    // ============================================
+    // View / No-Fork Logic Tests (run on fork for oracle instance)
+    // ============================================
+
+    function test_balanceOfZeroAddress() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(USDS));
+        assertEq(amount, 0);
+    }
+
+    function test_returnsZeroOnInvalidToken() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(TEST_USER, address(0xdead));
+        assertEq(amount, 0);
+    }
+
+    function test_supportsInterface() public view {
+        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
     }
 
     // ============================================

@@ -11,7 +11,7 @@ Onchain infrastructure for portfolio accounting: **balances** (across protocols)
 | **Balances** | Registry of balance oracles. Each oracle reports positions (balances) for an account in one or more protocols (e.g. Aave, Compound III, Morpho). Used by NAVCalculator to aggregate holdings. |
 | **Prices**   | Registry of price feeds per asset (Chainlink or custom). Handles staleness (heartbeat, L2 sequencer). Used by NAVCalculator to value positions. |
 | **NAV**      | Single contract that extends Prices + Balances. Registers assets with price feeds, registers balance oracles, and computes **NAV** for an account in a chosen quote currency (e.g. USD or a token). |
-| **Bridge**   | **BridgeEscrow** holds assets and tracks invoices; authorized portfolio safes call `depositAndBridge` to bridge to another chain. **Adapters** (Across, CCIP, CCTP, Gnosis, Stargate, Superchain) implement protocol-specific logic. On the destination chain, completion triggers `releaseByInvoiceId` so the escrow sends assets to the portfolio safe. |
+| **Bridge**   | **BridgeEscrow** holds assets and tracks invoices; authorized accounts call `depositAndBridge` to bridge to another chain. **Adapters** (Across, CCIP, CCTP, Gnosis, Stargate, Superchain) implement protocol-specific logic. On the destination chain, completion triggers `releaseByInvoiceId` so the escrow sends assets to the account. |
 
 There is no tokenized-share or subscription/redemption logic in this repo; that would sit in a separate layer that uses NAV and/or the bridge as primitives.
 
@@ -98,7 +98,7 @@ NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_
 
 ## Bridge
 
-- **BridgeEscrow**: Holds assets on each chain; authorized **portfolio safes** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, release is via `releaseByInvoiceId(messagePayload)` (checksum-validated); only authorized adapters or OPERATOR can call it. Escrow has a **fallback** that forwards protocol callbacks (e.g. `ccipReceive`) to the adapter registered for that selector; the adapter then calls `releaseByInvoiceId`.
+- **BridgeEscrow**: Holds assets on each chain; authorized **accounts** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, release is via `releaseByInvoiceId(messagePayload)` (checksum-validated); only authorized adapters or OPERATOR can call it. Escrow has a **fallback** that forwards protocol callbacks (e.g. `ccipReceive`) to the adapter registered for that selector; the adapter then calls `releaseByInvoiceId`.
 - **Adapters**: Each implements `_bridge` (initiate transfer, recipient = BridgeEscrow) and `_completeBridge` (operator path); callback-based adapters also implement the protocol’s receive function and call `releaseByInvoiceId` when the escrow forwards to them.
 - **Invoice lifecycle**: Created on source as BRIDGING; on destination, `releaseByInvoiceId` marks completion there. On source, an operator calls **`markInvoiceCompleted(invoiceHashes)`** to set status to COMPLETED and update in-transit balances and active-invoice list.
 

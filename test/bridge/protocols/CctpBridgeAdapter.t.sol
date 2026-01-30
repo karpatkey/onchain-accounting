@@ -65,11 +65,11 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge flow)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -90,7 +90,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsForNativeToken() public {
         uint256 amount = 1 ether;
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.deal(address(adapter), amount);
@@ -105,14 +105,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
             SOURCE_CHAIN_ID,
             999,
-            portfolioSafe,
+            account,
             USDC_SYMBOL,
             amount // Invalid chain ID
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Simulate bridge initiation (transfer tokens to BridgeEscrow, then approve adapter)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -128,11 +128,11 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Simulate bridge initiation (transfer tokens to BridgeEscrow, then approve adapter)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -150,7 +150,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_mintsUsdcOnDestination() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest(invoiceData);
@@ -224,7 +224,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         );
 
         // Get initial balance and verify escrow starts at zero
-        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialPortfolioBalance = usdc.balanceOf(account);
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should start with zero balance (CCTP will mint)");
 
         // Complete bridge
@@ -244,8 +244,8 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         uint256 initialPortfolioBalance,
         uint256 expectedAmount
     ) internal view {
-        uint256 finalBalance = usdc.balanceOf(portfolioSafe);
-        assertEq(finalBalance - initialPortfolioBalance, expectedAmount, "Portfolio safe should receive minted USDC");
+        uint256 finalBalance = usdc.balanceOf(account);
+        assertEq(finalBalance - initialPortfolioBalance, expectedAmount, "Account should receive minted USDC");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow balance should be zero after release");
     }
 
@@ -268,12 +268,12 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     {
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
         messagePayload = _getMessagePayloadFromInvoiceHash(bridgeEscrow, invoiceHash);
         nonce = tokenMessenger.nonce();
-        portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        portfolioBalanceBeforeRelease = usdc.balanceOf(account);
         assertGt(messagePayload.length, 0, "messagePayload from invoice");
     }
 
@@ -349,18 +349,18 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
 
-        uint256 portfolioBalanceAfterRelease = usdc.balanceOf(portfolioSafe);
+        uint256 portfolioBalanceAfterRelease = usdc.balanceOf(account);
         assertEq(
             portfolioBalanceAfterRelease - portfolioBalanceBeforeRelease,
             expectedAmount,
-            "portfolio safe received bridged amount"
+            "account received bridged amount"
         );
     }
 
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
@@ -391,7 +391,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         uint64 nonce = 123;
         bytes memory cctpMessage =
-            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, portfolioSafe, address(destAdapter));
+            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, account, address(destAdapter));
         bytes memory attestation = "mock_attestation";
 
         // Corrupt messagePayload (invalid checksum)
@@ -411,7 +411,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -442,7 +442,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         uint64 nonce = 123;
         bytes memory cctpMessage =
-            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, portfolioSafe, address(destAdapter));
+            _createMockCctpMessage(SOURCE_DOMAIN, DEST_DOMAIN, nonce, amount, account, address(destAdapter));
         bytes memory attestation = "mock_attestation";
         bytes memory protocolData = abi.encode(cctpMessage, attestation);
 
@@ -507,7 +507,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         }
 
         // sender (32 bytes at offset 20) - zero for simplicity
-        // recipient (32 bytes at offset 52) - portfolio safe address as bytes32
+        // recipient (32 bytes at offset 52) - account address as bytes32
         bytes32 recipient = bytes32(uint256(uint160(recipientAddr)));
         assembly {
             mstore(add(message, 84), recipient)

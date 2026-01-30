@@ -96,12 +96,12 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         uint256 amount = 1 ether;
         vm.prank(admin);
         bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
-        vm.deal(portfolioSafe, amount);
+        vm.deal(account, amount);
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, WETH_SYMBOL, amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge{value: amount}(L2_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
 
         assertEq(
@@ -118,9 +118,9 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         _approveToken(address(usdc), address(bridgeEscrow), amount);
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(L2_CHAIN_ID, USDC_SYMBOL, amount, address(l1Adapter));
 
         // Mock L1 bridge pulled tokens from adapter
@@ -136,10 +136,10 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(l1Adapter), amount);
@@ -155,7 +155,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_onL2_completesDeposit() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(L2_CHAIN_ID);
@@ -168,12 +168,12 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "invoice not completed yet");
 
-        uint256 portfolioBalanceBefore = usdc.balanceOf(portfolioSafe);
+        uint256 portfolioBalanceBefore = usdc.balanceOf(account);
         vm.prank(operator);
         destAdapter.completeBridge(messagePayload, "");
 
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(portfolioSafe) - portfolioBalanceBefore, amount, "portfolio received tokens");
+        assertEq(usdc.balanceOf(account) - portfolioBalanceBefore, amount, "portfolio received tokens");
     }
 
     function test_completeBridge_revertsForEmptyPayload() public {
@@ -189,7 +189,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(L2_CHAIN_ID);
@@ -211,7 +211,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         uint256 amount = 1000 * 10 ** usdc.decimals();
         _approveToken(address(usdc), address(destEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         destEscrow.depositAndBridge(SOURCE_CHAIN_ID, USDC_SYMBOL, amount, address(destAdapter));
 
         assertEq(usdc.balanceOf(address(l2Bridge)), amount, "L2 bridge received tokens");
@@ -298,9 +298,9 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(L2_CHAIN_ID, USDC_SYMBOL, amount, address(l1Adapter));
 
         bytes memory stored = l1Adapter.getMessagePayload(invoiceData.invoiceId);

@@ -68,11 +68,11 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
 
         // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
@@ -98,7 +98,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.stopPrank();
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Fund adapter with ETH (simulating BridgeEscrow sending ETH)
@@ -125,7 +125,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.stopPrank();
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Fund adapter with ETH
@@ -144,7 +144,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
@@ -157,7 +157,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -188,16 +188,14 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
         bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
 
         vm.prank(operator);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
-        );
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
 
         // Verify invoice is marked as completed
@@ -216,12 +214,12 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
         // Payload must come from the deposit the adapter created (realistic: same as production)
         bytes memory messagePayload = _getAcrossMessagePayloadFromLastDeposit(spokePool);
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe); // after deposit: safe sent amount to escrow
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account); // after deposit: safe sent amount to escrow
         assertGt(messagePayload.length, 0, "messagePayload from source deposit");
 
         uint256 sourceDepositId = spokePool.depositId();
@@ -263,18 +261,14 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
-            amount,
-            "portfolio safe received bridged amount"
-        );
+        assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
@@ -312,7 +306,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -346,7 +340,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_handleAcrossMessage_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(DEST_CHAIN_ID));
@@ -380,7 +374,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_handleAcrossMessage_revertsWhenCalledOnAdapter() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(address(spokePool));
@@ -443,7 +437,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     function test_getMessagePayload_returnsStoredPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Store payload via callback path (escrow fallback → adapter.handleAcrossMessage → _completeDelivery)

@@ -72,7 +72,7 @@ interface IBridgeEscrow {
         bytes32 invoiceId; // Unique identifier (32 bytes, excludes amount)
         uint64 sourceChainId; // Chain ID where assets originate
         uint64 destinationChainId; // Chain ID where assets are destined
-        address portfolioSafe; // Portfolio Safe address
+        address account; // Account address
         address asset; // Token address (address(0) for native)
         uint256 amount; // Amount being bridged
         uint256 timestamp; // Block timestamp when invoice created
@@ -83,7 +83,7 @@ interface IBridgeEscrow {
     /// @notice Event emitted when a new invoice is created
     event InvoiceCreated(
         bytes32 indexed invoiceId,
-        address indexed portfolioSafe,
+        address indexed account,
         address indexed asset,
         uint256 amount,
         uint64 sourceChainId,
@@ -101,11 +101,11 @@ interface IBridgeEscrow {
         bytes32 indexed invoiceId, uint64 indexed sourceChainId, address asset, uint256 amount, address recipient
     );
 
-    /// @notice Event emitted when a portfolio safe is authorized
-    event PortfolioSafeAuthorized(address indexed safe);
+    /// @notice Event emitted when an account is authorized
+    event AccountAuthorized(address indexed safe);
 
-    /// @notice Event emitted when a portfolio safe is revoked
-    event PortfolioSafeRevoked(address indexed safe);
+    /// @notice Event emitted when an account is revoked
+    event AccountRevoked(address indexed safe);
 
     /// @notice Event emitted when an adapter is authorized
     event AdapterAuthorized(address indexed adapter);
@@ -134,7 +134,7 @@ interface IBridgeEscrow {
     /// @notice Event emitted when emergency withdrawal is performed
     event EmergencyWithdrawal(address indexed asset, uint256 amount, address indexed to);
 
-    /// @notice Deposits assets from a portfolio safe and immediately bridges them
+    /// @notice Deposits assets from an account and immediately bridges them
     /// @param destinationChainId The destination chain ID
     /// @param assetSymbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
     /// @param amount The amount to bridge
@@ -170,12 +170,12 @@ interface IBridgeEscrow {
     /// @param invoiceId The 32-byte invoice ID (excludes amount)
     /// @return sourceChainId Source chain ID
     /// @return destinationChainId Destination chain ID
-    /// @return portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @return account Account address (full 20 bytes)
     /// @return assetSymbol Asset symbol
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol);
+        returns (uint24 sourceChainId, uint24 destinationChainId, address account, bytes6 assetSymbol);
 
     /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload
     /// @param invoiceId The 32-byte invoice ID (excludes amount)
@@ -188,21 +188,21 @@ interface IBridgeEscrow {
         pure
         returns (bool);
 
-    /// @notice Gets all active invoices for a portfolio safe
-    /// @param portfolioSafe The portfolio safe address
+    /// @notice Gets all active invoices for an account
+    /// @param account The account address
     /// @return Array of active Invoice structs (includes destination chain and all invoice details)
-    function getActiveInvoices(address portfolioSafe) external view returns (Invoice[] memory);
+    function getActiveInvoices(address account) external view returns (Invoice[] memory);
 
     /// @notice Calculates the total in-transit balance for an asset by summing all active invoice amounts
     /// @param asset The asset address to calculate balance for
-    /// @param portfolioSafe Optional portfolio safe address to filter by. If address(0), sums across all safes
-    /// @return The total amount in transit for this asset (optionally filtered by portfolio safe)
-    function getInTransitBalanceForAsset(address asset, address portfolioSafe) external view returns (uint256);
+    /// @param account Optional account address to filter by. If address(0), sums across all accounts
+    /// @return The total amount in transit for this asset (optionally filtered by account)
+    function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256);
 
-    /// @notice Checks if a portfolio safe is authorized
-    /// @param safe The portfolio safe address
+    /// @notice Checks if an account is authorized
+    /// @param safe The account address
     /// @return True if authorized
-    function isAuthorizedPortfolioSafe(address safe) external view returns (bool);
+    function isAuthorizedAccount(address safe) external view returns (bool);
 
     /// @notice Checks if an adapter is authorized
     /// @param adapter The adapter address
@@ -224,11 +224,11 @@ interface IBridgeEscrow {
     /// @return True if the symbol has been registered
     function registeredSymbols(bytes6 symbol) external view returns (bool);
 
-    /// @notice Returns all assets in-transit for a specific portfolio safe with their amounts
-    /// @param portfolioSafe The portfolio safe address
+    /// @notice Returns all assets in-transit for a specific account with their amounts
+    /// @param account The account address
     /// @return assets Array of asset addresses
     /// @return amounts Array of amounts corresponding to each asset
-    function getInTransitBalancesForSafe(address portfolioSafe)
+    function getInTransitBalancesForAccount(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts);

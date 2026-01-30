@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
@@ -10,7 +10,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title CompoundV3CometBalanceOracleForkTest
 /// @notice Fork tests for CompoundV3CometBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Compound V3 protocol contracts and positions
-contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract CompoundV3CometBalanceOracleForkTest is BalanceAdapterTestBase {
     // Compound V3 contract addresses (mainnet)
     address public constant COMPOUND_REWARDS = 0x1B0e765F6224C21223AeA2af16c1C46E38885a40;
     address public constant REWARD_TOKEN = 0xc00e94Cb662C3520282E6f5717214004A7f26888;

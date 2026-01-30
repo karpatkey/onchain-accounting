@@ -12,7 +12,7 @@ import "test/bridge/mocks/MockBridgeProtocols.sol";
 /// @notice Helpers for realistic bridge adapter tests that mirror production flow
 ///
 /// ## Real-world flow (what we emulate)
-/// 1. SOURCE CHAIN: Portfolio safe calls BridgeEscrow.depositAndBridge().
+/// 1. SOURCE CHAIN: Account calls BridgeEscrow.depositAndBridge().
 ///    - Escrow creates invoice, pulls tokens, approves adapter, calls adapter.bridge(messagePayload).
 ///    - Adapter calls the real bridge contract (e.g. SpokePool.deposit) with messagePayload.
 /// 2. [CROSS-CHAIN]: Relayer / attestation / L2 finality (we simulate by switching vm.chainId and
@@ -64,7 +64,7 @@ abstract contract BridgeScenarioHelper is BridgeTestBase {
             invoiceId: inv.invoiceId,
             sourceChainId: uint24(inv.sourceChainId),
             destinationChainId: destChainId,
-            portfolioSafe: inv.portfolioSafe,
+            account: inv.account,
             assetSymbol: assetSymbol,
             amount: inv.amount,
             timestamp: uint64(inv.timestamp),

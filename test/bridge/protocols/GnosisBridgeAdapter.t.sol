@@ -66,11 +66,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice data (bridging to Gnosis Chain)
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -93,13 +93,13 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
             SOURCE_CHAIN_ID,
             999, // Unsupported chain ID (not 1 or 100)
-            portfolioSafe,
+            account,
             USDC_SYMBOL,
             amount
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -115,7 +115,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsForNativeToken() public {
         uint256 amount = 1 ether;
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, WETH_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.deal(address(adapter), amount);
@@ -128,7 +128,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
@@ -141,7 +141,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -171,14 +171,12 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
         vm.prank(operator);
         destAdapter.completeBridge(messagePayload, "");
 
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
-        );
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
     }
@@ -189,11 +187,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(GNOSIS_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
         (bytes memory messagePayload, uint256 relayAmount) = omnibridge.getLastRelayData();
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account);
         assertGt(messagePayload.length, 0, "messagePayload from source");
         assertEq(relayAmount, amount, "relay value equals amount");
 
@@ -226,18 +224,14 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
-            amount,
-            "portfolio safe received bridged amount"
-        );
+        assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
@@ -273,7 +267,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -305,7 +299,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -337,7 +331,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_storesTransactionHash() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -381,7 +375,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_revertsWhenCalledOnAdapter() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
         bytes32 valueBytes32 = bytes32(amount);
 
@@ -429,7 +423,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_getMessagePayload_returnsStoredPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -460,11 +454,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_areTokensAvailable_returnsTrueWhenTokensPresent() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Store payload via bridge
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -487,11 +481,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_areTokensAvailable_returnsFalseWhenTokensNotPresent() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Store payload via bridge
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 

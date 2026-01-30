@@ -119,7 +119,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         // Convert recipient address to bytes32 (CCTP format)
         // Use bridgeEscrow as the recipient - all BridgeEscrows have the same address across chains
-        // BridgeEscrow will then release to portfolioSafe via releaseByInvoiceId()
+        // BridgeEscrow will then release to account via releaseByInvoiceId()
         bytes32 mintRecipient = bytes32(uint256(uint160(bridgeEscrow)));
 
         // Approve TokenMessenger to spend tokens

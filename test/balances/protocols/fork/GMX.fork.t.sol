@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {GmxBalanceOracle} from "src/balances/protocols/GMX.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title GmxBalanceOracleForkTest
 /// @notice Fork tests for GmxBalanceOracle using real Arbitrum contracts
 /// @dev Tests adapter behavior with real GMX protocol contracts and positions
-contract GmxBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract GmxBalanceOracleForkTest is BalanceAdapterTestBase {
     // Arbitrum token addresses
     IERC20 public constant WETH = IERC20(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1);
     IERC20 public constant USDC = IERC20(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);

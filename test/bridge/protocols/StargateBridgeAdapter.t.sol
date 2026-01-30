@@ -81,11 +81,11 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -111,13 +111,13 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
             SOURCE_CHAIN_ID,
             999, // Invalid chain ID (no LZ chain ID mapping)
-            portfolioSafe,
+            account,
             USDC_SYMBOL,
             amount
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
 
@@ -138,7 +138,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         // Use a different asset that doesn't have destination pool ID set
         // First, register a new token
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        newToken.mint(portfolioSafe, amount);
+        newToken.mint(account, amount);
 
         vm.startPrank(admin);
         bridgeEscrow.registerAsset("NEW   ", address(newToken));
@@ -148,7 +148,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         // Intentionally don't set destination pool ID for DEST_CHAIN_ID
         vm.stopPrank();
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         newToken.transfer(address(bridgeEscrow), amount);
 
@@ -160,7 +160,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice with new token
         InvoiceDataLib.InvoiceData memory newInvoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, "NEW   ", amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, "NEW   ", amount);
         bytes memory newMessagePayload = InvoiceDataLib.encode(newInvoiceData);
 
         vm.prank(address(bridgeEscrow));
@@ -171,7 +171,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
@@ -184,7 +184,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -219,14 +219,12 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
             destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
         );
 
-        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
         vm.prank(operator);
         destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - initialPortfolioBalance, amount, "Portfolio safe should receive tokens"
-        );
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
     }
@@ -238,11 +236,11 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
         vm.deal(address(adapter), 0.02 ether); // LayerZero fee
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
         bytes memory messagePayload = router.getLastSwapPayload();
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(portfolioSafe);
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account);
         assertGt(messagePayload.length, 0, "messagePayload from source");
 
         // ---------- DESTINATION CHAIN ----------
@@ -280,18 +278,14 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
-        assertEq(
-            usdc.balanceOf(portfolioSafe) - portfolioBalanceBeforeRelease,
-            amount,
-            "portfolio safe received bridged amount"
-        );
+        assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
@@ -329,7 +323,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotOperator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -363,7 +357,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_lzReceive_storesNonceMapping() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(DEST_CHAIN_ID));
@@ -401,7 +395,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_lzReceive_revertsIfNotEndpoint() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
@@ -503,7 +497,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_getMessagePayload_returnsStoredPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(DEST_CHAIN_ID));
@@ -541,7 +535,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     function test_quoteLayerZeroFee_returnsFee() public view {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // quoteLayerZeroFee signature: quoteLayerZeroFee(uint16 destinationChainId, uint256, uint256, uint256, bytes calldata payload, uint256 dstGasForCall)

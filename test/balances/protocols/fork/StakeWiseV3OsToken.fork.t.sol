@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title StakeWiseV3OsTokenBalanceOracleForkTest
 /// @notice Fork tests for StakeWiseV3OsTokenBalanceOracle using real Gnosis chain contracts
 /// @dev Tests adapter behavior with real StakeWise V3 osToken contracts and positions
-contract StakeWiseV3OsTokenBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract StakeWiseV3OsTokenBalanceOracleForkTest is BalanceAdapterTestBase {
     // Gnosis chain addresses
     address public constant OS_GNO = 0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0;
     address public constant GNO = 0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.sol";
+import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";

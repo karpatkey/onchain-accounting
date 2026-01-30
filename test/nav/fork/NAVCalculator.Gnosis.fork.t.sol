@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.sol";
+import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
-import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRatePriceAdapter.sol";
+import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRate_Price.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 

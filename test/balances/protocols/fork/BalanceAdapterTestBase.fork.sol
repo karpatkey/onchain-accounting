@@ -5,10 +5,10 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-/// @title BalanceAdapterForkTestBase
+/// @title BalanceAdapterTestBase (Fork)
 /// @notice Base test contract for fork-based balance adapter tests
 /// @dev Provides fork setup, real contract addresses, and helper functions for testing with real protocol contracts
-abstract contract BalanceAdapterForkTestBase is TestEnvConfigurator, TestSetupHelpers {
+abstract contract BalanceAdapterTestBase is TestEnvConfigurator, TestSetupHelpers {
     // Fork ID
     uint256 public fork;
 

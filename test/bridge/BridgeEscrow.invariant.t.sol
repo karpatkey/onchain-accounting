@@ -9,10 +9,10 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
     /// @notice After depositAndBridge, in-transit for safe equals in-transit for address(0) when only one safe has deposits
     function test_invariant_singleSafeInTransitConsistency() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
-        uint256 perSafe = bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe);
+        uint256 perSafe = bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account);
         uint256 allSafes = bridgeEscrow.getInTransitBalanceForAsset(address(usdc), address(0));
         assertEq(perSafe, allSafes, "Single safe: per-safe in-transit should equal all-safes in-transit");
     }
@@ -20,18 +20,16 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
     /// @notice After cancelInvoice, in-transit for that asset/safe is decremented
     function test_invariant_cancelInvoiceClearsInTransit() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
-        assertEq(
-            bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe), BRIDGE_AMOUNT, "In-transit set"
-        );
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), BRIDGE_AMOUNT, "In-transit set");
 
         vm.prank(operator);
         bridgeEscrow.cancelInvoice(invoiceHash);
 
         assertEq(
-            bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe),
+            bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account),
             0,
             "In-transit should be zero after cancel"
         );
@@ -40,7 +38,7 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
     /// @notice After markInvoiceCompleted, in-transit is decremented and isInvoiceCompleted is true
     function test_invariant_markCompletedClearsInTransit() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
@@ -48,6 +46,6 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         bridgeEscrow.markInvoiceCompleted(_array(invoiceHash));
 
         assertTrue(bridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed");
-        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe), 0, "In-transit should be zero");
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), 0, "In-transit should be zero");
     }
 }

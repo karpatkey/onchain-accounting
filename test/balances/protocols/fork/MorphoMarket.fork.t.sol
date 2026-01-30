@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Id} from "morpho-blue/src/interfaces/IMorpho.sol";
@@ -10,7 +10,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /// @title MorphoMarketBalanceOracleForkTest
 /// @notice Fork tests for MorphoMarketBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Morpho protocol contracts and positions
-contract MorphoMarketBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
     // Morpho contract addresses (mainnet)
     address public constant MORPHO_MAINNET = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
 

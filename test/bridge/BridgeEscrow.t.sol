@@ -22,11 +22,11 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
             bridgeEscrow.hasRole(bridgeEscrow.DEFAULT_ADMIN_ROLE(), admin), "Admin should have DEFAULT_ADMIN_ROLE"
         );
         assertEq(bridgeEscrow.chainId(), SOURCE_CHAIN_ID, "ChainId should be set");
-        assertTrue(bridgeEscrow.isAuthorizedPortfolioSafe(portfolioSafe), "Portfolio safe should be authorized");
+        assertTrue(bridgeEscrow.isAuthorizedAccount(account), "Account should be authorized");
     }
 
     function test_initialize_authorizesInitialSafesAndAdapters() public view {
-        assertTrue(bridgeEscrow.isAuthorizedPortfolioSafe(portfolioSafe), "Initial safe should be authorized");
+        assertTrue(bridgeEscrow.isAuthorizedAccount(account), "Initial account should be authorized");
         assertTrue(bridgeEscrow.isAuthorizedAdapter(address(mockAdapter)), "Mock adapter should be authorized");
     }
 
@@ -36,7 +36,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         uint256 amount = BRIDGE_AMOUNT;
         _approveToken(address(usdc), address(bridgeEscrow), amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
 
         assertTrue(invoiceHash != bytes32(0), "Invoice hash should be non-zero");
@@ -44,11 +44,9 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(inv.invoiceId != bytes32(0), true, "Invoice should exist");
         assertEq(uint256(inv.status), uint256(IBridgeEscrow.InvoiceStatus.BRIDGING), "Status should be BRIDGING");
         assertEq(inv.amount, amount, "Amount should match");
-        assertEq(inv.portfolioSafe, portfolioSafe, "Portfolio safe should match");
+        assertEq(inv.account, account, "Account should match");
         assertEq(
-            bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe),
-            amount,
-            "In-transit balance should match"
+            bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), amount, "In-transit balance should match"
         );
     }
 
@@ -56,7 +54,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         uint256 amount = BRIDGE_AMOUNT;
         _approveToken(address(usdc), address(bridgeEscrow), amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.recordLogs();
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -68,12 +66,12 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         uint256 amount = BRIDGE_AMOUNT;
         _approveToken(address(usdc), address(bridgeEscrow), amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
 
-        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe), amount, "Per-safe in-transit");
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), amount, "Per-safe in-transit");
         assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), address(0)), amount, "All-safes in-transit");
-        (address[] memory assets, uint256[] memory amounts) = bridgeEscrow.getInTransitBalancesForSafe(portfolioSafe);
+        (address[] memory assets, uint256[] memory amounts) = bridgeEscrow.getInTransitBalancesForAccount(account);
         assertEq(assets.length, 1, "One asset in transit");
         assertEq(assets[0], address(usdc), "Asset should be USDC");
         assertEq(amounts[0], amount, "Amount should match");
@@ -84,16 +82,14 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         vm.startPrank(admin);
         bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
         vm.stopPrank();
-        vm.deal(portfolioSafe, amount);
+        vm.deal(account, amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge{value: amount}(DEST_CHAIN_ID, WETH_SYMBOL, amount, address(mockAdapter));
 
         assertTrue(invoiceHash != bytes32(0), "Invoice hash should be non-zero");
-        assertEq(
-            bridgeEscrow.getInTransitBalanceForAsset(address(0), portfolioSafe), amount, "In-transit native balance"
-        );
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(0), account), amount, "In-transit native balance");
     }
 
     // ============ releaseByInvoiceId ============
@@ -103,10 +99,10 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         usdc.mint(address(destEscrow), 1000e6);
 
-        uint256 balanceBefore = usdc.balanceOf(portfolioSafe);
+        uint256 balanceBefore = usdc.balanceOf(account);
         vm.prank(address(destMock));
         destEscrow.releaseByInvoiceId(messagePayload);
-        assertEq(usdc.balanceOf(portfolioSafe), balanceBefore + 1000e6, "Portfolio safe should receive tokens");
+        assertEq(usdc.balanceOf(account), balanceBefore + 1000e6, "Account should receive tokens");
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed");
     }
@@ -116,24 +112,24 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     function test_cancelInvoice_success() public {
         uint256 amount = BRIDGE_AMOUNT;
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
         assertEq(usdc.balanceOf(address(bridgeEscrow)), amount, "Escrow should still hold tokens (mock does not pull)");
 
         vm.prank(operator);
         bridgeEscrow.cancelInvoice(invoiceHash);
 
-        assertEq(usdc.balanceOf(portfolioSafe), INITIAL_BALANCE, "Portfolio safe should get tokens back");
+        assertEq(usdc.balanceOf(account), INITIAL_BALANCE, "Account should get tokens back");
         IBridgeEscrow.Invoice memory inv = bridgeEscrow.getInvoice(invoiceHash);
         assertEq(uint256(inv.status), uint256(IBridgeEscrow.InvoiceStatus.CANCELLED), "Status should be CANCELLED");
-        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe), 0, "In-transit should be zero");
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), 0, "In-transit should be zero");
     }
 
     // ============ markInvoiceCompleted ============
 
     function test_markInvoiceCompleted_success() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
@@ -143,14 +139,14 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         IBridgeEscrow.Invoice memory inv = bridgeEscrow.getInvoice(invoiceHash);
         assertEq(uint256(inv.status), uint256(IBridgeEscrow.InvoiceStatus.COMPLETED), "Status should be COMPLETED");
         assertTrue(bridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed");
-        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), portfolioSafe), 0, "In-transit should be zero");
+        assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), 0, "In-transit should be zero");
     }
 
     function test_markInvoiceCompleted_skipsNonExistentAndNonBridging() public {
         bytes32[] memory hashes = new bytes32[](3);
         hashes[0] = keccak256("nonexistent");
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         hashes[1] = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
         hashes[2] = keccak256("also-nonexistent");
 
@@ -180,17 +176,17 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
 
     // ============ Admin: authorize / revoke ============
 
-    function test_authorizePortfolioSafe_success() public {
+    function test_authorizeAccount_success() public {
         address newSafe = makeAddr("newSafe");
         vm.prank(admin);
-        bridgeEscrow.authorizePortfolioSafe(newSafe);
-        assertTrue(bridgeEscrow.isAuthorizedPortfolioSafe(newSafe), "Safe should be authorized");
+        bridgeEscrow.authorizeAccount(newSafe);
+        assertTrue(bridgeEscrow.isAuthorizedAccount(newSafe), "Account should be authorized");
     }
 
-    function test_revokePortfolioSafe_success() public {
+    function test_revokeAccount_success() public {
         vm.prank(admin);
-        bridgeEscrow.revokePortfolioSafe(portfolioSafe);
-        assertFalse(bridgeEscrow.isAuthorizedPortfolioSafe(portfolioSafe), "Safe should be revoked");
+        bridgeEscrow.revokeAccount(account);
+        assertFalse(bridgeEscrow.isAuthorizedAccount(account), "Account should be revoked");
     }
 
     function test_authorizeAdapter_revertsForNonInterface() public {
@@ -231,35 +227,35 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
 
     function test_getInvoice_returnsStoredInvoice() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
         IBridgeEscrow.Invoice memory inv = bridgeEscrow.getInvoice(invoiceHash);
         assertEq(inv.amount, BRIDGE_AMOUNT, "Amount should match");
-        assertEq(inv.portfolioSafe, portfolioSafe, "Safe should match");
+        assertEq(inv.account, account, "Safe should match");
         assertEq(inv.asset, address(usdc), "Asset should match");
     }
 
     function test_getActiveInvoices_returnsBridgingInvoices() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
-        IBridgeEscrow.Invoice[] memory active = bridgeEscrow.getActiveInvoices(portfolioSafe);
+        IBridgeEscrow.Invoice[] memory active = bridgeEscrow.getActiveInvoices(account);
         assertEq(active.length, 1, "One active invoice");
         assertEq(active[0].amount, BRIDGE_AMOUNT, "Amount should match");
     }
 
     function test_decodeInvoiceId_roundtrip() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
         (uint24 src, uint24 dest, address safe, bytes6 symbol) = bridgeEscrow.decodeInvoiceId(invoiceId);
         assertEq(src, SafeCast.toUint24(SOURCE_CHAIN_ID), "Source chain");
         assertEq(dest, SafeCast.toUint24(DEST_CHAIN_ID), "Dest chain");
-        assertEq(safe, portfolioSafe, "Safe");
+        assertEq(safe, account, "Safe");
         assertEq(symbol, USDC_SYMBOL, "Symbol");
     }
 
     function test_validateInvoiceIdChecksum_valid() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
         bytes24 checksum = _calculateChecksum(invoiceId, amount, timestamp);
@@ -267,7 +263,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     }
 
     function test_validateInvoiceIdChecksum_invalid() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
         bytes24 goodChecksum = _calculateChecksum(invoiceId, amount, timestamp);
@@ -279,7 +275,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
 
     function test_getInvoicesCompletionStatus() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 h1 = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
         vm.prank(operator);
         bridgeEscrow.markInvoiceCompleted(_array(h1));

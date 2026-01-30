@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title BalancerV3PoolBalanceOracleForkTest
 /// @notice Fork tests for BalancerV3PoolBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Balancer V3 pool contracts and positions
-contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterTestBase {
     // Balancer V3 contract addresses (mainnet)
     address public constant POOL = 0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D;
     address public constant GAUGE = 0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f;

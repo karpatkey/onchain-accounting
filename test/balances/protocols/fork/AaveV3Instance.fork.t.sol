@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title AaveV3InstanceBalanceOracleForkTest
 /// @notice Fork tests for AaveV3InstanceBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Aave V3 protocol contracts and positions
-contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
     // Aave V3 contract addresses (mainnet)
     address public constant AAVE_DATA_PROVIDER = 0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3;
     address public constant REWARDS_DISTRIBUTOR = 0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb;

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DaiDsrBalanceOracleForkTest
 /// @notice Fork tests for DaiDsrBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Maker DSR contracts and positions
-contract DaiDsrBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract DaiDsrBalanceOracleForkTest is BalanceAdapterTestBase {
     // Maker contract addresses (mainnet)
     address public constant DAI = MAINNET_DAI;
     address public constant DSR = 0x373238337Bfe1146fb49989fc222523f83081dDb;

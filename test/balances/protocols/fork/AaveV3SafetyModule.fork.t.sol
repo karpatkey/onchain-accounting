@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3SafetyModuleBalanceOracle, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -14,7 +14,7 @@ interface IStakeTokenExtended is IStakeToken {
 /// @title AaveV3SafetyModuleBalanceOracleForkTest
 /// @notice Fork tests for AaveV3SafetyModuleBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Aave Safety Module contracts and positions
-contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
     // Aave Safety Module contract addresses (mainnet)
     IStakeTokenExtended public constant STK_GHO = IStakeTokenExtended(0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d);
     IStakeTokenExtended public constant STK_AAVE = IStakeTokenExtended(0x4da27a545c0c5B758a6BA100e3a049001de870f5);

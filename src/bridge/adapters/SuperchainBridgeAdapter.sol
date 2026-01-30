@@ -214,7 +214,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes memory messagePayload
     ) internal {
         // Use bridgeEscrow as receiver on L2 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // BridgeEscrow will release to account via releaseByInvoiceId() using account from messagePayload
         address receiver = bridgeEscrow;
 
         if (isEth) {
@@ -259,7 +259,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes memory messagePayload
     ) internal {
         // Use bridgeEscrow as receiver on L1 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to portfolioSafe via releaseByInvoiceId() using portfolioSafe from messagePayload
+        // BridgeEscrow will release to account via releaseByInvoiceId() using account from messagePayload
         address receiver = bridgeEscrow;
 
         if (isEth) {

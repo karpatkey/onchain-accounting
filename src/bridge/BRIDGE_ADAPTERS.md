@@ -8,21 +8,21 @@ This document describes the bridge escrow and adapter architecture as implemente
 
 The bridge system consists of:
 
-- **BridgeEscrow:** Holds assets, creates invoices on deposit, and releases assets on the destination chain when a valid payload is presented. It is the single recipient address for all callback-based bridges. Only authorized portfolio safes can deposit; only authorized adapters (or escrow operators) can trigger release.
+- **BridgeEscrow:** Holds assets, creates invoices on deposit, and releases assets on the destination chain when a valid payload is presented. It is the single recipient address for all callback-based bridges. Only authorized accounts can deposit; only authorized adapters (or escrow operators) can trigger release.
 - **Bridge adapters:** Contracts that implement `IBridgeAdapter`. Each adapter integrates with one bridge protocol (Across, CCIP, CCTP, etc.). Adapters initiate transfers on the source chain and complete them on the destination chain; for some protocols the destination “completion” is automatic via a callback.
 
-All adapters use a single **message payload** format (invoice data). Release is always performed by `BridgeEscrow.releaseByInvoiceId(messagePayload)`, which validates the payload and sends assets to the portfolio safe encoded in it.
+All adapters use a single **message payload** format (invoice data). Release is always performed by `BridgeEscrow.releaseByInvoiceId(messagePayload)`, which validates the payload and sends assets to the account encoded in it.
 
 ---
 
 ## 2. Token and data flow (depositAndBridge → completeBridge)
 
-The diagram below describes how tokens and the message payload move from a portfolio safe on the source chain until completion on the destination chain. Two completion paths are shown: **callback-based** (protocol calls the escrow, escrow forwards to adapter, adapter calls `releaseByInvoiceId`) and **operator-only** (operator calls `adapter.completeBridge`, base calls `releaseByInvoiceId`).
+The diagram below describes how tokens and the message payload move from a account on the source chain until completion on the destination chain. Two completion paths are shown: **callback-based** (protocol calls the escrow, escrow forwards to adapter, adapter calls `releaseByInvoiceId`) and **operator-only** (operator calls `adapter.completeBridge`, base calls `releaseByInvoiceId`).
 
 ```mermaid
 flowchart TB
     subgraph SOURCE["Source chain"]
-        PS[Portfolio Safe]
+        PS[Account]
         BE_S[BridgeEscrow]
         AD_S[Adapter]
         BC[Bridge protocol contract]
@@ -46,22 +46,22 @@ flowchart TB
         PROTOCOL -->|"7a. Callback path: send tokens to escrow,<br/>then call escrow with protocol callback"| BE_D
         BE_D -->|"8a. fallback: adapter.call(msg.data)"| AD_D
         AD_D -->|"9a. releaseByInvoiceId(messagePayload)"| BE_D
-        BE_D -->|"10. Transfer asset to portfolio safe"| PS_D[Portfolio Safe]
+        BE_D -->|"10. Transfer asset to account"| PS_D[Account]
 
         OP[Operator] -->|"7b. Operator path: completeBridge(messagePayload, protocolData)"| AD_D
         AD_D -->|"8b. _completeBridge (e.g. mint to escrow)"| AD_D
         AD_D -->|"9b. base calls releaseByInvoiceId(messagePayload)"| BE_D
-        BE_D -->|"10. Transfer asset to portfolio safe"| PS_D
+        BE_D -->|"10. Transfer asset to account"| PS_D
     end
 
     SOURCE --> CROSS
     CROSS --> DEST
 ```
 
-- **Steps 1–5 (source):** Portfolio safe deposits into the escrow; escrow creates the invoice, passes tokens to the adapter, and calls `adapter.bridge(messagePayload)`. The adapter sends the payload and initiates the bridge with the protocol, using the **escrow** as the recipient on the destination chain.
+- **Steps 1–5 (source):** Account deposits into the escrow; escrow creates the invoice, passes tokens to the adapter, and calls `adapter.bridge(messagePayload)`. The adapter sends the payload and initiates the bridge with the protocol, using the **escrow** as the recipient on the destination chain.
 - **Step 6:** The protocol moves tokens and (where applicable) the message to the destination chain.
-- **Path 7a–10 (callback):** The protocol sends tokens to the escrow and invokes the escrow with its callback. The escrow fallback forwards the call to the adapter; the adapter extracts the payload and calls `releaseByInvoiceId`; the escrow transfers the asset to the portfolio safe.
-- **Path 7b–10 (operator):** An operator calls `adapter.completeBridge(messagePayload, protocolData)`. The adapter runs `_completeBridge` (e.g. mint to escrow); the base then calls `releaseByInvoiceId`; the escrow transfers the asset to the portfolio safe.
+- **Path 7a–10 (callback):** The protocol sends tokens to the escrow and invokes the escrow with its callback. The escrow fallback forwards the call to the adapter; the adapter extracts the payload and calls `releaseByInvoiceId`; the escrow transfers the asset to the account.
+- **Path 7b–10 (operator):** An operator calls `adapter.completeBridge(messagePayload, protocolData)`. The adapter runs `_completeBridge` (e.g. mint to escrow); the base then calls `releaseByInvoiceId`; the escrow transfers the asset to the account.
 
 ---
 
@@ -71,10 +71,10 @@ Invoices are created only on the **source chain** and track a single bridge oper
 
 ### 3.1 Invoice lifecycle
 
-- **Creation:** When an authorized portfolio safe calls `depositAndBridge`, the escrow creates an **invoice** with status `BRIDGING`. The invoice stores `invoiceId`, source/destination chain IDs, portfolio safe, asset, amount, timestamp, adapter, and status. The invoice hash used as the storage key is derived from the checksum (first 24 bytes of `keccak256(invoiceId, amount, timestamp)`).
+- **Creation:** When an authorized account calls `depositAndBridge`, the escrow creates an **invoice** with status `BRIDGING`. The invoice stores `invoiceId`, source/destination chain IDs, account, asset, amount, timestamp, adapter, and status. The invoice hash used as the storage key is derived from the checksum (first 24 bytes of `keccak256(invoiceId, amount, timestamp)`).
 - **BRIDGING:** The invoice remains in `BRIDGING` status while the transfer is in progress. The escrow maintains **in-transit** balance caches per safe and asset; these reflect the sum of amounts of all invoices in `BRIDGING` for that safe and asset. Active invoices for a safe are stored in `_activeInvoices[safe]` so UIs and bookkeeping can list them.
 - **Completion on the destination chain:** Completion does **not** update the source-chain invoice. On the destination chain there is no stored invoice; the escrow only validates the message payload in `releaseByInvoiceId` (checksum, timestamp, destination chain, authorized safe, registered asset) and marks `completedInvoices[invoiceHash] = true` on the **destination** escrow to prevent double-spend. The **source** chain invoice is still `BRIDGING` at this point.
-- **Closure on the source chain (markInvoiceCompleted):** Once an operator has confirmed that the transfer completed on the destination (e.g. assets were released to the portfolio safe), an operator should call **`BridgeEscrow.markInvoiceCompleted(invoiceHashes)`** on the **source** chain. This function:
+- **Closure on the source chain (markInvoiceCompleted):** Once an operator has confirmed that the transfer completed on the destination (e.g. assets were released to the account), an operator should call **`BridgeEscrow.markInvoiceCompleted(invoiceHashes)`** on the **source** chain. This function:
   - Requires `OPERATOR_ROLE` on the escrow.
   - For each provided `invoiceHash`: if the invoice exists and its status is `BRIDGING`, it sets status to `COMPLETED`, sets `completedInvoices[invoiceHash] = true`, decrements the in-transit balance caches, and removes the invoice from the safe’s active list. If the invoice is missing or not in `BRIDGING`, that hash is skipped and reported in `InvoiceCompletionFailed`.
   - This closes the invoice on the source chain and updates bookkeeping (in-transit balances, active invoice list) so the source ledger reflects that the bridge is done.
@@ -83,7 +83,7 @@ So the full closure of an invoice is: (1) **destination:** `releaseByInvoiceId` 
 
 ### 3.2 Other outcomes
 
-- **Cancellation:** An operator can call `cancelInvoice(invoiceHash)` on the source chain when the invoice is still in `BRIDGING`. The escrow returns the assets (if still held) to the portfolio safe, sets status to `CANCELLED`, updates in-transit balances, and removes the invoice from the active list.
+- **Cancellation:** An operator can call `cancelInvoice(invoiceHash)` on the source chain when the invoice is still in `BRIDGING`. The escrow returns the assets (if still held) to the account, sets status to `CANCELLED`, updates in-transit balances, and removes the invoice from the active list.
 
 ---
 
@@ -95,7 +95,7 @@ Payloads are produced and consumed by `InvoiceDataLib` in `src/bridge/InvoiceDat
 
 `messagePayload` is `abi.encode(invoiceId, amount, meta)` where:
 
-- **invoiceId** (bytes32): Packed as `sourceChainId` (3 bytes) | `destinationChainId` (3 bytes) | `portfolioSafe` (20 bytes) | `assetSymbol` (6 bytes). Chain IDs are `uint24`; asset symbol is right-padded bytes6 (e.g. `"USDC  "`).
+- **invoiceId** (bytes32): Packed as `sourceChainId` (3 bytes) | `destinationChainId` (3 bytes) | `account` (20 bytes) | `assetSymbol` (6 bytes). Chain IDs are `uint24`; asset symbol is right-padded bytes6 (e.g. `"USDC  "`).
 - **amount** (uint256): Amount being bridged.
 - **meta** (bytes32): High 8 bytes = `timestamp` (uint64); low 24 bytes = **checksum24** (first 24 bytes of `keccak256(abi.encodePacked(invoiceId, amount, timestamp))`).
 
@@ -103,7 +103,7 @@ BridgeEscrow generates this payload in `depositAndBridge` and validates checksum
 
 ### 4.2 Struct form
 
-`InvoiceDataLib.InvoiceData` has: `invoiceId`, `sourceChainId`, `destinationChainId`, `portfolioSafe`, `assetSymbol`, `amount`, `timestamp`, `checksum24`. Use `InvoiceDataLib.decode(messagePayload)` and `InvoiceDataLib.encode(data)` to convert to and from bytes.
+`InvoiceDataLib.InvoiceData` has: `invoiceId`, `sourceChainId`, `destinationChainId`, `account`, `assetSymbol`, `amount`, `timestamp`, `checksum24`. Use `InvoiceDataLib.decode(messagePayload)` and `InvoiceDataLib.encode(data)` to convert to and from bytes.
 
 ---
 
@@ -111,14 +111,14 @@ BridgeEscrow generates this payload in `depositAndBridge` and validates checksum
 
 ### 5.1 Roles and access
 
-- **DEFAULT_ADMIN_ROLE:** Authorize/revoke portfolio safes and adapters, register assets, configure adapter callbacks, pause, emergency withdraw.
+- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, register assets, configure adapter callbacks, pause, emergency withdraw.
 - **OPERATOR_ROLE:** Call `releaseByInvoiceId` (and thus complete bridges when the adapter forwards to the escrow), cancel invoices, `markInvoiceCompleted`.
 
 ### 5.2 Core flows
 
 **Deposit and bridge (source chain)**
 
-1. An authorized portfolio safe calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)` (payable if the asset is native).
+1. An authorized account calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)` (payable if the asset is native).
 2. Escrow checks: safe authorized, adapter authorized, asset registered, `destinationChainId != chainId`, `amount > 0`. For native asset, `msg.value == amount`; for ERC20, it pulls tokens from the safe.
 3. Escrow creates an invoice, updates in-transit balances, then either transfers native to the adapter or approves the adapter for ERC20, and calls `IBridgeAdapter(adapter).bridge(messagePayload)`.
 4. The adapter initiates the cross-chain transfer (see section 7).
@@ -126,8 +126,8 @@ BridgeEscrow generates this payload in `depositAndBridge` and validates checksum
 **Release (destination chain)**
 
 1. Someone must call `releaseByInvoiceId(messagePayload)`. Caller must be an authorized adapter or an account with OPERATOR_ROLE.
-2. Escrow decodes the payload, validates timestamp (must be in the past), validates checksum, ensures `destinationChainId == chainId`, ensures the decoded portfolio safe is authorized, ensures the asset symbol is registered, and that the invoice hash has not already been completed.
-3. Escrow marks the invoice completed, transfers the asset (native or ERC20) to the portfolio safe from the payload, and emits events.
+2. Escrow decodes the payload, validates timestamp (must be in the past), validates checksum, ensures `destinationChainId == chainId`, ensures the decoded account is authorized, ensures the asset symbol is registered, and that the invoice hash has not already been completed.
+3. Escrow marks the invoice completed, transfers the asset (native or ERC20) to the account from the payload, and emits events.
 
 So on the destination chain the escrow must hold the assets (or receive them during the same call, e.g. CCTP mint) before `releaseByInvoiceId` is called.
 
@@ -279,4 +279,4 @@ Adapters are intended to be deployed as UUPS proxies. Call `_disableInitializers
 
 5. **Operator role:** The same or a separate operator that will call `adapter.completeBridge(...)` on the destination chain must have `OPERATOR_ROLE` on the **adapter**. The escrow’s OPERATOR_ROLE is used for `releaseByInvoiceId` when called directly (e.g. by a backend) and for cancel/mark-completed; typically the adapter is the one that calls `releaseByInvoiceId` (either from its callback or from the base `completeBridge`), so the adapter’s OPERATOR_ROLE is what gates `completeBridge`.
 
-After this, portfolio safes can call `depositAndBridge(..., adapter)` and, on the destination chain, either the protocol callback path (for callback-based adapters with registered selector) or the operator calling `adapter.completeBridge(messagePayload, protocolData)` will trigger release.
+After this, accounts can call `depositAndBridge(..., adapter)` and, on the destination chain, either the protocol callback path (for callback-based adapters with registered selector) or the operator calling `adapter.completeBridge(messagePayload, protocolData)` will trigger release.

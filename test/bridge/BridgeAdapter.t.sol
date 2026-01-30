@@ -44,7 +44,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     function test_bridge_onlyAcceptsBridgeEscrowAsCaller() public {
         uint256 amount = BRIDGE_AMOUNT;
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(makeAddr("random"));
@@ -54,13 +54,13 @@ contract BridgeAdapterTest is BridgeTestBase {
 
     function test_bridge_successWhenCalledByEscrow() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         require(usdc.transfer(address(bridgeEscrow), BRIDGE_AMOUNT), "transfer failed");
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(adapter), BRIDGE_AMOUNT);
 
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, BRIDGE_AMOUNT);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, BRIDGE_AMOUNT);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(address(bridgeEscrow));
@@ -74,7 +74,7 @@ contract BridgeAdapterTest is BridgeTestBase {
 
     function test_completeBridge_revertsWhenNotOperator() public {
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, portfolioSafe, USDC_SYMBOL, BRIDGE_AMOUNT);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, BRIDGE_AMOUNT);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(unauthorized);

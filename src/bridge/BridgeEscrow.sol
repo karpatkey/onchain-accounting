@@ -41,13 +41,13 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Invoice storage keyed by hashed invoice (checksum)
     mapping(bytes32 => Invoice) public invoices;
 
-    /// @notice Active invoices per portfolio safe
+    /// @notice Active invoices per account
     /// @dev Invariant: Should only contain invoice hashes with status BRIDGING
     mapping(address => bytes32[]) private _activeInvoices;
     mapping(address => mapping(bytes32 => bool)) private _activeInvoicesSet;
 
-    /// @notice Authorized portfolio safes
-    EnumerableSet.AddressSet private _authorizedPortfolioSafes;
+    /// @notice Authorized accounts
+    EnumerableSet.AddressSet private _authorizedAccounts;
 
     /// @notice Authorized bridge adapters
     EnumerableSet.AddressSet private _authorizedAdapters;
@@ -68,15 +68,15 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @dev registeredSymbols[symbol] = true if symbol has been registered
     mapping(bytes6 => bool) public registeredSymbols;
 
-    /// @notice Cached in-transit balances per safe and asset
-    /// @dev _inTransitBalances[safe][asset] = total amount in transit for that safe and asset
-    /// @dev Invariant: Should equal sum of amounts from all BRIDGING invoices for that safe and asset
+    /// @notice Cached in-transit balances per account and asset
+    /// @dev _inTransitBalances[account][asset] = total amount in transit for that account and asset
+    /// @dev Invariant: Should equal sum of amounts from all BRIDGING invoices for that account and asset
     mapping(address => mapping(address => uint256)) private _inTransitBalances;
 
-    /// @notice Cached in-transit balances across all safes per asset
-    /// @dev _inTransitBalancesAllSafes[asset] = total amount in transit across all safes for that asset
-    /// @dev Invariant: Should equal sum of _inTransitBalances[safe][asset] across all safes
-    mapping(address => uint256) private _inTransitBalancesAllSafes;
+    /// @notice Cached in-transit balances across all accounts per asset
+    /// @dev _inTransitBalancesAllAccounts[asset] = total amount in transit across all accounts for that asset
+    /// @dev Invariant: Should equal sum of _inTransitBalances[account][asset] across all accounts
+    mapping(address => uint256) private _inTransitBalancesAllAccounts;
 
     /// @notice Adapter per selector (delegatecall target for protocol callbacks, e.g. ccipReceive)
     mapping(bytes4 => address) private _callbackAdapters;
@@ -101,12 +101,12 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Initializes the BridgeEscrow contract
     /// @param admin_ The admin address
     /// @param chainId_ The chain ID where this contract is deployed
-    /// @param initialPortfolioSafes Array of initial authorized portfolio safes
+    /// @param initialAccounts Array of initial authorized accounts
     /// @param initialAdapters Array of initial authorized adapters
     function initialize(
         address admin_,
         uint64 chainId_,
-        address[] memory initialPortfolioSafes,
+        address[] memory initialAccounts,
         address[] memory initialAdapters
     ) external initializer {
         __AccessControl_init();
@@ -114,9 +114,9 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
         chainId = chainId_;
 
-        // Authorize initial portfolio safes
-        for (uint256 i = 0; i < initialPortfolioSafes.length; i++) {
-            _authorizePortfolioSafe(initialPortfolioSafes[i]);
+        // Authorize initial accounts
+        for (uint256 i = 0; i < initialAccounts.length; i++) {
+            _authorizeAccount(initialAccounts[i]);
         }
 
         // Authorize initial adapters
@@ -156,8 +156,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         whenNotPaused
         returns (bytes32 invoiceHash)
     {
-        // Only authorized portfolio safes can deposit
-        if (!_authorizedPortfolioSafes.contains(msg.sender)) {
+        // Only authorized accounts can deposit
+        if (!_authorizedAccounts.contains(msg.sender)) {
             revert NotAuthorized();
         }
 
@@ -183,7 +183,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         // Emit event after invoice creation
         emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
 
-        // Transfer assets from portfolio safe
+        // Transfer assets from account
         if (_isNativeToken(asset)) {
             // Native token
             if (msg.value != amount) revert InvalidArguments();
@@ -256,8 +256,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
             revert InvalidArguments();
         }
 
-        // Verify portfolio safe is authorized
-        if (!_authorizedPortfolioSafes.contains(data.portfolioSafe)) {
+        // Verify account is authorized
+        if (!_authorizedAccounts.contains(data.account)) {
             revert NotAuthorized();
         }
 
@@ -278,13 +278,13 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         completedInvoices[invoiceHash] = true;
         emit InvoiceCompleted(invoiceHash, invoiceId);
         if (_isNativeToken(asset)) {
-            (bool success,) = data.portfolioSafe.call{value: amount}("");
+            (bool success,) = data.account.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
-            IERC20(asset).safeTransfer(data.portfolioSafe, amount);
+            IERC20(asset).safeTransfer(data.account, amount);
         }
 
-        emit AssetsReleased(invoiceId, data.sourceChainId, asset, amount, data.portfolioSafe);
+        emit AssetsReleased(invoiceId, data.sourceChainId, asset, amount, data.account);
     }
 
     //
@@ -318,23 +318,23 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         invoice.status = InvoiceStatus.CANCELLED;
 
         // Update in-transit balance cache (invoice is no longer in BRIDGING status)
-        _updateInTransitBalance(invoice.portfolioSafe, asset, amount, false);
+        _updateInTransitBalance(invoice.account, asset, amount, false);
 
-        // Return assets to portfolio safe
+        // Return assets to account
         if (_isNativeToken(asset)) {
-            (bool success,) = invoice.portfolioSafe.call{value: amount}("");
+            (bool success,) = invoice.account.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
-            IERC20(asset).safeTransfer(invoice.portfolioSafe, amount);
+            IERC20(asset).safeTransfer(invoice.account, amount);
         }
 
         // Remove from active invoices
-        if (_activeInvoicesSet[invoice.portfolioSafe][invoiceHash]) {
-            _removeActiveInvoice(invoice.portfolioSafe, invoiceHash);
+        if (_activeInvoicesSet[invoice.account][invoiceHash]) {
+            _removeActiveInvoice(invoice.account, invoiceHash);
         }
 
         emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.CANCELLED);
-        emit AssetsReleased(invoice.invoiceId, invoice.sourceChainId, asset, amount, invoice.portfolioSafe);
+        emit AssetsReleased(invoice.invoiceId, invoice.sourceChainId, asset, amount, invoice.account);
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -364,11 +364,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
             completedInvoices[invoiceHash] = true;
 
             // Update in-transit balance cache (invoice is no longer in BRIDGING status)
-            _updateInTransitBalance(invoice.portfolioSafe, invoice.asset, invoice.amount, false);
+            _updateInTransitBalance(invoice.account, invoice.asset, invoice.amount, false);
 
             // Remove from active invoices
-            if (_activeInvoicesSet[invoice.portfolioSafe][invoiceHash]) {
-                _removeActiveInvoice(invoice.portfolioSafe, invoiceHash);
+            if (_activeInvoicesSet[invoice.account][invoiceHash]) {
+                _removeActiveInvoice(invoice.account, invoiceHash);
             }
 
             emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.COMPLETED);
@@ -419,8 +419,8 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     }
 
     /// @inheritdoc IBridgeEscrow
-    function getActiveInvoices(address portfolioSafe) external view override returns (Invoice[] memory) {
-        bytes32[] memory activeInvoiceHashes = _activeInvoices[portfolioSafe];
+    function getActiveInvoices(address account) external view override returns (Invoice[] memory) {
+        bytes32[] memory activeInvoiceHashes = _activeInvoices[account];
         uint256 length = activeInvoiceHashes.length;
         Invoice[] memory activeInvoices = new Invoice[](length);
 
@@ -433,17 +433,17 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         return activeInvoices;
     }
 
-    /// @notice Returns all assets in-transit for a specific portfolio safe with their amounts
-    /// @param portfolioSafe The portfolio safe address
+    /// @notice Returns all assets in-transit for a specific account with their amounts
+    /// @param account The account address
     /// @return assets Array of asset addresses
     /// @return amounts Array of amounts corresponding to each asset
     /// @dev Aggregates amounts per asset from all active invoices with BRIDGING status
-    function getInTransitBalancesForSafe(address portfolioSafe)
+    function getInTransitBalancesForAccount(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts)
     {
-        bytes32[] memory activeInvoiceHashes = _activeInvoices[portfolioSafe];
+        bytes32[] memory activeInvoiceHashes = _activeInvoices[account];
         uint256 length = activeInvoiceHashes.length;
 
         // Use a temporary mapping to aggregate amounts per asset
@@ -490,22 +490,22 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
     /// @notice Calculates the total in-transit balance for an asset using cached balances
     /// @param asset The asset address to calculate balance for
-    /// @param portfolioSafe Optional portfolio safe address to filter by. If address(0), sums across all safes
-    /// @return The total amount in transit for this asset (optionally filtered by portfolio safe)
+    /// @param account Optional account address to filter by. If address(0), sums across all accounts
+    /// @return The total amount in transit for this asset (optionally filtered by account)
     /// @dev Uses cached balances for O(1) lookup instead of iterating through all invoices
-    function getInTransitBalanceForAsset(address asset, address portfolioSafe) external view returns (uint256) {
-        if (portfolioSafe == address(0)) {
-            // Return total across all safes
-            return _inTransitBalancesAllSafes[asset];
+    function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256) {
+        if (account == address(0)) {
+            // Return total across all accounts
+            return _inTransitBalancesAllAccounts[asset];
         } else {
-            // Return balance for specific safe
-            return _inTransitBalances[portfolioSafe][asset];
+            // Return balance for specific account
+            return _inTransitBalances[account][asset];
         }
     }
 
     /// @inheritdoc IBridgeEscrow
-    function isAuthorizedPortfolioSafe(address safe) external view override returns (bool) {
-        return _authorizedPortfolioSafes.contains(safe);
+    function isAuthorizedAccount(address safe) external view override returns (bool) {
+        return _authorizedAccounts.contains(safe);
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -539,18 +539,18 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     // Admin Functions
     //
 
-    /// @notice Authorizes a portfolio safe
-    /// @param safe The portfolio safe address to authorize
-    function authorizePortfolioSafe(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _authorizePortfolioSafe(safe);
-        emit PortfolioSafeAuthorized(safe);
+    /// @notice Authorizes an account
+    /// @param safe The account address to authorize
+    function authorizeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _authorizeAccount(safe);
+        emit AccountAuthorized(safe);
     }
 
-    /// @notice Revokes authorization for a portfolio safe
-    /// @param safe The portfolio safe address to revoke
-    function revokePortfolioSafe(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _authorizedPortfolioSafes.remove(safe);
-        emit PortfolioSafeRevoked(safe);
+    /// @notice Revokes authorization for an account
+    /// @param safe The account address to revoke
+    function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _authorizedAccounts.remove(safe);
+        emit AccountRevoked(safe);
     }
 
     /// @notice Authorizes a bridge adapter (no callback; use updateAdapterConfig to add callback later if needed)
@@ -655,20 +655,19 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Generates a 32-byte invoice ID (excludes amount)
     /// @param sourceChainId Source chain ID
     /// @param destinationChainId Destination chain ID
-    /// @param portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @param account Account address (full 20 bytes)
     /// @param assetSymbol Asset symbol (bytes6)
     /// @return invoiceId The 32-byte invoice ID
-    function _generateInvoiceId(
-        uint64 sourceChainId,
-        uint64 destinationChainId,
-        address portfolioSafe,
-        bytes6 assetSymbol
-    ) internal pure returns (bytes32) {
+    function _generateInvoiceId(uint64 sourceChainId, uint64 destinationChainId, address account, bytes6 assetSymbol)
+        internal
+        pure
+        returns (bytes32)
+    {
         // Pack data: 3 + 3 + 20 + 6 = 32 bytes exactly
         return bytes32(
             (uint256(SafeCast.toUint24(sourceChainId)) << 232) // Bits 232-255 (3 bytes)
                 | (uint256(SafeCast.toUint24(destinationChainId)) << 208) // Bits 208-231 (3 bytes)
-                | (uint256(uint160(portfolioSafe)) << 48) // Bits 48-207 (20 bytes)
+                | (uint256(uint160(account)) << 48) // Bits 48-207 (20 bytes)
                 | (uint256(uint48(assetSymbol))) // Bits 0-47 (6 bytes)
         );
     }
@@ -703,18 +702,18 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @param invoiceId The 32-byte invoice ID (excludes amount)
     /// @return sourceChainId Source chain ID
     /// @return destinationChainId Destination chain ID
-    /// @return portfolioSafe Portfolio safe address (full 20 bytes)
+    /// @return account Account address (full 20 bytes)
     /// @return assetSymbol Asset symbol
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address portfolioSafe, bytes6 assetSymbol)
+        returns (uint24 sourceChainId, uint24 destinationChainId, address account, bytes6 assetSymbol)
     {
         uint256 id = uint256(invoiceId);
 
         sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
         destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit overflow
-        portfolioSafe = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
+        account = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
         // casting to uint48/bytes6 is safe: id & type(uint48).max keeps only low 48 bits, so no truncation
         // forge-lint: disable-next-line(unsafe-typecast)
         assetSymbol = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
@@ -737,7 +736,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
     /// @notice Creates and stores an invoice with all necessary bookkeeping
     /// @param destinationChainId Destination chain ID
-    /// @param portfolioSafe Portfolio safe address
+    /// @param account Account address
     /// @param assetSymbol Asset symbol
     /// @param asset Asset address
     /// @param amount Amount to bridge
@@ -748,14 +747,14 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @dev This function handles invoice ID generation, checksum calculation, storage, and state updates
     function _createAndStoreInvoice(
         uint64 destinationChainId,
-        address portfolioSafe,
+        address account,
         bytes6 assetSymbol,
         address asset,
         uint256 amount,
         address adapter
     ) internal returns (bytes32 invoiceHash, bytes32 invoiceId, bytes memory messagePayload) {
         // Generate invoice ID (32 bytes, excludes amount)
-        invoiceId = _generateInvoiceId(chainId, destinationChainId, portfolioSafe, assetSymbol);
+        invoiceId = _generateInvoiceId(chainId, destinationChainId, account, assetSymbol);
 
         // Use full uint64 timestamp (8 bytes) - no truncation needed
         uint64 timestamp = uint64(block.timestamp);
@@ -777,7 +776,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
                 invoiceId: invoiceId,
                 sourceChainId: SafeCast.toUint24(chainId),
                 destinationChainId: SafeCast.toUint24(destinationChainId),
-                portfolioSafe: portfolioSafe,
+                account: account,
                 assetSymbol: assetSymbol,
                 amount: amount,
                 timestamp: timestamp,
@@ -790,7 +789,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         invoice.invoiceId = invoiceId;
         invoice.sourceChainId = chainId;
         invoice.destinationChainId = destinationChainId;
-        invoice.portfolioSafe = portfolioSafe;
+        invoice.account = account;
         invoice.asset = asset;
         invoice.amount = amount;
         invoice.timestamp = block.timestamp;
@@ -798,20 +797,20 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
         invoice.adapter = adapter;
 
         // Add to active invoices (invoiceIds are unique, so no need to check for duplicates)
-        _activeInvoices[portfolioSafe].push(invoiceHash);
-        _activeInvoicesSet[portfolioSafe][invoiceHash] = true;
+        _activeInvoices[account].push(invoiceHash);
+        _activeInvoicesSet[account][invoiceHash] = true;
 
         // Update in-transit balance cache (invoice is in BRIDGING status)
-        _updateInTransitBalance(portfolioSafe, asset, amount, true);
+        _updateInTransitBalance(account, asset, amount, true);
 
         return (invoiceHash, invoiceId, messagePayload);
     }
 
-    /// @notice Internal function to authorize a portfolio safe
-    /// @param safe The portfolio safe address
-    function _authorizePortfolioSafe(address safe) internal {
+    /// @notice Internal function to authorize an account
+    /// @param safe The account address
+    function _authorizeAccount(address safe) internal {
         if (safe == address(0)) revert InvalidArguments();
-        _authorizedPortfolioSafes.add(safe);
+        _authorizedAccounts.add(safe);
     }
 
     /// @notice Internal function to authorize an adapter
@@ -832,31 +831,31 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     }
 
     /// @notice Updates in-transit balance caches when invoices are created or completed/cancelled
-    /// @param safe The portfolio safe address
+    /// @param safe The account address
     /// @param asset The asset address
     /// @param amount The amount to add or subtract
     /// @param increment True to increment, false to decrement
-    /// @dev Updates both per-safe and all-safes balances atomically
+    /// @dev Updates both per-account and all-accounts balances atomically
     function _updateInTransitBalance(address safe, address asset, uint256 amount, bool increment) internal {
         if (increment) {
             _inTransitBalances[safe][asset] += amount;
-            _inTransitBalancesAllSafes[asset] += amount;
+            _inTransitBalancesAllAccounts[asset] += amount;
         } else {
             // Defensive: prevent underflow (shouldn't happen in normal operation)
             if (_inTransitBalances[safe][asset] >= amount) {
                 _inTransitBalances[safe][asset] -= amount;
             }
-            if (_inTransitBalancesAllSafes[asset] >= amount) {
-                _inTransitBalancesAllSafes[asset] -= amount;
+            if (_inTransitBalancesAllAccounts[asset] >= amount) {
+                _inTransitBalancesAllAccounts[asset] -= amount;
             }
         }
     }
 
     /// @notice Internal function to remove an active invoice
-    /// @param portfolioSafe The portfolio safe address
+    /// @param account The account address
     /// @param invoiceId The invoice ID to remove
-    function _removeActiveInvoice(address portfolioSafe, bytes32 invoiceId) internal {
-        bytes32[] storage activeList = _activeInvoices[portfolioSafe];
+    function _removeActiveInvoice(address account, bytes32 invoiceId) internal {
+        bytes32[] storage activeList = _activeInvoices[account];
         uint256 length = activeList.length;
 
         for (uint256 i = 0; i < length; i++) {
@@ -866,7 +865,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
                 // Remove last element
                 activeList.pop();
                 // Remove from set
-                _activeInvoicesSet[portfolioSafe][invoiceId] = false;
+                _activeInvoicesSet[account][invoiceId] = false;
                 break;
             }
         }
@@ -875,15 +874,15 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Checks if an asset symbol has any active invoices
     /// @param assetSymbol The asset symbol to check
     /// @return True if there are active invoices for this asset symbol
-    /// @dev Iterates through all authorized portfolio safes and checks their active invoices
+    /// @dev Iterates through all authorized accounts and checks their active invoices
     /// @dev This is gas-intensive but only called during unregisterAsset (admin operation)
     function _hasActiveInvoicesForAsset(bytes6 assetSymbol) internal view returns (bool) {
-        // Get all authorized portfolio safes
-        uint256 safeCount = _authorizedPortfolioSafes.length();
+        // Get all authorized accounts
+        uint256 safeCount = _authorizedAccounts.length();
 
-        // Iterate through each safe
+        // Iterate through each account
         for (uint256 i = 0; i < safeCount; i++) {
-            address safe = _authorizedPortfolioSafes.at(i);
+            address safe = _authorizedAccounts.at(i);
             bytes32[] memory activeInvoiceHashes = _activeInvoices[safe];
 
             // Check each active invoice for this safe
@@ -892,7 +891,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
                 Invoice storage invoice = invoices[invoiceHash];
 
                 // Decode invoiceId to get assetSymbol
-                // invoiceId format: sourceChainId (3 bytes) + destinationChainId (3 bytes) + portfolioSafe (20 bytes) + assetSymbol (6 bytes)
+                // invoiceId format: sourceChainId (3 bytes) + destinationChainId (3 bytes) + account (20 bytes) + assetSymbol (6 bytes)
                 bytes6 invoiceAssetSymbol = bytes6(uint48(uint256(invoice.invoiceId)));
 
                 // Check if this invoice uses the asset symbol we're checking

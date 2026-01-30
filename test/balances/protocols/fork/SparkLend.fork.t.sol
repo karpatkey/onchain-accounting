@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {BalanceAdapterForkTestBase} from "test/balances/protocols/fork/BalanceAdapterForkTestBase.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @notice Fork tests for SparkLendBalanceOracle using real mainnet contracts
 /// @dev Tests adapter behavior with real Spark protocol contracts and positions
 /// @dev SparkLend inherits from AaveV3Instance, so it uses the same protocol structure
-contract SparkLendBalanceOracleForkTest is BalanceAdapterForkTestBase {
+contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Spark contract addresses (mainnet)
     address public constant DATA_PROVIDER = 0xFc21d6d146E6086B8359705C8b28512a983db0cb;
     address public constant REWARDS_DISTRIBUTOR = 0x4370D3b6C9588E02ce9D22e684387859c7Ff5b34;

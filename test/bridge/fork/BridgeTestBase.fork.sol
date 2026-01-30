@@ -9,14 +9,14 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import "src/bridge/InvoiceDataLib.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
-/// @title BridgeForkTestBase
+/// @title BridgeTestBase (Fork)
 /// @notice Base test contract for fork-based bridge adapter tests
 /// @dev Provides fork setup, real contract addresses, and helper functions for testing with real bridge protocols
-abstract contract BridgeForkTestBase is TestEnvConfigurator {
+abstract contract BridgeTestBase is TestEnvConfigurator {
     // Test accounts
     address public admin = makeAddr("admin");
     address public operator = makeAddr("operator");
-    address public portfolioSafe = makeAddr("portfolioSafe");
+    address public account = makeAddr("account");
 
     // Contracts
     BridgeEscrow public bridgeEscrow;
@@ -104,7 +104,7 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
 
         // Deploy proxy
         address[] memory initialSafes = new address[](1);
-        initialSafes[0] = portfolioSafe;
+        initialSafes[0] = account;
 
         address[] memory initialAdapters = new address[](0); // Will be added per test
 
@@ -153,7 +153,7 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
         vm.label(address(bridgeEscrow), "BridgeEscrow");
         vm.label(admin, "admin");
         vm.label(operator, "operator");
-        vm.label(portfolioSafe, "portfolioSafe");
+        vm.label(account, "account");
 
         // Label real contracts
         if (block.chainid == MAINNET_CHAIN_ID) {
@@ -178,26 +178,26 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
     }
 
     /// @notice Funds an account with ETH
-    function _fundAccountWithEth(address account, uint256 amount) internal {
-        vm.deal(account, amount);
+    function _fundAccountWithEth(address recipient, uint256 amount) internal {
+        vm.deal(recipient, amount);
     }
 
     /// @notice Funds an account with ERC20 tokens by dealing
-    function _fundAccountWithToken(address token, address account, uint256 amount) internal {
+    function _fundAccountWithToken(address token, address recipient, uint256 amount) internal {
         // Use deal cheatcode to give tokens
-        deal(token, account, amount);
+        deal(token, recipient, amount);
     }
 
-    /// @notice Funds portfolio safe with test amounts
-    function _fundPortfolioSafe() internal {
+    /// @notice Funds account with test amounts
+    function _fundAccount() internal {
         if (block.chainid == MAINNET_CHAIN_ID) {
-            _fundAccountWithToken(MAINNET_USDC, portfolioSafe, TEST_AMOUNT_USDC);
-            _fundAccountWithToken(MAINNET_WETH, portfolioSafe, TEST_AMOUNT_ETH);
-            _fundAccountWithEth(portfolioSafe, TEST_AMOUNT_ETH);
+            _fundAccountWithToken(MAINNET_USDC, account, TEST_AMOUNT_USDC);
+            _fundAccountWithToken(MAINNET_WETH, account, TEST_AMOUNT_ETH);
+            _fundAccountWithEth(account, TEST_AMOUNT_ETH);
         } else if (block.chainid == OPTIMISM_CHAIN_ID) {
-            _fundAccountWithToken(OPTIMISM_USDC, portfolioSafe, TEST_AMOUNT_USDC);
-            _fundAccountWithToken(OPTIMISM_WETH, portfolioSafe, TEST_AMOUNT_ETH);
-            _fundAccountWithEth(portfolioSafe, TEST_AMOUNT_ETH);
+            _fundAccountWithToken(OPTIMISM_USDC, account, TEST_AMOUNT_USDC);
+            _fundAccountWithToken(OPTIMISM_WETH, account, TEST_AMOUNT_ETH);
+            _fundAccountWithEth(account, TEST_AMOUNT_ETH);
         }
     }
 
@@ -217,7 +217,7 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
             invoiceId: invoiceId,
             sourceChainId: SafeCast.toUint24(sourceChainId),
             destinationChainId: SafeCast.toUint24(destChainId),
-            portfolioSafe: safe,
+            account: safe,
             assetSymbol: assetSymbol,
             amount: amount,
             timestamp: timestamp,
@@ -248,7 +248,7 @@ abstract contract BridgeForkTestBase is TestEnvConfigurator {
 
     /// @notice Helper to approve token spending
     function _approveToken(address token, address spender, uint256 amount) internal {
-        vm.startPrank(portfolioSafe);
+        vm.startPrank(account);
         IERC20(token).approve(spender, amount);
         vm.stopPrank();
     }

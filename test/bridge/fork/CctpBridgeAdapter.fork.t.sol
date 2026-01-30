@@ -9,11 +9,11 @@ import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
-import {BridgeForkTestBase} from "test/bridge/fork/BridgeForkTestBase.sol";
+import {BridgeTestBase} from "test/bridge/fork/BridgeTestBase.fork.sol";
 
 /// @title CctpBridgeAdapterForkTest
 /// @notice Fork tests for CCTP Bridge Adapter using real mainnet contracts
-contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
+contract CctpBridgeAdapterForkTest is BridgeTestBase {
     CctpBridgeAdapter public adapter;
     IERC20 public usdc;
 
@@ -26,7 +26,7 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         super.setUp();
         _selectMainnetFork();
         _setupCctpAdapter();
-        _fundPortfolioSafe();
+        _fundAccount();
     }
 
     function _setupCctpAdapter() internal {
@@ -69,14 +69,14 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         _approveToken(MAINNET_USDC, address(bridgeEscrow), amount);
 
         // Get initial balances
-        uint256 initialPortfolioBalance = usdc.balanceOf(portfolioSafe);
+        uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
 
         // Initiate bridge via BridgeEscrow
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
 
         // Verify USDC was transferred to adapter
@@ -84,10 +84,8 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
 
         // Verify USDC was burned (TokenMessenger should have received it)
         // Note: In real CCTP, tokens are burned, so TokenMessenger balance may not increase
-        // We verify by checking portfolio safe balance decreased
-        assertEq(
-            usdc.balanceOf(portfolioSafe), initialPortfolioBalance - amount, "Portfolio safe balance should decrease"
-        );
+        // We verify by checking account balance decreased
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance - amount, "Account balance should decrease");
 
         // Verify invoiceId mapping was stored
         bytes32 invoiceId = invoiceData.invoiceId;
@@ -110,7 +108,7 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         uint64 destChainId = OPTIMISM_CHAIN_ID;
 
         // Try to bridge native token (should revert)
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(); // CCTP only supports USDC
         bridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(adapter));
     }
@@ -121,7 +119,7 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
 
         _approveToken(MAINNET_USDC, address(bridgeEscrow), amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         vm.expectRevert(); // Should revert because domain mapping doesn't exist
         bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
     }
@@ -134,17 +132,17 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
 
         // Initiate bridge
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
 
         // Verify invoice data matches
         IBridgeEscrow.Invoice memory invoice = bridgeEscrow.getInvoice(invoiceHash);
         assertEq(invoice.invoiceId, invoiceData.invoiceId, "Invoice ID should match");
         assertEq(invoice.amount, invoiceData.amount, "Amount should match");
-        assertEq(invoice.portfolioSafe, invoiceData.portfolioSafe, "Portfolio safe should match");
+        assertEq(invoice.account, invoiceData.account, "Account should match");
 
         // Verify checksum validation works
         bool isValid = bridgeEscrow.validateInvoiceIdChecksum(
@@ -160,9 +158,9 @@ contract CctpBridgeAdapterForkTest is BridgeForkTestBase {
         _approveToken(MAINNET_USDC, address(bridgeEscrow), amount);
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, portfolioSafe, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
 
-        vm.prank(portfolioSafe);
+        vm.prank(account);
         bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
 
         // Verify adapter may have invoiceId stored (messageToInvoiceId); nonce 1 is a placeholder.

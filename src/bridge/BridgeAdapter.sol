@@ -24,8 +24,9 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     // Constants
     //
 
-    /// @notice Role for operators who can complete bridges
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    /// @notice Role for managers who can complete bridges and recover assets
+    /// @dev This role is used consistently across NAVCalculator and bridge system
+    bytes32 public constant MANAGER_ROLE = MANAGER;
 
     /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
     address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
@@ -110,7 +111,7 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     /// @inheritdoc IBridgeAdapter
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override {
         // Verify caller is authorized
-        if (!hasRole(OPERATOR_ROLE, msg.sender)) {
+        if (!hasRole(MANAGER_ROLE, msg.sender)) {
             revert NotAuthorized();
         }
 
@@ -196,7 +197,7 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     function recoverStuckAssets(address asset, uint256 amount, address to)
         external
         override
-        onlyRole(OPERATOR_ROLE)
+        onlyRole(MANAGER_ROLE)
         nonReentrant
     {
         if (to == address(0)) revert InvalidArguments();

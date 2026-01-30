@@ -333,7 +333,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
                 // Decode and finalize withdrawal
                 _finalizeWithdrawal(protocolData);
             } else {
-                // No protocol data - assume deposit completion or operator will provide finalization later
+                // No protocol data - assume deposit completion or manager will provide finalization later
                 // For withdrawals, tokens are not yet available until finalization
                 _completeDeposit(data, messagePayload);
             }
@@ -404,13 +404,13 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @param l2OutputIndex The L2 output index
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof
-    /// @dev This function should be called by an operator after the withdrawal is initiated
+    /// @dev This function should be called by a manager after the withdrawal is initiated
     function proveWithdrawal(
         Types.WithdrawalTransaction memory withdrawalTx,
         uint256 l2OutputIndex,
         Types.OutputRootProof memory outputRootProof,
         bytes[] calldata withdrawalProof
-    ) external onlyRole(OPERATOR_ROLE) {
+    ) external onlyRole(MANAGER_ROLE) {
         // Calculate withdrawal hash
         // forge-lint: disable-start(asm-keccak256)
         bytes32 withdrawalHash = keccak256(
@@ -435,10 +435,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         }
     }
 
-    /// @notice Finalizes a withdrawal transaction (public function for operators)
+    /// @notice Finalizes a withdrawal transaction (public function for Managers)
     /// @param withdrawalTx The withdrawal transaction to finalize
-    /// @dev This function should be called by an operator after the withdrawal is proven and challenge period has elapsed
-    function finalizeWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external onlyRole(OPERATOR_ROLE) {
+    /// @dev This function should be called by a manager after the withdrawal is proven and challenge period has elapsed
+    function finalizeWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external onlyRole(MANAGER_ROLE) {
         // Calculate withdrawal hash
         // forge-lint: disable-start(asm-keccak256)
         bytes32 withdrawalHash = keccak256(

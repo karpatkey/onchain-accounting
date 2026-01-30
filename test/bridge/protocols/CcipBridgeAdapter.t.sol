@@ -8,6 +8,8 @@ import {ICcipBridgeAdapter} from "src/bridge/adapters/interfaces/ICcipBridgeAdap
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -49,7 +51,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         adapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
         adapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow
@@ -221,11 +223,11 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
         destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Operator fallback: tokens already at escrow
+        // Manager fallback: tokens already at escrow
         usdc.mint(address(destBridgeEscrow), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
@@ -243,7 +245,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, abi.encode(minimalMessage));
 
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
@@ -271,7 +273,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -292,12 +294,12 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(ccipMessage);
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // Should revert because checksum is invalid
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -332,7 +334,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(ccipMessage);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not operator
+        vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
@@ -369,7 +371,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
         destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 

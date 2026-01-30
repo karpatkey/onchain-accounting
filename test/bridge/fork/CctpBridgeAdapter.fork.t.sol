@@ -8,6 +8,8 @@ import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMesseng
 import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {BridgeTestBase} from "test/bridge/fork/BridgeTestBase.fork.sol";
 
@@ -46,7 +48,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
         adapter.setDomainMapping(MAINNET_CHAIN_ID, MAINNET_DOMAIN);
         adapter.setDomainMapping(OPTIMISM_CHAIN_ID, OPTIMISM_DOMAIN);
         adapter.setDomainMapping(BASE_CHAIN_ID, BASE_DOMAIN);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow

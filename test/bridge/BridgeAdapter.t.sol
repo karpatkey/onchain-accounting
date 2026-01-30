@@ -35,7 +35,7 @@ contract BridgeAdapterTest is BridgeTestBase {
         vm.label(address(adapter), "MockBridgeAdapter");
 
         vm.startPrank(admin);
-        adapter.grantRole(adapter.OPERATOR_ROLE(), operator);
+        adapter.grantRole(adapter.MANAGER_ROLE(), manager);
         vm.stopPrank();
     }
 
@@ -70,9 +70,9 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     // ============ completeBridge() ============
-    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it calls releaseByInvoiceId on escrow and requires valid messagePayload + destination escrow. We test revert when not operator and when empty payload.
+    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it calls releaseByInvoiceId on escrow and requires valid messagePayload + destination escrow. We test revert when not manager and when empty payload.
 
-    function test_completeBridge_revertsWhenNotOperator() public {
+    function test_completeBridge_revertsWhenNotManager() public {
         InvoiceDataLib.InvoiceData memory data =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, BRIDGE_AMOUNT);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
@@ -83,7 +83,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     function test_completeBridge_revertsWhenMessagePayloadEmpty() public {
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvalidCompletionData.selector));
         adapter.completeBridge("", "");
     }
@@ -94,7 +94,7 @@ contract BridgeAdapterTest is BridgeTestBase {
         usdc.mint(address(adapter), 5000e6);
         address to = makeAddr("recoveryTo");
 
-        vm.prank(operator);
+        vm.prank(manager);
         adapter.recoverStuckAssets(address(usdc), 5000e6, to);
 
         assertEq(usdc.balanceOf(to), 5000e6, "Recipient should receive tokens");
@@ -106,14 +106,14 @@ contract BridgeAdapterTest is BridgeTestBase {
         address to = makeAddr("recoveryTo");
         uint256 toBalanceBefore = to.balance;
 
-        vm.prank(operator);
+        vm.prank(manager);
         adapter.recoverStuckAssets(address(0), 2 ether, to);
 
         assertEq(to.balance, toBalanceBefore + 2 ether, "Recipient should receive ETH");
         assertEq(address(adapter).balance, 0, "Adapter should have zero ETH");
     }
 
-    function test_RevertWhen_recoverStuckAssets_notOperator() public {
+    function test_RevertWhen_recoverStuckAssets_notManager() public {
         usdc.mint(address(adapter), 1000e6);
         vm.prank(unauthorized);
         vm.expectRevert();
@@ -121,20 +121,20 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     function test_RevertWhen_recoverStuckAssets_toZero() public {
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         adapter.recoverStuckAssets(address(usdc), 1, address(0));
     }
 
     function test_RevertWhen_recoverStuckAssets_amountZero() public {
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
         adapter.recoverStuckAssets(address(usdc), 0, makeAddr("to"));
     }
 
     function test_RevertWhen_recoverStuckAssets_insufficientBalance() public {
         usdc.mint(address(adapter), 100e6);
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // InsufficientBalance
         adapter.recoverStuckAssets(address(usdc), 200e6, makeAddr("to"));
     }
@@ -164,7 +164,7 @@ contract BridgeAdapterTest is BridgeTestBase {
         usdc.mint(address(adapter), amount);
         address to = makeAddr("recoveryTo");
 
-        vm.prank(operator);
+        vm.prank(manager);
         adapter.recoverStuckAssets(address(usdc), amount, to);
 
         assertEq(usdc.balanceOf(to), amount, "Recipient should receive full amount");

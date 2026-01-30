@@ -70,7 +70,7 @@ interface IBridgeAdapter {
     /// @param asset The asset address to recover (address(0) for native tokens)
     /// @param amount The amount to recover
     /// @param to The address to send recovered assets to
-    /// @dev Only operators can call this. Adapter-specific recovery logic.
+    /// @dev Only managers can call this. Adapter-specific recovery logic.
     function recoverStuckAssets(address asset, uint256 amount, address to) external;
 }
 

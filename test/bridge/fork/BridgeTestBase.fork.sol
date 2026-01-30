@@ -7,6 +7,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 /// @title BridgeTestBase (Fork)
@@ -15,7 +17,7 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 abstract contract BridgeTestBase is TestEnvConfigurator {
     // Test accounts
     address public admin = makeAddr("admin");
-    address public operator = makeAddr("operator");
+    address public manager = makeAddr("manager");
     address public account = makeAddr("account");
 
     // Contracts
@@ -116,13 +118,13 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
 
         bridgeEscrow = BridgeEscrow(bridgeEscrowProxy);
 
-        // Grant operator role to admin and operator
+        // Grant manager role to admin and manager
         vm.startPrank(admin);
-        bridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), admin);
-        bridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        bridgeEscrow.grantRole(MANAGER, admin);
+        bridgeEscrow.grantRole(MANAGER, manager);
         vm.stopPrank();
 
-        // Register assets based on current chain (requires OPERATOR_ROLE)
+        // Register assets based on current chain (requires MANAGER role)
         _registerAssets();
     }
 
@@ -152,7 +154,7 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
     function _setupLabels() internal {
         vm.label(address(bridgeEscrow), "BridgeEscrow");
         vm.label(admin, "admin");
-        vm.label(operator, "operator");
+        vm.label(manager, "manager");
         vm.label(account, "account");
 
         // Label real contracts

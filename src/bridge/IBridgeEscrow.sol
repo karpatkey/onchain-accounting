@@ -157,7 +157,7 @@ interface IBridgeEscrow {
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
     /// @param invoiceHashes Array of hashed invoice IDs to mark as completed
-    /// @dev This function should be called by an operator after assets have been released on the destination chain.
+    /// @dev This function should be called by a manager after assets have been released on the destination chain.
     ///      It updates the invoice status on the source chain for bookkeeping purposes only.
     function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external;
 

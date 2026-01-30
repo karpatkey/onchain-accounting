@@ -157,7 +157,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Completes bridge on destination chain (operator fallback when callback path not used)
+    /// @dev Completes bridge on destination chain (manager fallback when callback path not used)
     ///      When recipient is BridgeEscrow, tokens are already at escrow; we only trigger release.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         if (messagePayload.length == 0) revert InvalidCompletionData();

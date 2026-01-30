@@ -5,6 +5,8 @@ import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapter.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -57,7 +59,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
         vm.startPrank(admin);
-        l1Adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l1Adapter.grantRole(MANAGER, manager);
         l1Adapter.setL1ToL2Token(address(usdc), address(usdc));
         vm.stopPrank();
         _authorizeAdapter(address(l1Adapter));
@@ -83,7 +85,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             ));
         SuperchainBridgeAdapter destAdapter = SuperchainBridgeAdapter(l2AdapterProxy);
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
         return destAdapter;
@@ -169,7 +171,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "invoice not completed yet");
 
         uint256 portfolioBalanceBefore = usdc.balanceOf(account);
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, "");
 
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
@@ -181,12 +183,12 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         BridgeEscrow destEscrow = _setupDestinationChainEscrow(L2_CHAIN_ID);
         SuperchainBridgeAdapter destAdapter = _setupL2Adapter(destEscrow);
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvalidCompletionData.selector));
         destAdapter.completeBridge("", "");
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, L2_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -247,7 +249,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             ));
         SuperchainBridgeAdapter l1Ad = SuperchainBridgeAdapter(l1AdapterProxy);
         vm.prank(admin);
-        l1Ad.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l1Ad.grantRole(MANAGER, manager);
         vm.prank(admin);
         l1Escrow.authorizeAdapter(address(l1Ad));
 
@@ -266,7 +268,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         assertTrue(optimismPortal.provenWithdrawals(withdrawalHash), "withdrawal proven");
         uint256 escrowBalanceBefore = address(l1Escrow).balance;
-        vm.prank(operator);
+        vm.prank(manager);
         optimismPortal.finalizeWithdrawalTransaction(wtx);
         assertEq(address(l1Escrow).balance - escrowBalanceBefore, amount, "escrow received ETH");
     }

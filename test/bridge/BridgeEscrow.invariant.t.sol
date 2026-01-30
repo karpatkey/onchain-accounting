@@ -25,7 +25,7 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
         assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(usdc), account), BRIDGE_AMOUNT, "In-transit set");
 
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.cancelInvoice(invoiceHash);
 
         assertEq(
@@ -42,7 +42,7 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.markInvoiceCompleted(_array(invoiceHash));
 
         assertTrue(bridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed");

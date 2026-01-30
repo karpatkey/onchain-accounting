@@ -10,6 +10,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title BridgeTestBase
@@ -18,7 +20,7 @@ import "test/mocks/tokens.sol";
 abstract contract BridgeTestBase is Test {
     // Test accounts
     address public admin = makeAddr("admin");
-    address public operator = makeAddr("operator");
+    address public manager = makeAddr("manager");
     address public account = makeAddr("account");
     address public unauthorized = makeAddr("unauthorized");
 
@@ -73,13 +75,13 @@ abstract contract BridgeTestBase is Test {
 
         bridgeEscrow = BridgeEscrow(bridgeEscrowProxy);
 
-        // Grant operator role to admin and operator
+        // Grant manager role to admin and manager
         vm.startPrank(admin);
-        bridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), admin);
-        bridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        bridgeEscrow.grantRole(MANAGER, admin);
+        bridgeEscrow.grantRole(MANAGER, manager);
         vm.stopPrank();
 
-        // Register assets (requires OPERATOR_ROLE)
+        // Register assets (requires MANAGER role)
         vm.startPrank(admin);
         bridgeEscrow.registerAsset(USDC_SYMBOL, address(usdc));
         bridgeEscrow.registerAsset(WETH_SYMBOL, address(weth));
@@ -93,7 +95,7 @@ abstract contract BridgeTestBase is Test {
         vm.label(address(weth), "WETH");
         vm.label(address(dai), "DAI");
         vm.label(admin, "admin");
-        vm.label(operator, "operator");
+        vm.label(manager, "manager");
         vm.label(account, "account");
     }
 
@@ -194,10 +196,10 @@ abstract contract BridgeTestBase is Test {
 
         destBridgeEscrow = BridgeEscrow(bridgeEscrowProxy);
 
-        // Grant operator role
+        // Grant manager role
         vm.startPrank(admin);
-        destBridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), admin);
-        destBridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destBridgeEscrow.grantRole(MANAGER, admin);
+        destBridgeEscrow.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Register assets

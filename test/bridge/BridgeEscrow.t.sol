@@ -116,7 +116,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
         assertEq(usdc.balanceOf(address(bridgeEscrow)), amount, "Escrow should still hold tokens (mock does not pull)");
 
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.cancelInvoice(invoiceHash);
 
         assertEq(usdc.balanceOf(account), INITIAL_BALANCE, "Account should get tokens back");
@@ -133,7 +133,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         bytes32 invoiceHash =
             bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.markInvoiceCompleted(_array(invoiceHash));
 
         IBridgeEscrow.Invoice memory inv = bridgeEscrow.getInvoice(invoiceHash);
@@ -150,7 +150,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         hashes[1] = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
         hashes[2] = keccak256("also-nonexistent");
 
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.markInvoiceCompleted(hashes);
 
         assertTrue(bridgeEscrow.isInvoiceCompleted(hashes[1]), "Valid invoice should be completed");
@@ -277,7 +277,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);
         bytes32 h1 = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
-        vm.prank(operator);
+        vm.prank(manager);
         bridgeEscrow.markInvoiceCompleted(_array(h1));
         bytes32 h2 = keccak256("other");
         bytes32[] memory hashes = new bytes32[](2);

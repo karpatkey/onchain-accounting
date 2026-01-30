@@ -70,7 +70,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     // ============ releaseByInvoiceId reverts ============
 
-    function test_RevertWhen_releaseByInvoiceId_callerNotAdapterOrOperator() public {
+    function test_RevertWhen_releaseByInvoiceId_callerNotAdapterOrManager() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload,) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         usdc.mint(address(destEscrow), 1000e6);
@@ -131,7 +131,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     // ============ cancelInvoice reverts ============
 
-    function test_RevertWhen_cancelInvoice_notOperator() public {
+    function test_RevertWhen_cancelInvoice_notManager() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);
         bytes32 invoiceHash =
@@ -143,14 +143,14 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     }
 
     function test_RevertWhen_cancelInvoice_invoiceNotFound() public {
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));
         bridgeEscrow.cancelInvoice(keccak256("nonexistent"));
     }
 
     // ============ markInvoiceCompleted reverts ============
 
-    function test_RevertWhen_markInvoiceCompleted_notOperator() public {
+    function test_RevertWhen_markInvoiceCompleted_notManager() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);
         bytes32 invoiceHash =
@@ -163,7 +163,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     // ============ registerAsset / unregisterAsset reverts ============
 
-    function test_RevertWhen_registerAsset_notOperator() public {
+    function test_RevertWhen_registerAsset_notManager() public {
         vm.prank(unauthorized);
         vm.expectRevert();
         bridgeEscrow.registerAsset("NEW   ", makeAddr("token"));

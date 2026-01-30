@@ -1190,6 +1190,40 @@ contract NAVCalculatorTest is SuperTest {
         nav.setChainlinkL2SequencerGracePeriod(2 hours);
     }
 
+    function test_setChainlinkUptimeFeed_toAddressZero() public {
+        // This test verifies that setting the sequencer feed to address(0) is allowed
+        // This is the correct configuration for chains without sequencers (mainnet, Gnosis)
+        assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(sequencerUptimeFeed));
+
+        // Set to address(0) - should work for L1 chains
+        vm.prank(navCalculatorManager);
+        nav.setChainlinkL2SequencerUptimeFeed(address(0));
+
+        assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(0));
+
+        // Verify checkL2SequencerUptime returns false (not stale) when feed is address(0)
+        bool stale = nav.checkL2SequencerUptime();
+        assertFalse(stale);
+
+        // Verify latestPrice still works correctly without sequencer check
+        usdc.mint(safe, 10 ** usdc.decimals());
+        (int256 price, uint8 decimals, bool priceStale) = nav.latestPrice(address(usdc));
+        assertEq(price, 1e8);
+        assertEq(decimals, 8);
+        assertFalse(priceStale);
+
+        // Verify getAccountNav works correctly
+        INAVCalculator.NAV memory navReading = nav.getAccountNav(safe, address(0));
+        assertEq(navReading.value, 1e8);
+        assertFalse(navReading.sequencerDown);
+
+        // Verify that trying to set grace period now reverts (because feed is address(0))
+        vm.startPrank(navCalculatorManager);
+        vm.expectRevert(INAVCalculator.UptimeFeedNotSet.selector);
+        nav.setChainlinkL2SequencerGracePeriod(2 hours);
+        vm.stopPrank();
+    }
+
     // ============================================
     // B. Currency Conversion Tests
     // ============================================

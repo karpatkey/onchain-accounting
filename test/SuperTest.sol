@@ -94,7 +94,6 @@ abstract contract SuperTest is Test {
         );
         nav = NAVCalculator(navProxy);
 
-        nav.grantRole(OPERATOR, ops);
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 

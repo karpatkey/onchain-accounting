@@ -28,8 +28,9 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     // Constants
     //
 
-    /// @notice Role for operators who can cancel invoices
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    /// @notice Role for managers who can cancel invoices and manage assets
+    /// @dev This role is used consistently across NAVCalculator and bridge system
+    bytes32 public constant MANAGER_ROLE = MANAGER;
 
     /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
     address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
@@ -217,7 +218,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
     /// @inheritdoc IBridgeEscrow
     function releaseByInvoiceId(bytes memory messagePayload) external nonReentrant whenNotPaused {
-        if (!_authorizedAdapters.contains(msg.sender) && !hasRole(OPERATOR_ROLE, msg.sender)) {
+        if (!_authorizedAdapters.contains(msg.sender) && !hasRole(MANAGER_ROLE, msg.sender)) {
             revert NotAuthorized();
         }
 
@@ -288,11 +289,11 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     }
 
     //
-    // Operator Functions
+    // Manager Functions
     //
 
     /// @inheritdoc IBridgeEscrow
-    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(OPERATOR_ROLE) {
+    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(MANAGER_ROLE) {
         Invoice storage invoice = invoices[invoiceHash];
 
         if (invoice.invoiceId == bytes32(0)) revert InvoiceNotFound();
@@ -338,7 +339,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     }
 
     /// @inheritdoc IBridgeEscrow
-    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external override onlyRole(OPERATOR_ROLE) {
+    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external override onlyRole(MANAGER_ROLE) {
         uint256 length = invoiceHashes.length;
         bytes32[] memory failedInvoiceIds = new bytes32[](length);
         uint256 failedCount = 0;
@@ -388,7 +389,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Registers an asset with its symbol on this chain
     /// @param symbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
     /// @param asset The asset address (address(0) for native ETH/tokens)
-    function registerAsset(bytes6 symbol, address asset) external onlyRole(OPERATOR_ROLE) {
+    function registerAsset(bytes6 symbol, address asset) external onlyRole(MANAGER_ROLE) {
         // Allow address(0) for native tokens (e.g., ETH) - used by Superchain adapter
         assetRegistry[symbol] = asset;
         registeredSymbols[symbol] = true;
@@ -398,7 +399,7 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
     /// @notice Unregisters an asset symbol
     /// @param symbol The asset symbol to unregister
     /// @dev Prevents unregistering if there are active invoices for this asset symbol
-    function unregisterAsset(bytes6 symbol) external onlyRole(OPERATOR_ROLE) {
+    function unregisterAsset(bytes6 symbol) external onlyRole(MANAGER_ROLE) {
         // Check if asset has active invoices
         if (_hasActiveInvoicesForAsset(symbol)) {
             revert AssetHasActiveInvoices(symbol);

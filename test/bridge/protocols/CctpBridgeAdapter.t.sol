@@ -7,6 +7,8 @@ import {CctpBridgeAdapter} from "src/bridge/adapters/CctpBridgeAdapter.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -45,7 +47,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         adapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
         adapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow
@@ -194,7 +196,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         destAdapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
         destAdapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
     }
@@ -228,7 +230,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should start with zero balance (CCTP will mint)");
 
         // Complete bridge
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
         // Verify balances after completion
@@ -298,7 +300,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData =
             _prepareCctpProtocolData(nonce, amount, address(destBridgeEscrow), address(destAdapter));
 
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
         // Verify completion and balances
@@ -323,7 +325,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         destAdapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
         destAdapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
     }
@@ -385,7 +387,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         CctpBridgeAdapter destAdapter = CctpBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -403,12 +405,12 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(cctpMessage, attestation);
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // Should revert because checksum is invalid
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -447,7 +449,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(cctpMessage, attestation);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not operator
+        vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 

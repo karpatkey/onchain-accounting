@@ -11,6 +11,8 @@ import "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
 import "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -61,7 +63,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         adapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
         adapter.setAssetPoolId(address(weth), testChainId, SRC_POOL_ID);
         adapter.setAssetPoolId(address(weth), DEST_CHAIN_ID, DST_POOL_ID);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow
@@ -207,11 +209,11 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Operator fallback: tokens already at escrow
+        // Manager fallback: tokens already at escrow
         usdc.mint(address(destBridgeEscrow), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
@@ -221,7 +223,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
@@ -266,7 +268,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -302,7 +304,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -315,12 +317,12 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // Should revert because checksum is invalid
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -347,7 +349,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not operator
+        vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 

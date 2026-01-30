@@ -12,6 +12,8 @@ import "src/bridge/adapters/interfaces/IAcrossInterfaces.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/IBridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/BridgeTestBase.sol";
@@ -49,7 +51,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Configure adapter
         vm.startPrank(admin);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow
@@ -176,11 +178,11 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Configure adapter on destination chain
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Recipient is BridgeEscrow; for operator fallback path we mint tokens to escrow, then completeBridge (no transfer in _completeBridge)
+        // Recipient is BridgeEscrow; for manager fallback path we mint tokens to escrow, then completeBridge (no transfer in _completeBridge)
         usdc.mint(address(destBridgeEscrow), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
@@ -192,7 +194,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
 
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
@@ -242,7 +244,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -285,7 +287,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -298,12 +300,12 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // Should revert because checksum is invalid
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -330,7 +332,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not operator
+        vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
@@ -356,7 +358,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             ));
         AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 

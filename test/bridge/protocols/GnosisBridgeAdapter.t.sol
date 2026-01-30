@@ -9,6 +9,8 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
@@ -46,7 +48,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // Configure adapter
         vm.startPrank(admin);
-        adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         // Authorize adapter in BridgeEscrow
@@ -159,11 +161,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Operator fallback: tokens already at escrow (e.g. delivered via callback path earlier or manual transfer)
+        // Manager fallback: tokens already at escrow (e.g. delivered via callback path earlier or manual transfer)
         usdc.mint(address(destBridgeEscrow), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
@@ -173,7 +175,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
-        vm.prank(operator);
+        vm.prank(manager);
         destAdapter.completeBridge(messagePayload, "");
 
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
@@ -213,7 +215,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -248,7 +250,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
@@ -259,12 +261,12 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
-        vm.prank(operator);
+        vm.prank(manager);
         vm.expectRevert(); // Should revert because checksum is invalid
         destAdapter.completeBridge(corruptedPayload, "");
     }
 
-    function test_completeBridge_revertsIfNotOperator() public {
+    function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
@@ -289,7 +291,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         vm.stopPrank();
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not operator
+        vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, "");
     }
 

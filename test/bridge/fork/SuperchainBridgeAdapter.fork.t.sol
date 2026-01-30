@@ -7,6 +7,8 @@ import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapt
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 import {BridgeTestBase} from "test/bridge/fork/BridgeTestBase.fork.sol";
 
@@ -43,8 +45,8 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l1BridgeEscrow = BridgeEscrow(l1EscrowProxy);
 
         vm.startPrank(admin);
-        l1BridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), admin);
-        l1BridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l1BridgeEscrow.grantRole(MANAGER, admin);
+        l1BridgeEscrow.grantRole(MANAGER, manager);
         // Register native ETH (address(0)) for WETH_SYMBOL
         // BridgeEscrow now allows address(0) for native tokens
         l1BridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
@@ -71,7 +73,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
 
         vm.startPrank(admin);
-        l1Adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l1Adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         _authorizeAdapterForEscrow(address(l1Adapter), l1BridgeEscrow);
@@ -99,8 +101,8 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l2BridgeEscrow = BridgeEscrow(l2EscrowProxy);
 
         vm.startPrank(admin);
-        l2BridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), admin);
-        l2BridgeEscrow.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l2BridgeEscrow.grantRole(MANAGER, admin);
+        l2BridgeEscrow.grantRole(MANAGER, manager);
         // Register native ETH (address(0)) for WETH_SYMBOL
         // BridgeEscrow now allows address(0) for native tokens
         l2BridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
@@ -127,7 +129,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l2Adapter = SuperchainBridgeAdapter(l2AdapterProxy);
 
         vm.startPrank(admin);
-        l2Adapter.grantRole(keccak256("OPERATOR_ROLE"), operator);
+        l2Adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
         _authorizeAdapterForEscrow(address(l2Adapter), l2BridgeEscrow);

@@ -141,7 +141,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Completes bridge on destination chain (operator fallback when callback path not used).
+    /// @dev Completes bridge on destination chain (manager fallback when callback path not used).
     ///      When recipient is BridgeEscrow, tokens are delivered to escrow; we only record and release.
     function _completeBridge(
         bytes calldata messagePayload,
@@ -197,7 +197,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @inheritdoc IGnosisBridgeAdapter
     receive() external payable {
         // Native tokens received - messagePayload should be provided via completeBridge
-        // We cannot extract messagePayload from receive() directly, so operator must provide it
+        // We cannot extract messagePayload from receive() directly, so manager must provide it
     }
 
     //

@@ -36,9 +36,7 @@ contract ConstantsInvariantTest is Test {
 
     /// @notice Role IDs must be distinct (no accidental overlap)
     function test_invariant_roleIdsDistinct() public pure {
-        assertTrue(MANAGER != OPERATOR, "MANAGER != OPERATOR");
         assertTrue(MANAGER != DEFAULT_ADMIN_ROLE, "MANAGER != DEFAULT_ADMIN_ROLE");
-        assertTrue(OPERATOR != DEFAULT_ADMIN_ROLE, "OPERATOR != DEFAULT_ADMIN_ROLE");
     }
 
     /// @notice DEFAULT_ADMIN_ROLE must be 0x00 (OpenZeppelin AccessControl convention)

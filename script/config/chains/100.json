@@ -1,0 +1,69 @@
+{
+  "chainId": 100,
+  "name": "gnosis",
+  "rpc": "$GNOSIS_RPC_URL",
+  "explorer": "https://gnosisscan.io",
+  "explorerApiKey": "$GNOSISSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "xDAI",
+  "addresses": {
+    "safeMultisig": "0x0000000000000000000000000000000000000000",
+    "admin": "0x0000000000000000000000000000000000000000",
+    "manager": "0x0000000000000000000000000000000000000000",
+    "assetRecoverer": "0x0000000000000000000000000000000000000000"
+  },
+  "deployed": {
+    "Create2Deployer": "",
+    "NAVCalculatorImplementation": "",
+    "NAVCalculatorProxy": "",
+    "BridgeEscrowImplementation": "",
+    "BridgeEscrowProxy": ""
+  },
+  "priceFeeds": {
+    "sXDAI": {
+      "enabled": true,
+      "constructor": {
+        "sDai": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+        "xDaiToUsdChainlinkOracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+        "xDaiToUsdChainlinkHeartbeat": "3600"
+      },
+      "deployed": ""
+    }
+  },
+  "balanceAdapters": {
+    "AaveV3_USDC": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0x501B1444d034DcaA59dB64d33A8C0b45Fd0Af760",
+        "rewardsDistributor": "0xaD4F91D26254B6B0C6346b390dDA2991FDE2F20d",
+        "protocol": "Aave V3",
+        "navCalculator": ""
+      },
+      "deployed": ""
+    },
+    "Balancer_V3": {
+      "enabled": false,
+      "constructor": {
+        "pool": "0x0000000000000000000000000000000000000000",
+        "gauge": "0x0000000000000000000000000000000000000000",
+        "balancerMinter": "0x0000000000000000000000000000000000000000",
+        "protocol": "Balancer V3",
+        "navCalculator": ""
+      },
+      "deployed": ""
+    }
+  },
+  "bridgeAdapters": {
+    "Gnosis": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "omnibridge": "0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d",
+        "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
+        "version": "1.0.0"
+      },
+      "deployed": ""
+    }
+  }
+}

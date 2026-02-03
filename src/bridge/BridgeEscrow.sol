@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -20,7 +21,14 @@ import "src/constants.sol";
 /// @title BridgeEscrow
 /// @notice Tracks assets in transit across chains and maintains invoice ledger
 /// @author kpk
-contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuard, PausableUpgradeable, IBridgeEscrow {
+contract BridgeEscrow is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    PausableUpgradeable,
+    IBridgeEscrow
+{
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -904,5 +912,14 @@ contract BridgeEscrow is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
         return false;
     }
+
+    /// @notice Authorizes upgrades to new implementations
+    /// @param newImplementation Address of the new implementation
+    /// @dev Only accounts with DEFAULT_ADMIN_ROLE can authorize upgrades
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /// @dev Storage gap for future upgrades (allows adding new state variables without affecting storage layout)
+    /// @dev 50 slots reserved for future use
+    uint256[50] private __gap;
 }
 

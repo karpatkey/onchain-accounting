@@ -116,10 +116,10 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(bytes(dataProvider)[0] == "0" && bytes(dataProvider)[1] == "x", "Should be hex address");
     }
 
-    /// @notice Test reading price feed parameters
+    /// @notice Test reading price feed parameters from assets config
     function test_ReadPriceFeedParam() public view {
-        // Read sDAI price feed parameters from mainnet config
-        string memory sDai = ConfigReader.readAdapterParam(vm, 1, "priceFeeds", "sDAI", "sDai");
+        // Read sDAI price feed parameters from script/config/assets.json
+        string memory sDai = ConfigReader.readPriceFeedParam(vm, 1, "sDAI", "sDai");
 
         assertTrue(bytes(sDai).length > 0, "sDAI parameter should be set");
     }

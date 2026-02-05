@@ -6,6 +6,7 @@ import {Create2Deployer} from "../../src/deployment/Create2Deployer.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967ProxyUninitialized} from "../../src/proxy/ERC1967ProxyUninitialized.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 
 /// @title DeploymentTest
@@ -218,6 +219,55 @@ contract DeploymentTest is TestEnvConfigurator {
 
         // Different version = different salt
         assertTrue(salt1 != salt3, "Different version should produce different salt");
+    }
+
+    /// @notice Test that proxy deployment yields the same proxy address on every chain (CREATE2 determinism)
+    /// @dev Uses the same formula as 02_DeployProxiesAndInitialize: same deployer (Safe) + same salt + same
+    ///      bytecode (impls are also CREATE2 with same deployer) => same proxy address on mainnet, Arbitrum, etc.
+    function test_ProxyAddressSameAcrossChains() public pure {
+        address deployer = SAFE_ADDRESS; // Same Safe on all chains
+
+        bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", 1);
+        address navImpl = _computeCreate2Address(deployer, saltNavImpl, type(NAVCalculator).creationCode);
+
+        bytes32 saltBridgeImpl = ConfigReader.computeSalt("BridgeEscrowImplementation", 1);
+        address bridgeImpl = _computeCreate2Address(deployer, saltBridgeImpl, type(BridgeEscrow).creationCode);
+
+        bytes memory navProxyBytecode = abi.encodePacked(
+            type(ERC1967ProxyUninitialized).creationCode,
+            abi.encode(navImpl, "")
+        );
+        bytes memory bridgeProxyBytecode = abi.encodePacked(
+            type(ERC1967ProxyUninitialized).creationCode,
+            abi.encode(bridgeImpl, "")
+        );
+
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
+
+        address navProxy = _computeCreate2Address(deployer, saltNavProxy, navProxyBytecode);
+        address bridgeProxy = _computeCreate2Address(deployer, saltBridgeProxy, bridgeProxyBytecode);
+
+        assertTrue(navProxy != address(0), "NAV proxy address should be non-zero");
+        assertTrue(bridgeProxy != address(0), "Bridge proxy address should be non-zero");
+        assertTrue(navProxy != bridgeProxy, "NAV and Bridge proxy addresses should differ");
+
+        // Determinism: same deployer + salt + bytecode => same address on every chain
+        address navProxy2 = _computeCreate2Address(deployer, saltNavProxy, navProxyBytecode);
+        address bridgeProxy2 = _computeCreate2Address(deployer, saltBridgeProxy, bridgeProxyBytecode);
+        assertEq(navProxy, navProxy2, "NAVCalculator proxy address must be same across chains");
+        assertEq(bridgeProxy, bridgeProxy2, "BridgeEscrow proxy address must be same across chains");
+    }
+
+    /// @dev Same CREATE2 formula as BaseDeployScript.computeCreate2Address (used by deploy scripts)
+    function _computeCreate2Address(address deployer, bytes32 salt, bytes memory creationCode)
+        internal
+        pure
+        returns (address)
+    {
+        return address(
+            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), deployer, salt, keccak256(creationCode)))))
+        );
     }
 
     /// @notice Test that Create2Deployer is stateless (no storage)

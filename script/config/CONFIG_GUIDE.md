@@ -12,6 +12,7 @@ The deployment system uses **per-chain JSON configuration files** that:
 
 ```
 script/config/
+├── assets.json         # Assets and price feed adapters (per chain)
 ├── chains/
 │   ├── 1.json          # Mainnet configuration
 │   ├── 42161.json      # Arbitrum configuration
@@ -21,6 +22,73 @@ script/config/
 ├── chain-config.json   # Legacy (deprecated, will be removed)
 └── dev-input.json      # Legacy (deprecated, will be removed)
 ```
+
+## assets.json — Assets and price feeds
+
+Asset definitions and price feed adapter configs live in **`script/config/assets.json`** so chain files stay small as you add many assets.
+
+- **Defines** per-chain: which price feed adapters exist, `enabled`, and `constructor` params.
+- **Deployed addresses** are still written to `chains/{chainId}.json` under `priceFeeds.{adapter}.deployed`.
+
+Example structure (both sections live in the same file):
+
+```json
+{
+  "description": "Assets and price feed adapters. Deployed adapter addresses go in chains/{chainId}.json.",
+  "priceFeeds": {
+    "sDAI": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+          "dsrManager": "0x373238337Bfe1146fb49989fc222523f83081dDb",
+          "daiToUsdChainlinkOracle": "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9",
+          "daiToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "sXDAI": {
+      "100": {
+        "enabled": true,
+        "constructor": {
+          "sDai": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+          "xDaiToUsdChainlinkOracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+          "xDaiToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    }
+  },
+  "tokens": {
+    "1": {
+      "ETH": {
+        "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "type": "Chainlink",
+        "oracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "heartbeat": 3600
+      }
+    }
+  }
+}
+```
+
+- **priceFeeds**: Deployable custom adapters (e.g. sDAI, LDO). Add entries under `priceFeeds` with adapter name, then chain ID (`"1"`, `"100"`, etc.), then `enabled` and `constructor`.
+- **tokens**: Token list and oracles per chain (see below). Add token objects under `tokens.{chainId}.{SYMBOL}`.
+
+### tokens — Token list and oracles per chain
+
+The **`tokens`** section lists every token of interest per chain with its price oracle config. Each chain has an object keyed by symbol (e.g. `"ETH"`, `"WETH"`). The **list of symbols to process** is defined in `script/manage/RegisterAssets.s.sol` in `_symbolsForChain(chainId)` — add new tokens there and in this JSON.
+
+- **address**: Token contract address.
+- **type**: `"Chainlink"` (direct Chainlink feed), `"Custom"` (custom oracle contract), or `"None"` (no oracle).
+- **oracle**: Oracle contract address (Chainlink feed or custom). Empty if type is `None` or TBD.
+- **heartbeat**: Staleness heartbeat in seconds (e.g. 3600, 86400). Optional; defaults to 3600 in code.
+- **note**: Optional human-readable note (e.g. "No oracle available", "Deploy custom …").
+
+Only tokens with `type` Chainlink or Custom and non-empty `oracle` should be registered as having a price feed. Use `ConfigReader.hasTokenOracle(vm, chainId, symbol)` in scripts to check.
+
+**Registering assets:** Use `script/manage/RegisterAssets.s.sol` to report which tokens are already registered, which are skipped (no oracle or missing address), and which should be registered. It writes a Safe transaction batch to `safe-transactions/{chainId}-register-assets.json`. Run with `--rpc-url` so already-registered assets are excluded from the batch.
+
+---
 
 ## Configuration File Format
 
@@ -50,12 +118,10 @@ Each chain config file (`chains/{chainId}.json`) contains:
     "BridgeEscrowImplementation": "",
     "BridgeEscrowProxy": ""
   },
+  "comment_deployed": "Proxy addresses differ per chain: CREATE2 uses (deployer, salt, bytecode); the proxy bytecode includes the implementation address, which is different on each chain.",
   
   "priceFeeds": {
-    "sDAI": {
-      "enabled": true,
-      "deployed": ""
-    }
+    "sDAI": { "deployed": "" }
   },
   
   "balanceAdapters": {

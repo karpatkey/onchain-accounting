@@ -30,7 +30,8 @@ deployments/
 └── ...                        # One file per chain
 
 safe-transactions/
-├── 1-deploy-navcalc.json     # Safe transaction JSONs for multisig execution
+├── 1-deploy-implementations.json
+├── 1-deploy-proxies-and-initialize.json   # Safe transaction JSONs for multisig execution
 └── ...
 ```
 
@@ -575,11 +576,10 @@ SAFE_TX_SERVICE_URL=https://safe-transaction-mainnet.safe.global
 
 ```bash
 # Instead of private key, use Ledger for extra security
-forge script script/deploy/01_DeployNAVCalculator.s.sol \
+forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url $MAINNET_RPC_URL \
-  --ledger \
-  --sender 0xYourLedgerAddress \
-  --broadcast
+  --chain-id 1
+# Then run 02_DeployProxiesAndInitialize.s.sol per chain; execute generated Safe TXs via Safe UI.
 ```
 
 ---

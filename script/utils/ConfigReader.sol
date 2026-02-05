@@ -109,12 +109,109 @@ library ConfigReader {
         names = new string[](0);
     }
 
-    /// @notice Reads adapter constructor parameters from chain config
+    /// @notice Reads price feed constructor parameter from assets config (script/config/assets.json)
+    /// @param vm The Foundry Vm instance
+    /// @param chainId The chain ID
+    /// @param adapterName Price feed adapter name (e.g. "sDAI", "LDO")
+    /// @param paramName Constructor parameter name
+    /// @return The parameter value as a string, or empty if not found
+    function readPriceFeedParam(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterName,
+        string memory paramName
+    ) internal view returns (string memory) {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        string memory json = vm.readFile(path);
+        string memory jsonPath = string(
+            abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".constructor.", paramName)
+        );
+        if (vm.keyExists(json, jsonPath)) {
+            return json.readString(jsonPath);
+        }
+        return "";
+    }
+
+    /// @notice Returns whether a price feed adapter is enabled for a chain (from assets config)
+    /// @param vm The Foundry Vm instance
+    /// @param chainId The chain ID
+    /// @param adapterName Price feed adapter name
+    /// @return True if enabled in script/config/assets.json
+    function isPriceFeedEnabled(Vm vm, uint256 chainId, string memory adapterName) internal view returns (bool) {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        string memory json = vm.readFile(path);
+        string memory jsonPath =
+            string(abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".enabled"));
+        if (vm.keyExists(json, jsonPath)) {
+            return json.readBool(jsonPath);
+        }
+        return false;
+    }
+
+    /// @notice Reads token address from assets config (tokens section)
+    function readTokenAddress(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        return _readTokenField(vm, chainId, symbol, "address");
+    }
+
+    /// @notice Reads token oracle address from assets config (tokens section). Empty if none.
+    function readTokenOracle(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        return _readTokenField(vm, chainId, symbol, "oracle");
+    }
+
+    /// @notice Reads token price type from assets config: "Chainlink", "Custom", or "None"
+    function readTokenType(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        return _readTokenField(vm, chainId, symbol, "type");
+    }
+
+    /// @notice Reads token oracle heartbeat (seconds) from assets config. Returns "3600" if missing.
+    function readTokenHeartbeat(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        string memory json = vm.readFile(path);
+        string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".heartbeat"));
+        if (vm.keyExists(json, jsonPath)) {
+            return vm.toString(json.readUint(jsonPath));
+        }
+        return "3600";
+    }
+
+    /// @notice True if token has a usable oracle (Chainlink or Custom with non-empty oracle address)
+    function hasTokenOracle(Vm vm, uint256 chainId, string memory symbol) internal view returns (bool) {
+        string memory oracleType = readTokenType(vm, chainId, symbol);
+        if (_equals(oracleType, "None")) return false;
+        string memory oracle = readTokenOracle(vm, chainId, symbol);
+        return bytes(oracle).length > 0 && !_isPlaceholder(oracle);
+    }
+
+    /// @notice Reads optional note for a token from assets config (e.g. "No oracle available").
+    function readTokenNote(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        return _readTokenField(vm, chainId, symbol, "note");
+    }
+
+    function _readTokenField(Vm vm, uint256 chainId, string memory symbol, string memory field)
+        private
+        view
+        returns (string memory)
+    {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        string memory json = vm.readFile(path);
+        string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".", field));
+        if (vm.keyExists(json, jsonPath)) {
+            return json.readString(jsonPath);
+        }
+        return "";
+    }
+
+    /// @notice Reads adapter constructor parameters from chain config (balanceAdapters, bridgeAdapters)
+    ///         or "deployed" for any adapter type from chain config. For price feed constructor params use readPriceFeedParam.
     /// @param vm The Foundry Vm instance
     /// @param chainId The chain ID
     /// @param adapterType Type of adapter ("priceFeeds", "balanceAdapters", "bridgeAdapters")
     /// @param adapterName Name of the adapter
-    /// @param paramName Name of the constructor parameter
+    /// @param paramName Name of the constructor parameter (or "deployed" for price feeds)
     /// @return The parameter value as a string
     function readAdapterParam(
         Vm vm,
@@ -127,10 +224,14 @@ library ConfigReader {
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
         string memory json = vm.readFile(path);
 
-        // Try constructor path first (for priceFeeds and balanceAdapters)
-        string memory jsonPath =
-            string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
+        // For priceFeeds, only "deployed" is stored in chain config; constructor lives in assets.json
+        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
+        if (vm.keyExists(json, jsonPath)) {
+            return json.readString(jsonPath);
+        }
 
+        // Try constructor path (for balanceAdapters)
+        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
         if (vm.keyExists(json, jsonPath)) {
             return json.readString(jsonPath);
         }
@@ -144,10 +245,10 @@ library ConfigReader {
         return "";
     }
 
-    /// @notice Checks if an adapter is enabled for a chain
+    /// @notice Checks if an adapter is enabled for a chain. For "priceFeeds" reads from assets.json; otherwise from chain config.
     /// @param vm The Foundry Vm instance
     /// @param chainId The chain ID
-    /// @param adapterType Type of adapter
+    /// @param adapterType Type of adapter ("priceFeeds", "balanceAdapters", "bridgeAdapters")
     /// @param adapterName Name of the adapter
     /// @return True if enabled
     function isAdapterEnabled(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
@@ -155,12 +256,13 @@ library ConfigReader {
         view
         returns (bool)
     {
+        if (_equals(adapterType, "priceFeeds")) {
+            return isPriceFeedEnabled(vm, chainId, adapterName);
+        }
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-
         string memory json = vm.readFile(path);
         string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".enabled"));
-
         if (vm.keyExists(json, jsonPath)) {
             return json.readBool(jsonPath);
         }

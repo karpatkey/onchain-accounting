@@ -60,45 +60,32 @@ Update `script/config/chain-config.json` with the deployed addresses.
 
 ## Step 4: Deploy Core Contracts
 
-```bash
-# Deploy NAVCalculator on mainnet
-forge script script/deploy/01_DeployNAVCalculator.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+**4a. Deploy implementations (once)** — run on any chain, execute the generated Safe TX once:
 
-# This generates: safe-transactions/1-deploy-navcalc-proxy.json
+```bash
+forge script script/deploy/01_DeployImplementations.s.sol \
+  --rpc-url $MAINNET_RPC_URL \
+  --chain-id 1
+# Generates: safe-transactions/1-deploy-implementations.json (2 txs)
 ```
 
-**Execute via Safe UI:**
-1. Go to https://app.safe.global
-2. Import `safe-transactions/1-deploy-navcalc-proxy.json`
-3. Sign and execute
+**Execute via Safe UI:** Import `safe-transactions/1-deploy-implementations.json` → sign and execute.
 
-Repeat for BridgeEscrow:
+**4b. Deploy proxies and initialize (per chain)** — run per chain, then execute that chain’s Safe TX:
+
 ```bash
-forge script script/deploy/02_DeployBridgeEscrow.s.sol \
+# Mainnet
+forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
   --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --chain-id 1
+# Generates: safe-transactions/1-deploy-proxies-and-initialize.json (4 txs)
 ```
+
+**Execute via Safe UI:** Import the generated JSON for that chain → sign and execute. **Proxy addresses are identical on all chains.**
 
 ## Step 5: Deploy on Other Chains
 
-Repeat steps 3-4 on each chain. **Proxy addresses will be identical!**
-
-```bash
-# Arbitrum
-forge script script/deploy/01_DeployNAVCalculator.s.sol \
-  --rpc-url $ARBITRUM_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-
-forge script script/deploy/02_DeployBridgeEscrow.s.sol \
-  --rpc-url $ARBITRUM_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
+Repeat Step 4b on each chain (run the script with that chain’s RPC and `--chain-id`, then execute the generated Safe TX on that chain).
 
 ## Step 6: Deploy Adapters (Optional)
 

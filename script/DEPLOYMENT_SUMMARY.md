@@ -25,8 +25,8 @@ This deployment system implements the complete deployment architecture from `DEP
 | Script | Purpose | Output |
 |--------|---------|--------|
 | `00_DeployCreate2Deployer.s.sol` | Deploy CREATE2 library (one-time per chain) | Implementation address |
-| `01_DeployNAVCalculator.s.sol` | Deploy NAVCalculator via Safe CREATE2 | Safe TX JSON |
-| `02_DeployBridgeEscrow.s.sol` | Deploy BridgeEscrow via Safe CREATE2 | Safe TX JSON |
+| `01_DeployImplementations.s.sol` | Deploy NAVCalculator and BridgeEscrow **implementations only** (CREATE2). Run once; same impl addresses on all chains. | One Safe TX JSON (2 txs) |
+| `02_DeployProxiesAndInitialize.s.sol` | Deploy proxies + initialize NAV and Bridge in the Safe (CREATE2). Run **per chain** for chain-specific init. | One Safe TX JSON per chain (4 txs) |
 | `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters | Adapter addresses |
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters | Adapter addresses |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters | Adapter addresses |
@@ -74,26 +74,38 @@ forge script script/deploy/00_DeployCreate2Deployer.s.sol \
 
 ### Phase 2: Core Contract Deployment
 
+**Step 2a — Deploy implementations only (once)**
+
+Generate a Safe TX that deploys NAVCalculator and BridgeEscrow **implementations** via CREATE2. Execute it **once** (e.g. on mainnet); the same impl addresses will be used on all chains.
+
 ```bash
-# 1. Deploy NAVCalculator (generates Safe TX). Use RPC URL with $ALCHEMY_API_KEY for your chain.
-forge script script/deploy/01_DeployNAVCalculator.s.sol \
+forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-
-# 2. Execute Safe TX via Safe UI
-# - Import: safe-transactions/{chainId}-deploy-navcalc-proxy.json (file written to repo root safe-transactions/)
-# - Review delegatecall to Create2Deployer
-# - Sign and execute
-
-# 3. Deploy BridgeEscrow (generates Safe TX)
-forge script script/deploy/02_DeployBridgeEscrow.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-
-# 4. Execute Safe TX via Safe UI
+  --chain-id 1
+# Output: safe-transactions/1-deploy-implementations.json (2 txs)
 ```
+
+Execute that JSON in Safe UI. Then proceed to Step 2b per chain.
+
+**Step 2b — Deploy proxies and initialize (per chain)**
+
+For **each** chain, generate a Safe TX that deploys both proxies (CREATE2) and initializes NAV and Bridge with chain-specific args (admin, sequencer feed, native symbol, chainId).
+
+```bash
+# Example: Mainnet
+forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 1
+# Output: safe-transactions/1-deploy-proxies-and-initialize.json (4 txs)
+
+# Example: Arbitrum
+forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
+  --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 42161
+# Output: safe-transactions/42161-deploy-proxies-and-initialize.json
+```
+
+Execute each chain’s JSON in Safe UI. Proxy addresses are **identical on every chain** (CREATE2).
 
 ---
 
@@ -208,66 +220,58 @@ After it succeeds, the script writes the Create2Deployer address into the same c
 
 ---
 
-### Step 5 — Generate and execute the NAVCalculator proxy Safe TX
+### Step 5 — Deploy implementations (once)
 
-5a. **Generate** the Safe transaction and deploy the **implementation**. You must use **`--broadcast`** so the implementation is actually deployed (the Safe TX only deploys the proxy and expects the implementation to already exist):
-
-**Mainnet:**
+Run **once** (no `--broadcast`). Use any chain's RPC so the Safe TX deploys both implementations via CREATE2. Use the correct RPC URL and `--chain-id` for that chain.
 
 ```bash
-forge script script/deploy/01_DeployNAVCalculator.s.sol \
+forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --chain-id 1
 ```
 
-For other chains, use the same pattern with `arb-mainnet`, `gnosis-mainnet`, or `base-mainnet` in the URL (see Step 4).
+This writes **`safe-transactions/{chainId}-deploy-implementations.json`** with 2 transactions (deploy NAV impl, deploy Bridge impl). Execute that JSON in Safe UI **once**. Same impl addresses on all chains.
 
-This will:
+**Check:** Script prints and saves NAVCalculatorImplementation and BridgeEscrowImplementation addresses.
 
-- Deploy the NAVCalculator **implementation** (because of `--broadcast`).
-- Write a Safe transaction to **`safe-transactions/{chainId}-deploy-navcalc-proxy.json`** (e.g. `safe-transactions/1-deploy-navcalc-proxy.json` for Mainnet).
 
-5b. **Execute** the Safe transaction:
 
-1. Go to [app.safe.global](https://app.safe.global) and select the **same Safe** as in the config.
-2. New Transaction → Transaction Builder → **Import JSON**.
-3. Upload `safe-transactions/{chainId}-deploy-navcalc-proxy.json`.
-4. Review the transaction (it will be a **delegatecall** to the Create2Deployer to deploy the proxy).
-5. Sign and execute (according to your Safe’s policy).
+### Step 6 — Deploy proxies and initialize (per chain)
 
-**Check:** On the block explorer, the NAVCalculator **proxy** address (printed by the script and stored in the chain JSON as `deployed.NAVCalculatorProxy`) should have code and be the deterministic CREATE2 address.
+Run **once per chain** with that chain's RPC and `--chain-id`:
 
----
-
-### Step 6 — Generate and execute the BridgeEscrow proxy Safe TX
-
-6a. **Generate** the Safe transaction and deploy the **implementation**:
-
-**Mainnet:**
+**Mainnet (chain 1):**
 
 ```bash
-forge script script/deploy/02_DeployBridgeEscrow.s.sol \
+forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --chain-id 1
 ```
 
-For other chains, use the same URL pattern with the right Alchemy network (see Step 4). Use **`--broadcast`** so the BridgeEscrow implementation is deployed on-chain (the Safe TX only deploys the proxy).
+**Arbitrum (42161):**
 
-This deploys the BridgeEscrow **implementation** and writes **`safe-transactions/{chainId}-deploy-bridgeescrow-proxy.json`**.
+```bash
+forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
+  --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 42161
+```
 
-6b. **Execute** in Safe UI:
+(Use the same pattern for Gnosis `100`, Base `8453`, etc.)
 
-1. Safe UI → New Transaction → Transaction Builder → Import JSON.
-2. Upload `safe-transactions/{chainId}-deploy-bridgeescrow-proxy.json`.
-3. Review (delegatecall to Create2Deployer).
-4. Sign and execute.
+This writes **`safe-transactions/{chainId}-deploy-proxies-and-initialize.json`** with 4 transactions:
 
-**Check:** The BridgeEscrow proxy address in the chain JSON should have code on-chain.
+1. Deploy NAVCalculator proxy (CREATE2)  
+2. Deploy BridgeEscrow proxy (CREATE2)  
+3. Initialize NAVCalculator (admin, sequencer feed, native symbol from chain config)  
+4. Initialize BridgeEscrow (admin, chainId, empty accounts/adapters)
+
+For **each** chain: Safe UI → New Transaction → Transaction Builder → Import JSON → upload the chain's file → sign and execute.
+
+NAV and Bridge proxy addresses are **the same on every chain** (CREATE2).
+
+**Check:** On the block explorer, both proxy addresses have code and are initialized.
 
 ---
-
 ### Step 7 — Verify contracts (optional but recommended)
 
 Verification needs the **explorer API key** for the chain (see below). The verify script reads the chain config and prints ready-to-run `forge verify-contract` commands.
@@ -302,7 +306,7 @@ To deploy on another chain (e.g. Arbitrum after Mainnet):
 1. Use that chain’s config: `script/config/chains/42161.json` (etc.).
 2. Set **addresses** in that file (Safe and roles can be the same or different).
 3. Run **Step 4** for that chain (Create2Deployer).
-4. Run **Steps 5 and 6** for that chain (NAVCalculator and BridgeEscrow Safe TXs; execute in Safe UI for that chain).
+4. Run **Step 5** once (implementations Safe TX), then **Step 6** for that chain (proxies + init Safe TX; execute in Safe UI for that chain).
 
 Adapter deployment (price feeds, balance adapters, bridge adapters) and configuration come **after** NAVCalculator and BridgeEscrow are deployed; see “Phase 3” and “Phase 4” in the deployment workflow above.
 
@@ -359,10 +363,10 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - **Role-Based Access** - Admin, Manager, Asset Recoverer roles
 - **Upgrade Authorization** - Only admin can authorize upgrades
 
-### ✅ Deterministic Addresses
-- Same Safe address + same salt + same bytecode = **same proxy address across all chains**
-- Works even if Create2Deployer is at different addresses per chain
-- Predictable addresses simplify integration and documentation
+### ✅ Deterministic Addresses (per chain)
+- Same Safe + same salt + **same creation bytecode** = same proxy address on that chain
+- Proxy addresses **differ across chains** because the proxy’s creation bytecode includes the **implementation address**, and the implementation is deployed separately on each chain (so it has a different address per chain). Thus CREATE2(deployer, salt, bytecode) yields a different proxy address per chain.
+- Works even if Create2Deployer is at different addresses per chain (Safe does delegatecall, so Safe is the deployer)
 
 ### ✅ Upgradeability
 - **UUPS pattern** for NAVCalculator and BridgeEscrow
@@ -418,10 +422,10 @@ deployments/
 ### Safe Transactions (`safe-transactions/`)
 ```
 safe-transactions/
-├── 1-deploy-navcalc-proxy.json
-├── 1-deploy-bridgeescrow-proxy.json
+├── 1-deploy-implementations.json
+├── 1-deploy-proxies-and-initialize.json
+├── 42161-deploy-proxies-and-initialize.json
 ├── 1-upgrade-navcalc.json
-├── 42161-deploy-navcalc-proxy.json
 └── ... (one per Safe transaction)
 ```
 
@@ -456,7 +460,7 @@ safe-transactions/
 
 1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager, assetRecoverer (and RPC/explorer vars in `.env` if using `$VAR`)
 2. **Deploy Create2Deployer** - Run `00_DeployCreate2Deployer.s.sol` on each chain (broadcast; address is saved to chain JSON)
-3. **Deploy Core Contracts** - Run scripts 01 and 02 (they generate Safe TX JSONs; do **not** broadcast the proxy deploy). Execute the generated Safe TXs in Safe UI.
+3. **Deploy Core Contracts** - Run 01_DeployImplementations once (generates Safe TX with 2 txs; execute in Safe). Run 02_DeployProxiesAndInitialize per chain (generates Safe TX with 4 txs; execute each in Safe UI).
 4. **Deploy Adapters** - Run scripts 03-05 with adapters enabled in chain config; broadcast to deploy adapter contracts
 5. **Configure Adapters** - Use ManageAdapters script (generates Safe TXs; execute in Safe UI)
 6. **Verify** - Run verification script and run the printed forge verify-contract commands
@@ -476,14 +480,12 @@ safe-transactions/
    - **Create2Deployer** (once per chain):  
      `forge script script/deploy/00_DeployCreate2Deployer.s.sol --rpc-url <url> --private-key <key> --broadcast`  
      This writes the Create2Deployer address into `script/config/chains/{chainId}.json`.  
-   - **NAVCalculator**:  
-     Run `forge script script/deploy/01_DeployNAVCalculator.s.sol --rpc-url <url> --private-key <key>` (no `--broadcast`).  
-     This deploys the implementation and writes a Safe TX to `safe-transactions/{chainId}-deploy-navcalc-proxy.json`.  
-     Import that JSON in Safe UI and execute it (delegatecall to Create2Deployer to deploy the proxy).  
-   - **BridgeEscrow**:  
-     Run `forge script script/deploy/02_DeployBridgeEscrow.s.sol --rpc-url <url> --private-key <key>` (no `--broadcast`).  
-     Same idea: implementation is deployed by the script; Safe TX is written to `safe-transactions/{chainId}-deploy-bridgeescrow-proxy.json`.  
-     Execute that Safe TX in Safe UI to deploy the BridgeEscrow proxy.
+   - **Implementations** (once):  
+     Run `forge script script/deploy/01_DeployImplementations.s.sol --rpc-url <url> --chain-id <id>`.  
+     This writes `safe-transactions/{chainId}-deploy-implementations.json` (2 txs: deploy NAV impl, deploy Bridge impl). Execute that JSON in Safe UI once.  
+   - **Proxies + init** (per chain):  
+     Run `forge script script/deploy/02_DeployProxiesAndInitialize.s.sol --rpc-url <url> --chain-id <id>` for each chain.  
+     This writes `safe-transactions/{chainId}-deploy-proxies-and-initialize.json` (4 txs: deploy both proxies, init NAV, init Bridge). Execute each chain’s JSON in Safe UI.
 
 4. **After executing the Safe TXs**  
    - The scripts already save the **expected** proxy addresses into the chain JSON (they’re deterministic via CREATE2).  

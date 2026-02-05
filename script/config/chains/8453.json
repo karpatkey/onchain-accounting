@@ -4,7 +4,7 @@
   "rpc": "$ALCHEMY",
   "explorer": "https://basescan.org",
   "explorerApiKey": "$BASESCAN_API_KEY",
-  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "chainlinkSequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
   "nativeTokenSymbol": "ETH",
   "addresses": {
     "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
@@ -14,9 +14,9 @@
   "deployed": {
     "Create2Deployer": "0xF3c832B0B80852EDb501c9E080EDaAB7F67f0648",
     "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0xd26E88436E061b3003dcbd822f83A593A4e7Bdaa",
+    "NAVCalculatorProxy": "0xD1de5B2c053a39c6C28DD803f5e36c4Efd18185b",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
-    "BridgeEscrowProxy": "0x7AeD0Db2bF65D5E2f47352e21aa24eA6FC8BDa49"
+    "BridgeEscrowProxy": "0x3f1dbb34CCb8095EC6D50f5F466F4E019d2BB0D1"
   },
   "priceFeeds": {},
   "balanceAdapters": {},

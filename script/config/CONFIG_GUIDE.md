@@ -28,7 +28,7 @@ script/config/
 Asset definitions and price feed adapter configs live in **`script/config/assets.json`** so chain files stay small as you add many assets.
 
 - **Defines** per-chain: which price feed adapters exist, `enabled`, and `constructor` params.
-- **Deployed addresses** are still written to `chains/{chainId}.json` under `priceFeeds.{adapter}.deployed`.
+- **Note:** `priceFeeds` has been removed from the chain config schema. Deployed addresses should be stored elsewhere if needed.
 
 Example structure (both sections live in the same file):
 
@@ -71,7 +71,7 @@ Example structure (both sections live in the same file):
 }
 ```
 
-- **priceFeeds**: Deployable custom adapters (e.g. sDAI, LDO). Add entries under `priceFeeds` with adapter name, then chain ID (`"1"`, `"100"`, etc.), then `enabled` and `constructor`.
+- **priceFeeds**: [DEPRECATED in chain config] Deployable custom adapters (e.g. sDAI, LDO). Configuration lives in `assets.json` under `priceFeeds` with adapter name, then chain ID (`"1"`, `"100"`, etc.), then `enabled` and `constructor`. Deployed addresses are no longer stored in chain config files.
 - **tokens**: Token list and oracles per chain (see below). Add token objects under `tokens.{chainId}.{SYMBOL}`.
 
 ### tokens — Token list and oracles per chain
@@ -112,17 +112,12 @@ Each chain config file (`chains/{chainId}.json`) contains:
   },
   
   "deployed": {
-    "Create2Deployer": "",
     "NAVCalculatorImplementation": "",
     "NAVCalculatorProxy": "",
     "BridgeEscrowImplementation": "",
     "BridgeEscrowProxy": ""
   },
   "comment_deployed": "Proxy addresses differ per chain: CREATE2 uses (deployer, salt, bytecode); the proxy bytecode includes the implementation address, which is different on each chain.",
-  
-  "priceFeeds": {
-    "sDAI": { "deployed": "" }
-  },
   
   "balanceAdapters": {
     "AaveV3_USDC": {

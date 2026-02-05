@@ -84,14 +84,11 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Read constructor parameters from assets config
         address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "sDai"));
-        address dsrManager =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "dsrManager"));
-        address daiOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkOracle")
-        );
-        uint256 daiHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkHeartbeat")
-        );
+        address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "dsrManager"));
+        address daiOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkOracle"));
+        uint256 daiHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkHeartbeat"));
 
         // Deploy
         sDAI_PriceOracle sdaiAdapter = new sDAI_PriceOracle(sDai, dsrManager, daiOracle, daiHeartbeat);
@@ -109,18 +106,14 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Read constructor parameters from assets config
         address ldo = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldo"));
-        address ldoEthOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkAddress")
-        );
-        address ethUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkAddress")
-        );
-        uint256 ldoEthHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkHeartbeat")
-        );
-        uint256 ethUsdHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkHeartbeat")
-        );
+        address ldoEthOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkAddress"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkAddress"));
+        uint256 ldoEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkHeartbeat"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkHeartbeat"));
 
         // Deploy
         LDO_PriceOracle ldoAdapter =
@@ -139,12 +132,10 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Read constructor parameters from assets config
         address sUsds = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "sUsds"));
-        address usdsUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkAddress")
-        );
-        uint256 usdsUsdHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkHeartbeat")
-        );
+        address usdsUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkAddress"));
+        uint256 usdsUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkHeartbeat"));
 
         // Deploy
         sUSDS_PriceOracle susdsAdapter = new sUSDS_PriceOracle(sUsds, usdsUsdOracle, usdsUsdHeartbeat);

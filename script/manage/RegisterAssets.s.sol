@@ -81,9 +81,8 @@ contract RegisterAssets is BaseDeployScript {
                 toRegisterCount++;
                 continue;
             }
-            (bool ok, bytes memory data) = navProxy.staticcall(
-                abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset)
-            );
+            (bool ok, bytes memory data) =
+                navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
             if (!ok || data.length == 0) {
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
@@ -127,9 +126,8 @@ contract RegisterAssets is BaseDeployScript {
             if (asset == address(0)) continue;
             if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) continue;
             if (navProxy.code.length > 0) {
-                (bool ok, bytes memory data) = navProxy.staticcall(
-                    abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset)
-                );
+                (bool ok, bytes memory data) =
+                    navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
                 if (ok && data.length > 0 && abi.decode(data, (bool))) continue;
             }
 
@@ -140,9 +138,7 @@ contract RegisterAssets is BaseDeployScript {
             uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
 
             transactions[j] = SafeTxBuilder.call(
-                navProxy,
-                0,
-                abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat))
+                navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat))
             );
             j++;
         }

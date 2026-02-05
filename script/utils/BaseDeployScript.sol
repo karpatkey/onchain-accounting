@@ -87,7 +87,9 @@ abstract contract BaseDeployScript is Script {
         string memory description,
         SafeTxBuilder.Transaction[] memory transactions
     ) internal {
-        SafeTxBuilder.writeSafeTx(vm, currentChainId, filename, name, description, transactions);
+        SafeTxBuilder.writeSafeTx(
+            vm, currentChainId, filename, name, description, chainConfig.safeMultisig, transactions
+        );
     }
 
     /// @notice Helper to start broadcasting if enabled

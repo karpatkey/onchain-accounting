@@ -40,23 +40,11 @@ Edit `script/config/dev-input.json`:
 }
 ```
 
-## Step 3: Deploy Create2Deployer (One-time)
+## Step 3: Deploy Implementations (One-time, via Safe)
 
-```bash
-# Mainnet
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+**Note:** We now use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
 
-# Arbitrum
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url $ARBITRUM_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
-
-Update `script/config/chain-config.json` with the deployed addresses.
+Generate Safe transactions to deploy implementations:
 
 ## Step 4: Deploy Core Contracts
 
@@ -75,7 +63,16 @@ forge script script/deploy/01_DeployImplementations.s.sol \
 
 ```bash
 # Mainnet
-forge script script/deploy/02_DeployProxiesAndInitialize.s.sol \
+forge script script/deploy/02a_DeployProxies.s.sol \
+  --rpc-url "$RPC_URL" \
+  --chain-id "$CHAIN_ID" \
+  --broadcast \
+  --private-key "$PRIVATE_KEY"
+
+# Then generate Safe transactions for initialization
+forge script script/deploy/02b_InitializeProxies.s.sol \
+  --rpc-url "$RPC_URL" \
+  --chain-id "$CHAIN_ID"
   --rpc-url $MAINNET_RPC_URL \
   --chain-id 1
 # Generates: safe-transactions/1-deploy-proxies-and-initialize.json (4 txs)

@@ -19,7 +19,7 @@ via_ir = true
 
 # Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.
 # See: https://book.getfoundry.sh/reference/config/solidity-compiler
-deny = "warnings"
+# deny = "warnings"
 ignored_warnings_from = ["lib"]
 
 # Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.

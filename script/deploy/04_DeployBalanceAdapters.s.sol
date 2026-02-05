@@ -280,7 +280,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployERC20Default(string memory /* adapterName */, address navCalculator) internal returns (address) {
+    function _deployERC20Default(
+        string memory,
+        /* adapterName */
+        address navCalculator
+    )
+        internal
+        returns (address)
+    {
         // Read initialAssets from config - this is an array
         // For now, we'll need to handle this differently as ConfigReader doesn't support arrays
         // Using empty array as placeholder - this should be enhanced to read arrays from config

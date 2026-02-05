@@ -17,23 +17,13 @@ contract VerifyEtherscan is BaseDeployScript {
         console2.log("");
 
         // Get deployment addresses
-        address create2Deployer = readDeployedAddress("Create2Deployer");
         address navImpl = readDeployedAddress("NAVCalculatorImplementation");
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
 
-        // Verify Create2Deployer
-        if (create2Deployer != address(0)) {
-            console2.log("# Verify Create2Deployer");
-            console2.log("forge verify-contract \\");
-            console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.30 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
-            console2.log(string(abi.encodePacked("  ", vm.toString(create2Deployer), " \\")));
-            console2.log("  src/deployment/Create2Deployer.sol:Create2Deployer");
-            console2.log("");
-        }
+        // Note: Create2Deployer is no longer used - we use canonical CREATE2 deployer
+        // (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is already verified on all chains
 
         // Verify NAVCalculator Implementation
         if (navImpl != address(0)) {

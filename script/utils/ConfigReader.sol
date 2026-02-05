@@ -115,12 +115,11 @@ library ConfigReader {
     /// @param adapterName Price feed adapter name (e.g. "sDAI", "LDO")
     /// @param paramName Constructor parameter name
     /// @return The parameter value as a string, or empty if not found
-    function readPriceFeedParam(
-        Vm vm,
-        uint256 chainId,
-        string memory adapterName,
-        string memory paramName
-    ) internal view returns (string memory) {
+    function readPriceFeedParam(Vm vm, uint256 chainId, string memory adapterName, string memory paramName)
+        internal
+        view
+        returns (string memory)
+    {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
         string memory json = vm.readFile(path);
@@ -224,7 +223,8 @@ library ConfigReader {
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
         string memory json = vm.readFile(path);
 
-        // For priceFeeds, only "deployed" is stored in chain config; constructor lives in assets.json
+        // Note: priceFeeds has been removed from chain config schema
+        // For priceFeeds, constructor params live in assets.json; deployed addresses are no longer stored in chain config
         string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
         if (vm.keyExists(json, jsonPath)) {
             return json.readString(jsonPath);

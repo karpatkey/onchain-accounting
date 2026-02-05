@@ -6,7 +6,8 @@ import {Create2Deployer} from "../../src/deployment/Create2Deployer.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC1967ProxyUninitialized} from "../../src/proxy/ERC1967ProxyUninitialized.sol";
+import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
+import {Empty} from "../../src/utils/Empty.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 
 /// @title DeploymentTest
@@ -75,8 +76,7 @@ contract DeploymentTest is TestEnvConfigurator {
         navImplementation = new NAVCalculator();
 
         // Prepare init data
-        bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
+        bytes memory initData = abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         // Generate proxy bytecode
         bytes memory proxyBytecode =
@@ -158,8 +158,7 @@ contract DeploymentTest is TestEnvConfigurator {
         navImplementation = new NAVCalculator();
 
         // Deploy proxy
-        bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
+        bytes memory initData = abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));
@@ -222,28 +221,22 @@ contract DeploymentTest is TestEnvConfigurator {
     }
 
     /// @notice Test that proxy deployment yields the same proxy address on every chain (CREATE2 determinism)
-    /// @dev Uses the same formula as 02_DeployProxiesAndInitialize: same deployer (Safe) + same salt + same
-    ///      bytecode (impls are also CREATE2 with same deployer) => same proxy address on mainnet, Arbitrum, etc.
+    /// @dev Uses the same formula as 02a_DeployProxies: same deployer (canonical CREATE2) + same salt + same
+    ///      bytecode (with Empty placeholder) => same proxy address on mainnet, Arbitrum, etc.
     function test_ProxyAddressSameAcrossChains() public pure {
-        address deployer = SAFE_ADDRESS; // Same Safe on all chains
+        address deployer = address(0x4e59b44847b379578588920cA78FbF26c0B4956C); // Canonical CREATE2 deployer
 
-        bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", 1);
-        address navImpl = _computeCreate2Address(deployer, saltNavImpl, type(NAVCalculator).creationCode);
-
-        bytes32 saltBridgeImpl = ConfigReader.computeSalt("BridgeEscrowImplementation", 1);
-        address bridgeImpl = _computeCreate2Address(deployer, saltBridgeImpl, type(BridgeEscrow).creationCode);
-
-        bytes memory navProxyBytecode = abi.encodePacked(
-            type(ERC1967ProxyUninitialized).creationCode,
-            abi.encode(navImpl, "")
-        );
-        bytes memory bridgeProxyBytecode = abi.encodePacked(
-            type(ERC1967ProxyUninitialized).creationCode,
-            abi.encode(bridgeImpl, "")
-        );
+        // Deploy Empty placeholder first
+        bytes32 saltEmpty = ConfigReader.computeSalt("Empty", 1);
+        address emptyPlaceholder = _computeCreate2Address(deployer, saltEmpty, type(Empty).creationCode);
 
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
+        bytes memory navProxyBytecode =
+            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(emptyPlaceholder, SAFE_ADDRESS, ""));
+
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
+        bytes memory bridgeProxyBytecode =
+            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(emptyPlaceholder, SAFE_ADDRESS, ""));
 
         address navProxy = _computeCreate2Address(deployer, saltNavProxy, navProxyBytecode);
         address bridgeProxy = _computeCreate2Address(deployer, saltBridgeProxy, bridgeProxyBytecode);
@@ -344,8 +337,7 @@ contract DeploymentTest is TestEnvConfigurator {
         // Deploy and initialize NAVCalculator
         navImplementation = new NAVCalculator();
 
-        bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
+        bytes memory initData = abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));
@@ -359,8 +351,7 @@ contract DeploymentTest is TestEnvConfigurator {
     function test_ProxyAdminRoleSetCorrectly() public {
         navImplementation = new NAVCalculator();
 
-        bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
+        bytes memory initData = abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));

@@ -172,7 +172,7 @@ Chain-specific infrastructure parameters. **Use environment variables for sensit
 | `explorer.apiUrl` | string | Block explorer API endpoint |
 | `explorer.apiKey` | string | API key for verification (use env var) |
 | `sourcify.apiUrl` | string | Sourcify API endpoint |
-| `create2DeployerAddress` | string | Deployed Create2Deployer library address (filled after deployment) |
+| ~~`create2DeployerAddress`~~ | ~~string~~ | ~~[DEPRECATED] We now use canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C)~~ |
 | `chainlinkSequencerFeed` | address | L2 sequencer uptime feed (use 0x0 for L1) |
 | `nativeTokenSymbol` | string | Native token symbol (ETH, xDAI, etc.) |
 | `nativeTokenAddress` | address | ERC-7528 convention address for native token |
@@ -579,7 +579,7 @@ SAFE_TX_SERVICE_URL=https://safe-transaction-mainnet.safe.global
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url $MAINNET_RPC_URL \
   --chain-id 1
-# Then run 02_DeployProxiesAndInitialize.s.sol per chain; execute generated Safe TXs via Safe UI.
+# Then run 02a_DeployProxies.s.sol per chain (EOA deployment), then 02b_InitializeProxies.s.sol per chain (generates Safe TXs; execute via Safe UI).
 ```
 
 ---

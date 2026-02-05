@@ -1,23 +1,22 @@
 {
   "chainId": 1,
   "name": "mainnet",
-  "rpc": "$MAINNET_RPC_URL",
+  "rpc": "$ALCHEMY",
   "explorer": "https://etherscan.io",
   "explorerApiKey": "$ETHERSCAN_API_KEY",
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x0000000000000000000000000000000000000000",
-    "admin": "0x0000000000000000000000000000000000000000",
-    "manager": "0x0000000000000000000000000000000000000000",
-    "assetRecoverer": "0x0000000000000000000000000000000000000000"
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0xb007369cA6656639de93c444daE8789159d4CBFb"
   },
   "deployed": {
-    "Create2Deployer": "",
-    "NAVCalculatorImplementation": "",
-    "NAVCalculatorProxy": "",
-    "BridgeEscrowImplementation": "",
-    "BridgeEscrowProxy": ""
+    "Create2Deployer": "0xF3c832B0B80852EDb501c9E080EDaAB7F67f0648",
+    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
+    "NAVCalculatorProxy": "0xd26E88436E061b3003dcbd822f83A593A4e7Bdaa",
+    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
+    "BridgeEscrowProxy": "0xE1F7FA05d924b5B97a179b3926a8E48456A92326"
   },
   "priceFeeds": {
     "sDAI": {
@@ -128,7 +127,9 @@
       "enabled": false,
       "constructor": {
         "navCalculator": "",
-        "initialAssets": ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]
+        "initialAssets": [
+          "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        ]
       },
       "deployed": ""
     }

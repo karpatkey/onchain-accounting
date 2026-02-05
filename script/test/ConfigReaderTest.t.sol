@@ -205,6 +205,5 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(config.safeMultisig != address(1), "safeMultisig should be defined");
         assertTrue(config.admin != address(1), "admin should be defined");
         assertTrue(config.manager != address(1), "manager should be defined");
-        assertTrue(config.assetRecoverer != address(1), "assetRecoverer should be defined");
     }
 }

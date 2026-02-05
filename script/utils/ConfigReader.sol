@@ -20,7 +20,6 @@ library ConfigReader {
         address safeMultisig;
         address admin;
         address manager;
-        address assetRecoverer;
     }
 
     struct AdapterConfig {
@@ -39,7 +38,7 @@ library ConfigReader {
 
         config.chainId = chainId;
         config.name = json.readString(".name");
-        config.rpc = _resolveEnvVar(vm, json.readString(".rpc"));
+        config.rpc = _resolveRpcUrl(vm, json.readString(".rpc"), chainId);
         config.explorer = json.readString(".explorer");
         config.explorerApiKey = _resolveEnvVar(vm, json.readString(".explorerApiKey"));
         config.chainlinkSequencerFeed = json.readAddress(".chainlinkSequencerFeed");
@@ -47,7 +46,6 @@ library ConfigReader {
         config.safeMultisig = json.readAddress(".addresses.safeMultisig");
         config.admin = json.readAddress(".addresses.admin");
         config.manager = json.readAddress(".addresses.manager");
-        config.assetRecoverer = json.readAddress(".addresses.assetRecoverer");
     }
 
     /// @notice Reads deployed address from chain config file
@@ -195,6 +193,34 @@ library ConfigReader {
     /// @return The CREATE2 salt
     function computeSalt(string memory contractName, uint256 version) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(contractName, version));
+    }
+
+    /// @dev Resolves RPC URL: if value is $ALCHEMY, build from ALCHEMY_API_KEY + chain's Alchemy network (same pattern as TestEnvConfigurator.getAlchemyUrl).
+    ///      Otherwise resolve $VAR_NAME env vars as usual.
+    function _resolveRpcUrl(Vm vm, string memory value, uint256 chainId) private view returns (string memory) {
+        if (_equals(value, "$ALCHEMY")) {
+            string memory network = _alchemyNetworkForChainId(chainId);
+            if (bytes(network).length == 0) return "";
+            string memory apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
+            if (bytes(apiKey).length == 0) return "";
+            return string.concat("https://", network, ".g.alchemy.com/v2/", apiKey);
+        }
+        return _resolveEnvVar(vm, value);
+    }
+
+    /// @dev Alchemy network identifier for chain ID (matches TestEnvConfigurator.getAlchemyUrl network names).
+    function _alchemyNetworkForChainId(uint256 chainId) private pure returns (string memory) {
+        if (chainId == 1) return "eth-mainnet";
+        if (chainId == 10) return "opt-mainnet";
+        if (chainId == 100) return "gnosis-mainnet";
+        if (chainId == 42161) return "arb-mainnet";
+        if (chainId == 8453) return "base-mainnet";
+        return "";
+    }
+
+    /// @dev Simple string equality (keccak256 comparison).
+    function _equals(string memory a, string memory b) private pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
     /// @dev Resolves environment variables in format $VAR_NAME

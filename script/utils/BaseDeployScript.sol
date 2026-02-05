@@ -109,7 +109,6 @@ abstract contract BaseDeployScript is Script {
         require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
         require(chainConfig.manager != address(0), "Manager address not configured");
-        require(chainConfig.assetRecoverer != address(0), "Asset recoverer address not configured");
     }
 
     /// @notice Checks if a contract is already deployed

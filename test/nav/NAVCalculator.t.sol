@@ -9,8 +9,8 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
-    constructor(address admin, address safe, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
-        NAVCalculator.initialize(admin, safe, chainlinkUptimeFeed, nativeTokenSymbol);
+    constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
+        NAVCalculator.initialize(admin, chainlinkUptimeFeed, nativeTokenSymbol);
     }
 }
 
@@ -187,12 +187,11 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(foundErc20Default, "Should find ERC20DefaultOracle in global oracles");
 
         assertEq(nav.chainlinkL2SequencerGracePeriod(), 3600);
-        assertEq(nav.assetRecoverer(), safe);
     }
 
     function test_addBalanceOracle() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -204,7 +203,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_addBalanceOracle_notAuthorized() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -217,7 +216,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_registerAsset() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -228,7 +227,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_registerAsset_notAuthorized() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -240,7 +239,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_addBalanceOracle_withoutAsset() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -256,7 +255,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_removeBalanceOracle_ops() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -274,7 +273,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_removeBalanceOracle_notAuthorized() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -292,7 +291,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_unsetPriceFeed_ops() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -305,7 +304,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_unsetPriceFeed_notAuthorized() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -325,7 +324,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_registerAsset_duplicate() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -339,7 +338,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_registerAsset_zeroAddress() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -351,7 +350,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_registerAsset_zeroOracle() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeed));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -616,7 +615,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_getPriceData_sequencerDown() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeedDown));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeedDown));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -675,11 +674,6 @@ contract NAVCalculatorTest is SuperTest {
     function test_usdDecimals() public view {
         uint8 decimals = nav.usdDecimals();
         assertEq(decimals, 8); // NAV_DECIMALS
-    }
-
-    function test_assetRecoverer() public view {
-        address recoverer = nav.assetRecoverer();
-        assertEq(recoverer, safe);
     }
 
     // ============================================
@@ -790,7 +784,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_setChainlinkL2SequencerGracePeriod_noUptimeFeed() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(0)); // No uptime feed
+        nav = this.setupNAVCalculatorWithParams(admin, address(0)); // No uptime feed
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
@@ -1034,7 +1028,7 @@ contract NAVCalculatorTest is SuperTest {
     // Test 18: getAccountPositions_sequencerDown
     function test_getAccountPositions_sequencerDown() public {
         vm.startPrank(admin);
-        nav = this.setupNAVCalculatorWithParams(admin, safe, address(sequencerUptimeFeedDown));
+        nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeedDown));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 

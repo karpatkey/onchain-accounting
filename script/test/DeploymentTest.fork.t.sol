@@ -15,7 +15,6 @@ contract DeploymentTest is TestEnvConfigurator {
     address constant SAFE_ADDRESS = address(0x1);
     address constant ADMIN_ADDRESS = address(0x2);
     address constant MANAGER_ADDRESS = address(0x3);
-    address constant RECOVERER_ADDRESS = address(0x4);
 
     Create2Deployer public create2Deployer;
     NAVCalculator public navImplementation;
@@ -76,7 +75,7 @@ contract DeploymentTest is TestEnvConfigurator {
 
         // Prepare init data
         bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, RECOVERER_ADDRESS, address(0), "ETH"));
+            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         // Generate proxy bytecode
         bytes memory proxyBytecode =
@@ -159,7 +158,7 @@ contract DeploymentTest is TestEnvConfigurator {
 
         // Deploy proxy
         bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, RECOVERER_ADDRESS, address(0), "ETH"));
+            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));
@@ -296,14 +295,14 @@ contract DeploymentTest is TestEnvConfigurator {
         navImplementation = new NAVCalculator();
 
         bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, RECOVERER_ADDRESS, address(0), "ETH"));
+            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));
 
         // Try to initialize again - should fail
         vm.expectRevert();
-        nav.initialize(ADMIN_ADDRESS, RECOVERER_ADDRESS, address(0), "ETH");
+        nav.initialize(ADMIN_ADDRESS, address(0), "ETH");
     }
 
     /// @notice Test proxy admin role is set correctly
@@ -311,7 +310,7 @@ contract DeploymentTest is TestEnvConfigurator {
         navImplementation = new NAVCalculator();
 
         bytes memory initData =
-            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, RECOVERER_ADDRESS, address(0), "ETH"));
+            abi.encodeCall(NAVCalculator.initialize, (ADMIN_ADDRESS, address(0), "ETH"));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(navImplementation), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));

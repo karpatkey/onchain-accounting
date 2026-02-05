@@ -5,6 +5,7 @@ out = "out"
 fs_permissions = [
   { access = "read-write", path = "script" },
   { access = "read-write", path = "out" },
+  { access = "read-write", path = "safe-transactions" },
 ]
 ffi = true
 ast = true

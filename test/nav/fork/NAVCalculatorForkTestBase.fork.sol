@@ -95,7 +95,7 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         nav = NAVCalculator(
             Upgrades.deployUUPSProxy(
                 "NAVCalculator.sol",
-                abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(0), "ETH")),
+                abi.encodeCall(NAVCalculator.initialize, (admin, address(0), "ETH")),
                 unsafeDeployOpts()
             )
         );

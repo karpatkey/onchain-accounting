@@ -90,7 +90,7 @@ abstract contract SuperTest is Test {
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, safe, address(sequencerUptimeFeed), "ETH"))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, address(sequencerUptimeFeed), "ETH"))
         );
         nav = NAVCalculator(navProxy);
 
@@ -130,13 +130,10 @@ abstract contract SuperTest is Test {
     }
 
     // forge-lint: disable-next-line(mixed-case-function) -- test helper; NAV in name is intentional
-    function setupNAVCalculatorWithParams(address admin_, address safe_, address chainlinkUptimeFeed_)
-        public
-        returns (NAVCalculator)
-    {
+    function setupNAVCalculatorWithParams(address admin_, address chainlinkUptimeFeed_) public returns (NAVCalculator) {
         address navCalculatorImpl = address(new NAVCalculator());
         address navCalculatorProxy = UnsafeUpgrades.deployUUPSProxy(
-            navCalculatorImpl, abi.encodeCall(NAVCalculator.initialize, (admin_, safe_, chainlinkUptimeFeed_, "ETH"))
+            navCalculatorImpl, abi.encodeCall(NAVCalculator.initialize, (admin_, chainlinkUptimeFeed_, "ETH"))
         );
 
         return NAVCalculator(navCalculatorProxy);

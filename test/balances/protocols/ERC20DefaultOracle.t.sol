@@ -48,7 +48,7 @@ contract ERC20DefaultOracleTest is Test {
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0), "ETH"))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, address(0), "ETH"))
         );
         navCalculator = NAVCalculator(navProxy);
         navCalculator.grantRole(MANAGER, manager);
@@ -102,7 +102,7 @@ contract ERC20DefaultOracleTest is Test {
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
-            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, makeAddr("safe"), address(0), "ETH"))
+            navImpl, abi.encodeCall(NAVCalculator.initialize, (admin, address(0), "ETH"))
         );
         NAVCalculator emptyNav = NAVCalculator(navProxy);
         vm.stopPrank();

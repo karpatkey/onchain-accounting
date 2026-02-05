@@ -69,11 +69,6 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     // State
     //
 
-    /// @notice Asset recoverer. useful solely for recovery of wrongly sent funds to this contract.
-    /// @dev This is the recipient address that will receive the assets recovered by a call to the `recoverAssets`
-    /// function.
-    address public assetRecoverer;
-
     /// @notice Asset registry (NAV/Pricing) — ordered list of registered assets (address, symbol, decimals)
     INAVCalculator.Asset[] private _registeredAssets;
 
@@ -94,12 +89,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @notice Initializer for UUPS proxy
     /// @param admin_ The initial admin
-    /// @param assetRecoverer_ Asset recoverer. useful solely for recovery of wrongly sent funds
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the chainlink feed for the sequencer uptime
     /// @param nativeTokenSymbol_ The native token symbol (e.g. "ETH", "xDAI") — fixed at init
     function initialize(
         address admin_,
-        address assetRecoverer_,
         address chainlinkL2SequencerUptimeFeed_,
         string memory nativeTokenSymbol_
     ) public initializer {
@@ -117,7 +110,6 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _setErc20DefaultOracle(address(defaultOracle));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        assetRecoverer = assetRecoverer_;
     }
 
     //

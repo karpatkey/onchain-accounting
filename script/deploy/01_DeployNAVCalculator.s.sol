@@ -39,12 +39,7 @@ contract DeployNAVCalculator is BaseDeployScript {
         // Prepare initialization data
         bytes memory initData = abi.encodeCall(
             NAVCalculator.initialize,
-            (
-                chainConfig.admin,
-                chainConfig.assetRecoverer,
-                chainConfig.chainlinkSequencerFeed,
-                chainConfig.nativeTokenSymbol
-            )
+            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         // Generate proxy creation bytecode

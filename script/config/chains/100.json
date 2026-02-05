@@ -1,23 +1,22 @@
 {
   "chainId": 100,
   "name": "gnosis",
-  "rpc": "$GNOSIS_RPC_URL",
+  "rpc": "$ALCHEMY",
   "explorer": "https://gnosisscan.io",
   "explorerApiKey": "$GNOSISSCAN_API_KEY",
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "xDAI",
   "addresses": {
-    "safeMultisig": "0x0000000000000000000000000000000000000000",
-    "admin": "0x0000000000000000000000000000000000000000",
-    "manager": "0x0000000000000000000000000000000000000000",
-    "assetRecoverer": "0x0000000000000000000000000000000000000000"
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0xb007369cA6656639de93c444daE8789159d4CBFb"
   },
   "deployed": {
-    "Create2Deployer": "",
-    "NAVCalculatorImplementation": "",
-    "NAVCalculatorProxy": "",
-    "BridgeEscrowImplementation": "",
-    "BridgeEscrowProxy": ""
+    "Create2Deployer": "0xF3c832B0B80852EDb501c9E080EDaAB7F67f0648",
+    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
+    "NAVCalculatorProxy": "0x9D005EE03cd39d0B902Fc36bf9922663438ae0A2",
+    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
+    "BridgeEscrowProxy": "0x71c0AE25eE62c44e9246E8A47256BEAbEFbEB383"
   },
   "priceFeeds": {
     "sXDAI": {

@@ -28,8 +28,8 @@ contract VerifyEtherscan is BaseDeployScript {
             console2.log("# Verify Create2Deployer");
             console2.log("forge verify-contract \\");
             console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.28 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key $", _getApiKeyEnvVar(), " \\")));
+            console2.log("  --compiler-version v0.8.30 \\");
+            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
             console2.log(string(abi.encodePacked("  ", vm.toString(create2Deployer), " \\")));
             console2.log("  src/deployment/Create2Deployer.sol:Create2Deployer");
             console2.log("");
@@ -40,8 +40,8 @@ contract VerifyEtherscan is BaseDeployScript {
             console2.log("# Verify NAVCalculator Implementation");
             console2.log("forge verify-contract \\");
             console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.28 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key $", _getApiKeyEnvVar(), " \\")));
+            console2.log("  --compiler-version v0.8.30 \\");
+            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
             console2.log(string(abi.encodePacked("  ", vm.toString(navImpl), " \\")));
             console2.log("  src/nav/NAVCalculator.sol:NAVCalculator");
             console2.log("");
@@ -52,8 +52,8 @@ contract VerifyEtherscan is BaseDeployScript {
             console2.log("# Verify NAVCalculator Proxy");
             console2.log("forge verify-contract \\");
             console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.28 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key $", _getApiKeyEnvVar(), " \\")));
+            console2.log("  --compiler-version v0.8.30 \\");
+            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
             console2.log(
                 string(
                     abi.encodePacked(
@@ -75,8 +75,8 @@ contract VerifyEtherscan is BaseDeployScript {
             console2.log("# Verify BridgeEscrow Implementation");
             console2.log("forge verify-contract \\");
             console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.28 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key $", _getApiKeyEnvVar(), " \\")));
+            console2.log("  --compiler-version v0.8.30 \\");
+            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
             console2.log(string(abi.encodePacked("  ", vm.toString(bridgeImpl), " \\")));
             console2.log("  src/bridge/BridgeEscrow.sol:BridgeEscrow");
             console2.log("");
@@ -87,8 +87,8 @@ contract VerifyEtherscan is BaseDeployScript {
             console2.log("# Verify BridgeEscrow Proxy");
             console2.log("forge verify-contract \\");
             console2.log(string(abi.encodePacked("  --chain-id ", vm.toString(currentChainId), " \\")));
-            console2.log("  --compiler-version v0.8.28 \\");
-            console2.log(string(abi.encodePacked("  --etherscan-api-key $", _getApiKeyEnvVar(), " \\")));
+            console2.log("  --compiler-version v0.8.30 \\");
+            console2.log(string(abi.encodePacked("  --etherscan-api-key=$", _getApiKeyEnvVar(), " \\")));
             console2.log(
                 string(
                     abi.encodePacked(
@@ -121,9 +121,8 @@ contract VerifyEtherscan is BaseDeployScript {
 
     function _getNavInitData() internal view returns (bytes memory) {
         return abi.encodeWithSignature(
-            "initialize(address,address,address,string)",
+            "initialize(address,address,string)",
             chainConfig.admin,
-            chainConfig.assetRecoverer,
             chainConfig.chainlinkSequencerFeed,
             chainConfig.nativeTokenSymbol
         );

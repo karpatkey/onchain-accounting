@@ -5,14 +5,15 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
-import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title InitializeProxies
 /// @notice Generates Safe transactions per chain: upgrade proxies from placeholder to real impl and initialize.
-/// @dev Proxies are deployed by 02a with a placeholder impl; this script generates upgradeAndCall(proxy, realImpl, initData)
-///      via each proxy's ProxyAdmin (at vm.computeCreateAddress(proxy, 0)). Run per chain for chain-specific impl addresses and init.
+/// @dev Proxies are deployed by 02a with a placeholder impl; this script generates upgradeToAndCall(realImpl, initData)
+///      called directly on the proxy. Upgrades are protected by _authorizeUpgrade in the implementation (checks DEFAULT_ADMIN_ROLE).
+///      Run per chain for chain-specific impl addresses and init.
 contract InitializeProxies is BaseDeployScript {
     function run() public override {
         setUp();
@@ -45,82 +46,143 @@ contract InitializeProxies is BaseDeployScript {
             )
         );
 
-        // ProxyAdmin is deployed by the proxy in its constructor; address = computeCreateAddress(proxy, 0).
-        address navProxyAdmin = vm.computeCreateAddress(navProxy, 0);
-        address bridgeProxyAdmin = vm.computeCreateAddress(bridgeProxy, 0);
+        // Verify proxies are deployed
+        require(navProxy.code.length > 0, "NAVCalculator proxy not deployed - run 02a_DeployProxies.s.sol first");
+        require(bridgeProxy.code.length > 0, "BridgeEscrow proxy not deployed - run 02a_DeployProxies.s.sol first");
 
-        SafeTxBuilder.Transaction[] memory allTxs = new SafeTxBuilder.Transaction[](2);
+        // Generate FIRST transaction file: upgrade and initialize proxies
+        // This must be executed BEFORE granting roles to ensure proxies are initialized
+        // UUPS pattern: call upgradeToAndCall directly on proxy (protected by _authorizeUpgrade in implementation)
+        SafeTxBuilder.Transaction[] memory upgradeTxs = new SafeTxBuilder.Transaction[](2);
 
-        // 1. Upgrade NAV proxy to real impl and initialize (via ProxyAdmin)
-        allTxs[0] = SafeTxBuilder.call(
-            navProxyAdmin,
-            0,
-            abi.encodeWithSelector(
-                ProxyAdmin.upgradeAndCall.selector,
-                ITransparentUpgradeableProxy(payable(navProxy)),
-                navImpl,
-                navInitData
-            )
+        // 1. Upgrade NAV proxy to real impl and initialize (direct call to proxy)
+        upgradeTxs[0] = SafeTxBuilder.call(
+            navProxy, 0, abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, navImpl, navInitData)
         );
 
-        // 2. Upgrade Bridge proxy to real impl and initialize (via ProxyAdmin)
-        allTxs[1] = SafeTxBuilder.call(
-            bridgeProxyAdmin,
+        // 2. Upgrade Bridge proxy to real impl and initialize (direct call to proxy)
+        upgradeTxs[1] = SafeTxBuilder.call(
+            bridgeProxy,
             0,
-            abi.encodeWithSelector(
-                ProxyAdmin.upgradeAndCall.selector,
-                ITransparentUpgradeableProxy(payable(bridgeProxy)),
-                bridgeImpl,
-                bridgeInitData
-            )
+            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, bridgeImpl, bridgeInitData)
         );
 
-        // Generate transaction file with initialization transactions only
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-initialize-proxies.json"));
+        string memory upgradeFilename =
+            string(abi.encodePacked(vm.toString(currentChainId), "-initialize-proxies.json"));
         SafeTxBuilder.writeSafeTx(
             vm,
             currentChainId,
-            filename,
+            upgradeFilename,
             "Initialize NAVCalculator + BridgeEscrow proxies",
             string(
                 abi.encodePacked(
                     "Chain ",
                     vm.toString(currentChainId),
-                    ": initialize NAV + Bridge proxies. ",
+                    ": upgrade and initialize NAV + Bridge proxies. ",
                     "Proxies must be deployed first via 02a_DeployProxies.s.sol. ",
                     "NAV proxy: ",
                     vm.toString(navProxy),
                     ", Bridge proxy: ",
-                    vm.toString(bridgeProxy)
+                    vm.toString(bridgeProxy),
+                    ". ",
+                    "Execute this transaction FIRST, then execute the grant-role transaction."
                 )
             ),
             chainConfig.safeMultisig,
-            allTxs
+            upgradeTxs
         );
+
+        console2.log("\n=== Transaction File 1 Generated: Upgrade & Initialize ===");
+        console2.log("File: safe-transactions/", upgradeFilename);
+        console2.log("This file contains 2 transactions:");
+        console2.log("  1. CALL: NAV proxy.upgradeToAndCall(NAV impl, initData)");
+        console2.log("  2. CALL: Bridge proxy.upgradeToAndCall(Bridge impl, initData)");
+        console2.log("Note: Upgrades are protected by _authorizeUpgrade (requires DEFAULT_ADMIN_ROLE)");
+
+        // Generate SECOND transaction file: grant MANAGER roles (only if manager is configured)
+        if (chainConfig.manager != address(0)) {
+            SafeTxBuilder.Transaction[] memory grantRoleTxs = new SafeTxBuilder.Transaction[](2);
+
+            // 1. Grant MANAGER role to manager address on NAVCalculator
+            grantRoleTxs[0] = SafeTxBuilder.call(
+                navProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, chainConfig.manager)
+            );
+
+            // 2. Grant MANAGER role to manager address on BridgeEscrow
+            grantRoleTxs[1] = SafeTxBuilder.call(
+                bridgeProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, chainConfig.manager)
+            );
+
+            string memory grantRoleFilename =
+                string(abi.encodePacked(vm.toString(currentChainId), "-grant-manager-role.json"));
+            SafeTxBuilder.writeSafeTx(
+                vm,
+                currentChainId,
+                grantRoleFilename,
+                "Grant MANAGER role to manager address",
+                string(
+                    abi.encodePacked(
+                        "Chain ",
+                        vm.toString(currentChainId),
+                        ": grant MANAGER role to ",
+                        vm.toString(chainConfig.manager),
+                        " on NAVCalculator and BridgeEscrow. ",
+                        "Execute this transaction AFTER the initialize-proxies transaction has completed. ",
+                        "NAV proxy: ",
+                        vm.toString(navProxy),
+                        ", Bridge proxy: ",
+                        vm.toString(bridgeProxy)
+                    )
+                ),
+                chainConfig.safeMultisig,
+                grantRoleTxs
+            );
+
+            console2.log("\n=== Transaction File 2 Generated: Grant MANAGER Role ===");
+            console2.log("File: safe-transactions/", grantRoleFilename);
+            console2.log("This file contains 2 transactions:");
+            console2.log("  1. CALL: NAVCalculator.grantRole(MANAGER, ", chainConfig.manager, ")");
+            console2.log("  2. CALL: BridgeEscrow.grantRole(MANAGER, ", chainConfig.manager, ")");
+            console2.log(
+                "\n[IMPORTANT] Execute the initialize-proxies transaction FIRST, then execute this grant-role transaction."
+            );
+        } else {
+            console2.log("\n[INFO] No manager address configured, skipping grantRole transaction file.");
+        }
 
         // Note: All operations are CALL (0), no DELEGATECALL needed
 
-        console2.log("\n=== Transaction File Generated ===");
-        console2.log("File: safe-transactions/", filename);
-        console2.log("\nThis transaction file contains 2 individual transactions:");
-        console2.log("  1. CALL: ProxyAdmin.upgradeAndCall(NAV proxy, NAV impl, initData)");
-        console2.log("  2. CALL: ProxyAdmin.upgradeAndCall(Bridge proxy, Bridge impl, initData)");
         console2.log("\n[NOTE] Proxies must be deployed first via 02a_DeployProxies.s.sol (with placeholder impl).");
-        console2.log("\n=== Safe CLI Command (Ready to Execute) ===");
-        console2.log("Using tx-builder command:");
-        string memory txBuilderCommand = string(
+        console2.log("\n=== Safe CLI Commands (Execute in Order) ===");
+        string memory upgradeCommand = string(
             abi.encodePacked(
                 "safe-cli tx-builder ",
                 vm.toString(chainConfig.safeMultisig),
                 " ",
                 chainConfig.rpc,
                 " ./safe-transactions/",
-                filename,
+                upgradeFilename,
                 " --private-key <KEY1> --private-key <KEY2> [--non-interactive]"
             )
         );
-        console2.log(txBuilderCommand);
-        console2.log("\n[INFO] This transaction file contains multiple individual transactions (not MultiSend).");
+        console2.log("1. First, execute upgrade & initialize:");
+        console2.log("   ", upgradeCommand);
+        if (chainConfig.manager != address(0)) {
+            string memory grantRoleCommand = string(
+                abi.encodePacked(
+                    "safe-cli tx-builder ",
+                    vm.toString(chainConfig.safeMultisig),
+                    " ",
+                    chainConfig.rpc,
+                    " ./safe-transactions/",
+                    string(abi.encodePacked(vm.toString(currentChainId), "-grant-manager-role.json")),
+                    " --private-key <KEY1> --private-key <KEY2> [--non-interactive]"
+                )
+            );
+            console2.log("2. Then, execute grant role:");
+            console2.log("   ", grantRoleCommand);
+        }
+        console2.log("\n[INFO] These transaction files contain multiple individual transactions (not MultiSend).");
         console2.log("  The Safe UI will execute them as a batch. All operations use CALL (no DELEGATECALL required).");
         console2.log("\n  To simulate transactions before submission, run:");
         console2.log("    forge test --match-path script/test/SimulateSafeTransactions.fork.t.sol --fork-url <RPC_URL>");
@@ -128,6 +190,8 @@ contract InitializeProxies is BaseDeployScript {
         console2.log("\nProxy addresses (from deployment config):");
         console2.log("  NAVCalculator proxy:", navProxy);
         console2.log("  BridgeEscrow proxy:", bridgeProxy);
-        console2.log("\nRun this script per chain (--chain-id <id>), then execute the transaction on that chain.");
+        console2.log(
+            "\nRun this script per chain (--chain-id <id>), then execute the transactions on that chain in order."
+        );
     }
 }

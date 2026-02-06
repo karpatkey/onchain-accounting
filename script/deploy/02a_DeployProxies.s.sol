@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
-import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
-import {Empty} from "../../src/utils/Empty.sol";
+import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
+import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployProxies
@@ -13,6 +13,7 @@ import {console2} from "forge-std/console2.sol";
 ///     are identical across chains regardless of where real NAV/Bridge implementations are deployed.
 ///   - 02a deploys placeholder (Empty) then both proxies; 02b upgrades each proxy to real impl and initializes.
 ///   - Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt (32 bytes) || init_code (Arachnid ABI).
+///   - Uses UUPS pattern (ERC1967Proxy) - upgrades go directly through proxy to implementation, protected by _authorizeUpgrade.
 ///   - See script/deploy/README.md for full docs and commands.
 contract DeployProxies is BaseDeployScript {
     /// @notice Canonical CREATE2 deployer address (same on all chains)
@@ -23,24 +24,20 @@ contract DeployProxies is BaseDeployScript {
         setUp();
         validateAddresses();
 
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
-
         // Placeholder impl: same address on all chains (CREATE2). Proxy bytecode uses this so it is chain-independent.
+        // Uses UUPSPlaceholder which is UUPS-compatible (has upgradeToAndCall function)
         bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 1);
-        bytes memory placeholderBytecode = type(Empty).creationCode;
+        bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
-        // Proxy bytecode: (placeholder, safe, "") — identical on every chain; real impl is set in 02b via upgradeAndCall.
+        // Proxy bytecode: (placeholder, "") — identical on every chain; real impl is set in 02b via upgradeToAndCall.
+        // UUPS pattern: no owner needed, upgrades go directly through proxy to implementation.
         bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address bridgeProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
         console2.log("\n=== Proxy Deployment (EOA) ===");

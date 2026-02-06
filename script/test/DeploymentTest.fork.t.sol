@@ -6,7 +6,7 @@ import {Create2Deployer} from "../../src/deployment/Create2Deployer.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
+import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {Empty} from "../../src/utils/Empty.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 
@@ -231,12 +231,11 @@ contract DeploymentTest is TestEnvConfigurator {
         address emptyPlaceholder = _computeCreate2Address(deployer, saltEmpty, type(Empty).creationCode);
 
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(emptyPlaceholder, SAFE_ADDRESS, ""));
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(emptyPlaceholder, ""));
 
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
         bytes memory bridgeProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(emptyPlaceholder, SAFE_ADDRESS, ""));
+            abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(emptyPlaceholder, ""));
 
         address navProxy = _computeCreate2Address(deployer, saltNavProxy, navProxyBytecode);
         address bridgeProxy = _computeCreate2Address(deployer, saltBridgeProxy, bridgeProxyBytecode);

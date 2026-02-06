@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
-import {Empty} from "../../src/utils/Empty.sol";
+import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title VerifyEtherscan
@@ -19,25 +19,19 @@ contract VerifyEtherscan is BaseDeployScript {
         address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
 
-        // Proxy constructor at deploy (02a) is (placeholder, safe, ""). Same on all chains.
+        // Proxy constructor at deploy (02a) is (placeholder, ""). Same on all chains (UUPS pattern, no owner needed).
         address placeholder = _placeholderAddress();
-        bytes memory proxyConstructorArgs = abi.encode(placeholder, chainConfig.safeMultisig, "");
+        bytes memory proxyConstructorArgs = abi.encode(placeholder, "");
 
         console2.log("\n=== Verification (chain %s) ===", vm.toString(currentChainId));
 
         _emitVerify("NAVCalculatorImplementation", navImpl, "src/nav/NAVCalculator.sol:NAVCalculator", "");
         _emitVerify(
-            "NAVCalculatorProxy",
-            navProxy,
-            "src/proxy/TransparentProxy.sol:TransparentProxy",
-            vm.toString(proxyConstructorArgs)
+            "NAVCalculatorProxy", navProxy, "src/proxy/UUPSProxy.sol:UUPSProxy", vm.toString(proxyConstructorArgs)
         );
         _emitVerify("BridgeEscrowImplementation", bridgeImpl, "src/bridge/BridgeEscrow.sol:BridgeEscrow", "");
         _emitVerify(
-            "BridgeEscrowProxy",
-            bridgeProxy,
-            "src/proxy/TransparentProxy.sol:TransparentProxy",
-            vm.toString(proxyConstructorArgs)
+            "BridgeEscrowProxy", bridgeProxy, "src/proxy/UUPSProxy.sol:UUPSProxy", vm.toString(proxyConstructorArgs)
         );
 
         console2.log("");
@@ -70,7 +64,7 @@ contract VerifyEtherscan is BaseDeployScript {
 
     function _placeholderAddress() internal pure returns (address) {
         bytes32 salt = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(1)));
-        bytes memory creationCode = type(Empty).creationCode;
+        bytes memory creationCode = type(UUPSPlaceholder).creationCode;
         return address(
             uint160(
                 uint256(

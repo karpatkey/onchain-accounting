@@ -13,9 +13,9 @@
   },
   "deployed": {
     "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x3720E21E0D581faDC1626f0464cC9f023beB1aAa",
+    "NAVCalculatorProxy": "0xA69B6A3D419809a005C304c2ecB4e7578fd3AE90",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
-    "BridgeEscrowProxy": "0x911A0818da77365ED0f246FB15053E5324a810f6"
+    "BridgeEscrowProxy": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd"
   },
   "balanceAdapters": {
     "AaveV3_USDC": {

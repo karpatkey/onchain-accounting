@@ -5,15 +5,10 @@ import {TestEnvConfigurator} from "../../test/TestEnvConfigurator.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
-import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
-import {Empty} from "../../src/utils/Empty.sol";
-import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
+import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 
-/// @notice Placeholder implementation with no-op initializer for tests (OZ proxy requires non-empty init data).
-contract PlaceholderWithInit {
-    function initialize() external {}
-}
-import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -60,19 +55,13 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that different EOAs deploy proxies to the same addresses
     /// @dev Proxy bytecode uses placeholder impl (same on all chains), not real NAV/Bridge impl.
     function test_DifferentEOAsDeploySameAddresses() public view {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
-
         address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
@@ -111,20 +100,14 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that the script's address computation matches actual deployment
     /// @dev 02a uses placeholder in bytecode; this verifies the same formula.
     function test_ScriptAddressComputationMatchesDeployment() public view {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
-
         address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 navProxyBytecodeHash = keccak256(navProxyBytecode);
         address computedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode = abi.encodePacked(
-            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
-        );
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 bridgeProxyBytecodeHash = keccak256(bridgeProxyBytecode);
         address computedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
@@ -200,12 +183,11 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             // Proxy bytecode uses placeholder (same on all chains), not real impl address
             address placeholder = _getPlaceholderAddress();
             bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-            bytes memory navProxyBytecode =
-                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(placeholder, config.safeMultisig, ""));
+            bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
             bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
             bytes memory bridgeProxyBytecode =
-                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(placeholder, config.safeMultisig, ""));
+                abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
             // Compute addresses using canonical CREATE2 deployer
             navProxyAddresses[i] = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
@@ -358,23 +340,24 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
-        PlaceholderWithInit placeholder = new PlaceholderWithInit();
-        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
 
-        // Deploy proxy with placeholder implementation (OZ proxy requires non-empty init data)
-        TransparentProxy proxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
+        // Deploy proxy with placeholder implementation
+        UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
 
         // Upgrade to real implementation and initialize
-        ProxyAdmin proxyAdmin = ProxyAdmin(_getProxyAdmin(address(proxy)));
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
             (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
-        // Upgrade and initialize as Safe Admin
+        // Upgrade and initialize as Safe Admin (must have DEFAULT_ADMIN_ROLE after init)
+        // First initialize to grant Safe the DEFAULT_ADMIN_ROLE, then upgrade
+        // For UUPS, we call upgradeToAndCall directly on the proxy
+        // Note: Safe needs DEFAULT_ADMIN_ROLE to upgrade, but gets it during initialization
+        // So we need to do this in two steps: upgrade first (placeholder has no auth), then init grants role
         vm.prank(chainConfig.safeMultisig);
-        proxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(proxy)), address(navImpl), navInitData);
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
 
         // Verify it's initialized
         NAVCalculator nav = NAVCalculator(address(proxy));
@@ -397,22 +380,11 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
         BridgeEscrow bridgeImpl = new BridgeEscrow();
-        PlaceholderWithInit placeholder = new PlaceholderWithInit();
-        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
 
-        // Deploy proxies with placeholder implementations (OZ proxy requires non-empty init data)
-        TransparentProxy navProxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
-        TransparentProxy bridgeProxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
-
-        // Get ProxyAdmin instances
-        ProxyAdmin navProxyAdmin = ProxyAdmin(_getProxyAdmin(address(navProxy)));
-        ProxyAdmin bridgeProxyAdmin = ProxyAdmin(_getProxyAdmin(address(bridgeProxy)));
-
-        // Verify Safe owns the ProxyAdmin
-        assertEq(navProxyAdmin.owner(), chainConfig.safeMultisig, "Safe should own NAV ProxyAdmin");
-        assertEq(bridgeProxyAdmin.owner(), chainConfig.safeMultisig, "Safe should own Bridge ProxyAdmin");
+        // Deploy proxies with placeholder implementations
+        UUPSProxy navProxy = new UUPSProxy(address(placeholder), "");
+        UUPSProxy bridgeProxy = new UUPSProxy(address(placeholder), "");
 
         // Prepare initialization data
         bytes memory navInitData = abi.encodeCall(
@@ -434,15 +406,15 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             )
         );
 
-        // Upgrade and initialize NAV proxy as Safe Admin via ProxyAdmin
+        // Upgrade and initialize NAV proxy as Safe Admin (direct call to proxy)
+        // Note: Placeholder implementation has no _authorizeUpgrade, so upgrade works
+        // After upgrade, Safe gets DEFAULT_ADMIN_ROLE during initialization
         vm.prank(chainConfig.safeMultisig);
-        navProxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(navProxy)), address(navImpl), navInitData);
+        UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        // Upgrade and initialize Bridge proxy as Safe Admin via ProxyAdmin
+        // Upgrade and initialize Bridge proxy as Safe Admin (direct call to proxy)
         vm.prank(chainConfig.safeMultisig);
-        bridgeProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(bridgeProxy)), address(bridgeImpl), bridgeInitData
-        );
+        UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
         // Verify both proxies are initialized
         NAVCalculator nav = NAVCalculator(address(navProxy));
@@ -454,32 +426,34 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("[OK] Safe Admin can successfully initialize proxies");
     }
 
-    /// @notice Test that non-Safe Admin cannot use ProxyAdmin to upgrade
-    /// @dev Only the Safe (owner of ProxyAdmin) can call upgradeAndCall on ProxyAdmin
-    function test_NonSafeAdminCannotUseProxyAdmin() public {
+    /// @notice Test that non-admin cannot upgrade UUPS proxy
+    /// @dev Only addresses with DEFAULT_ADMIN_ROLE can upgrade (checked by _authorizeUpgrade)
+    function test_NonAdminCannotUpgradeUUPSProxy() public {
         require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
-        // Deploy implementations (only newNavImpl needed for the failed upgrade attempt)
+        // Deploy implementations
+        NAVCalculator navImpl = new NAVCalculator();
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
+
+        // Deploy proxy with placeholder implementation
+        UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
+
+        // Initialize proxy first to set up DEFAULT_ADMIN_ROLE
+        bytes memory navInitData = abi.encodeCall(
+            NAVCalculator.initialize,
+            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+        );
+        vm.prank(chainConfig.safeMultisig);
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
+
+        // Now try to upgrade as EOA1 (not admin) - should fail
         NAVCalculator newNavImpl = new NAVCalculator();
-        PlaceholderWithInit placeholder = new PlaceholderWithInit();
-        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
-
-        // Deploy proxy with placeholder implementation (OZ proxy requires non-empty init data)
-        TransparentProxy proxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
-
-        // Get ProxyAdmin
-        ProxyAdmin proxyAdmin = ProxyAdmin(_getProxyAdmin(address(proxy)));
-
-        // Try to upgrade as EOA1 (not Safe Admin) - should fail
-        // Use upgradeAndCall with empty data (equivalent to upgrade)
-        bytes memory emptyUpgradeData = "";
         vm.prank(EOA1);
-        vm.expectRevert(); // Should revert because EOA1 is not the owner of ProxyAdmin
-        proxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(proxy)), address(newNavImpl), emptyUpgradeData);
+        vm.expectRevert(); // Should revert because EOA1 does not have DEFAULT_ADMIN_ROLE
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(newNavImpl), "");
 
-        console2.log("[OK] Non-Safe Admin cannot use ProxyAdmin to upgrade");
+        console2.log("[OK] Non-admin cannot upgrade UUPS proxy");
     }
 
     /// @notice Test that anyone can initialize an uninitialized proxy directly (current behavior)
@@ -491,14 +465,11 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
         BridgeEscrow bridgeImpl = new BridgeEscrow();
-        PlaceholderWithInit placeholder = new PlaceholderWithInit();
-        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
 
-        // Deploy proxies with placeholder implementations (OZ proxy requires non-empty init data)
-        TransparentProxy navProxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
-        TransparentProxy bridgeProxy =
-            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
+        // Deploy proxies with placeholder implementations
+        UUPSProxy navProxy = new UUPSProxy(address(placeholder), "");
+        UUPSProxy bridgeProxy = new UUPSProxy(address(placeholder), "");
 
         // Prepare initialization data
         bytes memory navInitData = abi.encodeCall(
@@ -520,25 +491,13 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             )
         );
 
-        // Get ProxyAdmin instances
-        ProxyAdmin navProxyAdmin = ProxyAdmin(_getProxyAdmin(address(navProxy)));
-        ProxyAdmin bridgeProxyAdmin = ProxyAdmin(_getProxyAdmin(address(bridgeProxy)));
-
-        // Upgrade and initialize NAV proxy as EOA1 (anyone can call ProxyAdmin if they're the owner, but EOA1 is not)
-        // Actually, for this test, let's use the Safe to upgrade, then test that anyone can call initialize
-        // But wait - we need to upgrade first. Let's test that EOA1 can't use ProxyAdmin
-        vm.prank(EOA1);
-        vm.expectRevert(); // EOA1 is not the owner of ProxyAdmin
-        navProxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(navProxy)), address(navImpl), navInitData);
-
-        // Now do it correctly as Safe Admin
+        // Upgrade and initialize NAV proxy as Safe Admin (direct call to proxy)
         vm.prank(chainConfig.safeMultisig);
-        navProxyAdmin.upgradeAndCall(ITransparentUpgradeableProxy(address(navProxy)), address(navImpl), navInitData);
+        UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
+        // Upgrade and initialize Bridge proxy as Safe Admin (direct call to proxy)
         vm.prank(chainConfig.safeMultisig);
-        bridgeProxyAdmin.upgradeAndCall(
-            ITransparentUpgradeableProxy(address(bridgeProxy)), address(bridgeImpl), bridgeInitData
-        );
+        UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
         // Verify both proxies are initialized
         NAVCalculator nav = NAVCalculator(address(navProxy));
@@ -592,10 +551,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         );
     }
 
-    /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, Empty)
+    /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, UUPSPlaceholder)
     function _getPlaceholderAddress() internal pure returns (address) {
         bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", 1);
-        return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(Empty).creationCode);
+        return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(UUPSPlaceholder).creationCode);
     }
 
     /// @notice Checks if an address has code
@@ -605,16 +564,5 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             codeSize := extcodesize(addr)
         }
         return codeSize > 0;
-    }
-
-    /// @notice Gets the ProxyAdmin address for a TransparentProxy
-    /// @dev Reads from EIP-1967 admin storage slot
-    /// @param proxy The proxy address
-    /// @return The ProxyAdmin address
-    function _getProxyAdmin(address proxy) internal view returns (address) {
-        // EIP-1967 admin storage slot: bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1)
-        bytes32 slot = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
-        bytes32 adminSlot = vm.load(proxy, slot);
-        return address(uint160(uint256(adminSlot)));
     }
 }

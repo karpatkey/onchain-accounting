@@ -2,18 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
-import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
-import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
-import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
+import {Empty} from "../../src/utils/Empty.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployProxies
 /// @notice Deploys NAV + Bridge proxies via EOA using canonical CREATE2 deployer for deterministic addresses.
-/// @dev Run after 01_DeployImplementations has been executed. Can be run by any EOA - addresses are deterministic.
-///      Uses canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) via CALL.
-///      Proxies are deployed with real implementation and Safe as admin.
-///      Same proxy addresses on all chains regardless of which EOA deploys them.
+/// @dev
+///   - Proxy bytecode uses a placeholder implementation (same CREATE2 address on all chains), so proxy addresses
+///     are identical across chains regardless of where real NAV/Bridge implementations are deployed.
+///   - 02a deploys placeholder (Empty) then both proxies; 02b upgrades each proxy to real impl and initializes.
+///   - Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt (32 bytes) || init_code (Arachnid ABI).
+///   - See script/deploy/README.md for full docs and commands.
 contract DeployProxies is BaseDeployScript {
     /// @notice Canonical CREATE2 deployer address (same on all chains)
     /// @dev 0x4e59b44847b379578588920cA78FbF26c0B4956C
@@ -23,72 +23,47 @@ contract DeployProxies is BaseDeployScript {
         setUp();
         validateAddresses();
 
-        // Read implementation addresses from config (deployed by EOA, not via Safe CREATE2)
-        address navImpl = readDeployedAddress("NAVCalculatorImplementation");
-        address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
+        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
 
-        // Verify implementation addresses are configured
-        require(navImpl != address(0), "NAVCalculator implementation address not configured in chain config");
-        require(bridgeImpl != address(0), "BridgeEscrow implementation address not configured in chain config");
+        // Placeholder impl: same address on all chains (CREATE2). Proxy bytecode uses this so it is chain-independent.
+        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 1);
+        bytes memory placeholderBytecode = type(Empty).creationCode;
+        address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
-        // Compute proxy addresses using canonical CREATE2 deployer
-        // Proxies are deployed directly with the real implementation and Safe as admin
-        // This ensures deterministic addresses regardless of which EOA deploys them
+        // Proxy bytecode: (placeholder, safe, "") — identical on every chain; real impl is set in 02b via upgradeAndCall.
         bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(navImpl, chainConfig.safeMultisig, ""));
-        bytes32 navProxyBytecodeHash = keccak256(navProxyBytecode);
+        bytes memory navProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         address navProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(bridgeImpl, chainConfig.safeMultisig, ""));
-        bytes32 bridgeProxyBytecodeHash = keccak256(bridgeProxyBytecode);
+        bytes memory bridgeProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         address bridgeProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
         console2.log("\n=== Proxy Deployment (EOA) ===");
-        console2.log("Deployer (EOA):", msg.sender);
-        console2.log("Canonical CREATE2 Deployer:", CANONICAL_CREATE2_DEPLOYER);
-        console2.log("\nComputed proxy addresses (deterministic, same regardless of EOA):");
+        console2.log("Placeholder impl (same on all chains):", placeholder);
         console2.log("  NAVCalculator proxy:", navProxy);
         console2.log("  BridgeEscrow proxy:", bridgeProxy);
 
-        // Verify address computation using deployer's computeAddress function (if on-chain)
-        try ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).computeAddress(saltNavProxy, navProxyBytecodeHash) returns (
-            address computedAddress
-        ) {
-            require(computedAddress == navProxy, "NAV proxy address mismatch: computed != deployer.computeAddress");
-            console2.log("[OK] Verified NAV proxy address matches deployer computation");
-        } catch {
-            console2.log("[WARN] Could not verify NAV proxy address with deployer (offline mode or deployer not found)");
-        }
-
-        try ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER)
-            .computeAddress(saltBridgeProxy, bridgeProxyBytecodeHash) returns (
-            address computedAddress
-        ) {
-            require(
-                computedAddress == bridgeProxy, "Bridge proxy address mismatch: computed != deployer.computeAddress"
-            );
-            console2.log("[OK] Verified Bridge proxy address matches deployer computation");
-        } catch {
-            console2.log(
-                "[WARN] Could not verify Bridge proxy address with deployer (offline mode or deployer not found)"
-            );
-        }
-
-        // Deploy proxies via EOA using canonical CREATE2 deployer
-        // Start broadcast to enable transaction generation
         vm.startBroadcast();
 
-        console2.log("\n=== Deploying Proxies ===");
+        // 1. Deploy placeholder so proxy constructor sees implementation with code
+        if (placeholder.code.length == 0) {
+            (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltPlaceholder, placeholderBytecode));
+            require(ok, "Placeholder deploy failed");
+        }
 
-        // Deploy NAV proxy
-        ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).deploy(0, saltNavProxy, navProxyBytecode);
+        // 2. Deploy NAV proxy
+        (bool navOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltNavProxy, navProxyBytecode));
+        require(navOk, "NAV proxy deploy call failed");
         console2.log("[OK] NAV proxy deployed at:", navProxy);
 
-        // Deploy Bridge proxy
-        ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).deploy(0, saltBridgeProxy, bridgeProxyBytecode);
+        // 3. Deploy Bridge proxy
+        (bool bridgeOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeProxy, bridgeProxyBytecode));
+        require(bridgeOk, "Bridge proxy deploy call failed");
         console2.log("[OK] Bridge proxy deployed at:", bridgeProxy);
 
         vm.stopBroadcast();

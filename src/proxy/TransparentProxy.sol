@@ -12,9 +12,15 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 contract TransparentProxy is TransparentUpgradeableProxy {
     /// @param placeholderImplementation The placeholder implementation address (e.g., Empty contract)
     /// @param initialOwner The owner of the ProxyAdmin contract (typically Safe multisig)
-    /// @param _data Empty bytes (no initialization during deployment)
+    /// @param _data Empty bytes (no initialization during deployment); init is done later via Safe (02b).
     constructor(address placeholderImplementation, address initialOwner, bytes memory _data)
         payable
         TransparentUpgradeableProxy(placeholderImplementation, initialOwner, _data)
     {}
+
+    /// @dev Allow deploying with empty init data; initialization is performed by Safe via 02b_InitializeProxies.
+    ///      Between 02a deploy and 02b execution, only ProxyAdmin can upgrade; only Safe owns ProxyAdmin.
+    function _unsafeAllowUninitialized() internal pure override returns (bool) {
+        return true;
+    }
 }

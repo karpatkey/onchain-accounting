@@ -12,10 +12,10 @@
     "manager": "0xb007369cA6656639de93c444daE8789159d4CBFb"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "",
-    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
-    "BridgeEscrowProxy": ""
+    "NAVCalculatorImplementation": "0xf141150092f88f3c3516D825E2FD3CeF57283442",
+    "NAVCalculatorProxy": "0x3720E21E0D581faDC1626f0464cC9f023beB1aAa",
+    "BridgeEscrowImplementation": "0xB9330561EA35a7643A95b68D8A70fA6D6c004773",
+    "BridgeEscrowProxy": "0x911A0818da77365ED0f246FB15053E5324a810f6"
   },
   "balanceAdapters": {},
   "bridgeAdapters": {}

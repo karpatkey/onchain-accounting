@@ -5,24 +5,28 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
+import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title InitializeProxies
-/// @notice Generates Safe transactions per chain: initialize NAV + Bridge proxies (proxies must be deployed first via 02a_DeployProxies.s.sol).
-/// @dev Run after 02a_DeployProxies has been executed. Run this script per chain (--chain-id) for chain-specific init.
-///      This script only generates initialization transactions for the Safe.
+/// @notice Generates Safe transactions per chain: upgrade proxies from placeholder to real impl and initialize.
+/// @dev Proxies are deployed by 02a with a placeholder impl; this script generates upgradeAndCall(proxy, realImpl, initData)
+///      via each proxy's ProxyAdmin (at vm.computeCreateAddress(proxy, 0)). Run per chain for chain-specific impl addresses and init.
 contract InitializeProxies is BaseDeployScript {
     function run() public override {
         setUp();
         validateAddresses();
 
-        // Read proxy addresses from config (deployed by EOA via 02a_DeployProxies.s.sol)
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
+        address navImpl = readDeployedAddress("NAVCalculatorImplementation");
+        address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
 
-        // Verify proxy addresses are configured
         require(navProxy != address(0), "NAVCalculator proxy address not found. Run 02a_DeployProxies.s.sol first.");
         require(bridgeProxy != address(0), "BridgeEscrow proxy address not found. Run 02a_DeployProxies.s.sol first.");
+        require(navImpl != address(0), "NAVCalculator implementation address not configured.");
+        require(bridgeImpl != address(0), "BridgeEscrow implementation address not configured.");
 
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
@@ -34,7 +38,6 @@ contract InitializeProxies is BaseDeployScript {
             BridgeEscrow.initialize,
             (
                 chainConfig.admin,
-                // casting to 'uint64' is safe because we check currentChainId <= type(uint64).max first
                 // forge-lint: disable-next-line(unsafe-typecast)
                 currentChainId > type(uint64).max ? uint64(0) : uint64(currentChainId),
                 initialAccounts,
@@ -42,15 +45,35 @@ contract InitializeProxies is BaseDeployScript {
             )
         );
 
-        // Create array of 2 transactions for initialization only
-        // Proxies should already be deployed via 02a_DeployProxies.s.sol
+        // ProxyAdmin is deployed by the proxy in its constructor; address = computeCreateAddress(proxy, 0).
+        address navProxyAdmin = vm.computeCreateAddress(navProxy, 0);
+        address bridgeProxyAdmin = vm.computeCreateAddress(bridgeProxy, 0);
+
         SafeTxBuilder.Transaction[] memory allTxs = new SafeTxBuilder.Transaction[](2);
 
-        // 1. Initialize NAV proxy via CALL
-        allTxs[0] = SafeTxBuilder.call(navProxy, 0, navInitData);
+        // 1. Upgrade NAV proxy to real impl and initialize (via ProxyAdmin)
+        allTxs[0] = SafeTxBuilder.call(
+            navProxyAdmin,
+            0,
+            abi.encodeWithSelector(
+                ProxyAdmin.upgradeAndCall.selector,
+                ITransparentUpgradeableProxy(payable(navProxy)),
+                navImpl,
+                navInitData
+            )
+        );
 
-        // 2. Initialize Bridge proxy via CALL
-        allTxs[1] = SafeTxBuilder.call(bridgeProxy, 0, bridgeInitData);
+        // 2. Upgrade Bridge proxy to real impl and initialize (via ProxyAdmin)
+        allTxs[1] = SafeTxBuilder.call(
+            bridgeProxyAdmin,
+            0,
+            abi.encodeWithSelector(
+                ProxyAdmin.upgradeAndCall.selector,
+                ITransparentUpgradeableProxy(payable(bridgeProxy)),
+                bridgeImpl,
+                bridgeInitData
+            )
+        );
 
         // Generate transaction file with initialization transactions only
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-initialize-proxies.json"));
@@ -80,9 +103,9 @@ contract InitializeProxies is BaseDeployScript {
         console2.log("\n=== Transaction File Generated ===");
         console2.log("File: safe-transactions/", filename);
         console2.log("\nThis transaction file contains 2 individual transactions:");
-        console2.log("  1. CALL: Initialize NAVCalculator proxy");
-        console2.log("  2. CALL: Initialize BridgeEscrow proxy");
-        console2.log("\n[NOTE] Proxies must be deployed first via 02a_DeployProxies.s.sol");
+        console2.log("  1. CALL: ProxyAdmin.upgradeAndCall(NAV proxy, NAV impl, initData)");
+        console2.log("  2. CALL: ProxyAdmin.upgradeAndCall(Bridge proxy, Bridge impl, initData)");
+        console2.log("\n[NOTE] Proxies must be deployed first via 02a_DeployProxies.s.sol (with placeholder impl).");
         console2.log("\n=== Safe CLI Command (Ready to Execute) ===");
         console2.log("Using tx-builder command:");
         string memory txBuilderCommand = string(

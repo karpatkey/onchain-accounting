@@ -297,13 +297,16 @@ library ConfigReader {
         return keccak256(abi.encodePacked(contractName, version));
     }
 
-    /// @dev Resolves RPC URL: if value is $ALCHEMY, build from ALCHEMY_API_KEY + chain's Alchemy network (same pattern as TestEnvConfigurator.getAlchemyUrl).
+    /// @dev Resolves RPC URL: if value is $ALCHEMY, build from ALCHEMY_API_KEY (or ALCHEMY_APİ_KEY) + chain's Alchemy network (same pattern as TestEnvConfigurator.getAlchemyUrl).
     ///      Otherwise resolve $VAR_NAME env vars as usual.
     function _resolveRpcUrl(Vm vm, string memory value, uint256 chainId) private view returns (string memory) {
         if (_equals(value, "$ALCHEMY")) {
             string memory network = _alchemyNetworkForChainId(chainId);
             if (bytes(network).length == 0) return "";
             string memory apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
+            if (bytes(apiKey).length == 0) {
+                apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
+            }
             if (bytes(apiKey).length == 0) return "";
             return string.concat("https://", network, ".g.alchemy.com/v2/", apiKey);
         }

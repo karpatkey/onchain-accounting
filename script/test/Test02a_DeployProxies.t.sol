@@ -8,6 +8,11 @@ import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {TransparentProxy} from "../../src/proxy/TransparentProxy.sol";
 import {Empty} from "../../src/utils/Empty.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+
+/// @notice Placeholder implementation with no-op initializer for tests (OZ proxy requires non-empty init data).
+contract PlaceholderWithInit {
+    function initialize() external {}
+}
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
 import {console2} from "forge-std/console2.sol";
@@ -53,23 +58,21 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     }
 
     /// @notice Test that different EOAs deploy proxies to the same addresses
-    /// @dev This is the core test: verifies that CREATE2 determinism works correctly
-    ///      when using the canonical deployer, regardless of which EOA calls it.
+    /// @dev Proxy bytecode uses placeholder impl (same on all chains), not real NAV/Bridge impl.
     function test_DifferentEOAsDeploySameAddresses() public view {
         require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
 
-        // Get implementation addresses
-        (address navImpl, address bridgeImpl) = _getImplementations();
-
-        // Compute expected proxy addresses (same regardless of EOA)
+        address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(navImpl, chainConfig.safeMultisig, ""));
+        bytes memory navProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(bridgeImpl, chainConfig.safeMultisig, ""));
+        bytes memory bridgeProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         address expectedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
@@ -106,23 +109,22 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     }
 
     /// @notice Test that the script's address computation matches actual deployment
-    /// @dev This verifies that the logic in 02a_DeployProxies.s.sol computes addresses correctly
+    /// @dev 02a uses placeholder in bytecode; this verifies the same formula.
     function test_ScriptAddressComputationMatchesDeployment() public view {
         require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
 
-        // Get implementation addresses
-        (address navImpl, address bridgeImpl) = _getImplementations();
-
-        // Compute addresses exactly as the script does
+        address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
-        bytes memory navProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(navImpl, chainConfig.safeMultisig, ""));
+        bytes memory navProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         bytes32 navProxyBytecodeHash = keccak256(navProxyBytecode);
         address computedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
         bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
-        bytes memory bridgeProxyBytecode =
-            abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(bridgeImpl, chainConfig.safeMultisig, ""));
+        bytes memory bridgeProxyBytecode = abi.encodePacked(
+            type(TransparentProxy).creationCode, abi.encode(placeholder, chainConfig.safeMultisig, "")
+        );
         bytes32 bridgeProxyBytecodeHash = keccak256(bridgeProxyBytecode);
         address computedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
@@ -195,29 +197,15 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             uint256 chainId = chainIds[i];
             ConfigReader.ChainConfig memory config = ConfigReader.readChainConfig(vm, chainId);
 
-            // Get implementation addresses for this chain
-            address navImpl = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorImplementation");
-            address bridgeImpl = ConfigReader.readDeployedAddress(vm, chainId, "BridgeEscrowImplementation");
-
-            // If not in records, compute expected addresses using the Safe address
-            if (navImpl == address(0)) {
-                bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", 1);
-                navImpl = _computeCreate2Address(config.safeMultisig, saltNavImpl, type(NAVCalculator).creationCode);
-            }
-            if (bridgeImpl == address(0)) {
-                bytes32 saltBridgeImpl = ConfigReader.computeSalt("BridgeEscrowImplementation", 1);
-                bridgeImpl =
-                    _computeCreate2Address(config.safeMultisig, saltBridgeImpl, type(BridgeEscrow).creationCode);
-            }
-
-            // Compute proxy bytecode (same formula as 02a_DeployProxies.s.sol)
+            // Proxy bytecode uses placeholder (same on all chains), not real impl address
+            address placeholder = _getPlaceholderAddress();
             bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
             bytes memory navProxyBytecode =
-                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(navImpl, config.safeMultisig, ""));
+                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(placeholder, config.safeMultisig, ""));
 
             bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
             bytes memory bridgeProxyBytecode =
-                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(bridgeImpl, config.safeMultisig, ""));
+                abi.encodePacked(type(TransparentProxy).creationCode, abi.encode(placeholder, config.safeMultisig, ""));
 
             // Compute addresses using canonical CREATE2 deployer
             navProxyAddresses[i] = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
@@ -263,11 +251,9 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("\nThis proves true cross-chain determinism using the canonical CREATE2 deployer.");
     }
 
-    /// @notice Test that implementation addresses are the same across all networks
-    /// @dev This is CRITICAL: if implementations have different addresses on different chains,
-    ///      the proxy bytecode will differ, causing proxy addresses to differ as well.
-    ///      Script 01 deploys implementations via CREATE2 using Safe as deployer.
-    ///      This test verifies what's ACTUALLY recorded in config files (from script 01 execution).
+    /// @notice Test that config can be read for all chains; Safe must be same (proxy admin in bytecode)
+    /// @dev Proxy bytecode uses a placeholder impl, so implementation addresses may differ per chain.
+    ///      This test verifies Safe is consistent and logs per-chain impl addresses from config.
     function test_ImplementationAddressesSameAcrossAllNetworks() public view {
         // List of chain IDs to test
         uint256[] memory chainIds = new uint256[](5);
@@ -308,53 +294,42 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             console2.log("  Bridge Implementation:", recordedBridgeImpl);
         }
 
-        // Verify all NAV implementation addresses are the same across all chains
-        // This is CRITICAL - if they differ, proxy addresses will also differ
+        // Implementation addresses may differ per chain; proxy bytecode uses a placeholder, so proxy addresses
+        // are the same across chains regardless. 02b uses chain-specific impl addresses for upgradeAndCall.
         for (uint256 i = 1; i < navImplAddresses.length; i++) {
-            if (navImplAddresses[0] == address(0) || navImplAddresses[i] == address(0)) {
+            if (
+                navImplAddresses[0] != address(0) && navImplAddresses[i] != address(0)
+                    && navImplAddresses[0] != navImplAddresses[i]
+            ) {
                 console2.log(
                     string(
                         abi.encodePacked(
-                            "[WARN] Implementation not deployed on chain ", vm.toString(chainIds[i == 0 ? 1 : i])
+                            "[INFO] NAV implementation differs on chain ",
+                            vm.toString(chainIds[i]),
+                            " (OK: proxy uses placeholder)"
                         )
                     )
                 );
-                continue;
             }
-            assertEq(
-                navImplAddresses[0],
-                navImplAddresses[i],
-                string(
-                    abi.encodePacked(
-                        "CRITICAL: NAV implementation address differs on chain ",
-                        vm.toString(chainIds[i]),
-                        ". This will cause proxy addresses to differ!",
-                        " Ensure script 01 was executed with same Safe address on all chains."
-                    )
-                )
-            );
         }
-
-        // Verify all Bridge implementation addresses are the same across all chains
         for (uint256 i = 1; i < bridgeImplAddresses.length; i++) {
-            if (bridgeImplAddresses[0] == address(0) || bridgeImplAddresses[i] == address(0)) {
-                continue;
-            }
-            assertEq(
-                bridgeImplAddresses[0],
-                bridgeImplAddresses[i],
-                string(
-                    abi.encodePacked(
-                        "CRITICAL: Bridge implementation address differs on chain ",
-                        vm.toString(chainIds[i]),
-                        ". This will cause proxy addresses to differ!",
-                        " Ensure script 01 was executed with same Safe address on all chains."
+            if (
+                bridgeImplAddresses[0] != address(0) && bridgeImplAddresses[i] != address(0)
+                    && bridgeImplAddresses[0] != bridgeImplAddresses[i]
+            ) {
+                console2.log(
+                    string(
+                        abi.encodePacked(
+                            "[INFO] Bridge implementation differs on chain ",
+                            vm.toString(chainIds[i]),
+                            " (OK: proxy uses placeholder)"
+                        )
                     )
-                )
-            );
+                );
+            }
         }
 
-        // Verify Safe addresses are the same (required for implementation determinism)
+        // Safe address must be the same on all chains (used in proxy bytecode as admin)
         for (uint256 i = 1; i < chainIds.length; i++) {
             ConfigReader.ChainConfig memory config0 = ConfigReader.readChainConfig(vm, chainIds[0]);
             ConfigReader.ChainConfig memory configI = ConfigReader.readChainConfig(vm, chainIds[i]);
@@ -363,22 +338,16 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
                 configI.safeMultisig,
                 string(
                     abi.encodePacked(
-                        "Safe address must be same on all chains for implementation determinism, but differs on chain ",
+                        "Safe address must be same on all chains (proxy admin), but differs on chain ",
                         vm.toString(chainIds[i])
                     )
                 )
             );
         }
 
-        if (navImplAddresses[0] != address(0) && bridgeImplAddresses[0] != address(0)) {
-            console2.log("\n[OK] All implementation addresses are identical across all networks!");
-            console2.log("  NAV Implementation (same on all chains):", navImplAddresses[0]);
-            console2.log("  Bridge Implementation (same on all chains):", bridgeImplAddresses[0]);
-            console2.log("\nThis ensures proxy addresses will also be the same across all chains");
-            console2.log("because proxy bytecode includes the implementation addresses.");
-        } else {
-            console2.log("\n[WARN] Some implementations not yet deployed. Run script 01 on all chains first.");
-        }
+        console2.log("\n[OK] Config read for all chains.");
+        console2.log("Proxy addresses are the same across chains (bytecode uses placeholder impl).");
+        console2.log("Implementation addresses may differ per chain; 02b uses them for upgradeAndCall.");
     }
 
     /// @notice Test that non-Safe Admin cannot re-initialize an already initialized proxy
@@ -389,11 +358,12 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
-        Empty placeholder = new Empty();
+        PlaceholderWithInit placeholder = new PlaceholderWithInit();
+        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
 
-        // Deploy proxy with placeholder implementation
-        bytes memory emptyData = "";
-        TransparentProxy proxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
+        // Deploy proxy with placeholder implementation (OZ proxy requires non-empty init data)
+        TransparentProxy proxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
 
         // Upgrade to real implementation and initialize
         ProxyAdmin proxyAdmin = ProxyAdmin(_getProxyAdmin(address(proxy)));
@@ -427,12 +397,14 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
         BridgeEscrow bridgeImpl = new BridgeEscrow();
-        Empty placeholder = new Empty();
+        PlaceholderWithInit placeholder = new PlaceholderWithInit();
+        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
 
-        // Deploy proxies with placeholder implementations
-        bytes memory emptyData = "";
-        TransparentProxy navProxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
-        TransparentProxy bridgeProxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
+        // Deploy proxies with placeholder implementations (OZ proxy requires non-empty init data)
+        TransparentProxy navProxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
+        TransparentProxy bridgeProxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
 
         // Get ProxyAdmin instances
         ProxyAdmin navProxyAdmin = ProxyAdmin(_getProxyAdmin(address(navProxy)));
@@ -488,14 +460,14 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
-        // Deploy implementations
-        NAVCalculator navImpl = new NAVCalculator();
+        // Deploy implementations (only newNavImpl needed for the failed upgrade attempt)
         NAVCalculator newNavImpl = new NAVCalculator();
-        Empty placeholder = new Empty();
+        PlaceholderWithInit placeholder = new PlaceholderWithInit();
+        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
 
-        // Deploy proxy with placeholder implementation
-        bytes memory emptyData = "";
-        TransparentProxy proxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
+        // Deploy proxy with placeholder implementation (OZ proxy requires non-empty init data)
+        TransparentProxy proxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
 
         // Get ProxyAdmin
         ProxyAdmin proxyAdmin = ProxyAdmin(_getProxyAdmin(address(proxy)));
@@ -519,12 +491,14 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Deploy implementations
         NAVCalculator navImpl = new NAVCalculator();
         BridgeEscrow bridgeImpl = new BridgeEscrow();
-        Empty placeholder = new Empty();
+        PlaceholderWithInit placeholder = new PlaceholderWithInit();
+        bytes memory placeholderInitData = abi.encodeWithSelector(PlaceholderWithInit.initialize.selector);
 
-        // Deploy proxies with placeholder implementations
-        bytes memory emptyData = "";
-        TransparentProxy navProxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
-        TransparentProxy bridgeProxy = new TransparentProxy(address(placeholder), chainConfig.safeMultisig, emptyData);
+        // Deploy proxies with placeholder implementations (OZ proxy requires non-empty init data)
+        TransparentProxy navProxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
+        TransparentProxy bridgeProxy =
+            new TransparentProxy(address(placeholder), chainConfig.safeMultisig, placeholderInitData);
 
         // Prepare initialization data
         bytes memory navInitData = abi.encodeCall(
@@ -616,6 +590,12 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         return address(
             uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), deployer, salt, keccak256(creationCode)))))
         );
+    }
+
+    /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, Empty)
+    function _getPlaceholderAddress() internal pure returns (address) {
+        bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", 1);
+        return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(Empty).creationCode);
     }
 
     /// @notice Checks if an address has code

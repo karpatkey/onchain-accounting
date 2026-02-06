@@ -5,16 +5,14 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
-import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployImplementations
-/// @notice Generates one Safe multicall to deploy NAVCalculator and BridgeEscrow implementations only (CREATE2).
-/// @dev Execute the generated JSON in Safe once; same impl addresses on all chains. Then run 02 per chain for proxies + init.
-///      Uses canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) via CALL.
+/// @notice Deploys NAVCalculator and BridgeEscrow implementations (CREATE2). Safe JSON and/or EOA broadcast.
+/// @dev Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt || init_code (Arachnid format).
+///      Run without --broadcast: generates safe-transactions/{chainId}-deploy-implementations.json and saves addresses.
+///      Run with --broadcast --private-key: deploys via EOA (skips if already deployed), then saves addresses.
 contract DeployImplementations is BaseDeployScript {
-    /// @notice Canonical CREATE2 deployer address (same on all chains)
-    /// @dev 0x4e59b44847b379578588920cA78FbF26c0B4956C
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
     function run() public override {
@@ -23,26 +21,18 @@ contract DeployImplementations is BaseDeployScript {
 
         bytes32 saltNavImpl = generateSalt("NAVCalculatorImplementation", 1);
         bytes memory navImplBytecode = type(NAVCalculator).creationCode;
-        // Compute address using canonical CREATE2 deployer (not Safe)
         address navImpl = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavImpl, navImplBytecode);
 
         bytes32 saltBridgeImpl = generateSalt("BridgeEscrowImplementation", 1);
         bytes memory bridgeImplBytecode = type(BridgeEscrow).creationCode;
-        // Compute address using canonical CREATE2 deployer (not Safe)
         address bridgeImpl = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeImpl, bridgeImplBytecode);
 
+        // Safe TX: same calldata as EOA (salt || bytecode)
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](2);
-        // Use CALL (not DELEGATECALL) to canonical CREATE2 deployer
-        transactions[0] = SafeTxBuilder.call(
-            CANONICAL_CREATE2_DEPLOYER,
-            0,
-            abi.encodeWithSelector(ICreate2Deployer.deploy.selector, 0, saltNavImpl, navImplBytecode)
-        );
-        transactions[1] = SafeTxBuilder.call(
-            CANONICAL_CREATE2_DEPLOYER,
-            0,
-            abi.encodeWithSelector(ICreate2Deployer.deploy.selector, 0, saltBridgeImpl, bridgeImplBytecode)
-        );
+        transactions[0] =
+            SafeTxBuilder.call(CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(saltNavImpl, navImplBytecode));
+        transactions[1] =
+            SafeTxBuilder.call(CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(saltBridgeImpl, bridgeImplBytecode));
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-deploy-implementations.json"));
         writeSafeTx(
@@ -52,19 +42,32 @@ contract DeployImplementations is BaseDeployScript {
             transactions
         );
 
+        // EOA path: deploy when --broadcast is used
+        vm.startBroadcast();
+        if (navImpl.code.length == 0) {
+            (bool navOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltNavImpl, navImplBytecode));
+            require(navOk, "NAV impl deploy failed");
+            console2.log("[OK] NAV implementation deployed at:", navImpl);
+        } else {
+            console2.log("[SKIP] NAV implementation already at:", navImpl);
+        }
+        if (bridgeImpl.code.length == 0) {
+            (bool bridgeOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeImpl, bridgeImplBytecode));
+            require(bridgeOk, "Bridge impl deploy failed");
+            console2.log("[OK] Bridge implementation deployed at:", bridgeImpl);
+        } else {
+            console2.log("[SKIP] Bridge implementation already at:", bridgeImpl);
+        }
+        vm.stopBroadcast();
+
         saveDeployedAddress("NAVCalculatorImplementation", navImpl);
         saveDeployedAddress("BridgeEscrowImplementation", bridgeImpl);
 
-        console2.log("\n=== Implementation Deployment (Safe) ===");
-        console2.log("Canonical CREATE2 Deployer:", CANONICAL_CREATE2_DEPLOYER);
-        console2.log("\nGenerated:", filename);
-        console2.log("  Tx 1: Deploy NAVCalculator implementation");
-        console2.log("  Tx 2: Deploy BridgeEscrow implementation");
-        console2.log("\nComputed implementation addresses (same on all chains):");
+        console2.log("\n=== Implementation Deployment ===");
+        console2.log("Chain ID:", currentChainId);
+        console2.log("Generated:", filename);
         console2.log("  NAV Implementation:", navImpl);
         console2.log("  Bridge Implementation:", bridgeImpl);
-        console2.log(
-            "\nExecute this Safe batch once, then run 02a_DeployProxies.s.sol (EOA) and 02b_InitializeProxies.s.sol (Safe) per chain."
-        );
+        console2.log("Addresses saved to config. Run 02a then 02b per chain.");
     }
 }

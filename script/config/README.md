@@ -548,10 +548,21 @@ After deployment, addresses are saved to `deployments/{chainId}-addresses.json`.
 
 ## Environment Variables
 
-Set these in your `.env` file (never commit to git!):
+Set these in your `.env` file (never commit to git!).
+
+### RPC via Alchemy (scripts)
+
+When chain config has `"rpc": "$ALCHEMY"`, **ConfigReader** (used by deploy scripts) builds the URL from an Alchemy API key:
+
+1. **ALCHEMY_API_KEY** — checked first.
+2. **ALCHEMY_APİ_KEY** — used if `ALCHEMY_API_KEY` is unset (alternate name).
+
+URL format: `https://{network}.g.alchemy.com/v2/{apiKey}` (network is derived from chain ID). So you can run scripts without passing `--rpc-url` if one of these is set. Same logic is used in **TestEnvConfigurator.getAlchemyUrl** for fork tests.
+
+### RPC URLs (optional overrides)
 
 ```bash
-# RPC URLs
+# RPC URLs (optional; use when not using $ALCHEMY in chain config)
 MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
 OPTIMISM_RPC_URL=https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY

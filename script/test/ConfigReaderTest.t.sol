@@ -206,4 +206,66 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(config.admin != address(1), "admin should be defined");
         assertTrue(config.manager != address(1), "manager should be defined");
     }
+
+    /// @notice Verify Safe, admin, and manager addresses are the same across all chain configs
+    function test_ConfigAddressesConsistentAcrossChains() public view {
+        uint256[] memory chainIds = _supportedChainIds();
+        require(chainIds.length > 0, "no chains");
+
+        ConfigReader.ChainConfig memory ref = ConfigReader.readChainConfig(vm, chainIds[0]);
+        for (uint256 i = 1; i < chainIds.length; i++) {
+            ConfigReader.ChainConfig memory c = ConfigReader.readChainConfig(vm, chainIds[i]);
+            assertEq(c.safeMultisig, ref.safeMultisig, "safeMultisig should match across chains");
+            assertEq(c.admin, ref.admin, "admin should match across chains");
+            assertEq(c.manager, ref.manager, "manager should match across chains");
+        }
+    }
+
+    /// @notice Verify NAV and Bridge proxy addresses are the same across all chains (CREATE2)
+    function test_DeployedProxyAddressesConsistentAcrossChains() public view {
+        uint256[] memory chainIds = _supportedChainIds();
+        require(chainIds.length > 0, "no chains");
+
+        address refNavProxy = ConfigReader.readDeployedAddress(vm, chainIds[0], "NAVCalculatorProxy");
+        address refBridgeProxy = ConfigReader.readDeployedAddress(vm, chainIds[0], "BridgeEscrowProxy");
+        assertTrue(refNavProxy != address(0), "NAV proxy should be set on first chain");
+        assertTrue(refBridgeProxy != address(0), "Bridge proxy should be set on first chain");
+
+        for (uint256 i = 1; i < chainIds.length; i++) {
+            address navProxy = ConfigReader.readDeployedAddress(vm, chainIds[i], "NAVCalculatorProxy");
+            address bridgeProxy = ConfigReader.readDeployedAddress(vm, chainIds[i], "BridgeEscrowProxy");
+            assertEq(navProxy, refNavProxy, "NAVCalculatorProxy should be same on all chains");
+            assertEq(bridgeProxy, refBridgeProxy, "BridgeEscrowProxy should be same on all chains");
+        }
+    }
+
+    /// @notice Verify all chains have the four core deployed addresses set (non-zero)
+    function test_DeployedAddressesSetOnAllChains() public view {
+        uint256[] memory chainIds = _supportedChainIds();
+        string[] memory names = new string[](4);
+        names[0] = "NAVCalculatorImplementation";
+        names[1] = "NAVCalculatorProxy";
+        names[2] = "BridgeEscrowImplementation";
+        names[3] = "BridgeEscrowProxy";
+
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            uint256 chainId = chainIds[i];
+            for (uint256 j = 0; j < names.length; j++) {
+                address a = ConfigReader.readDeployedAddress(vm, chainId, names[j]);
+                assertTrue(
+                    a != address(0), string(abi.encodePacked(names[j], " must be set for chain ", vm.toString(chainId)))
+                );
+            }
+        }
+    }
+
+    function _supportedChainIds() internal pure returns (uint256[] memory) {
+        uint256[] memory chainIds = new uint256[](5);
+        chainIds[0] = 1;
+        chainIds[1] = 10;
+        chainIds[2] = 100;
+        chainIds[3] = 42161;
+        chainIds[4] = 8453;
+        return chainIds;
+    }
 }

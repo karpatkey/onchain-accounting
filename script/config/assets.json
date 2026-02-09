@@ -1,114 +1,113 @@
 {
-  "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom oracle per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
+  "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom pricefeed per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
   "tokens": {
     "1": {
       "ETH": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "type": "Chainlink",
-        "oracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "pricefeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
       },
       "WETH": {
         "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         "type": "Chainlink",
-        "oracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "pricefeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
       },
       "wstETH": {
         "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
         "type": "Custom",
-        "oracle": "0xAc8ef2dc1Ee81f30A3249fcAb6789ed85Fd189Cd",
+        "pricefeed": "0xAc8ef2dc1Ee81f30A3249fcAb6789ed85Fd189Cd",
         "heartbeat": 3600
       },
       "eETH": {
         "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
         "type": "Chainlink",
-        "oracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-        "heartbeat": 3600,
-        "note": "1:1 with ETH, use ETH/USD"
+        "pricefeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "heartbeat": 3600
       },
       "weETH": {
         "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
         "type": "Custom",
-        "oracle": "0x5E7a6154AcE2eC453DE9527d7f81b13e7B5e5B59",
+        "pricefeed": "0x5E7a6154AcE2eC453DE9527d7f81b13e7B5e5B59",
         "heartbeat": 3600
       },
       "rETH": {
         "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
         "type": "Custom",
-        "oracle": "",
-        "note": "Custom oracle or deploy rETH/ETH + ETH/USD (e.g. Chainlink)"
+        "pricefeed": "0x7E6366A015e7C72d238E0E289e1652eaa06f962E",
+        "heartbeat": 3600
       },
       "ETH+": {
         "address": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
         "type": "Chainlink",
-        "oracle": "0x66Ab900341C98de949EC31d11b3C4180743844F1",
+        "pricefeed": "0x66Ab900341C98de949EC31d11b3C4180743844F1",
         "heartbeat": 3600
       },
       "ezETH": {
         "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
         "type": "Custom",
-        "oracle": "0x8AB8F6CAb2bdB7b602B7258dfD3cD028A9b921B0",
+        "pricefeed": "0x8AB8F6CAb2bdB7b602B7258dfD3cD028A9b921B0",
         "heartbeat": 3600
       },
       "rsETH": {
         "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
         "type": "Custom",
-        "oracle": "0x0f580E84d92e89150bE94fCAA4D03C6B855D2FD8",
+        "pricefeed": "0x0f580E84d92e89150bE94fCAA4D03C6B855D2FD8",
         "heartbeat": 3600
       },
       "MORPHO": {
         "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
         "type": "None",
-        "oracle": "",
+        "pricefeed": "",
         "note": "No oracle available"
       },
       "USDC": {
         "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         "type": "Chainlink",
-        "oracle": "0x37be050e75C7F0a80F0E8abBFC2c4Ff826728cAa",
+        "pricefeed": "0x37be050e75C7F0a80F0E8abBFC2c4Ff826728cAa",
         "heartbeat": 86400
       },
       "BAL": {
         "address": "0xba100000625a3754423978a60c9317c58a424e3D",
         "type": "Chainlink",
-        "oracle": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
+        "pricefeed": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
         "heartbeat": 3600
       },
       "AURA": {
         "address": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
         "type": "None",
-        "oracle": "",
+        "pricefeed": "",
         "note": "No oracle available"
       },
       "RPL": {
         "address": "0xD33526068D116cE69F19A9ee46F0bd304F21A51f",
         "type": "Chainlink",
-        "oracle": "0x4E155eD98aFE9034b7A5962f6C84c86d869daA9d",
+        "pricefeed": "0x4E155eD98aFE9034b7A5962f6C84c86d869daA9d",
         "heartbeat": 3600
       },
       "GEAR": {
         "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
         "type": "None",
-        "oracle": "",
+        "pricefeed": "",
         "note": "No oracle available"
       },
       "stETH": {
         "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
         "type": "Chainlink",
-        "oracle": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",
+        "pricefeed": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",
         "heartbeat": 3600
       },
       "CRV": {
         "address": "0xD533a949740bb3306d119CC777fa900bA034cd52",
         "type": "Chainlink",
-        "oracle": "0xCd627aA160A6fA45Eb793D19Ef54f5062F20f33f",
+        "pricefeed": "0xCd627aA160A6fA45Eb793D19Ef54f5062F20f33f",
         "heartbeat": 3600
       },
       "CVX": {
         "address": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
         "type": "Chainlink",
-        "oracle": "0xd962fC30A72A84cE50161031391756Bf2876Af5D",
+        "pricefeed": "0xd962fC30A72A84cE50161031391756Bf2876Af5D",
         "heartbeat": 3600
       }
     },
@@ -116,43 +115,43 @@
       "ETH": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "type": "Chainlink",
-        "oracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+        "pricefeed": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
         "heartbeat": 3600
       },
       "WETH": {
         "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
         "type": "Chainlink",
-        "oracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+        "pricefeed": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
         "heartbeat": 3600
       },
       "wstETH": {
         "address": "0x5979d7b546e38e414f7e9822514be443a4800529",
         "type": "Custom",
-        "oracle": "0x822FfE6998f14235e954989e063D12B2687976d6",
+        "pricefeed": "0x822FfE6998f14235e954989e063D12B2687976d6",
         "heartbeat": 3600
       },
       "weETH": {
         "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
         "type": "Custom",
-        "oracle": "0x2BfBA69E9Cd423BF2a9473a88B32d79a04000F4A",
+        "pricefeed": "0x2BfBA69E9Cd423BF2a9473a88B32d79a04000F4A",
         "heartbeat": 3600
       },
       "ezETH": {
         "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
         "type": "Custom",
-        "oracle": "0x7D18060Be6927A501fceBe1309a3DE24C5E6072B",
+        "pricefeed": "0x7D18060Be6927A501fceBe1309a3DE24C5E6072B",
         "heartbeat": 3600
       },
       "rsETH": {
         "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
         "type": "Custom",
-        "oracle": "",
-        "note": "Deploy custom rsETH/ETH + ETH/USD or use Chainlink rseth-eth + ETH/USD"
+        "pricefeed": "0x599dfB44624ce88F3e4A559Ad3ED5EB725DcE04D",
+        "heartbeat": 3600
       },
       "MORPHO": {
         "address": "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48",
         "type": "None",
-        "oracle": "",
+        "pricefeed": "",
         "note": "No oracle available"
       }
     },
@@ -160,25 +159,25 @@
       "xDAI": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "type": "Chainlink",
-        "oracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+        "pricefeed": "0x678df3415fc31947dA4324eC63212874be5a82f8",
         "heartbeat": 3600
       },
       "WXDAI": {
         "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
         "type": "Chainlink",
-        "oracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+        "pricefeed": "0x678df3415fc31947dA4324eC63212874be5a82f8",
         "heartbeat": 3600
       },
       "WETH": {
         "address": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
         "type": "Chainlink",
-        "oracle": "0xa767f745331D267c7751297D982b050c93985627",
+        "pricefeed": "0xa767f745331D267c7751297D982b050c93985627",
         "heartbeat": 3600
       },
       "wstETH": {
         "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
         "type": "Custom",
-        "oracle": "0xbe47eDCc920C0615De3041988476673127b17f81",
+        "pricefeed": "0xbe47eDCc920C0615De3041988476673127b17f81",
         "heartbeat": 3600
       }
     },
@@ -186,37 +185,37 @@
       "ETH": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "type": "Chainlink",
-        "oracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+        "pricefeed": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 3600
       },
       "WETH": {
         "address": "0x4200000000000000000000000000000000000006",
         "type": "Chainlink",
-        "oracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+        "pricefeed": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 3600
       },
       "wstETH": {
         "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
         "type": "Custom",
-        "oracle": "0x6545E2c9d9f9587bEb06Ed2b19f229a3580e583B",
+        "pricefeed": "0x6545E2c9d9f9587bEb06Ed2b19f229a3580e583B",
         "heartbeat": 3600
       },
       "weETH": {
         "address": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
         "type": "Custom",
-        "oracle": "0xC36B7f605c8A422772893aA6a86cC1e74D763F63",
+        "pricefeed": "0xC36B7f605c8A422772893aA6a86cC1e74D763F63",
         "heartbeat": 3600
       },
       "cbETH": {
         "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
         "type": "Custom",
-        "oracle": "",
-        "note": "Deploy custom cbETH/ETH + ETH/USD or use Chainlink cbeth-eth + ETH/USD"
+        "pricefeed": "0x70F4AF4CC12f1f2752635ef4470e22020677Ea93",
+        "heartbeat": 3600
       },
       "MORPHO": {
         "address": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
         "type": "Chainlink",
-        "oracle": "0xe95e258bb6615d47515Fc849f8542dA651f12bF6",
+        "pricefeed": "0xe95e258bb6615d47515Fc849f8542dA651f12bF6",
         "heartbeat": 3600
       }
     },
@@ -224,19 +223,19 @@
       "ETH": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "type": "Chainlink",
-        "oracle": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+        "pricefeed": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 3600
       },
       "WETH": {
         "address": "0x4200000000000000000000000000000000000006",
         "type": "Chainlink",
-        "oracle": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+        "pricefeed": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 3600
       },
       "wstETH": {
         "address": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
         "type": "Chainlink",
-        "oracle": "0x698B585CbC4407e2D54aa898B2600B53C68958f7",
+        "pricefeed": "0x698B585CbC4407e2D54aa898B2600B53C68958f7",
         "heartbeat": 3600
       }
     }

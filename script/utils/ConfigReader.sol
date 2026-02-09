@@ -154,8 +154,11 @@ library ConfigReader {
         return _readTokenField(vm, chainId, symbol, "address");
     }
 
-    /// @notice Reads token oracle address from assets config (tokens section). Empty if none.
+    /// @notice Reads token price feed address from assets config (tokens section). Empty if none.
+    /// @dev Prefers "pricefeed" key; falls back to "oracle" for backward compatibility.
     function readTokenOracle(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        string memory v = _readTokenField(vm, chainId, symbol, "pricefeed");
+        if (bytes(v).length > 0) return v;
         return _readTokenField(vm, chainId, symbol, "oracle");
     }
 

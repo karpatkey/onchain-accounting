@@ -17,6 +17,9 @@ import {ArrayLib} from "src/utils/ArrayLib.sol";
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 /// @dev For each asset, up to 3 positions may be returned: Supply/Collateral (positive balance), Borrow (negative balance), and Rewards (positive balance).
 /// @dev positionDetail is "Supply", "Collateral", "Borrow", or "Rewards" (Collateral when usageAsCollateralEnabled, else Supply for deposits).
+///
+/// @dev REWARDS / DOUBLE COUNTING: If different pools on the same chain use the same underlyingAsset, rewards could be double counted when aggregating.
+/// @dev Note: Aave currently does not really use the RewardsDistributor anymore; it uses Merkl or external points for incentives.
 contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries

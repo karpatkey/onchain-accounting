@@ -7,15 +7,15 @@
   "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "manager": "0xb007369cA6656639de93c444daE8789159d4CBFb"
+    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
   },
   "deployed": {
     "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0xA69B6A3D419809a005C304c2ecB4e7578fd3AE90",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
-    "BridgeEscrowProxy": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd"
+    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
   "balanceAdapters": {
     "AaveV3_USDC": {
@@ -58,8 +58,8 @@
     "CCIP": {
       "enabled": false,
       "initialize": {
-        "admin": "",
-        "bridgeEscrow": "",
+        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
         "router": "0x141fa059441E0ca23ce184B6A78bafD2A517DdE8",
         "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
         "version": "1.0.0"
@@ -69,8 +69,8 @@
     "Across": {
       "enabled": false,
       "initialize": {
-        "admin": "",
-        "bridgeEscrow": "",
+        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
         "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
@@ -80,21 +80,21 @@
     "Stargate": {
       "enabled": false,
       "initialize": {
-        "admin": "",
-        "bridgeEscrow": "",
+        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
         "router": "0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614",
-        "endpoint": "0x3c2269811836af69497E5F486A85D7316753cf62",
+        "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
       "deployed": ""
     },
     "CCTP": {
-      "enabled": false,
+      "enabled": true,
       "initialize": {
-        "admin": "",
-        "bridgeEscrow": "",
-        "tokenMessenger": "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
-        "messageTransmitter": "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
         "version": "1.0.0"
       },
       "deployed": ""

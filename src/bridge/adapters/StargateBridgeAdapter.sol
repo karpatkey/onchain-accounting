@@ -53,19 +53,6 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @notice Default destination gas for LayerZero calls
     uint256 public defaultDstGasForCall = 200000;
 
-    //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
     /// @inheritdoc IStargateBridgeAdapter
     function initialize(
         address admin_,
@@ -73,7 +60,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         address router_,
         address endpoint_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "Stargate", version_);
 

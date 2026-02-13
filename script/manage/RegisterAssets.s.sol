@@ -15,12 +15,18 @@ import {console2} from "forge-std/console2.sol";
 /// @dev
 ///   - Token list per chain is defined in this script (_symbolsForChain). Add new tokens to assets.json
 ///     and to the corresponding array here.
+///   - Only tokens with a usable oracle (type Chainlink or Custom, non-empty pricefeed) are considered.
 ///   - Tokens without an oracle are reported as "SKIP (no oracle)" with optional note from config.
-///   - Run with --rpc-url <url> so the script can call NAVCalculator.isAssetRegistered and only
-///     include unregistered assets in the Safe tx. Without RPC, all tokens with an oracle are included.
+///   - Safe tx batch is only generated when run with --rpc-url so the script can verify on-chain
+///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
+///     reports status but refuses to write the Safe tx file.
 ///   - Output: safe-transactions/{chainId}-register-assets.json
+///   - With --broadcast, tx(s) are sent from the default signer (--private-key). registerAsset checks MANAGER on-chain (msg.sender).
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;
+
+    /// @dev ERC-7528 native token sentinel; has no code but NAVCalculator handles it in init.
+    address private constant NATIVE_SENTINEL = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     function run() public override {
         setUp();
@@ -43,6 +49,7 @@ contract RegisterAssets is BaseDeployScript {
         uint256 alreadyRegistered;
         uint256 skipNoOracle;
         uint256 skipMissingAddress;
+        uint256 skipNoContract;
         uint256 toRegisterCount;
 
         // First pass: report each token and count how many need registration
@@ -84,12 +91,22 @@ contract RegisterAssets is BaseDeployScript {
             (bool ok, bytes memory data) =
                 navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
             if (!ok || data.length == 0) {
+                if (_hasNoCode(asset)) {
+                    console2.log("  SKIP (no contract at address):", symbol);
+                    skipNoContract++;
+                    continue;
+                }
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
                 console2.log("  ALREADY REGISTERED:", symbol);
                 alreadyRegistered++;
             } else {
+                if (_hasNoCode(asset)) {
+                    console2.log("  SKIP (no contract at address):", symbol);
+                    skipNoContract++;
+                    continue;
+                }
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             }
@@ -101,6 +118,7 @@ contract RegisterAssets is BaseDeployScript {
         console2.log("  Already registered:", alreadyRegistered);
         console2.log("  Skipped (no oracle):", skipNoOracle);
         console2.log("  Skipped (missing/invalid address):", skipMissingAddress);
+        console2.log("  Skipped (no contract at address):", skipNoContract);
         console2.log("  To register:", toRegisterCount);
 
         if (toRegisterCount == 0) {
@@ -115,6 +133,15 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
+        // Require RPC so we only include assets that are confirmed not already registered on-chain
+        if (navProxy.code.length == 0) {
+            console2.log("");
+            console2.log(
+                "Run with --rpc-url so the script can verify which assets are not yet registered. Refusing to generate Safe tx without this check."
+            );
+            return;
+        }
+
         // Second pass: build Safe tx batch for each token that needs registration
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](toRegisterCount);
         uint256 j = 0;
@@ -125,17 +152,21 @@ contract RegisterAssets is BaseDeployScript {
             address asset = vm.parseAddress(addrStr);
             if (asset == address(0)) continue;
             if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) continue;
-            if (navProxy.code.length > 0) {
-                (bool ok, bytes memory data) =
-                    navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
-                if (ok && data.length > 0 && abi.decode(data, (bool))) continue;
-            }
+            (bool ok, bytes memory data) =
+                navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
+            if (ok && data.length > 0 && abi.decode(data, (bool))) continue;
+            if (_hasNoCode(asset)) continue;
 
-            address oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, currentChainId, symbol));
             string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
+            if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) continue;
+            string memory oracleStr = ConfigReader.readTokenOracle(vm, currentChainId, symbol);
+            if (bytes(oracleStr).length == 0) continue;
+            address oracle = vm.parseAddress(oracleStr);
+            if (oracle == address(0)) continue;
+
+            uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
             IPrices.PriceType priceType =
                 _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
-            uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
 
             transactions[j] = SafeTxBuilder.call(
                 navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat))
@@ -143,19 +174,108 @@ contract RegisterAssets is BaseDeployScript {
             j++;
         }
 
+        if (j == 0) {
+            console2.log("");
+            console2.log("No assets to register after re-check (already registered or invalid). Nothing written.");
+            return;
+        }
+
+        // Copy to exact-sized array (in case any defensive skips happened in second pass)
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](j);
+        for (uint256 k = 0; k < j; k++) {
+            batch[k] = transactions[k];
+        }
+
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-register-assets.json"));
         writeSafeTx(
             filename,
             "Register assets in NAVCalculator",
-            string(abi.encodePacked("Register ", vm.toString(toRegisterCount), " assets from assets.json")),
-            transactions
+            string(abi.encodePacked("Register ", vm.toString(j), " assets from assets.json")),
+            batch
         );
+
+        // Additionally, build MultiSend-compatible calldata that a MANAGER can execute directly
+        // via a MultiSend contract (e.g. Gnosis Safe MultiSend) to register all assets in one
+        // multicall-style transaction.
+        bytes memory multiSendData = _buildMultiSendCallData(batch);
+        console2.log("");
+        console2.log("MultiSend calldata to register all assets (for a MANAGER caller):");
+        console2.log(vm.toString(multiSendData));
+
+        // If the broadcast sender (PRIVATE_KEY) is the configured manager, broadcast registerAsset tx(s) directly.
+        _broadcastManagerMultiSend(batch);
+
         console2.log("");
         console2.log(string(abi.encodePacked("Safe transaction written to safe-transactions/", filename)));
     }
 
+    /// @notice Broadcast one tx per asset from the default signer (msg.sender when txs run). registerAsset reverts if not MANAGER.
+    function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {
+        vm.startBroadcast();
+        for (uint256 i = 0; i < batch.length; i++) {
+            (bool success, bytes memory data) = batch[i].to.call(batch[i].data);
+            if (!success) {
+                string memory msg_ = _revertMsg(data);
+                require(false, string(abi.encodePacked("registerAsset failed at index ", vm.toString(i), ": ", msg_)));
+            }
+        }
+        vm.stopBroadcast();
+        console2.log("[OK] Broadcast", batch.length, "tx(s); all assets registered.");
+    }
+
+    /// @dev Decode Error(string) from revert data (selector 0x08c379a0 + offset + length + data).
+    function _revertMsg(bytes memory data) internal pure returns (string memory) {
+        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
+            uint256 len;
+            assembly {
+                len := mload(add(add(data, 32), 36))
+            }
+            if (data.length >= 68 + 32 + len) {
+                bytes memory msgBytes = new bytes(len);
+                for (uint256 i = 0; i < len; i++) {
+                    msgBytes[i] = data[i + 68 + 32];
+                }
+                return string(msgBytes);
+            }
+        }
+        if (data.length > 0) return string(abi.encodePacked("0x", _toHex(data.length > 64 ? 64 : data.length, data)));
+        return "unknown";
+    }
+
+    function _toHex(uint256 len, bytes memory data) private pure returns (string memory) {
+        bytes memory hexChars = "0123456789abcdef";
+        bytes memory out = new bytes(len * 2);
+        for (uint256 i = 0; i < len; i++) {
+            out[i * 2] = hexChars[uint8(data[i]) >> 4];
+            out[i * 2 + 1] = hexChars[uint8(data[i]) & 0x0f];
+        }
+        return string(out);
+    }
+
+    /// @dev True if asset has no code (not a contract). Native sentinel is allowed (handled in NAVCalculator init).
+    function _hasNoCode(address asset) private view returns (bool) {
+        if (asset == NATIVE_SENTINEL) return false;
+        return asset.code.length == 0;
+    }
+
     function _equals(string memory a, string memory b) private pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
+
+    /// @notice Encodes an array of Safe transactions into MultiSend format
+    /// @dev Format per tx: operation (1 byte) | to (20 bytes) | value (32 bytes) | dataLength (32 bytes) | data (N bytes)
+    function _encodeMultiSend(SafeTxBuilder.Transaction[] memory txs) private pure returns (bytes memory encoded) {
+        for (uint256 i = 0; i < txs.length; i++) {
+            encoded = abi.encodePacked(
+                encoded, bytes1(txs[i].operation), txs[i].to, txs[i].value, uint256(txs[i].data.length), txs[i].data
+            );
+        }
+    }
+
+    /// @notice Builds calldata for a MultiSend-style multicall to execute all registerAsset calls
+    /// @dev Caller (sender) must have MANAGER role on NAVCalculator for these calls to succeed.
+    function _buildMultiSendCallData(SafeTxBuilder.Transaction[] memory txs) private pure returns (bytes memory) {
+        return abi.encodeWithSignature("multiSend(bytes)", _encodeMultiSend(txs));
     }
 
     /// @notice Token symbols to process per chain. Must match keys in assets.json tokens.{chainId}.
@@ -195,9 +315,12 @@ contract RegisterAssets is BaseDeployScript {
             return s;
         }
         if (chainId == 100) {
-            string[] memory s = new string[](2);
-            s[0] = "WETH";
-            s[1] = "wstETH";
+            // Include all tokens defined for chain 100 in assets.json
+            string[] memory s = new string[](4);
+            s[0] = "xDAI";
+            s[1] = "WXDAI";
+            s[2] = "WETH";
+            s[3] = "wstETH";
             return s;
         }
         if (chainId == 8453) {
@@ -211,9 +334,11 @@ contract RegisterAssets is BaseDeployScript {
             return s;
         }
         if (chainId == 10) {
-            string[] memory s = new string[](2);
+            // Include all tokens defined for chain 10 in assets.json
+            string[] memory s = new string[](3);
             s[0] = "ETH";
-            s[1] = "wstETH";
+            s[1] = "WETH";
+            s[2] = "wstETH";
             return s;
         }
         return new string[](0);

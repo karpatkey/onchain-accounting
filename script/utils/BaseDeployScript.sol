@@ -18,13 +18,18 @@ abstract contract BaseDeployScript is Script {
     /// @notice Current chain ID
     uint256 internal currentChainId;
 
-    /// @notice Whether to broadcast transactions
+    /// @notice Whether this run should persist on-chain/config side effects (e.g. real broadcast + config writes)
     bool internal shouldBroadcast;
 
     /// @notice Setup function called before deployment
     function setUp() public virtual {
         currentChainId = block.chainid;
         chainConfig = ConfigReader.readChainConfig(vm, currentChainId);
+
+        // Treat this run as a \"real\" broadcast/persist run only when explicitly opted-in via env.
+        // This lets you dry-run scripts without mutating config files.
+        // Example: PERSIST_DEPLOYMENTS=1 forge script ... --broadcast ...
+        shouldBroadcast = vm.envOr("PERSIST_DEPLOYMENTS", false);
 
         console2.log("=== Deployment Configuration ===");
         console2.log("Chain ID:", currentChainId);
@@ -60,10 +65,22 @@ abstract contract BaseDeployScript is Script {
         return ConfigReader.readDeployedAddress(vm, currentChainId, contractName);
     }
 
-    /// @notice Saves a deployed contract address to deployment files
+    /// @notice Saves a deployed contract address to deployment files (only when persistence is enabled)
     /// @param contractName The name of the contract
     /// @param contractAddress The deployed address
     function saveDeployedAddress(string memory contractName, address contractAddress) internal {
+        if (!shouldBroadcast) {
+            console2.log(
+                string(
+                    abi.encodePacked(
+                        contractName, " deployed at (NOT persisted to config; set PERSIST_DEPLOYMENTS=1 to write):"
+                    )
+                ),
+                contractAddress
+            );
+            return;
+        }
+
         ConfigReader.writeDeployedAddress(vm, currentChainId, contractName, contractAddress);
         console2.log(string(abi.encodePacked(contractName, " deployed at:")), contractAddress);
     }

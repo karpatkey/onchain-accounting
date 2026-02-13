@@ -2,177 +2,229 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {ConfigReader} from "../utils/ConfigReader.sol";
+import {CcipBridgeAdapter} from "../../src/bridge/adapters/CcipBridgeAdapter.sol";
+import {AcrossBridgeAdapter} from "../../src/bridge/adapters/AcrossBridgeAdapter.sol";
+import {StargateBridgeAdapter} from "../../src/bridge/adapters/StargateBridgeAdapter.sol";
+import {CctpBridgeAdapter} from "../../src/bridge/adapters/CctpBridgeAdapter.sol";
+import {SuperchainBridgeAdapter} from "../../src/bridge/adapters/SuperchainBridgeAdapter.sol";
 import {console2} from "forge-std/console2.sol";
 
-// Import bridge adapters - add these imports as you create the adapters
-// import {CCIPBridgeAdapter} from "../../src/bridge/adapters/CCIPBridgeAdapter.sol";
-// import {AcrossBridgeAdapter} from "../../src/bridge/adapters/AcrossBridgeAdapter.sol";
-
 /// @title DeployBridgeAdapters
-/// @notice Deploys bridge adapters for BridgeEscrow
-/// @dev Bridge adapters are NOT upgradeable - they can be authorized/revoked via BridgeEscrow admin functions
+/// @notice Deploys bridge adapters for BridgeEscrow from chain config
+/// @dev Bridge adapters use initialize(admin, bridgeEscrow, ...). Addresses saved to bridgeAdapters.<Name>.deployed.
 contract DeployBridgeAdapters is BaseDeployScript {
+    /// @notice L2 Standard Bridge (OP Stack: Optimism, Base) - same address on all Superchain L2s
+    address internal constant L2_STANDARD_BRIDGE = 0x4200000000000000000000000000000000000010;
+    /// @notice L2 Cross Domain Messenger (OP Stack)
+    address internal constant L2_CROSS_DOMAIN_MESSENGER = 0x4200000000000000000000000000000000000007;
+
     function run() public override {
         setUp();
 
+        address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
+        if (bridgeProxy == address(0)) {
+            bridgeProxy = readDeployedAddress("BridgeEscrowProxyWithInit");
+        }
+        require(bridgeProxy != address(0), "BridgeEscrow proxy not in config. Deploy 02a or 02c first.");
+        require(chainConfig.admin != address(0), "Admin not configured.");
+
         console2.log("\n=== Deploying Bridge Adapters ===");
         console2.log("Chain:", chainConfig.name);
+        console2.log("BridgeEscrow:", bridgeProxy);
+        console2.log("Admin:", chainConfig.admin);
         console2.log("");
 
-        console2.log("=== Bridge Adapter Deployment Instructions ===");
-        console2.log("Bridge adapters need chain-specific router/pool addresses.");
-        console2.log("Available adapter types in src/bridge/adapters/:");
-        console2.log("- CCIP (Chainlink Cross-Chain Interoperability Protocol)");
-        console2.log("- Across Protocol");
-        console2.log("- Stargate");
-        console2.log("- Native L2 bridges (Optimism, Arbitrum, Base)");
-        console2.log("");
-        console2.log("After deployment:");
-        console2.log("1. Save adapter addresses using saveDeployedAddress()");
-        console2.log("2. Generate Safe transaction to authorize adapters");
-        console2.log("3. Execute via Safe UI");
-        console2.log("===============================================\n");
-
-        // Deploy adapters based on chain
         if (currentChainId == 1) {
-            // Mainnet
-            _deployMainnetBridgeAdapters();
+            _deployMainnetBridgeAdapters(bridgeProxy);
         } else if (currentChainId == 42161) {
-            // Arbitrum
-            _deployArbitrumBridgeAdapters();
+            _deployArbitrumBridgeAdapters(bridgeProxy);
         } else if (currentChainId == 10) {
-            // Optimism
-            _deployOptimismBridgeAdapters();
+            _deployOptimismBridgeAdapters(bridgeProxy);
         } else if (currentChainId == 8453) {
-            // Base
-            _deployBaseBridgeAdapters();
+            _deployBaseBridgeAdapters(bridgeProxy);
         } else if (currentChainId == 100) {
-            // Gnosis
-            _deployGnosisBridgeAdapters();
+            _deployGnosisBridgeAdapters(bridgeProxy);
         } else {
             console2.log("No bridge adapters configured for chain:", currentChainId);
         }
 
         console2.log("\n=== Next Steps ===");
-        console2.log("1. Verify deployed adapters on Etherscan");
-        console2.log("2. Generate Safe transaction to authorize adapters:");
-        console2.log("   forge script script/manage/ManageAdapters.s.sol --sig 'authorizeBridgeAdapter(address)'");
+        console2.log("1. Set bridgeAdapters.<Name>.enabled to true in chain config if needed");
+        console2.log("2. Run 06_Configure.s.sol to generate Safe tx to authorize adapters");
         console2.log("3. Execute via Safe UI");
         console2.log("====================");
     }
 
-    // Mainnet bridge adapter deployments
-    function _deployMainnetBridgeAdapters() internal {
+    function _deployMainnetBridgeAdapters(address) internal {
         console2.log("Deploying Mainnet bridge adapters...\n");
-
         vm.startBroadcast();
-
-        // Example: CCIP Adapter
-        // address ccipRouter = 0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D; // Mainnet CCIP Router
-        // CCIPBridgeAdapter ccipAdapter = new CCIPBridgeAdapter(ccipRouter);
-        // saveDeployedAddress("CCIPBridgeAdapter", address(ccipAdapter));
-        // console2.log("CCIP Bridge Adapter:", address(ccipAdapter));
-
-        // Example: Across Adapter
-        // address spokePool = 0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5; // Mainnet Across SpokePool
-        // AcrossBridgeAdapter acrossAdapter = new AcrossBridgeAdapter(spokePool);
-        // saveDeployedAddress("AcrossBridgeAdapter", address(acrossAdapter));
-        // console2.log("Across Bridge Adapter:", address(acrossAdapter));
-
+        // Add Mainnet-specific adapters when config is present
         vm.stopBroadcast();
-
-        console2.log("Mainnet bridge adapters deployment ready (uncomment adapters to deploy)");
+        console2.log("Mainnet: no bridge adapters with config to deploy.");
     }
 
-    // Arbitrum bridge adapter deployments
-    function _deployArbitrumBridgeAdapters() internal {
+    function _deployArbitrumBridgeAdapters(address bridgeProxy) internal {
         console2.log("Deploying Arbitrum bridge adapters...\n");
-
         vm.startBroadcast();
 
-        // Example: CCIP Adapter
-        // address ccipRouter = 0x141fa059441E0ca23ce184B6A78bafD2A517DdE8; // Arbitrum CCIP Router
-        // CCIPBridgeAdapter ccipAdapter = new CCIPBridgeAdapter(ccipRouter);
-        // saveDeployedAddress("CCIPBridgeAdapter", address(ccipAdapter));
-
-        // Example: Across Adapter
-        // address spokePool = 0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A; // Arbitrum Across SpokePool
-        // AcrossBridgeAdapter acrossAdapter = new AcrossBridgeAdapter(spokePool);
-        // saveDeployedAddress("AcrossBridgeAdapter", address(acrossAdapter));
-
-        // Example: Arbitrum Native Bridge Adapter
-        // address arbBridge = 0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a; // Arbitrum Bridge
-        // ArbitrumBridgeAdapter arbAdapter = new ArbitrumBridgeAdapter(arbBridge);
-        // saveDeployedAddress("ArbitrumBridgeAdapter", address(arbAdapter));
+        _deployCcipIfConfigured(bridgeProxy);
+        _deployAcrossIfConfigured(bridgeProxy);
+        _deployStargateIfConfigured(bridgeProxy);
+        _deployCctpIfConfigured(bridgeProxy);
 
         vm.stopBroadcast();
-
-        console2.log("Arbitrum bridge adapters deployment ready (uncomment adapters to deploy)");
     }
 
-    // Optimism bridge adapter deployments
-    function _deployOptimismBridgeAdapters() internal {
-        console2.log("Deploying Optimism bridge adapters...\n");
-
+    function _deployBaseBridgeAdapters(address bridgeProxy) internal {
+        console2.log("Deploying Base bridge adapters (Superchain + CCTP, Across, Stargate)...\n");
         vm.startBroadcast();
-
-        // Example: CCIP Adapter
-        // address ccipRouter = 0x3206695CaE29952f4b0c22a169725a865bc8Ce0f; // Optimism CCIP Router
-        // CCIPBridgeAdapter ccipAdapter = new CCIPBridgeAdapter(ccipRouter);
-        // saveDeployedAddress("CCIPBridgeAdapter", address(ccipAdapter));
-
-        // Example: Across Adapter
-        // address spokePool = 0x6f26Bf09B1C792e3228e5467807a900A503c0281; // Optimism Across SpokePool
-        // AcrossBridgeAdapter acrossAdapter = new AcrossBridgeAdapter(spokePool);
-        // saveDeployedAddress("AcrossBridgeAdapter", address(acrossAdapter));
-
-        // Example: Optimism Native Bridge Adapter
-        // address opBridge = 0x4200000000000000000000000000000000000010; // Optimism L2StandardBridge
-        // OptimismBridgeAdapter opAdapter = new OptimismBridgeAdapter(opBridge);
-        // saveDeployedAddress("OptimismBridgeAdapter", address(opAdapter));
-
+        _deploySuperchainL2IfNeeded(bridgeProxy);
+        _deployCcipIfConfigured(bridgeProxy);
+        _deployAcrossIfConfigured(bridgeProxy);
+        _deployStargateIfConfigured(bridgeProxy);
+        _deployCctpIfConfigured(bridgeProxy);
         vm.stopBroadcast();
-
-        console2.log("Optimism bridge adapters deployment ready (uncomment adapters to deploy)");
     }
 
-    // Base bridge adapter deployments
-    function _deployBaseBridgeAdapters() internal {
-        console2.log("Deploying Base bridge adapters...\n");
-
+    function _deployOptimismBridgeAdapters(address bridgeProxy) internal {
+        console2.log("Deploying Optimism bridge adapters (Superchain L2 + CCTP)...\n");
         vm.startBroadcast();
-
-        // Example: CCIP Adapter
-        // address ccipRouter = 0x881e3A65B4d4a04dD529061dd0071cf975F58bCD; // Base CCIP Router
-        // CCIPBridgeAdapter ccipAdapter = new CCIPBridgeAdapter(ccipRouter);
-        // saveDeployedAddress("CCIPBridgeAdapter", address(ccipAdapter));
-
-        // Example: Across Adapter
-        // address spokePool = 0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64; // Base Across SpokePool
-        // AcrossBridgeAdapter acrossAdapter = new AcrossBridgeAdapter(spokePool);
-        // saveDeployedAddress("AcrossBridgeAdapter", address(acrossAdapter));
-
-        // Example: Base Native Bridge Adapter (same as OP Stack)
-        // address baseBridge = 0x4200000000000000000000000000000000000010; // Base L2StandardBridge
-        // BaseBridgeAdapter baseAdapter = new BaseBridgeAdapter(baseBridge);
-        // saveDeployedAddress("BaseBridgeAdapter", address(baseAdapter));
-
+        _deploySuperchainL2IfNeeded(bridgeProxy);
+        _deployCctpIfConfigured(bridgeProxy);
         vm.stopBroadcast();
-
-        console2.log("Base bridge adapters deployment ready (uncomment adapters to deploy)");
     }
 
-    // Gnosis bridge adapter deployments
-    function _deployGnosisBridgeAdapters() internal {
+    function _deployGnosisBridgeAdapters(address) internal {
         console2.log("Deploying Gnosis bridge adapters...\n");
-
         vm.startBroadcast();
-
-        // Example: Gnosis-specific bridge adapters
-        // Add adapters for Gnosis Chain bridges
-
         vm.stopBroadcast();
+        console2.log("Gnosis: no bridge adapters configured.");
+    }
 
-        console2.log("Gnosis bridge adapters deployment ready (uncomment adapters to deploy)");
+    function _deploySuperchainL2IfNeeded(address bridgeProxy) internal {
+        if (_isAdapterDeployedOnChain("bridgeAdapters", "Superchain")) {
+            console2.log("Superchain adapter already deployed");
+            return;
+        }
+        SuperchainBridgeAdapter adapter = new SuperchainBridgeAdapter();
+        adapter.initialize(
+            chainConfig.admin,
+            bridgeProxy,
+            address(0), // l1Bridge
+            L2_STANDARD_BRIDGE,
+            address(0), // l1Messenger
+            L2_CROSS_DOMAIN_MESSENGER,
+            address(0), // optimismPortal
+            "1.0.0"
+        );
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Superchain", address(adapter));
+        console2.log("SuperchainBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _deployCcipIfConfigured(address bridgeProxy) internal {
+        string memory routerStr = ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "router");
+        if (bytes(routerStr).length == 0) return;
+        if (_isAdapterDeployedOnChain("bridgeAdapters", "CCIP")) {
+            console2.log("CCIP already deployed");
+            return;
+        }
+        address router = vm.parseAddress(routerStr);
+        string memory feeTokenStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
+        address feeToken = bytes(feeTokenStr).length > 0 ? vm.parseAddress(feeTokenStr) : address(0);
+        string memory version = _adapterVersion("CCIP");
+
+        CcipBridgeAdapter adapter = new CcipBridgeAdapter();
+        adapter.initialize(chainConfig.admin, bridgeProxy, router, feeToken, version);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "CCIP", address(adapter));
+        console2.log("CcipBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _deployAcrossIfConfigured(address bridgeProxy) internal {
+        string memory spokePoolStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Across", "spokePool");
+        if (bytes(spokePoolStr).length == 0) return;
+        if (_isAdapterDeployedOnChain("bridgeAdapters", "Across")) {
+            console2.log("Across already deployed");
+            return;
+        }
+        address spokePool = vm.parseAddress(spokePoolStr);
+        string memory feePctStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Across", "defaultRelayerFeePct");
+        int64 feePct = bytes(feePctStr).length == 0 ? int64(0) : int64(int256(vm.parseInt(feePctStr)));
+        string memory version = _adapterVersion("Across");
+
+        AcrossBridgeAdapter adapter = new AcrossBridgeAdapter();
+        adapter.initialize(chainConfig.admin, bridgeProxy, spokePool, feePct, version);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Across", address(adapter));
+        console2.log("AcrossBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _deployStargateIfConfigured(address bridgeProxy) internal {
+        string memory routerStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Stargate", "router");
+        if (bytes(routerStr).length == 0) return;
+        if (_isAdapterDeployedOnChain("bridgeAdapters", "Stargate")) {
+            console2.log("Stargate already deployed");
+            return;
+        }
+        address router = vm.parseAddress(routerStr);
+        string memory endpointStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Stargate", "endpoint");
+        address endpoint = vm.parseAddress(endpointStr);
+        string memory version = _adapterVersion("Stargate");
+
+        StargateBridgeAdapter adapter = new StargateBridgeAdapter();
+        adapter.initialize(chainConfig.admin, bridgeProxy, router, endpoint, version);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Stargate", address(adapter));
+        console2.log("StargateBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _deployCctpIfConfigured(address bridgeProxy) internal {
+        string memory tokenMessengerStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCTP", "tokenMessenger");
+        if (bytes(tokenMessengerStr).length == 0) return;
+        if (_isAdapterDeployedOnChain("bridgeAdapters", "CCTP")) {
+            console2.log("CCTP already deployed");
+            return;
+        }
+        address tokenMessenger = vm.parseAddress(tokenMessengerStr);
+        string memory messageTransmitterStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCTP", "messageTransmitter");
+        address messageTransmitter = vm.parseAddress(messageTransmitterStr);
+        string memory version = _adapterVersion("CCTP");
+
+        CctpBridgeAdapter adapter = new CctpBridgeAdapter();
+        adapter.initialize(chainConfig.admin, bridgeProxy, tokenMessenger, messageTransmitter, version);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "CCTP", address(adapter));
+        console2.log("CctpBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _adapterVersion(string memory name) internal view returns (string memory) {
+        string memory v = ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", name, "version");
+        return bytes(v).length > 0 ? v : "1.0.0";
+    }
+
+    function _readAdapterDeployed(string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (address)
+    {
+        string memory a = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
+        if (bytes(a).length == 0) return address(0);
+        return vm.parseAddress(a);
+    }
+
+    /// @notice Returns true only if the config has a deployed address and that address has bytecode on the current chain.
+    /// @dev Used to avoid skipping deployment when config has a stale or wrong address with no contract on chain.
+    function _isAdapterDeployedOnChain(string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        address a = _readAdapterDeployed(adapterType, adapterName);
+        if (a == address(0)) return false;
+        return a.code.length > 0;
     }
 }

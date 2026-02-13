@@ -252,6 +252,7 @@ library SafeTxBuilder {
         hexString[1] = "x";
         uint160 addrValue = uint160(addr);
         for (uint256 i = 0; i < 20; i++) {
+            // forge-lint: disable-next-line(unsafe-typecast)
             uint8 byteValue = uint8(uint160(addrValue) >> (8 * (19 - i)));
             hexString[2 + i * 2] = _getHexChar(byteValue >> 4);
             hexString[3 + i * 2] = _getHexChar(byteValue & 0x0f);

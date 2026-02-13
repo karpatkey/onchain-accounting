@@ -44,19 +44,6 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @notice Mapping from domain ID to chain ID
     mapping(uint32 => uint64) public domainToChainId;
 
-    //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
     /// @inheritdoc ICctpBridgeAdapter
     function initialize(
         address admin_,
@@ -64,7 +51,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         address tokenMessenger_,
         address messageTransmitter_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "CCTP", version_);
 

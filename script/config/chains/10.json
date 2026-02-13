@@ -7,16 +7,28 @@
   "chainlinkSequencerFeed": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "manager": "0xb007369cA6656639de93c444daE8789159d4CBFb"
+    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
   },
   "deployed": {
     "NAVCalculatorImplementation": "0xf141150092f88f3c3516D825E2FD3CeF57283442",
-    "NAVCalculatorProxy": "0xA69B6A3D419809a005C304c2ecB4e7578fd3AE90",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
     "BridgeEscrowImplementation": "0xB9330561EA35a7643A95b68D8A70fA6D6c004773",
-    "BridgeEscrowProxy": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd"
+    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
   "balanceAdapters": {},
-  "bridgeAdapters": {}
+  "bridgeAdapters": {
+    "CCTP": {
+      "enabled": true,
+      "initialize": {
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+        "version": "1.0.0"
+      },
+      "deployed": ""
+    }
+  }
 }

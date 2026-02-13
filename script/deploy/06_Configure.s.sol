@@ -143,11 +143,12 @@ contract Configure is BaseDeployScript {
 
     function _countDeployedBridgeAdapters() internal view returns (uint256 count) {
         // Count enabled bridge adapters that have been deployed
-        string[] memory adapterNames = new string[](4);
+        string[] memory adapterNames = new string[](5);
         adapterNames[0] = "CCIP";
         adapterNames[1] = "Across";
         adapterNames[2] = "Stargate";
         adapterNames[3] = "CCTP";
+        adapterNames[4] = "Superchain";
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", adapterNames[i])) {
@@ -210,11 +211,12 @@ contract Configure is BaseDeployScript {
         }
 
         uint256 txIndex = startIndex;
-        string[] memory adapterNames = new string[](4);
+        string[] memory adapterNames = new string[](5);
         adapterNames[0] = "CCIP";
         adapterNames[1] = "Across";
         adapterNames[2] = "Stargate";
         adapterNames[3] = "CCTP";
+        adapterNames[4] = "Superchain";
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", adapterNames[i])) {

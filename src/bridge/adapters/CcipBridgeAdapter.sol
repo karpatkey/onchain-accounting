@@ -54,19 +54,6 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
 
-    //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
     /// @inheritdoc ICcipBridgeAdapter
     function initialize(
         address admin_,
@@ -74,7 +61,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         address router_,
         address feeToken_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "CCIP", version_);
 

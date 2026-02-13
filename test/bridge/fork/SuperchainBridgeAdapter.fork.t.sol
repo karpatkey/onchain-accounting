@@ -38,6 +38,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         initialSafes[0] = account;
         address[] memory initialAdapters = new address[](0);
 
+        // Use explicit MAINNET_CHAIN_ID for clarity when forking
         address payable l1EscrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l1EscrowImpl,
                 abi.encodeCall(BridgeEscrow.initialize, (admin, MAINNET_CHAIN_ID, initialSafes, initialAdapters))
@@ -94,6 +95,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         initialSafes[0] = account;
         address[] memory initialAdapters = new address[](0);
 
+        // Use explicit OPTIMISM_CHAIN_ID: fork state may leave block.chainid as 1
         address payable l2EscrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l2EscrowImpl,
                 abi.encodeCall(BridgeEscrow.initialize, (admin, OPTIMISM_CHAIN_ID, initialSafes, initialAdapters))

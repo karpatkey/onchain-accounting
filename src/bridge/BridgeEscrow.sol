@@ -920,6 +920,6 @@ contract BridgeEscrow is
 
     /// @dev Storage gap for future upgrades (allows adding new state variables without affecting storage layout)
     /// @dev 50 slots reserved for future use
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }
 

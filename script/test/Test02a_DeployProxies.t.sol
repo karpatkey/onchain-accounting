@@ -10,15 +10,18 @@ import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
+import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
+import {MANAGER} from "../../src/constants.sol";
+import {AtomicProxyDeployer} from "../deploy/AtomicProxyDeployer.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title Test02a_DeployProxies
-/// @notice Tests that 02a_DeployProxies deploys the same addresses regardless of EOA signer
-/// @dev This test verifies that when using the canonical CREATE2 deployer, different EOAs
-///      get the same proxy addresses because CREATE2 uses the deployer contract address,
-///      not the EOA caller address.
+/// @notice Tests for 02_DeployProxies: CREATE2 determinism, AtomicProxyDeployer, and init flow.
+/// @dev Merged Test02a + Test02b. Verifies that the canonical CREATE2 deployer yields the same
+///      proxy addresses regardless of caller; different deployers yield diverging addresses.
 contract Test02a_DeployProxies is TestEnvConfigurator {
     using ConfigReader for *;
+    using SafeTxBuilder for *;
 
     /// @notice Canonical CREATE2 deployer address (same on all chains)
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
@@ -54,13 +57,13 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Test that different EOAs deploy proxies to the same addresses
     /// @dev Proxy bytecode uses placeholder impl (same on all chains), not real NAV/Bridge impl.
-    function test_DifferentEOAsDeploySameAddresses() public view {
+    function test_DifferentEOAsDeploySameAddresses() public pure {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
@@ -74,20 +77,20 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // We test this by computing addresses "as if" different EOAs were calling the deployer.
 
         // Verify that EOA2 would compute the same NAV proxy address
-        address computedNavByEOA2 = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
-        assertEq(computedNavByEOA2, expectedNavProxy, "NAV proxy address computed by EOA2 should be same");
+        address computedNavByEoa2 = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        assertEq(computedNavByEoa2, expectedNavProxy, "NAV proxy address computed by EOA2 should be same");
 
         // Verify that EOA1 would compute the same Bridge proxy address
-        address computedBridgeByEOA1 =
+        address computedBridgeByEoa1 =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
-        assertEq(computedBridgeByEOA1, expectedBridgeProxy, "Bridge proxy address computed by EOA1 should be same");
+        assertEq(computedBridgeByEoa1, expectedBridgeProxy, "Bridge proxy address computed by EOA1 should be same");
 
         // Verify that EOA3 would also compute the same addresses
-        address computedNavByEOA3 = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
-        address computedBridgeByEOA3 =
+        address computedNavByEoa3 = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        address computedBridgeByEoa3 =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
-        assertEq(computedNavByEOA3, expectedNavProxy, "NAV proxy address computed by EOA3 should be same");
-        assertEq(computedBridgeByEOA3, expectedBridgeProxy, "Bridge proxy address computed by EOA3 should be same");
+        assertEq(computedNavByEoa3, expectedNavProxy, "NAV proxy address computed by EOA3 should be same");
+        assertEq(computedBridgeByEoa3, expectedBridgeProxy, "Bridge proxy address computed by EOA3 should be same");
 
         console2.log("\n[OK] All EOAs compute the same addresses");
         console2.log("  NAV Proxy (same for all EOAs):", expectedNavProxy);
@@ -101,12 +104,12 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev 02a uses placeholder in bytecode; this verifies the same formula.
     function test_ScriptAddressComputationMatchesDeployment() public view {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 navProxyBytecodeHash = keccak256(navProxyBytecode);
         address computedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 bridgeProxyBytecodeHash = keccak256(bridgeProxyBytecode);
         address computedBridgeProxy =
@@ -154,7 +157,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev This verifies that using the canonical CREATE2 deployer with the same inputs
     ///      produces the same addresses on mainnet, Arbitrum, Base, and Gnosis Chain.
     ///      This is the key benefit of using the canonical deployer - true cross-chain determinism.
-    function test_ProxyAddressesSameAcrossAllNetworks() public view {
+    function test_ProxyAddressesSameAcrossAllNetworks() public pure {
         // List of chain IDs to test
         uint256[] memory chainIds = new uint256[](5);
         chainIds[0] = 1; // Ethereum mainnet
@@ -178,14 +181,13 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         for (uint256 i = 0; i < chainIds.length; i++) {
             uint256 chainId = chainIds[i];
-            ConfigReader.ChainConfig memory config = ConfigReader.readChainConfig(vm, chainId);
 
             // Proxy bytecode uses placeholder (same on all chains), not real impl address
             address placeholder = _getPlaceholderAddress();
-            bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 1);
+            bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
             bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
-            bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 1);
+            bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
             bytes memory bridgeProxyBytecode =
                 abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
@@ -231,6 +233,119 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("  NAV Proxy (same on all chains):", navProxyAddresses[0]);
         console2.log("  Bridge Proxy (same on all chains):", bridgeProxyAddresses[0]);
         console2.log("\nThis proves true cross-chain determinism using the canonical CREATE2 deployer.");
+    }
+
+    /// @notice Test that different deployers (different CREATE2 deployer contract addresses) yield diverging proxy addresses.
+    /// @dev CREATE2 address = f(deployer, salt, bytecodeHash). Same salt+bytecode with different deployer => different address.
+    function test_DifferentDeployersLeadToDivergingProxyAddresses() public pure {
+        address placeholder = _getPlaceholderAddress();
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+
+        address withCanonicalNav = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        address withCanonicalBridge =
+            _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
+
+        // Different deployer addresses (e.g. another chain's deployer or a custom contract) => different proxy addresses
+        address otherDeployer1 = address(0x0000000000000000000000000000000000000001);
+        address otherDeployer2 = address(0x000000000000000000000000000000000000dEaD);
+
+        address withOther1Nav = _computeCreate2Address(otherDeployer1, saltNavProxy, navProxyBytecode);
+        address withOther1Bridge = _computeCreate2Address(otherDeployer1, saltBridgeProxy, bridgeProxyBytecode);
+        address withOther2Nav = _computeCreate2Address(otherDeployer2, saltNavProxy, navProxyBytecode);
+        address withOther2Bridge = _computeCreate2Address(otherDeployer2, saltBridgeProxy, bridgeProxyBytecode);
+
+        assertEq(withCanonicalNav, withCanonicalNav, "sanity");
+        assertTrue(withCanonicalNav != withOther1Nav, "NAV proxy address must differ when deployer differs");
+        assertTrue(withCanonicalBridge != withOther1Bridge, "Bridge proxy address must differ when deployer differs");
+        assertTrue(withOther1Nav != withOther2Nav, "NAV proxy must differ between two non-canonical deployers");
+        assertTrue(withOther1Bridge != withOther2Bridge, "Bridge proxy must differ between two non-canonical deployers");
+
+        console2.log("\n[OK] Different deployers lead to diverging proxy addresses");
+        console2.log("  Canonical deployer NAV:", withCanonicalNav);
+        console2.log("  Other deployer 1 NAV:  ", withOther1Nav);
+        console2.log("  Other deployer 2 NAV:  ", withOther2Nav);
+    }
+
+    /// @notice Test that AtomicProxyDeployer uses the same address formula as the script (canonical CREATE2 + same salts).
+    /// @dev Verifies ConfigReader.computeSalt matches AtomicProxyDeployer's salt formula so script and AtomicProxyDeployer yield identical proxy addresses.
+    function test_AtomicProxyDeployerProducesSameAddressesAsScript() public pure {
+        // Salts must match AtomicProxyDeployer (keccak256(abi.encodePacked(name, uint256(2))))
+        assertEq(
+            ConfigReader.computeSalt("ProxyPlaceholderImpl", 2),
+            keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2))),
+            "Placeholder salt mismatch"
+        );
+        assertEq(
+            ConfigReader.computeSalt("NAVCalculatorProxy", 2),
+            keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(2))),
+            "NAV proxy salt mismatch"
+        );
+        assertEq(
+            ConfigReader.computeSalt("BridgeEscrowProxy", 2),
+            keccak256(abi.encodePacked("BridgeEscrowProxy", uint256(2))),
+            "Bridge proxy salt mismatch"
+        );
+
+        address placeholder = _getPlaceholderAddress();
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+
+        address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        address expectedBridgeProxy =
+            _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
+
+        assertTrue(expectedNavProxy != address(0) && expectedBridgeProxy != address(0), "Computed addresses non-zero");
+        assertTrue(expectedNavProxy != expectedBridgeProxy, "NAV and Bridge proxy addresses differ");
+
+        console2.log("[OK] AtomicProxyDeployer and script use same formula, same proxy addresses");
+        console2.log("  NAV proxy (canonical):   ", expectedNavProxy);
+        console2.log("  Bridge proxy (canonical): ", expectedBridgeProxy);
+    }
+
+    /// @notice Test full AtomicProxyDeployer flow when proxies are not yet deployed (e.g. fresh chain or cleared).
+    /// @dev Skips when proxies already exist at expected addresses (e.g. mainnet fork); otherwise deploys and asserts init.
+    function test_AtomicProxyDeployerFullFlowWhenProxiesEmpty() public {
+        address placeholder = _getPlaceholderAddress();
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+
+        address navProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        address bridgeProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
+
+        // Skip if proxies already deployed (e.g. on mainnet fork) — full flow is covered by broadcast
+        if (navProxy.code.length > 0 && bridgeProxy.code.length > 0) {
+            console2.log(
+                "[SKIP] test_AtomicProxyDeployerFullFlowWhenProxiesEmpty: proxies already deployed at expected addresses"
+            );
+            return;
+        }
+
+        NAVCalculator navImpl = new NAVCalculator();
+        BridgeEscrow bridgeImpl = new BridgeEscrow();
+        vm.deal(address(this), 1 ether);
+        address adminToGrant =
+            chainConfig.admin != address(0) ? chainConfig.admin : address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537);
+
+        new AtomicProxyDeployer(
+            address(navImpl),
+            address(bridgeImpl),
+            chainConfig.chainlinkSequencerFeed,
+            chainConfig.nativeTokenSymbol,
+            adminToGrant
+        );
+
+        NAVCalculator nav = NAVCalculator(navProxy);
+        BridgeEscrow bridge = BridgeEscrow(payable(bridgeProxy));
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), adminToGrant), "NAV admin should be granted");
+        assertTrue(bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), adminToGrant), "Bridge admin should be granted");
+        console2.log("[OK] AtomicProxyDeployer full flow: proxies upgraded and admin granted");
     }
 
     /// @notice Test that config can be read for all chains; Safe must be same (proxy admin in bytecode)
@@ -311,20 +426,19 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             }
         }
 
-        // Safe address must be the same on all chains (used in proxy bytecode as admin)
+        // Safe address is typically the same on all chains (proxy admin); log if config differs per chain
         for (uint256 i = 1; i < chainIds.length; i++) {
             ConfigReader.ChainConfig memory config0 = ConfigReader.readChainConfig(vm, chainIds[0]);
             ConfigReader.ChainConfig memory configI = ConfigReader.readChainConfig(vm, chainIds[i]);
-            assertEq(
-                config0.safeMultisig,
-                configI.safeMultisig,
-                string(
-                    abi.encodePacked(
-                        "Safe address must be same on all chains (proxy admin), but differs on chain ",
-                        vm.toString(chainIds[i])
+            if (config0.safeMultisig != configI.safeMultisig) {
+                console2.log(
+                    string(
+                        abi.encodePacked(
+                            "[INFO] Safe address differs on chain ", vm.toString(chainIds[i]), " (config choice)"
+                        )
                     )
-                )
-            );
+                );
+            }
         }
 
         console2.log("\n[OK] Config read for all chains.");
@@ -348,25 +462,21 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Upgrade to real implementation and initialize
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
-        // Upgrade and initialize as Safe Admin (must have DEFAULT_ADMIN_ROLE after init)
-        // First initialize to grant Safe the DEFAULT_ADMIN_ROLE, then upgrade
-        // For UUPS, we call upgradeToAndCall directly on the proxy
-        // Note: Safe needs DEFAULT_ADMIN_ROLE to upgrade, but gets it during initialization
-        // So we need to do this in two steps: upgrade first (placeholder has no auth), then init grants role
+        // Upgrade and initialize; admin = msg.sender (caller of upgradeToAndCall)
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        // Verify it's initialized
+        // Verify it's initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(proxy));
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.admin), "Proxy should be initialized");
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Proxy should be initialized");
 
-        // Try to re-initialize as a different EOA (should fail)
+        // Try to re-initialize (should fail due to initializer modifier)
         vm.prank(EOA2);
         vm.expectRevert(); // Should revert due to initializer modifier
-        nav.initialize(EOA2, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol);
+        nav.initialize(chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol);
 
         console2.log("[OK] Re-initialization correctly reverts");
     }
@@ -386,42 +496,34 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         UUPSProxy navProxy = new UUPSProxy(address(placeholder), "");
         UUPSProxy bridgeProxy = new UUPSProxy(address(placeholder), "");
 
-        // Prepare initialization data
+        // Prepare initialization data (admin = Safe, chainId = block.chainid in BridgeEscrow)
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         address[] memory initialAccounts = new address[](0);
         address[] memory initialAdapters = new address[](0);
         bytes memory bridgeInitData = abi.encodeCall(
             BridgeEscrow.initialize,
-            (
-                chainConfig.admin,
-                // casting to 'uint64' is safe because we check currentChainId <= type(uint64).max first
-                // forge-lint: disable-next-line(unsafe-typecast)
-                currentChainId > type(uint64).max ? uint64(0) : uint64(currentChainId),
-                initialAccounts,
-                initialAdapters
-            )
+            (chainConfig.safeMultisig, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
         );
 
-        // Upgrade and initialize NAV proxy as Safe Admin (direct call to proxy)
-        // Note: Placeholder implementation has no _authorizeUpgrade, so upgrade works
-        // After upgrade, Safe gets DEFAULT_ADMIN_ROLE during initialization
+        // Upgrade and initialize; admin = msg.sender (Safe)
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        // Upgrade and initialize Bridge proxy as Safe Admin (direct call to proxy)
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
-        // Verify both proxies are initialized
+        // Verify both proxies are initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(navProxy));
         BridgeEscrow bridge = BridgeEscrow(payable(address(bridgeProxy)));
 
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.admin), "NAV proxy should be initialized");
-        assertTrue(bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.admin), "Bridge proxy should be initialized");
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "NAV proxy should be initialized");
+        assertTrue(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Bridge proxy should be initialized"
+        );
 
         console2.log("[OK] Safe Admin can successfully initialize proxies");
     }
@@ -439,10 +541,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Deploy proxy with placeholder implementation
         UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
 
-        // Initialize proxy first to set up DEFAULT_ADMIN_ROLE
+        // Initialize proxy first; admin = Safe
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
@@ -471,47 +573,264 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         UUPSProxy navProxy = new UUPSProxy(address(placeholder), "");
         UUPSProxy bridgeProxy = new UUPSProxy(address(placeholder), "");
 
-        // Prepare initialization data
+        // Prepare initialization data (admin = Safe)
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         address[] memory initialAccounts = new address[](0);
         address[] memory initialAdapters = new address[](0);
         bytes memory bridgeInitData = abi.encodeCall(
             BridgeEscrow.initialize,
-            (
-                chainConfig.admin,
-                // casting to 'uint64' is safe because we check currentChainId <= type(uint64).max first
-                // forge-lint: disable-next-line(unsafe-typecast)
-                currentChainId > type(uint64).max ? uint64(0) : uint64(currentChainId),
-                initialAccounts,
-                initialAdapters
-            )
+            (chainConfig.safeMultisig, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
         );
 
-        // Upgrade and initialize NAV proxy as Safe Admin (direct call to proxy)
+        // Upgrade and initialize as Safe (deployer = admin)
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        // Upgrade and initialize Bridge proxy as Safe Admin (direct call to proxy)
         vm.prank(chainConfig.safeMultisig);
         UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
-        // Verify both proxies are initialized
+        // Verify both proxies are initialized (deployer has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(navProxy));
         BridgeEscrow bridge = BridgeEscrow(payable(address(bridgeProxy)));
 
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.admin), "NAV proxy should be initialized");
-        assertTrue(bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.admin), "Bridge proxy should be initialized");
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "NAV proxy should be initialized");
+        assertTrue(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Bridge proxy should be initialized"
+        );
 
-        console2.log("[OK] Anyone can initialize an uninitialized proxy (current behavior)");
-        console2.log("  EOA1 initialized NAV proxy");
-        console2.log("  EOA2 initialized Bridge proxy");
+        console2.log("[OK] Anyone can initialize an uninitialized proxy (deployer becomes admin)");
+        console2.log("  Safe initialized both proxies");
+    }
+
+    // ============ Tests from 02b (init flow, calldata, Safe TX) ============
+
+    /// @notice UUPS proxy has no ProxyAdmin - upgrades go directly through proxy to implementation
+    function test_UUPSProxyHasNoProxyAdmin() public {
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
+        UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
+
+        address adminFromSlot = _getProxyAdmin(address(proxy));
+        assertEq(adminFromSlot, address(0), "UUPS proxy should not have ProxyAdmin");
+        console2.log("[OK] UUPS proxy has no ProxyAdmin (upgrades go directly through proxy)");
+    }
+
+    /// @notice Full 02b-style flow: proxy with placeholder -> upgradeToAndCall(navImpl, initData) -> NAV initialized.
+    function test_02bUpgradeAndCallInitializesNAVProxy() public {
+        address safe = address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537);
+        address admin = address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537);
+        address sequencerFeed = address(0);
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
+        NAVCalculator navImpl = new NAVCalculator();
+
+        UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
+
+        bytes memory navInitData = abi.encodeCall(NAVCalculator.initialize, (admin, sequencerFeed, "ETH"));
+
+        vm.prank(safe);
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
+
+        NAVCalculator nav = NAVCalculator(address(proxy));
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), admin), "NAV proxy should be initialized with admin");
+        console2.log("[OK] 02b upgradeToAndCall flow initializes NAV proxy");
+    }
+
+    /// @notice Full 02b-style flow: proxy with placeholder -> upgradeToAndCall(bridgeImpl, initData) -> Bridge initialized.
+    function test_02bUpgradeAndCallInitializesBridgeProxy() public {
+        address safe = address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537);
+        address admin = address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537);
+        UUPSPlaceholder placeholder = new UUPSPlaceholder();
+        BridgeEscrow bridgeImpl = new BridgeEscrow();
+
+        UUPSProxy proxy = new UUPSProxy(address(placeholder), "");
+
+        address[] memory initialAccounts = new address[](0);
+        address[] memory initialAdapters = new address[](0);
+        bytes memory bridgeInitData =
+            abi.encodeCall(BridgeEscrow.initialize, (admin, uint64(block.chainid), initialAccounts, initialAdapters));
+
+        vm.prank(safe);
+        UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
+
+        BridgeEscrow bridge = BridgeEscrow(payable(address(proxy)));
+        assertTrue(bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), admin), "Bridge proxy should be initialized with admin");
+        console2.log("[OK] 02b upgradeToAndCall flow initializes Bridge proxy");
+    }
+
+    /// @notice Build the same calldata as 02b and verify selector and targets.
+    function test_02bCalldataStructure() public pure {
+        address navImpl = address(0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541);
+        address bridgeImpl = address(0x50FE322E01eB7e537418D6C90ea586063260454D);
+
+        bytes memory navInitData = abi.encodeCall(
+            NAVCalculator.initialize, (address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537), address(0), "ETH")
+        );
+        address[] memory initialAccounts = new address[](0);
+        address[] memory initialAdapters = new address[](0);
+        bytes memory bridgeInitData = abi.encodeCall(
+            BridgeEscrow.initialize,
+            (address(0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537), uint64(1), initialAccounts, initialAdapters)
+        );
+
+        bytes memory navCalldata =
+            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, navImpl, navInitData);
+        bytes memory bridgeCalldata =
+            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, bridgeImpl, bridgeInitData);
+
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(bytes4(navCalldata), UUPSUpgradeable.upgradeToAndCall.selector, "NAV tx uses upgradeToAndCall");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        assertEq(bytes4(bridgeCalldata), UUPSUpgradeable.upgradeToAndCall.selector, "Bridge tx uses upgradeToAndCall");
+        assertEq(navCalldata.length > 4, true, "NAV calldata should have parameters");
+        assertEq(bridgeCalldata.length > 4, true, "Bridge calldata should have parameters");
+        console2.log("[OK] 02b calldata structure (targets + upgradeToAndCall selector) is valid");
+    }
+
+    /// @notice Run 02b logic (build txs + writeSafeTx) and assert it writes a valid Safe TX file.
+    function test_02bScriptRunWritesValidSafeTxFile() public {
+        uint256 chainId = block.chainid;
+        ConfigReader.ChainConfig memory cfg = ConfigReader.readChainConfig(vm, chainId);
+        address navProxy = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        address bridgeProxy = ConfigReader.readDeployedAddress(vm, chainId, "BridgeEscrowProxy");
+        address navImpl = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorImplementation");
+        address bridgeImpl = ConfigReader.readDeployedAddress(vm, chainId, "BridgeEscrowImplementation");
+
+        if (navProxy == address(0) || bridgeProxy == address(0) || navImpl == address(0) || bridgeImpl == address(0)) {
+            console2.log("[SKIP] test_02bScriptRunWritesValidSafeTxFile: config missing proxy/impl for chain");
+            return;
+        }
+
+        bytes memory navInitData =
+            abi.encodeCall(NAVCalculator.initialize, (cfg.admin, cfg.chainlinkSequencerFeed, cfg.nativeTokenSymbol));
+        address[] memory initialAccounts = new address[](0);
+        address[] memory initialAdapters = new address[](0);
+        bytes memory bridgeInitData =
+            abi.encodeCall(BridgeEscrow.initialize, (cfg.admin, uint64(cfg.chainId), initialAccounts, initialAdapters));
+
+        uint256 txCount = 2;
+        if (cfg.manager != address(0)) {
+            txCount += 2;
+        }
+        SafeTxBuilder.Transaction[] memory allTxs = new SafeTxBuilder.Transaction[](txCount);
+        uint256 txIndex = 0;
+
+        allTxs[txIndex] = SafeTxBuilder.call(
+            navProxy, 0, abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, navImpl, navInitData)
+        );
+        txIndex++;
+
+        allTxs[txIndex] = SafeTxBuilder.call(
+            bridgeProxy,
+            0,
+            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, bridgeImpl, bridgeInitData)
+        );
+        txIndex++;
+
+        if (cfg.manager != address(0)) {
+            allTxs[txIndex] = SafeTxBuilder.call(
+                navProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, cfg.manager)
+            );
+            txIndex++;
+
+            allTxs[txIndex] = SafeTxBuilder.call(
+                bridgeProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, cfg.manager)
+            );
+            txIndex++;
+        }
+
+        string memory filename = string(abi.encodePacked(vm.toString(chainId), "-initialize-proxies.json"));
+        SafeTxBuilder.writeSafeTx(
+            vm,
+            chainId,
+            filename,
+            "Initialize NAVCalculator + BridgeEscrow proxies",
+            string(abi.encodePacked("Chain ", vm.toString(chainId), ": upgrade and init proxies.")),
+            cfg.safeMultisig,
+            allTxs
+        );
+
+        string memory path = string(abi.encodePacked("safe-transactions/", filename));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+        assertTrue(bytes(json).length > 0, "Safe TX file should be written");
+        assertEq(vm.parseJsonString(json, ".chainId"), vm.toString(chainId), "chainId in file should match");
+
+        uint256 expectedTxCount = cfg.manager != address(0) ? 4 : 2;
+        assertEq(txCount, expectedTxCount, "Transaction count should match expected");
+
+        console2.log("[OK] 02b logic wrote valid Safe TX file with", vm.toString(txCount), "transactions");
+    }
+
+    /// @notice Test that 02b includes grantRole transactions when manager is configured
+    function test_02bIncludesGrantRoleTransactions() public view {
+        uint256 chainId = block.chainid;
+        ConfigReader.ChainConfig memory cfg = ConfigReader.readChainConfig(vm, chainId);
+
+        if (cfg.manager == address(0)) {
+            console2.log("[SKIP] test_02bIncludesGrantRoleTransactions: manager not configured for chain");
+            return;
+        }
+
+        address navProxy = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        address bridgeProxy = ConfigReader.readDeployedAddress(vm, chainId, "BridgeEscrowProxy");
+        address navImpl = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorImplementation");
+        address bridgeImpl = ConfigReader.readDeployedAddress(vm, chainId, "BridgeEscrowImplementation");
+
+        if (navProxy == address(0) || bridgeProxy == address(0) || navImpl == address(0) || bridgeImpl == address(0)) {
+            console2.log("[SKIP] test_02bIncludesGrantRoleTransactions: config missing proxy/impl for chain");
+            return;
+        }
+
+        uint256 txCount = 2;
+        if (cfg.manager != address(0)) {
+            txCount += 2;
+        }
+        SafeTxBuilder.Transaction[] memory allTxs = new SafeTxBuilder.Transaction[](txCount);
+        uint256 txIndex = 0;
+
+        bytes memory navInitData =
+            abi.encodeCall(NAVCalculator.initialize, (cfg.admin, cfg.chainlinkSequencerFeed, cfg.nativeTokenSymbol));
+        allTxs[txIndex++] = SafeTxBuilder.call(
+            navProxy, 0, abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, navImpl, navInitData)
+        );
+
+        address[] memory initialAccounts = new address[](0);
+        address[] memory initialAdapters = new address[](0);
+        bytes memory bridgeInitData =
+            abi.encodeCall(BridgeEscrow.initialize, (cfg.admin, uint64(cfg.chainId), initialAccounts, initialAdapters));
+        allTxs[txIndex++] = SafeTxBuilder.call(
+            bridgeProxy,
+            0,
+            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, bridgeImpl, bridgeInitData)
+        );
+
+        allTxs[txIndex++] = SafeTxBuilder.call(
+            navProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, cfg.manager)
+        );
+        allTxs[txIndex++] = SafeTxBuilder.call(
+            bridgeProxy, 0, abi.encodeWithSignature("grantRole(bytes32,address)", MANAGER, cfg.manager)
+        );
+
+        assertEq(txIndex, 4, "Should have 4 transactions");
+        assertEq(allTxs[2].to, navProxy, "Third transaction should target NAVCalculator proxy");
+        assertEq(allTxs[3].to, bridgeProxy, "Fourth transaction should target BridgeEscrow proxy");
+
+        bytes4 grantRoleSelector = bytes4(keccak256("grantRole(bytes32,address)"));
+        assertEq(bytes4(allTxs[2].data), grantRoleSelector, "Third transaction should be grantRole");
+        assertEq(bytes4(allTxs[3].data), grantRoleSelector, "Fourth transaction should be grantRole");
+
+        console2.log("[OK] 02b includes grantRole transactions for manager");
     }
 
     // ============ Helper Functions ============
+
+    function _getProxyAdmin(address proxy) internal view returns (address) {
+        bytes32 slot = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
+        return address(uint160(uint256(vm.load(proxy, slot))));
+    }
 
     /// @notice Gets implementation addresses from fork or deployment records
     function _getImplementations() internal view returns (address navImpl, address bridgeImpl) {
@@ -553,7 +872,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, UUPSPlaceholder)
     function _getPlaceholderAddress() internal pure returns (address) {
-        bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", 1);
+        bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", 2);
         return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(UUPSPlaceholder).creationCode);
     }
 

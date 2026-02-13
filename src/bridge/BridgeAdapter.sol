@@ -3,8 +3,7 @@ pragma solidity ^0.8;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IBridgeAdapter} from "./IBridgeAdapter.sol";
 import {IBridgeEscrow} from "./IBridgeEscrow.sol";
@@ -15,9 +14,9 @@ import "src/errors.sol";
 import "src/constants.sol";
 
 /// @title BridgeAdapter
-/// @notice Abstract base contract for bridge adapter implementations
+/// @notice Abstract base contract for bridge adapter implementations (non-upgradeable, single-initialize)
 /// @author kpk
-abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, ReentrancyGuard, IBridgeAdapter {
+abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
 
     //
@@ -44,30 +43,21 @@ abstract contract BridgeAdapter is Initializable, AccessControlUpgradeable, Reen
     /// @notice Adapter version
     string public adapterVersion;
 
-    //
-    // Constructor
-    //
+    bool private _initialized;
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
-    /// @notice Initializes the BridgeAdapter
+    /// @notice One-time initializer for the BridgeAdapter
     /// @param admin_ The admin address
     /// @param bridgeEscrow_ The BridgeEscrow contract address
     /// @param providerName_ The bridge provider name
     /// @param version_ The adapter version
-    /// @dev Public (not external) so concrete adapters can call super.initialize() from their initialize()
+    /// @dev Public so concrete adapters can call super.initialize() from their initialize().
+    ///      Uses a simple boolean guard instead of OZ Initializable.
     function initialize(address admin_, address bridgeEscrow_, string memory providerName_, string memory version_)
         public
-        initializer
     {
-        __AccessControl_init();
+        require(!_initialized, "BridgeAdapter: already initialized");
+        _initialized = true;
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
         bridgeEscrow = bridgeEscrow_;
         bridgeProviderName = providerName_;

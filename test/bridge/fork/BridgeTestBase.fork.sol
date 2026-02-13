@@ -79,13 +79,15 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
         mainnetFork = createForkWithCadence(getAlchemyUrl("eth-mainnet"), MAINNET_FORK_BLOCK);
         optimismFork = createForkWithCadence(getAlchemyUrl("opt-mainnet"), OPTIMISM_FORK_BLOCK);
 
-        // Select mainnet fork by default
+        // Select mainnet fork by default and set chainId (fork state may not set chainid for non-mainnet)
         vm.selectFork(mainnetFork);
+        vm.chainId(MAINNET_CHAIN_ID);
     }
 
     /// @notice Switches to mainnet fork
     function _selectMainnetFork() internal {
         vm.selectFork(mainnetFork);
+        vm.chainId(MAINNET_CHAIN_ID);
         // Note: Don't roll fork here as it resets state and loses deployed contracts
         // If you need a specific block, roll before deploying contracts in setUp()
         // vm.rollFork(MAINNET_FORK_BLOCK);
@@ -94,6 +96,7 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
     /// @notice Switches to Optimism fork
     function _selectOptimismFork() internal {
         vm.selectFork(optimismFork);
+        vm.chainId(OPTIMISM_CHAIN_ID);
         // Note: Don't roll fork here as it resets state and loses deployed contracts
         // If you need a specific block, roll before deploying contracts in setUp()
         // vm.rollFork(OPTIMISM_FORK_BLOCK);

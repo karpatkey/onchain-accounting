@@ -58,23 +58,23 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Deploy sDAI Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sDAI")) {
-            _deploySDAI();
+            _deploySdai();
         }
 
         // Deploy LDO Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LDO")) {
-            _deployLDO();
+            _deployLdo();
         }
 
         // Deploy sUSDS Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sUSDS")) {
-            _deploySUSDS();
+            _deploySusds();
         }
 
         vm.stopBroadcast();
     }
 
-    function _deploySDAI() internal {
+    function _deploySdai() internal {
         // Check if already deployed
         address deployed = _readAdapterDeployed("priceFeeds", "sDAI");
         if (deployed != address(0)) {
@@ -96,7 +96,7 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("sDAI_PriceOracle deployed at:", address(sdaiAdapter));
     }
 
-    function _deployLDO() internal {
+    function _deployLdo() internal {
         // Check if already deployed
         address deployed = _readAdapterDeployed("priceFeeds", "LDO");
         if (deployed != address(0)) {
@@ -122,7 +122,7 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("LDO_PriceOracle deployed at:", address(ldoAdapter));
     }
 
-    function _deploySUSDS() internal {
+    function _deploySusds() internal {
         // Check if already deployed
         address deployed = _readAdapterDeployed("priceFeeds", "sUSDS");
         if (deployed != address(0)) {

@@ -125,7 +125,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // GMX adapters
         if (_startsWith(adapterName, "GMX_")) {
-            return _deployGMX(adapterName, navCalculator);
+            return _deployGmx(adapterName, navCalculator);
         }
 
         // DAI DSR
@@ -140,7 +140,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // ERC20 Default oracles
         if (_startsWith(adapterName, "ERC20Default_")) {
-            return _deployERC20Default(adapterName, navCalculator);
+            return _deployErc20Default(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -208,7 +208,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployGMX(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployGmx(string memory adapterName, address navCalculator) internal returns (address) {
         // GMX has complex constructor - reading all params
         address market = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
@@ -280,7 +280,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployERC20Default(
+    function _deployErc20Default(
         string memory,
         /* adapterName */
         address navCalculator

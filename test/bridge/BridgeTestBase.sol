@@ -68,6 +68,7 @@ abstract contract BridgeTestBase is Test {
 
         address[] memory initialAdapters = new address[](0); // Will be added per test
 
+        // Use SOURCE_CHAIN_ID so unit tests (no fork) get deterministic chainId 1 and invoiceIds match test helpers
         address payable bridgeEscrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 bridgeEscrowImpl,
                 abi.encodeCall(BridgeEscrow.initialize, (admin, SOURCE_CHAIN_ID, initialSafes, initialAdapters))

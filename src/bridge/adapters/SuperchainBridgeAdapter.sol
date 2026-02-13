@@ -64,19 +64,6 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @notice Default L1 gas limit for withdrawals
     uint32 public defaultL1GasLimit = 200000;
 
-    //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
     /// @inheritdoc ISuperchainBridgeAdapter
     function initialize(
         address admin_,
@@ -87,7 +74,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         address l2Messenger_,
         address optimismPortal_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "Superchain", version_);
         chainId = block.chainid;

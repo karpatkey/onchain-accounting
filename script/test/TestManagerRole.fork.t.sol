@@ -17,7 +17,7 @@ contract TestManagerRole is TestEnvConfigurator {
     using ConfigReader for *;
 
     // Manager address from config
-    address public constant MANAGER_ADDRESS = 0xb007369cA6656639de93c444daE8789159d4CBFb;
+    address public constant MANAGER_ADDRESS = 0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F;
 
     // Chain ID to test (mainnet)
     uint256 public constant CHAIN_ID = 1;
@@ -33,10 +33,10 @@ contract TestManagerRole is TestEnvConfigurator {
 
     /// @notice Computes the placeholder implementation address (same on all chains)
     /// @dev Uses the same computation as 02a_DeployProxies.s.sol lines 28-31:
-    ///      generateSalt("ProxyPlaceholderImpl", 1) + type(Empty).creationCode + CREATE2
+    ///      generateSalt("ProxyPlaceholderImpl", 2) + type(Empty).creationCode + CREATE2
     function _computePlaceholderAddress() internal pure returns (address) {
-        // Same as: bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 1);
-        bytes32 saltPlaceholder = ConfigReader.computeSalt("ProxyPlaceholderImpl", 1);
+        // Same as: bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 2);
+        bytes32 saltPlaceholder = ConfigReader.computeSalt("ProxyPlaceholderImpl", 2);
         // Same as: bytes memory placeholderBytecode = type(Empty).creationCode;
         bytes memory placeholderBytecode = type(Empty).creationCode;
         // Same as: address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
@@ -102,15 +102,15 @@ contract TestManagerRole is TestEnvConfigurator {
 
         NAVCalculator nav = NAVCalculator(navProxy);
 
-        // Verify proxy was initialized (has DEFAULT_ADMIN_ROLE set to admin)
+        // Verify proxy was initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         require(
-            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.admin),
+            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig),
             "NAVCalculator proxy not initialized - admin role not set"
         );
 
-        // Grant MANAGER role if not already granted (simulating 02b script behavior)
+        // Grant MANAGER role if not already granted (admin = Safe)
         if (!nav.hasRole(MANAGER, chainConfig.manager)) {
-            vm.prank(chainConfig.admin);
+            vm.prank(chainConfig.safeMultisig);
             nav.grantRole(MANAGER, chainConfig.manager);
             console2.log("Granted MANAGER role to manager on NAVCalculator");
         }
@@ -150,12 +150,7 @@ contract TestManagerRole is TestEnvConfigurator {
             address[] memory initialAdapters = new address[](0);
             bytes memory bridgeInitData = abi.encodeCall(
                 BridgeEscrow.initialize,
-                (
-                    chainConfig.admin,
-                    CHAIN_ID > type(uint64).max ? uint64(0) : uint64(CHAIN_ID),
-                    initialAccounts,
-                    initialAdapters
-                )
+                (chainConfig.admin, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
             );
             _initializeProxyViaProxyAdmin(bridgeProxy, expectedImpl, bridgeInitData, chainConfig.safeMultisig);
             console2.log("Upgraded and initialized BridgeEscrow proxy via upgradeToAndCall");
@@ -163,15 +158,15 @@ contract TestManagerRole is TestEnvConfigurator {
 
         BridgeEscrow bridge = BridgeEscrow(payable(bridgeProxy));
 
-        // Verify proxy was initialized (has DEFAULT_ADMIN_ROLE set to admin)
+        // Verify proxy was initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         require(
-            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.admin),
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig),
             "BridgeEscrow proxy not initialized - admin role not set"
         );
 
-        // Grant MANAGER role if not already granted (simulating 02b script behavior)
+        // Grant MANAGER role if not already granted (admin = Safe)
         if (!bridge.hasRole(MANAGER, chainConfig.manager)) {
-            vm.prank(chainConfig.admin);
+            vm.prank(chainConfig.safeMultisig);
             bridge.grantRole(MANAGER, chainConfig.manager);
             console2.log("Granted MANAGER role to manager on BridgeEscrow");
         }
@@ -221,12 +216,7 @@ contract TestManagerRole is TestEnvConfigurator {
             address[] memory initialAdapters = new address[](0);
             bytes memory bridgeInitData = abi.encodeCall(
                 BridgeEscrow.initialize,
-                (
-                    chainConfig.admin,
-                    CHAIN_ID > type(uint64).max ? uint64(0) : uint64(CHAIN_ID),
-                    initialAccounts,
-                    initialAdapters
-                )
+                (chainConfig.admin, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
             );
             _initializeProxyViaProxyAdmin(bridgeProxy, bridgeImpl, bridgeInitData, chainConfig.safeMultisig);
             console2.log("Upgraded and initialized BridgeEscrow proxy via ProxyAdmin.upgradeAndCall");

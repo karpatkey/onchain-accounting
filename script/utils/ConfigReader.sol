@@ -34,6 +34,7 @@ library ConfigReader {
     function readChainConfig(Vm vm, uint256 chainId) internal view returns (ChainConfig memory config) {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
 
         config.chainId = chainId;
@@ -57,6 +58,7 @@ library ConfigReader {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
 
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath = string(abi.encodePacked(".deployed.", contractName));
 
@@ -122,6 +124,7 @@ library ConfigReader {
     {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath = string(
             abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".constructor.", paramName)
@@ -140,6 +143,7 @@ library ConfigReader {
     function isPriceFeedEnabled(Vm vm, uint256 chainId, string memory adapterName) internal view returns (bool) {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath =
             string(abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".enabled"));
@@ -171,6 +175,7 @@ library ConfigReader {
     function readTokenHeartbeat(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".heartbeat"));
         if (vm.keyExists(json, jsonPath)) {
@@ -199,6 +204,7 @@ library ConfigReader {
     {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".", field));
         if (vm.keyExists(json, jsonPath)) {
@@ -224,6 +230,7 @@ library ConfigReader {
     ) internal view returns (string memory) {
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
 
         // Note: priceFeeds has been removed from chain config schema
@@ -264,6 +271,7 @@ library ConfigReader {
         }
         string memory root = vm.projectRoot();
         string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".enabled"));
         if (vm.keyExists(json, jsonPath)) {

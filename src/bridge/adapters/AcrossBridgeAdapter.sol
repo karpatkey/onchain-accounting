@@ -40,19 +40,6 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
 
-    //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
-    // Initialization
-    //
-
     /// @inheritdoc IAcrossBridgeAdapter
     function initialize(
         address admin_,
@@ -60,7 +47,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         address spokePool_,
         int64 defaultRelayerFeePct_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "Across", version_);
 

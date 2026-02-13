@@ -41,15 +41,6 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     mapping(bytes32 => bytes32) public invoiceToTransactionHash;
 
     //
-    // Constructor
-    //
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    //
     // Initialization
     //
 
@@ -60,7 +51,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         address omnibridge_,
         address amb_,
         string memory version_
-    ) external initializer {
+    ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super.initialize(admin_, bridgeEscrow_, "Gnosis", version_);
 

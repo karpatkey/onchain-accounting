@@ -32,10 +32,13 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
     uint64 public constant OPTIMISM_CHAIN_ID = 10;
     uint64 public constant BASE_CHAIN_ID = 8453;
 
-    // Asset symbols (bytes6, right-padded with spaces)
-    bytes6 public constant USDC_SYMBOL = "USDC  ";
-    bytes6 public constant WETH_SYMBOL = "WETH  ";
-    bytes6 public constant DAI_SYMBOL = "DAI   ";
+    // Asset symbols (string for escrow API; bytes6 for invoice data)
+    string public constant USDC_SYMBOL = "USDC";
+    string public constant WETH_SYMBOL = "WETH";
+    string public constant DAI_SYMBOL = "DAI";
+    bytes6 public constant USDC_SYMBOL_BYTES6 = "USDC  ";
+    bytes6 public constant WETH_SYMBOL_BYTES6 = "WETH  ";
+    bytes6 public constant DAI_SYMBOL_BYTES6 = "DAI   ";
 
     // Real contract addresses (Mainnet)
     address public constant MAINNET_USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
@@ -260,11 +263,11 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
 
     /// @notice Gets real token address for a symbol on current chain
     function _getRealTokenAddress(bytes6 symbol) internal view returns (address) {
-        if (symbol == USDC_SYMBOL) {
+        if (symbol == USDC_SYMBOL_BYTES6) {
             return block.chainid == MAINNET_CHAIN_ID ? MAINNET_USDC : OPTIMISM_USDC;
-        } else if (symbol == WETH_SYMBOL) {
+        } else if (symbol == WETH_SYMBOL_BYTES6) {
             return block.chainid == MAINNET_CHAIN_ID ? MAINNET_WETH : OPTIMISM_WETH;
-        } else if (symbol == DAI_SYMBOL) {
+        } else if (symbol == DAI_SYMBOL_BYTES6) {
             return MAINNET_DAI; // DAI may not be on Optimism
         }
         revert("Unknown asset symbol");

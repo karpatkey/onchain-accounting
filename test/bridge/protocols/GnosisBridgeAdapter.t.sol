@@ -68,7 +68,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // Create invoice data (bridging to Gnosis Chain)
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
@@ -96,7 +96,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             SOURCE_CHAIN_ID,
             999, // Unsupported chain ID (not 1 or 100)
             account,
-            USDC_SYMBOL,
+            USDC_SYMBOL_BYTES6,
             amount
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
@@ -117,7 +117,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsForNativeToken() public {
         uint256 amount = 1 ether;
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, WETH_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.deal(address(adapter), amount);
@@ -130,7 +130,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
@@ -143,7 +143,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -233,7 +233,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_validatesChecksum() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
@@ -269,7 +269,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
         // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
@@ -301,7 +301,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -333,7 +333,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_storesTransactionHash() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -377,7 +377,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_onTokenTransfer_revertsWhenCalledOnAdapter() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
         bytes32 valueBytes32 = bytes32(amount);
 
@@ -425,7 +425,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_getMessagePayload_returnsStoredPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
@@ -456,7 +456,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_areTokensAvailable_returnsTrueWhenTokensPresent() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Store payload via bridge
@@ -483,7 +483,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     function test_areTokensAvailable_returnsFalseWhenTokensNotPresent() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Store payload via bridge

@@ -4,10 +4,44 @@ pragma solidity ^0.8;
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title InvoiceDataLib
-/// @notice Library for encoding and decoding invoice message payloads
-/// @dev Provides a standardized way to encode/decode invoice data across bridge components
+/// @notice Library for encoding and decoding invoice message payloads and symbol conversion
+/// @dev Provides a standardized way to encode/decode invoice data and convert bytes6/string symbols
 /// @author kpk
 library InvoiceDataLib {
+    /// @notice Converts a bytes6 symbol (e.g. right-padded "USDC  ") to a string, trimming trailing spaces and null bytes
+    function bytes6ToStr(bytes6 symbol) public pure returns (string memory) {
+        bytes memory b = abi.encodePacked(symbol);
+        uint256 length = 6;
+        while (length > 0 && (b[length - 1] == 0x20 || b[length - 1] == 0)) {
+            length--;
+        }
+        if (length == 0) return "";
+        bytes memory trimmed = new bytes(length);
+        for (uint256 i; i < length; i++) {
+            trimmed[i] = b[i];
+        }
+        return string(trimmed);
+    }
+
+    /// @notice Converts a string symbol to bytes6, right-padding with spaces to 6 bytes
+    /// @param symbol The symbol string (max 6 characters); reverts with SymbolTooLong if length > 6
+    function strToBytes6(string memory symbol) public pure returns (bytes6) {
+        bytes memory b = bytes(symbol);
+        if (b.length > 6) revert SymbolTooLong();
+        bytes memory padded = new bytes(6);
+        for (uint256 i; i < 6; i++) {
+            padded[i] = i < b.length ? b[i] : bytes1(0x20);
+        }
+        uint256 word;
+        for (uint256 i; i < 6; i++) {
+            word |= uint256(uint8(padded[i])) << (8 * (5 - i));
+        }
+        return bytes6(uint48(word));
+    }
+
+    error SymbolTooLong();
+
+    //
     /// @notice Struct containing all invoice data components
     struct InvoiceData {
         bytes32 invoiceId; // The full invoice ID (32 bytes)

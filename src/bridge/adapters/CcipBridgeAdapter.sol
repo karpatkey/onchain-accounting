@@ -63,7 +63,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "CCIP", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "CCIP", version_);
 
         if (router_ == address(0)) revert InvalidRouter();
         router = IRouterClient(router_);
@@ -133,7 +133,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         }
 
         // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Pull ERC20 tokens from escrow if not native (escrow approved us in depositAndBridge)
         // CCIP doesn't bridge native tokens directly - only ERC20 tokens

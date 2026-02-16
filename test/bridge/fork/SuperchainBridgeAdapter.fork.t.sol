@@ -162,7 +162,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL_BYTES6, amount);
 
         // Initiate bridge via BridgeEscrow
         vm.prank(account);
@@ -206,7 +206,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         uint64 destChainId = OPTIMISM_CHAIN_ID;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(account);
@@ -243,7 +243,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         uint256 initialL2Balance = account.balance;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL_BYTES6, amount);
 
         // Initiate withdrawal via BridgeEscrow
         vm.prank(account);
@@ -278,7 +278,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         uint64 destChainId = MAINNET_CHAIN_ID;
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, destChainId, account, WETH_SYMBOL_BYTES6, amount);
 
         vm.prank(account);
         l2BridgeEscrow.depositAndBridge{value: amount}(destChainId, WETH_SYMBOL, amount, address(l2Adapter));
@@ -306,7 +306,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
 
         uint256 amount = TEST_ETH_AMOUNT;
         InvoiceDataLib.InvoiceData memory l1ToL2Data =
-            _createInvoiceData(MAINNET_CHAIN_ID, OPTIMISM_CHAIN_ID, account, WETH_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, OPTIMISM_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory l1ToL2Payload = InvoiceDataLib.encode(l1ToL2Data);
 
         vm.prank(account);
@@ -321,7 +321,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         _selectOptimismFork();
 
         InvoiceDataLib.InvoiceData memory l2ToL1Data =
-            _createInvoiceData(OPTIMISM_CHAIN_ID, MAINNET_CHAIN_ID, account, WETH_SYMBOL, amount);
+            _createInvoiceData(OPTIMISM_CHAIN_ID, MAINNET_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory l2ToL1Payload = InvoiceDataLib.encode(l2ToL1Data);
 
         vm.prank(account);

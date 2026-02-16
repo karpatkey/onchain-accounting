@@ -60,7 +60,8 @@ is_verified() {
   local resp
   resp=$(curl -sS "https://${host}/api?module=contract&action=getsourcecode&address=${address}&apikey=${api_key}") || { echo "skip"; return; }
   local code
-  code=$(echo "$resp" | jq -r '.result[0].SourceCode // empty')
+  # .result can be an array (normal) or a string (API error); only index when array
+  code=$(echo "$resp" | jq -r 'if (.result | type) == "array" and (.result[0] != null) then .result[0].SourceCode // empty else empty end')
   if [[ -z "$code" || "$code" == *"Contract source code not verified"* ]]; then
     echo "no"
   else

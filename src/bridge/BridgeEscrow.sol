@@ -68,14 +68,14 @@ contract BridgeEscrow is
     /// @dev Invariant: Should only be true for valid invoice hashes that have been released
     mapping(bytes32 => bool) public completedInvoices;
 
-    /// @notice Maps asset symbol to asset address on this chain
-    /// @dev Format: assetRegistry[symbol] = assetAddress
+    /// @notice Maps asset symbol (bytes6, internal) to asset address on this chain
     /// @dev address(0) is valid for native tokens (ETH) - must be explicitly registered
-    mapping(bytes6 => address) public assetRegistry;
+    mapping(bytes6 => address) private _assetRegistry;
 
-    /// @notice Tracks which asset symbols have been registered (to distinguish unregistered from native ETH)
-    /// @dev registeredSymbols[symbol] = true if symbol has been registered
-    mapping(bytes6 => bool) public registeredSymbols;
+    /// @notice List of registered asset symbols (for enumeration and registeredAssets())
+    bytes6[] private _registeredSymbols;
+    /// @notice 1-based index in _registeredSymbols for O(1) lookup/removal (0 = not registered)
+    mapping(bytes6 => uint256) private _registeredSymbolsIndex;
 
     /// @notice Cached in-transit balances per account and asset
     /// @dev _inTransitBalances[account][asset] = total amount in transit for that account and asset
@@ -159,7 +159,7 @@ contract BridgeEscrow is
     //
 
     /// @inheritdoc IBridgeEscrow
-    function depositAndBridge(uint64 destinationChainId, bytes6 assetSymbol, uint256 amount, address adapter)
+    function depositAndBridge(uint64 destinationChainId, string calldata assetSymbol, uint256 amount, address adapter)
         external
         payable
         whenNotPaused
@@ -178,16 +178,17 @@ contract BridgeEscrow is
         if (amount == 0) revert InvalidArguments();
         if (destinationChainId == chainId) revert InvalidArguments(); // Can't bridge to same chain
 
+        bytes6 sym = InvoiceDataLib.strToBytes6(assetSymbol);
         // Look up asset address from symbol
-        address asset = assetRegistry[assetSymbol];
-        // Verify asset is registered (check registeredSymbols to distinguish unregistered from native ETH)
-        if (!registeredSymbols[assetSymbol]) revert InvalidArguments(); // Asset not registered
+        address asset = _assetRegistry[sym];
+        // Verify asset is registered (_registeredSymbolsIndex != 0 distinguishes unregistered from native ETH)
+        if (_registeredSymbolsIndex[sym] == 0) revert InvalidArguments(); // Asset not registered
 
         // Create and store invoice (returns invoiceHash, invoiceId, and messagePayload)
         bytes32 invoiceId;
         bytes memory messagePayload;
         (invoiceHash, invoiceId, messagePayload) =
-            _createAndStoreInvoice(destinationChainId, msg.sender, assetSymbol, asset, amount, adapter);
+            _createAndStoreInvoice(destinationChainId, msg.sender, sym, asset, amount, adapter);
 
         // Emit event after invoice creation
         emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
@@ -271,9 +272,9 @@ contract BridgeEscrow is
         }
 
         // Look up asset address from symbol
-        address asset = assetRegistry[data.assetSymbol];
-        // Verify asset is registered (check registeredSymbols to distinguish unregistered from native ETH)
-        if (!registeredSymbols[data.assetSymbol]) revert InvalidArguments();
+        address asset = _assetRegistry[data.assetSymbol];
+        // Verify asset is registered
+        if (_registeredSymbolsIndex[data.assetSymbol] == 0) revert InvalidArguments();
 
         uint256 balance;
         if (_isNativeToken(asset)) {
@@ -395,32 +396,59 @@ contract BridgeEscrow is
     }
 
     /// @notice Registers an asset with its symbol on this chain
-    /// @param symbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
+    /// @param symbol The asset symbol as string (e.g. "USDC" or "WETH"; max 6 chars, right-padded internally)
     /// @param asset The asset address (address(0) for native ETH/tokens)
-    function registerAsset(bytes6 symbol, address asset) external onlyRole(MANAGER_ROLE) {
-        // Allow address(0) for native tokens (e.g., ETH) - used by Superchain adapter
-        assetRegistry[symbol] = asset;
-        registeredSymbols[symbol] = true;
-        emit AssetRegistered(symbol, asset);
+    function registerAsset(string calldata symbol, address asset) external onlyRole(MANAGER_ROLE) {
+        bytes6 sym = InvoiceDataLib.strToBytes6(symbol);
+        _assetRegistry[sym] = asset;
+        if (_registeredSymbolsIndex[sym] == 0) {
+            _registeredSymbols.push(sym);
+            _registeredSymbolsIndex[sym] = _registeredSymbols.length; // 1-based
+        }
+        emit AssetRegistered(sym, asset);
     }
 
     /// @notice Unregisters an asset symbol
-    /// @param symbol The asset symbol to unregister
-    /// @dev Prevents unregistering if there are active invoices for this asset symbol
-    function unregisterAsset(bytes6 symbol) external onlyRole(MANAGER_ROLE) {
-        // Check if asset has active invoices
-        if (_hasActiveInvoicesForAsset(symbol)) {
+    /// @param symbol The asset symbol as string (must match registered symbol)
+    /// @dev Reverts if symbol was never registered or has active invoices
+    function unregisterAsset(string calldata symbol) external onlyRole(MANAGER_ROLE) {
+        bytes6 sym = InvoiceDataLib.strToBytes6(symbol);
+        uint256 idx = _registeredSymbolsIndex[sym];
+        if (idx == 0) revert AssetNotRegistered(symbol);
+        if (_hasActiveInvoicesForAsset(sym)) {
             revert AssetHasActiveInvoices(symbol);
         }
 
-        delete assetRegistry[symbol];
-        registeredSymbols[symbol] = false;
-        emit AssetUnregistered(symbol);
+        uint256 lastIdx = _registeredSymbols.length;
+        bytes6 lastSymbol = _registeredSymbols[lastIdx - 1];
+        _registeredSymbols[idx - 1] = lastSymbol;
+        _registeredSymbolsIndex[lastSymbol] = idx;
+        _registeredSymbols.pop();
+        delete _registeredSymbolsIndex[sym];
+        delete _assetRegistry[sym];
+
+        emit AssetUnregistered(sym);
     }
 
     //
     // View Functions
     //
+
+    /// @inheritdoc IBridgeEscrow
+    function assetRegistry(string calldata symbol) external view override returns (address) {
+        return _assetRegistry[InvoiceDataLib.strToBytes6(symbol)];
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function registeredAssets() external view override returns (string[] memory symbols, address[] memory assets) {
+        uint256 n = _registeredSymbols.length;
+        symbols = new string[](n);
+        assets = new address[](n);
+        for (uint256 i; i < n; i++) {
+            symbols[i] = InvoiceDataLib.bytes6ToStr(_registeredSymbols[i]);
+            assets[i] = _assetRegistry[_registeredSymbols[i]];
+        }
+    }
 
     /// @inheritdoc IBridgeEscrow
     function getInvoice(bytes32 invoiceHash) external view override returns (Invoice memory) {
@@ -712,20 +740,20 @@ contract BridgeEscrow is
     /// @return sourceChainId Source chain ID
     /// @return destinationChainId Destination chain ID
     /// @return account Account address (full 20 bytes)
-    /// @return assetSymbol Asset symbol
+    /// @return assetSymbol Asset symbol as string (trimmed)
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address account, bytes6 assetSymbol)
+        returns (uint24 sourceChainId, uint24 destinationChainId, address account, string memory assetSymbol)
     {
         uint256 id = uint256(invoiceId);
 
         sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
         destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit overflow
         account = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
-        // casting to uint48/bytes6 is safe: id & type(uint48).max keeps only low 48 bits, so no truncation
         // forge-lint: disable-next-line(unsafe-typecast)
-        assetSymbol = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
+        bytes6 sym = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
+        assetSymbol = InvoiceDataLib.bytes6ToStr(sym);
     }
 
     /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload

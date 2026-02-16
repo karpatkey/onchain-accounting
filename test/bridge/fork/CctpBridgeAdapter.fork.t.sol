@@ -75,7 +75,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL_BYTES6, amount);
 
         // Initiate bridge via BridgeEscrow
         vm.prank(account);
@@ -134,7 +134,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
 
         // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL_BYTES6, amount);
 
         // Initiate bridge
         vm.prank(account);
@@ -160,7 +160,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
         _approveToken(MAINNET_USDC, address(bridgeEscrow), amount);
 
         InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL, amount);
+            _createInvoiceData(MAINNET_CHAIN_ID, destChainId, account, USDC_SYMBOL_BYTES6, amount);
 
         vm.prank(account);
         bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));

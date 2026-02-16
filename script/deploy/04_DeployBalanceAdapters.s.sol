@@ -13,7 +13,6 @@ import {GmxBalanceOracle} from "../../src/balances/protocols/GMX.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
-import {ERC20DefaultOracle} from "../../src/balances/protocols/ERC20DefaultOracle.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -48,9 +47,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Deploy Sky Savings USDS
         _deployIfEnabled("SkySavingsUsds");
 
-        // Deploy ERC20 Default oracles
-        _deployIfEnabled("ERC20Default_WETH");
-        _deployIfEnabled("ERC20Default_USDC");
+        // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
         vm.stopBroadcast();
 
@@ -136,11 +133,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Sky Savings USDS
         if (_equals(adapterName, "SkySavingsUsds")) {
             return _deploySkySavingsUsds(navCalculator);
-        }
-
-        // ERC20 Default oracles
-        if (_startsWith(adapterName, "ERC20Default_")) {
-            return _deployErc20Default(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -277,24 +269,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         SkySavingsUsdsBalanceOracle adapter =
             new SkySavingsUsdsBalanceOracle(savingsUsds, protocol, positionDetail, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployErc20Default(
-        string memory,
-        /* adapterName */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
-        // Read initialAssets from config - this is an array
-        // For now, we'll need to handle this differently as ConfigReader doesn't support arrays
-        // Using empty array as placeholder - this should be enhanced to read arrays from config
-        // Note: adapterName parameter is reserved for future use when we implement array reading from config
-        address[] memory initialAssets = new address[](0);
-
-        ERC20DefaultOracle adapter = new ERC20DefaultOracle(navCalculator, initialAssets);
         return address(adapter);
     }
 

@@ -45,16 +45,19 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     bool private _initialized;
 
-    /// @notice One-time initializer for the BridgeAdapter
+    /// @notice One-time initializer for the BridgeAdapter (internal; only for use by derived adapters)
     /// @param admin_ The admin address
     /// @param bridgeEscrow_ The BridgeEscrow contract address
     /// @param providerName_ The bridge provider name
     /// @param version_ The adapter version
-    /// @dev Public so concrete adapters can call super.initialize() from their initialize().
+    /// @dev Derived adapters expose their own initialize() and call this via super._initializeBridgeAdapter().
     ///      Uses a simple boolean guard instead of OZ Initializable.
-    function initialize(address admin_, address bridgeEscrow_, string memory providerName_, string memory version_)
-        public
-    {
+    function _initializeBridgeAdapter(
+        address admin_,
+        address bridgeEscrow_,
+        string memory providerName_,
+        string memory version_
+    ) internal {
         require(!_initialized, "BridgeAdapter: already initialized");
         _initialized = true;
 

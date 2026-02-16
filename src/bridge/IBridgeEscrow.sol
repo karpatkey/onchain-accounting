@@ -54,8 +54,12 @@ interface IBridgeEscrow {
     error InvalidTimestamp(uint64 provided, uint64 current);
 
     /// @notice Thrown when attempting to unregister an asset with active invoices
-    /// @param symbol The asset symbol
-    error AssetHasActiveInvoices(bytes6 symbol);
+    /// @param symbol The asset symbol (string)
+    error AssetHasActiveInvoices(string symbol);
+
+    /// @notice Thrown when attempting to unregister a symbol that was never registered
+    /// @param symbol The asset symbol (string)
+    error AssetNotRegistered(string symbol);
 
     //
     // Types
@@ -136,11 +140,11 @@ interface IBridgeEscrow {
 
     /// @notice Deposits assets from an account and immediately bridges them
     /// @param destinationChainId The destination chain ID
-    /// @param assetSymbol The asset symbol (bytes6, e.g., "USDC  " or "WETH  ")
+    /// @param assetSymbol The asset symbol as string (e.g. "USDC" or "WETH"; max 6 chars)
     /// @param amount The amount to bridge
     /// @param adapter The bridge adapter address to use
     /// @return invoiceHash The hashed invoice identifier (checksum: invoiceId + amount + timestamp)
-    function depositAndBridge(uint64 destinationChainId, bytes6 assetSymbol, uint256 amount, address adapter)
+    function depositAndBridge(uint64 destinationChainId, string calldata assetSymbol, uint256 amount, address adapter)
         external
         payable
         returns (bytes32 invoiceHash);
@@ -171,11 +175,11 @@ interface IBridgeEscrow {
     /// @return sourceChainId Source chain ID
     /// @return destinationChainId Destination chain ID
     /// @return account Account address (full 20 bytes)
-    /// @return assetSymbol Asset symbol
+    /// @return assetSymbol Asset symbol as string (trimmed)
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
-        returns (uint24 sourceChainId, uint24 destinationChainId, address account, bytes6 assetSymbol);
+        returns (uint24 sourceChainId, uint24 destinationChainId, address account, string memory assetSymbol);
 
     /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload
     /// @param invoiceId The 32-byte invoice ID (excludes amount)
@@ -215,14 +219,14 @@ interface IBridgeEscrow {
     function isInvoiceCompleted(bytes32 invoiceHash) external view returns (bool);
 
     /// @notice Gets the asset address for a given asset symbol
-    /// @param symbol The asset symbol (bytes6)
+    /// @param symbol The asset symbol as string (max 6 chars)
     /// @return The asset address, or address(0) if not registered
-    function assetRegistry(bytes6 symbol) external view returns (address);
+    function assetRegistry(string calldata symbol) external view returns (address);
 
-    /// @notice Checks if an asset symbol has been registered
-    /// @param symbol The asset symbol (bytes6)
-    /// @return True if the symbol has been registered
-    function registeredSymbols(bytes6 symbol) external view returns (bool);
+    /// @notice Returns all registered asset symbol–address pairs
+    /// @return symbols Array of registered asset symbols as strings (converted from bytes6)
+    /// @return assets Array of asset addresses (same length as symbols; address(0) for native)
+    function registeredAssets() external view returns (string[] memory symbols, address[] memory assets);
 
     /// @notice Returns all assets in-transit for a specific account with their amounts
     /// @param account The account address

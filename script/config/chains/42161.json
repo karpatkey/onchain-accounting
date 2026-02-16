@@ -18,75 +18,47 @@
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
   "balanceAdapters": {
-    "AaveV3_USDC": {
+    "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "dataProvider": "0x69FA688f1Dc47d4B5d8029D5a35FB7a548310654",
-        "rewardsDistributor": "0x929EC64c34a17401F460460D4B9390518E5B473e",
-        "protocol": "Aave V3",
-        "navCalculator": ""
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
-      "deployed": ""
-    },
-    "CompoundV3_USDC": {
-      "enabled": true,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "comet": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
-        "rewardToken": "0x912CE59144191C1204E64559FE8253a0e49E6548",
-        "protocol": "Compound V3",
-        "navCalculator": ""
-      },
-      "deployed": ""
-    },
-    "GMX_GLP": {
-      "enabled": true,
-      "constructor": {
-        "market": "0x70d95587d40A2caf56bd97485aB3Eec10Bee6336",
-        "reader": "0x38d91ED96283d62182Fc6d990C24097A918a4d9b",
-        "referralStorage": "0xe6fab3F0c7199b0d34d7FbE83394fc0e0D06e99d",
-        "usdc": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-        "collateralToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-        "protocol": "GMX",
-        "positionDetail": "GLP",
-        "navCalculator": ""
-      },
-      "deployed": ""
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
     }
   },
   "bridgeAdapters": {
     "CCIP": {
-      "enabled": false,
+      "enabled": true,
       "initialize": {
-        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
         "router": "0x141fa059441E0ca23ce184B6A78bafD2A517DdE8",
         "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "0x57DD601d0474dcC95c8C9748f6d41D967086ed9F"
     },
     "Across": {
-      "enabled": false,
+      "enabled": true,
       "initialize": {
-        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
         "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "0x086e289d5Ab4B63Daa75002E034919d7dd43d611"
     },
     "Stargate": {
-      "enabled": false,
+      "enabled": true,
       "initialize": {
-        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
         "router": "0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614",
         "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "0x3F7DE433E2AC424921C38177CCbb586F7ab2a101"
     },
     "CCTP": {
       "enabled": true,
@@ -97,7 +69,7 @@
         "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "0xEFa5a2E15b0247Aab160511dc862C6c098DEe16b"
     }
   }
 }

@@ -8,6 +8,13 @@ import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 /// @notice Minimal concrete implementation of BridgeAdapter for testing base behavior
 /// @dev _bridge and _completeBridge are no-ops; used to test bridge(), completeBridge(), recoverStuckAssets()
 contract MockBridgeAdapter is BridgeAdapter {
+    /// @notice Initializer for tests (single external entrypoint; base initializer is internal)
+    function initialize(address admin_, address bridgeEscrow_, string memory providerName_, string memory version_)
+        external
+    {
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, providerName_, version_);
+    }
+
     /// @notice No-op bridge implementation for unit testing base adapter
     function _bridge(InvoiceDataLib.InvoiceData memory) internal pure override {
         // No-op: base tests verify caller check and event emission only

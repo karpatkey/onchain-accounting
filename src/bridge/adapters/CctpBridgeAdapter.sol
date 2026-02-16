@@ -53,7 +53,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "CCTP", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "CCTP", version_);
 
         // Initialize CCTP-specific contracts
         tokenMessenger = ITokenMessenger(tokenMessenger_);
@@ -88,7 +88,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @dev Receives decoded invoice data struct and converts it to CCTP-specific format
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
         // Get asset address from registry
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Validate asset is not native (CCTP only supports USDC)
         if (_isNativeToken(asset)) {

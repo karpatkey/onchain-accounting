@@ -17,11 +17,29 @@
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
-  "balanceAdapters": {},
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {  
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+      },
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    }
+  },
   "bridgeAdapters": {
     "Superchain": {
       "enabled": true,
-      "deployed": "0x7A684c45aFb3B86aa5aEb10Dc1bD33AC0F17fd13"
+      "initialize": {
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "l1Bridge": "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
+        "l2Bridge": "0x4200000000000000000000000000000000000010",
+        "l1Messenger": "0x866E82a600A1414e583f7F13623F1acC5b786258",
+        "l2Messenger": "0x4200000000000000000000000000000000000007",
+        "optimismPortal": "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+        "version": "1.0.0"
+      },
+      "deployed": "0xB3A50Ce68FA50A554311F8aD7039a75a0b83Da1A"
     },
     "Across": {
       "enabled": true,
@@ -32,7 +50,7 @@
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": "0x07E93439B5B4d9F9688E4AE967e5aEEdBbD508fa"
+      "deployed": "0xb59846652D7e64FA1F0A6DfA82e25d1F1431FCEC"
     },
     "Stargate": {
       "enabled": true,
@@ -43,7 +61,7 @@
         "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
-      "deployed": "0xfbB980103556253Bb09115BcA16202372f05d563"
+      "deployed": "0x7ced6E6660D01475E7974Ae130269BB1c14D03D6"
     },
     "CCTP": {
       "enabled": true,
@@ -54,7 +72,7 @@
         "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
         "version": "1.0.0"
       },
-      "deployed": "0xE4DF7e8A9AEDD4AA1E402FFd73e1c87A5e233ff1"
+      "deployed": "0x05905e5FECE2169ff7F118E07124e62Acc52aFB4"
     }
   }
 }

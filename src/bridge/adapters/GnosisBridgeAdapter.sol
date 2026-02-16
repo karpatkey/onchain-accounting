@@ -53,7 +53,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "Gnosis", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Gnosis", version_);
 
         if (omnibridge_ == address(0)) revert InvalidOmnibridge();
         if (amb_ == address(0)) revert InvalidAMB();
@@ -89,7 +89,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         // Get asset address from registry
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Validate destination chain is supported (Ethereum or Gnosis Chain)
         // Chain ID 1 = Ethereum, Chain ID 100 = Gnosis Chain

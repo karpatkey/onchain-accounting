@@ -17,8 +17,30 @@
     "BridgeEscrowImplementation": "0xB9330561EA35a7643A95b68D8A70fA6D6c004773",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
-  "balanceAdapters": {},
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+      },
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    }
+  },
   "bridgeAdapters": {
+    "Superchain": {
+      "enabled": true,
+      "initialize": {
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "l1Bridge": "0x636Af16bf2f682dD3109e60102b8E1A089FedAa8",
+        "l2Bridge": "0x4200000000000000000000000000000000000010",
+        "l1Messenger": "0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1",
+        "l2Messenger": "0x4200000000000000000000000000000000000007",
+        "optimismPortal": "0xbEb5Fc579115071764c7423A4f12eDde41f106EdC",
+        "version": "1.0.0"
+      },
+      "deployed": ""
+    },
     "CCTP": {
       "enabled": true,
       "initialize": {

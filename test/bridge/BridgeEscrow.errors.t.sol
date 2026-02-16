@@ -5,7 +5,13 @@ import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
 import {InvoiceDataLib} from "src/bridge/InvoiceDataLib.sol";
 import {BridgeEscrowTestBase} from "test/bridge/BridgeEscrowTestBase.sol";
 import {MockBridgeAdapter} from "test/bridge/mocks/MockBridgeAdapter.sol";
-import {NotAuthorized, InvalidArguments, InvoiceNotFound, AssetHasActiveInvoices} from "src/errors.sol";
+import {
+    NotAuthorized,
+    InvalidArguments,
+    InvoiceNotFound,
+    AssetHasActiveInvoices,
+    AssetNotRegistered
+} from "src/errors.sol";
 
 /// @title BridgeEscrow Error Tests
 /// @notice Revert and authorization tests for BridgeEscrow
@@ -41,7 +47,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     }
 
     function test_RevertWhen_depositAndBridge_assetNotRegistered() public {
-        bytes6 unknownSymbol = "UNK   ";
+        string memory unknownSymbol = "UNK";
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
@@ -82,7 +88,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
     function test_RevertWhen_releaseByInvoiceId_invalidChecksum() public {
         (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, 1000e6);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 1000e6);
         data.checksum24 = bytes24(uint192(uint256(uint192(data.checksum24)) ^ 1)); // corrupt
         bytes memory badPayload = InvoiceDataLib.encode(data);
         usdc.mint(address(destEscrow), 1000e6);
@@ -100,8 +106,9 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.authorizeAdapter(address(destMock));
 
         uint64 futureTs = uint64(block.timestamp + 1);
-        InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceDataWithTimestamp(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, 1000e6, futureTs);
+        InvoiceDataLib.InvoiceData memory data = _createInvoiceDataWithTimestamp(
+            SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 1000e6, futureTs
+        );
         bytes memory messagePayload = InvoiceDataLib.encode(data);
         usdc.mint(address(destEscrow), 1000e6);
 
@@ -167,6 +174,19 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.prank(unauthorized);
         vm.expectRevert();
         bridgeEscrow.registerAsset("NEW   ", makeAddr("token"));
+    }
+
+    function test_RevertWhen_unregisterAsset_notManager() public {
+        vm.prank(unauthorized);
+        vm.expectRevert();
+        bridgeEscrow.unregisterAsset(DAI_SYMBOL);
+    }
+
+    function test_RevertWhen_unregisterAsset_notRegistered() public {
+        string memory unknownSymbol = "FAKE";
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(AssetNotRegistered.selector, unknownSymbol));
+        bridgeEscrow.unregisterAsset(unknownSymbol);
     }
 
     function test_RevertWhen_unregisterAsset_hasActiveInvoices() public {

@@ -49,7 +49,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "Across", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Across", version_);
 
         if (spokePool_ == address(0)) revert InvalidSpokePool();
         if (defaultRelayerFeePct_ < 0 || defaultRelayerFeePct_ > 1e18) {
@@ -88,7 +88,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Check if asset is native token (address(0) or NATIVE_ADDRESS_ERC7528)
         bool isNative = _isNativeToken(asset);

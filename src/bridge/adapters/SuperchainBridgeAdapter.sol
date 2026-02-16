@@ -76,7 +76,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "Superchain", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Superchain", version_);
         chainId = block.chainid;
 
         // On L1 (mainnet), only initialize L1 contracts
@@ -170,7 +170,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         // Get asset address from registry
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
         bool isEth = _isNativeToken(asset);
 
         // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
@@ -344,7 +344,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     {
         // For L1 → L2 deposits, tokens should be at bridgeEscrow (receiver = bridgeEscrow)
         // But if they arrived at adapter, transfer them to bridgeEscrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
         // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event

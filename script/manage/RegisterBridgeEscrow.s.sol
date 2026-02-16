@@ -5,6 +5,7 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
+import {InvoiceDataLib} from "../../src/bridge/InvoiceDataLib.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterBridgeEscrow
@@ -61,8 +62,11 @@ contract RegisterBridgeEscrow is BaseDeployScript {
         if (_shouldAddUsdcRegistration()) {
             address usdc = _readUsdcAddress();
             require(usdc != address(0), "USDC address missing in assets.json");
-            transactions[idx] =
-                SafeTxBuilder.call(bridgeProxy, 0, abi.encodeCall(BridgeEscrow.registerAsset, (USDC_SYMBOL, usdc)));
+            transactions[idx] = SafeTxBuilder.call(
+                bridgeProxy,
+                0,
+                abi.encodeCall(BridgeEscrow.registerAsset, (InvoiceDataLib.bytes6ToStr(USDC_SYMBOL), usdc))
+            );
             console2.log("Added tx: BridgeEscrow.registerAsset(USDC, ...)", usdc);
         }
 

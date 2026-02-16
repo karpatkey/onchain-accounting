@@ -36,10 +36,13 @@ abstract contract BridgeTestBase is Test {
     uint256 public constant INITIAL_BALANCE = 1000000 * 1e18;
     uint256 public constant BRIDGE_AMOUNT = 1000 * 1e18;
 
-    // Asset symbols (bytes6, right-padded with spaces)
-    bytes6 public constant USDC_SYMBOL = "USDC  ";
-    bytes6 public constant WETH_SYMBOL = "WETH  ";
-    bytes6 public constant DAI_SYMBOL = "DAI   ";
+    // Asset symbols: string for escrow API, bytes6 for invoice data (right-padded)
+    string public constant USDC_SYMBOL = "USDC";
+    string public constant WETH_SYMBOL = "WETH";
+    string public constant DAI_SYMBOL = "DAI";
+    bytes6 public constant USDC_SYMBOL_BYTES6 = "USDC  ";
+    bytes6 public constant WETH_SYMBOL_BYTES6 = "WETH  ";
+    bytes6 public constant DAI_SYMBOL_BYTES6 = "DAI   ";
 
     function setUp() public virtual {
         _setupTokens();
@@ -171,9 +174,9 @@ abstract contract BridgeTestBase is Test {
 
     /// @notice Helper to get asset address from symbol
     function _getAssetAddress(bytes6 symbol) internal view returns (address) {
-        if (symbol == USDC_SYMBOL) return address(usdc);
-        if (symbol == WETH_SYMBOL) return address(weth);
-        if (symbol == DAI_SYMBOL) return address(dai);
+        if (symbol == USDC_SYMBOL_BYTES6) return address(usdc);
+        if (symbol == WETH_SYMBOL_BYTES6) return address(weth);
+        if (symbol == DAI_SYMBOL_BYTES6) return address(dai);
         revert("Unknown asset symbol");
     }
 

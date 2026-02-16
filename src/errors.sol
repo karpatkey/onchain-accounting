@@ -18,7 +18,8 @@ error InvalidNonce();
 error InvalidCompletionData();
 error InvalidChecksum(bytes32 invoiceId, bytes24 provided, bytes24 calculated);
 error InvalidTimestamp(uint64 provided, uint64 current);
-error AssetHasActiveInvoices(bytes6 symbol);
+error AssetHasActiveInvoices(string symbol);
+error AssetNotRegistered(string symbol);
 
 // NAV Calculator / registry errors
 error PriceFeedNotSet(address asset);

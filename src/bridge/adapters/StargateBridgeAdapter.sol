@@ -62,7 +62,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
-        super.initialize(admin_, bridgeEscrow_, "Stargate", version_);
+        super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Stargate", version_);
 
         if (router_ == address(0)) revert InvalidRouter();
         if (endpoint_ == address(0)) revert InvalidEndpoint();
@@ -122,7 +122,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         }
 
         // Get asset address from escrow
-        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
         // Stargate doesn't support native tokens directly - they must be wrapped first
         if (_isNativeToken(asset)) {

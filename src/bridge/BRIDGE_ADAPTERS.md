@@ -148,7 +148,7 @@ So the **recipient** of callback-based bridges is always the BridgeEscrow. When 
 - **revokeAdapter(adapter):** Removes the adapter from the authorized set and clears its callback registration if any.
 - **getCallbackAdapter(selector):** Returns the adapter address registered for a given callback selector.
 
-Assets must be registered per symbol via `registerAsset(symbol, assetAddress)`. Native tokens use `address(0)`; the escrow still distinguishes “registered native” from “unregistered” via `registeredSymbols`.
+Assets must be registered per symbol via `registerAsset(symbol, assetAddress)`. Native tokens use `address(0)`; the escrow still distinguishes “registered native” from “unregistered” via `registeredAssets()`.
 
 ---
 

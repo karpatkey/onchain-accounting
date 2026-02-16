@@ -120,7 +120,7 @@ contract Configure is BaseDeployScript {
 
     function _countDeployedBalanceAdapters() internal view returns (uint256 count) {
         // Count enabled adapters that have been deployed
-        string[] memory adapterNames = new string[](10);
+        string[] memory adapterNames = new string[](9);
         adapterNames[0] = "AaveV3_USDC";
         adapterNames[1] = "AaveV3_WETH";
         adapterNames[2] = "CompoundV3_USDC";
@@ -130,6 +130,7 @@ contract Configure is BaseDeployScript {
         adapterNames[6] = "GMX_GLP";
         adapterNames[7] = "DaiDsr";
         adapterNames[8] = "SkySavingsUsds";
+        // ERC20Default is created in NAVCalculator.initialize() and already registered; address written by 02_DeployProxies
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "balanceAdapters", adapterNames[i])) {
@@ -170,7 +171,7 @@ contract Configure is BaseDeployScript {
         }
 
         uint256 txIndex = startIndex;
-        string[] memory adapterNames = new string[](10);
+        string[] memory adapterNames = new string[](9);
         adapterNames[0] = "AaveV3_USDC";
         adapterNames[1] = "AaveV3_WETH";
         adapterNames[2] = "CompoundV3_USDC";
@@ -180,6 +181,7 @@ contract Configure is BaseDeployScript {
         adapterNames[6] = "GMX_GLP";
         adapterNames[7] = "DaiDsr";
         adapterNames[8] = "SkySavingsUsds";
+        // ERC20Default is already registered in NAVCalculator.initialize(), not added via Configure
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "balanceAdapters", adapterNames[i])) {

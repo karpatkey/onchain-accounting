@@ -5,6 +5,7 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
+import {InvoiceDataLib} from "../../src/bridge/InvoiceDataLib.sol";
 import {IPrices} from "../../src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -197,8 +198,9 @@ contract ManageAdapters is BaseDeployScript {
         require(bridgeProxy != address(0), "BridgeEscrow not deployed");
 
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
-        transactions[0] =
-            SafeTxBuilder.call(bridgeProxy, 0, abi.encodeCall(BridgeEscrow.registerAsset, (symbol, asset)));
+        transactions[0] = SafeTxBuilder.call(
+            bridgeProxy, 0, abi.encodeCall(BridgeEscrow.registerAsset, (InvoiceDataLib.bytes6ToStr(symbol), asset))
+        );
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-register-asset.json"));
 

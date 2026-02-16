@@ -58,14 +58,14 @@ abstract contract BridgeScenarioHelper is BridgeTestBase {
     {
         IBridgeEscrow.Invoice memory inv = escrow.getInvoice(invoiceHash);
         require(inv.invoiceId != bytes32(0), "BridgeScenario: no invoice");
-        (, uint24 destChainId,, bytes6 assetSymbol) = escrow.decodeInvoiceId(inv.invoiceId);
+        (, uint24 destChainId,, string memory assetSymbolStr) = escrow.decodeInvoiceId(inv.invoiceId);
         bytes24 checksum24 = _calculateChecksum(inv.invoiceId, inv.amount, uint64(inv.timestamp));
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.InvoiceData({
             invoiceId: inv.invoiceId,
             sourceChainId: uint24(inv.sourceChainId),
             destinationChainId: destChainId,
             account: inv.account,
-            assetSymbol: assetSymbol,
+            assetSymbol: InvoiceDataLib.strToBytes6(assetSymbolStr),
             amount: inv.amount,
             timestamp: uint64(inv.timestamp),
             checksum24: checksum24

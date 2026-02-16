@@ -27,7 +27,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         address impl = address(new MockBridgeAdapter());
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
-                    impl, abi.encodeCall(BridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
+                    impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
                 )
             ));
         mockAdapter = MockBridgeAdapter(proxy);
@@ -50,7 +50,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         destEscrow.authorizeAdapter(address(destMock));
         vm.stopPrank();
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         messagePayload = InvoiceDataLib.encode(data);
         return (destEscrow, messagePayload, destMock);
     }
@@ -59,7 +59,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         address impl = address(new MockBridgeAdapter());
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
-                    impl, abi.encodeCall(BridgeAdapter.initialize, (admin, address(escrow), "Mock", "1.0.0"))
+                    impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(escrow), "Mock", "1.0.0"))
                 )
             ));
         return MockBridgeAdapter(proxy);

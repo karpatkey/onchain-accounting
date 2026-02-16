@@ -14,11 +14,6 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Deploys bridge adapters for BridgeEscrow from chain config
 /// @dev Bridge adapters use initialize(admin, bridgeEscrow, ...). Addresses saved to bridgeAdapters.<Name>.deployed.
 contract DeployBridgeAdapters is BaseDeployScript {
-    /// @notice L2 Standard Bridge (OP Stack: Optimism, Base) - same address on all Superchain L2s
-    address internal constant L2_STANDARD_BRIDGE = 0x4200000000000000000000000000000000000010;
-    /// @notice L2 Cross Domain Messenger (OP Stack)
-    address internal constant L2_CROSS_DOMAIN_MESSENGER = 0x4200000000000000000000000000000000000007;
-
     function run() public override {
         setUp();
 
@@ -103,23 +98,38 @@ contract DeployBridgeAdapters is BaseDeployScript {
     }
 
     function _deploySuperchainL2IfNeeded(address bridgeProxy) internal {
+        string memory l2BridgeStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Superchain", "l2Bridge");
+        if (bytes(l2BridgeStr).length == 0) return;
         if (_isAdapterDeployedOnChain("bridgeAdapters", "Superchain")) {
             console2.log("Superchain adapter already deployed");
             return;
         }
+        address admin_ = _parseAddr("Superchain", "admin", chainConfig.admin);
+        address bridgeEscrow_ = _parseAddr("Superchain", "bridgeEscrow", bridgeProxy);
+        address l1Bridge_ = _parseAddr("Superchain", "l1Bridge", address(0));
+        address l2Bridge_ = vm.parseAddress(l2BridgeStr);
+        address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
+        address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));
+        address optimismPortal_ = _parseAddr("Superchain", "optimismPortal", address(0));
+        string memory version_ = _adapterVersion("Superchain");
+
         SuperchainBridgeAdapter adapter = new SuperchainBridgeAdapter();
         adapter.initialize(
-            chainConfig.admin,
-            bridgeProxy,
-            address(0), // l1Bridge
-            L2_STANDARD_BRIDGE,
-            address(0), // l1Messenger
-            L2_CROSS_DOMAIN_MESSENGER,
-            address(0), // optimismPortal
-            "1.0.0"
+            admin_, bridgeEscrow_, l1Bridge_, l2Bridge_, l1Messenger_, l2Messenger_, optimismPortal_, version_
         );
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Superchain", address(adapter));
         console2.log("SuperchainBridgeAdapter deployed at:", address(adapter));
+    }
+
+    function _parseAddr(string memory adapterName, string memory paramName, address fallback_)
+        internal
+        view
+        returns (address)
+    {
+        string memory s = ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", adapterName, paramName);
+        if (bytes(s).length == 0) return fallback_;
+        return vm.parseAddress(s);
     }
 
     function _deployCcipIfConfigured(address bridgeProxy) internal {

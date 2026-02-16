@@ -35,7 +35,6 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     function test_depositAndBridge_erc20Success() public {
         uint256 amount = BRIDGE_AMOUNT;
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-
         vm.prank(account);
         bytes32 invoiceHash = bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(mockAdapter));
 
@@ -158,20 +157,117 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
 
     // ============ registerAsset / unregisterAsset ============
 
+    function test_registeredAssets_initialState() public view {
+        (string[] memory symbols, address[] memory assets) = bridgeEscrow.registeredAssets();
+        assertEq(symbols.length, 3, "Setup registers USDC, WETH, DAI");
+        assertEq(assets.length, 3, "Same length as symbols");
+        (bool hasUsdc,) = _findSymbolString(symbols, USDC_SYMBOL);
+        (bool hasWeth,) = _findSymbolString(symbols, WETH_SYMBOL);
+        (bool hasDai,) = _findSymbolString(symbols, DAI_SYMBOL);
+        assertTrue(hasUsdc && hasWeth && hasDai, "All setup symbols present");
+        assertEq(bridgeEscrow.assetRegistry(USDC_SYMBOL), address(usdc), "USDC mapping");
+        assertEq(bridgeEscrow.assetRegistry(WETH_SYMBOL), address(weth), "WETH mapping");
+        assertEq(bridgeEscrow.assetRegistry(DAI_SYMBOL), address(dai), "DAI mapping");
+    }
+
     function test_registerAsset_success() public {
-        bytes6 symbol = "NEW   ";
+        string memory symbol = "NEW";
         address token = address(new Mock_ERC20("NEW", 18));
+        bytes6 expectedSym = InvoiceDataLib.strToBytes6(symbol);
         vm.prank(admin);
+        vm.expectEmit(true, true, true, true);
+        emit IBridgeEscrow.AssetRegistered(expectedSym, token);
         bridgeEscrow.registerAsset(symbol, token);
         assertEq(bridgeEscrow.assetRegistry(symbol), token, "Asset should be registered");
-        assertTrue(bridgeEscrow.registeredSymbols(symbol), "Symbol should be registered");
+        (string[] memory symbols, address[] memory assets) = bridgeEscrow.registeredAssets();
+        assertEq(symbols.length, 4, "One more than initial");
+        (bool found, uint256 idx) = _findSymbolString(symbols, symbol);
+        assertTrue(found, "Symbol should be in registeredAssets");
+        assertEq(assets[idx], token, "Asset address should match");
+    }
+
+    function test_registerAsset_nativeWithAddressZero() public {
+        string memory symbol = "NATIVE";
+        bytes6 expectedSym = InvoiceDataLib.strToBytes6(symbol);
+        vm.prank(admin);
+        vm.expectEmit(true, true, true, true);
+        emit IBridgeEscrow.AssetRegistered(expectedSym, address(0));
+        bridgeEscrow.registerAsset(symbol, address(0));
+        assertEq(bridgeEscrow.assetRegistry(symbol), address(0), "Native registered as zero address");
+        (string[] memory symbols, address[] memory assets) = bridgeEscrow.registeredAssets();
+        (bool found, uint256 idx) = _findSymbolString(symbols, symbol);
+        assertTrue(found, "Native symbol in registeredAssets");
+        assertEq(assets[idx], address(0), "Native asset is address(0)");
+    }
+
+    function test_registerAsset_revertsWhenSymbolTooLong() public {
+        address token = address(new Mock_ERC20("LONG", 18));
+        vm.prank(admin);
+        vm.expectRevert(InvoiceDataLib.SymbolTooLong.selector);
+        bridgeEscrow.registerAsset("SEVENCH", token); // 7 characters
+    }
+
+    function test_registerAsset_returnsSameSymbolAsInput() public {
+        string memory symbol = "XYZ";
+        address token = address(new Mock_ERC20("XYZ", 18));
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(symbol, token);
+
+        (string[] memory symbols,) = bridgeEscrow.registeredAssets();
+        (bool found, uint256 idx) = _findSymbolString(symbols, symbol);
+        assertTrue(found, "Symbol should be in registeredAssets");
+        assertEq(symbols[idx], symbol, "Registered asset should return the same symbol as input");
+        assertEq(bridgeEscrow.assetRegistry(symbol), token, "assetRegistry(symbol) should return registered token");
+    }
+
+    function test_registerAsset_updateExistingSymbol() public {
+        address newToken = address(new Mock_ERC20("USDC2", 6));
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(USDC_SYMBOL, newToken);
+        assertEq(bridgeEscrow.assetRegistry(USDC_SYMBOL), newToken, "Registry updated");
+        (string[] memory symbols, address[] memory assets) = bridgeEscrow.registeredAssets();
+        assertEq(symbols.length, 3, "No duplicate entry; same symbol count");
+        assertEq(assets[_findSymbolStringIndex(symbols, USDC_SYMBOL)], newToken, "registeredAssets shows new address");
     }
 
     function test_unregisterAsset_success() public {
         vm.prank(admin);
+        vm.expectEmit(true, true, true, true);
+        emit IBridgeEscrow.AssetUnregistered(DAI_SYMBOL_BYTES6);
         bridgeEscrow.unregisterAsset(DAI_SYMBOL);
         assertEq(bridgeEscrow.assetRegistry(DAI_SYMBOL), address(0), "Asset should be cleared");
-        assertFalse(bridgeEscrow.registeredSymbols(DAI_SYMBOL), "Symbol should be unregistered");
+        (string[] memory symbols,) = bridgeEscrow.registeredAssets();
+        assertEq(symbols.length, 2, "One fewer than initial");
+        (bool found,) = _findSymbolString(symbols, DAI_SYMBOL);
+        assertFalse(found, "Symbol should not be in registeredAssets");
+    }
+
+    function test_unregisterAsset_registeredAssetsLengthAndContent() public {
+        (string[] memory beforeSym,) = bridgeEscrow.registeredAssets();
+        assertEq(beforeSym.length, 3, "Initial count");
+        vm.prank(admin);
+        bridgeEscrow.unregisterAsset(WETH_SYMBOL);
+        (string[] memory afterSym, address[] memory afterAssets) = bridgeEscrow.registeredAssets();
+        assertEq(afterSym.length, 2, "Count after unregister");
+        assertEq(afterAssets.length, 2, "Assets length matches symbols");
+        (bool hasWeth,) = _findSymbolString(afterSym, WETH_SYMBOL);
+        assertFalse(hasWeth, "WETH removed from list");
+    }
+
+    function _findSymbolString(string[] memory symbols, string memory symbolStr)
+        internal
+        pure
+        returns (bool found, uint256 index)
+    {
+        for (uint256 i; i < symbols.length; i++) {
+            if (keccak256(abi.encodePacked(symbols[i])) == keccak256(abi.encodePacked(symbolStr))) return (true, i);
+        }
+        return (false, 0);
+    }
+
+    function _findSymbolStringIndex(string[] memory symbols, string memory symbolStr) internal pure returns (uint256) {
+        (, uint256 index) = _findSymbolString(symbols, symbolStr);
+        return index;
     }
 
     // ============ Admin: authorize / revoke ============
@@ -246,8 +342,8 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     }
 
     function test_decodeInvoiceId_roundtrip() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
-        (uint24 src, uint24 dest, address safe, bytes6 symbol) = bridgeEscrow.decodeInvoiceId(invoiceId);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
+        (uint24 src, uint24 dest, address safe, string memory symbol) = bridgeEscrow.decodeInvoiceId(invoiceId);
         assertEq(src, SafeCast.toUint24(SOURCE_CHAIN_ID), "Source chain");
         assertEq(dest, SafeCast.toUint24(DEST_CHAIN_ID), "Dest chain");
         assertEq(safe, account, "Safe");
@@ -255,7 +351,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     }
 
     function test_validateInvoiceIdChecksum_valid() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
         bytes24 checksum = _calculateChecksum(invoiceId, amount, timestamp);
@@ -263,7 +359,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     }
 
     function test_validateInvoiceIdChecksum_invalid() public view {
-        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL);
+        bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
         bytes24 goodChecksum = _calculateChecksum(invoiceId, amount, timestamp);

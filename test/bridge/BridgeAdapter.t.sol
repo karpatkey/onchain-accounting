@@ -28,7 +28,7 @@ contract BridgeAdapterTest is BridgeTestBase {
         address impl = address(new MockBridgeAdapter());
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
-                    impl, abi.encodeCall(BridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
+                    impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
                 )
             ));
         adapter = MockBridgeAdapter(proxy);
@@ -44,7 +44,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     function test_bridge_onlyAcceptsBridgeEscrowAsCaller() public {
         uint256 amount = BRIDGE_AMOUNT;
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, amount);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(makeAddr("random"));
@@ -60,7 +60,7 @@ contract BridgeAdapterTest is BridgeTestBase {
         usdc.approve(address(adapter), BRIDGE_AMOUNT);
 
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, BRIDGE_AMOUNT);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, BRIDGE_AMOUNT);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(address(bridgeEscrow));
@@ -74,7 +74,7 @@ contract BridgeAdapterTest is BridgeTestBase {
 
     function test_completeBridge_revertsWhenNotManager() public {
         InvoiceDataLib.InvoiceData memory data =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL, BRIDGE_AMOUNT);
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, BRIDGE_AMOUNT);
         bytes memory messagePayload = InvoiceDataLib.encode(data);
 
         vm.prank(unauthorized);

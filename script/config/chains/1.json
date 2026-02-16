@@ -18,25 +18,12 @@
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
   "balanceAdapters": {
-    "AaveV3_Core": {
+    "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
-        "rewardsDistributor": "0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb",
-        "protocol": "Aave V3 - Core",
-        "navCalculator": ""
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
-      "deployed": ""
-    },
-    "AaveV3_Prime": {
-      "enabled": true,
-      "constructor": {
-        "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
-        "rewardsDistributor": "0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb",
-        "protocol": "Aave V3 - Prime",
-        "navCalculator": ""
-      },
-      "deployed": ""
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
     }
   },
   "bridgeAdapters": {

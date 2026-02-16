@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {ConfigReader} from "../utils/ConfigReader.sol";
 import {AtomicProxyDeployer} from "./AtomicProxyDeployer.sol";
 import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
@@ -237,6 +238,18 @@ contract DeployProxies is BaseDeployScript {
         require(navProxy.code.length > 0, "NAV proxy deployment failed - no code at address");
         require(bridgeProxy.code.length > 0, "Bridge proxy deployment failed - no code at address");
         console2.log("[OK] Both proxies verified with code");
+
+        // Index ERC20Default oracle (created in NAVCalculator.initialize()) and write to config
+        address defaultOracle = NAVCalculator(navProxy).erc20DefaultOracle();
+        console2.log("  ERC20Default oracle (from NAV init):", defaultOracle);
+        if (defaultOracle != address(0)) {
+            if (shouldBroadcast) {
+                ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", "ERC20Default", defaultOracle);
+                console2.log("  balanceAdapters.ERC20Default.deployed written to config");
+            } else {
+                console2.log("  (Set PERSIST_DEPLOYMENTS=1 to write balanceAdapters.ERC20Default.deployed to config)");
+            }
+        }
 
         // Save deployed addresses
         saveDeployedAddress("NAVCalculatorProxy", navProxy);

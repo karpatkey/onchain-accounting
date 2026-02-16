@@ -86,7 +86,7 @@ contract BridgeEscrowCallbacksTest is BridgeEscrowTestBase {
         address impl = address(new MockBridgeAdapter());
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
-                    impl, abi.encodeCall(BridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock2", "1.0.0"))
+                    impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock2", "1.0.0"))
                 )
             ));
         return MockBridgeAdapter(proxy);

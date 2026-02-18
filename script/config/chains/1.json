@@ -36,7 +36,8 @@
         "feeToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "",
+      "callbackSelector": "0x85572ffb"
     },
     "Across": {
       "enabled": false,
@@ -47,7 +48,8 @@
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "",
+      "callbackSelector": "0x0ea1f938"
     },
     "Stargate": {
       "enabled": false,
@@ -58,7 +60,8 @@
         "endpoint": "0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675",
         "version": "1.0.0"
       },
-      "deployed": ""
+      "deployed": "",
+      "callbackSelector": "0x001d3567"
     },
     "CCTP": {
       "enabled": false,

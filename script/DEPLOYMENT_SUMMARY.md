@@ -24,14 +24,12 @@ This deployment system implements the complete deployment architecture from `DEP
 
 | Script | Purpose | Output |
 |--------|---------|--------|
-| ~~`00_DeployCreate2Deployer.s.sol`~~ | ~~[DEPRECATED]~~ We now use canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) | N/A |
-| `01_DeployImplementations.s.sol` | Deploy NAVCalculator and BridgeEscrow **implementations only** (CREATE2 via canonical deployer). Run once; same impl addresses on all chains. | One Safe TX JSON (2 txs) |
-| `02a_DeployProxies.s.sol` | Deploy NAV + Bridge proxies via EOA using canonical CREATE2 deployer. Run **per chain**. | Proxy addresses (same on all chains) |
-| `02b_InitializeProxies.s.sol` | Generate Safe transactions to initialize NAV and Bridge proxies. Run **per chain** for chain-specific init. | One Safe TX JSON per chain (2 txs) |
-| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters | Adapter addresses |
-| `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters | Adapter addresses |
-| `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters | Adapter addresses |
-| `06_Configure.s.sol` | Post-deployment configuration | Safe TX JSON |
+| `01_DeployImplementations.s.sol` | Deploy NAVCalculator and BridgeEscrow **implementations** (CREATE2 via canonical deployer 0x4e59...). Run without `--broadcast`: generates Safe TX JSON (2 txs). Run with `--broadcast`: deploys via EOA. Same impl addresses on all chains. | Safe TX JSON and/or saved addresses |
+| `02_DeployProxies.s.sol` | Deploy placeholder + NAV + Bridge **proxies** and **initialize** them via EOA (canonical CREATE2). Default: one atomic tx via `AtomicProxyDeployer`. Set `USE_LEGACY_DEPLOY=1` for legacy multi-tx path. Run **per chain**. Grants MANAGER to config manager. | Proxy addresses (same on all chains); saved to config |
+| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters (per-chain, config-driven) | Adapter addresses in config |
+| `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters (per-chain, config-driven) | Adapter addresses in config |
+| `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Superchain; per-chain) | Adapter addresses in config |
+| `06_Configure.s.sol` | Generate Safe TX JSON to grant MANAGER, add balance oracles to NAV, authorize bridge adapters on BridgeEscrow | Safe TX JSON (`{chainId}-configure.json`) |
 
 ### Upgrade Scripts (`script/upgrade/`)
 
@@ -61,75 +59,46 @@ This deployment system implements the complete deployment architecture from `DEP
 
 ## Deployment Workflow
 
-### Phase 1: One-Time Setup (Per Chain)
+### Phase 1: No separate Create2Deployer
 
-```bash
-# 1. Deploy Create2Deployer library (use RPC URL with ALCHEMY_API_KEY — see Step 4 for per-chain URL)
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-
-# 2. Create2Deployer address is written to chain JSON automatically.
-```
+The project uses the **canonical CREATE2 deployer** at `0x4e59b44847b379578588920cA78FbF26c0B4956C` (same on all EVM chains). No `00_DeployCreate2Deployer` script is used.
 
 ### Phase 2: Core Contract Deployment
 
-**Step 2a — Deploy implementations only (once)**
+**Step 1 — Deploy implementations (once)**
 
-Generate a Safe TX that deploys NAVCalculator and BridgeEscrow **implementations** via CREATE2. Execute it **once** (e.g. on mainnet); the same impl addresses will be used on all chains.
+Run `01_DeployImplementations.s.sol` **once**. Without `--broadcast`: generates `safe-transactions/{chainId}-deploy-implementations.json` (2 txs) for Safe UI. With `--broadcast --private-key`: deploys via EOA. Same implementation addresses on all chains.
 
 ```bash
+# Generate Safe TX (no broadcast)
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1
-# Output: safe-transactions/1-deploy-implementations.json (2 txs)
+# Output: safe-transactions/1-deploy-implementations.json (2 txs). Execute in Safe UI once.
+
+# Or deploy via EOA (broadcast)
+forge script script/deploy/01_DeployImplementations.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
 ```
 
-Execute that JSON in Safe UI. Then proceed to Step 2b per chain.
+**Step 2 — Deploy and initialize proxies (per chain, via EOA)**
 
-**Step 2a — Deploy proxies (per chain, via EOA)**
-
-For **each** chain, deploy both proxies using the canonical CREATE2 deployer. Any EOA can deploy - addresses are deterministic.
+For **each** chain, run `02_DeployProxies.s.sol` with `--broadcast`. It deploys placeholder + NAV + Bridge proxies (CREATE2) and upgrades them to the real implementations with chain-specific init (admin, sequencer feed, native symbol, chainId). Default: **one atomic transaction** via `AtomicProxyDeployer` (no front-run window). Set env `USE_LEGACY_DEPLOY=1` to use the legacy multi-tx path. Also grants MANAGER to the configured manager.
 
 ```bash
-# Example: Mainnet
-forge script script/deploy/02a_DeployProxies.s.sol \
+# Mainnet
+forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1 \
-  --broadcast \
-  --private-key $PRIVATE_KEY
-# Deploys proxies and saves addresses to config
+  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
 
-# Example: Arbitrum
-forge script script/deploy/02a_DeployProxies.s.sol \
+# Arbitrum
+forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 42161 \
-  --broadcast \
-  --private-key $PRIVATE_KEY
+  --chain-id 42161 --broadcast --private-key $PRIVATE_KEY
 ```
 
-Proxy addresses are **identical on every chain** (CREATE2), regardless of which EOA deploys them.
-
-**Step 2b — Initialize proxies (per chain, via Safe)**
-
-For **each** chain, generate a Safe TX that initializes NAV and Bridge with chain-specific args (admin, sequencer feed, native symbol, chainId).
-
-```bash
-# Example: Mainnet
-forge script script/deploy/02b_InitializeProxies.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1
-# Output: safe-transactions/1-initialize-proxies.json (2 txs)
-
-# Example: Arbitrum
-forge script script/deploy/02b_InitializeProxies.s.sol \
-  --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 42161
-# Output: safe-transactions/42161-initialize-proxies.json
-```
-
-Execute each chain's JSON in Safe UI.
+Proxy addresses are **identical on every chain** (CREATE2 with placeholder bytecode).
 
 ---
 
@@ -144,7 +113,7 @@ Follow these steps **one by one**. Do not skip steps; later steps depend on earl
 In the **project root**, create or edit `.env` (copy from `.env.sample` if needed). Set:
 
 - **`ALCHEMY_API_KEY`** — Used for RPC on all chains (chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`).
-- **`PRIVATE_KEY`** — Deploys only Create2Deployer and implementation contracts (not the Safe).
+- **`PRIVATE_KEY`** — Used for implementation deployment (01, optional) and for 02_DeployProxies (proxies + init via EOA).
 - **Explorer API key** for verification (set the one(s) for your chain(s)):
   - Mainnet: `ETHERSCAN_API_KEY`
   - Arbitrum: `ARBISCAN_API_KEY`
@@ -198,76 +167,32 @@ Save the file.
 
 ---
 
-### Step 4 — Deploy Create2Deployer (once per chain)
+### Step 4 — Deploy implementations (once)
 
-From the **project root**, run the script **with** `--broadcast` so the transaction is sent on-chain. Use the RPC and env var for **your** chain.
-
-**Mainnet (chain 1):**
+Run **once**. Without `--broadcast`: generates **`safe-transactions/{chainId}-deploy-implementations.json`** (2 txs); execute in Safe UI once. With `--broadcast --private-key`: deploys via EOA. Same impl addresses on all chains.
 
 ```bash
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
-
-**Arbitrum (42161):**
-
-```bash
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
-
-**Gnosis (100):**
-
-```bash
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url "https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
-
-**Base (8453):**
-
-```bash
-forge script script/deploy/00_DeployCreate2Deployer.s.sol \
-  --rpc-url "https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-```
-
-After it succeeds, the script writes the Create2Deployer address into the same chain JSON (`script/config/chains/{chainId}.json` under `deployed.Create2Deployer`). You don’t need to edit that by hand.
-
-**Check:** Open the chain JSON and confirm `deployed.Create2Deployer` is a non-empty address.
-
----
-
-### Step 5 — Deploy implementations (once)
-
-Run **once** (no `--broadcast`). Use any chain's RPC so the Safe TX deploys both implementations via CREATE2. Use the correct RPC URL and `--chain-id` for that chain.
-
-```bash
+# Generate Safe TX
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1
-```
 
-This writes **`safe-transactions/{chainId}-deploy-implementations.json`** with 2 transactions (deploy NAV impl, deploy Bridge impl). Execute that JSON in Safe UI **once**. Same impl addresses on all chains.
+# Or deploy via EOA
+forge script script/deploy/01_DeployImplementations.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+```
 
 **Check:** Script prints and saves NAVCalculatorImplementation and BridgeEscrowImplementation addresses.
 
+### Step 5 — Deploy and initialize proxies (per chain, via EOA)
 
-
-### Step 6a — Deploy proxies (per chain, via EOA)
-
-Run **once per chain** with that chain's RPC and `--chain-id`:
+Run **once per chain** with that chain's RPC and `--chain-id` and **`--broadcast --private-key`**. The script deploys placeholder + both proxies (CREATE2) and upgrades them to the real implementations with chain-specific init in one go (atomic by default; set `USE_LEGACY_DEPLOY=1` for legacy multi-tx).
 
 **Mainnet (chain 1):**
 
 ```bash
-forge script script/deploy/02a_DeployProxies.s.sol \
+forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
@@ -277,50 +202,21 @@ forge script script/deploy/02a_DeployProxies.s.sol \
 **Arbitrum (42161):**
 
 ```bash
-forge script script/deploy/02a_DeployProxies.s.sol \
+forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 42161 \
   --broadcast \
   --private-key $PRIVATE_KEY
 ```
 
-### Step 6b — Initialize proxies (per chain, via Safe)
+(Use the same pattern for Gnosis `100`, Base `8453`, Optimism `10`, etc.)
 
-Run **once per chain** with that chain's RPC and `--chain-id`:
-
-**Mainnet (chain 1):**
-
-```bash
-forge script script/deploy/02b_InitializeProxies.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1
-```
-
-**Arbitrum (42161):**
-
-```bash
-forge script script/deploy/02b_InitializeProxies.s.sol \
-  --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 42161
-```
-
-(Use the same pattern for Gnosis `100`, Base `8453`, etc.)
-
-This writes **`safe-transactions/{chainId}-deploy-proxies-and-initialize.json`** with 4 transactions:
-
-1. Deploy NAVCalculator proxy (CREATE2)  
-2. Deploy BridgeEscrow proxy (CREATE2)  
-3. Initialize NAVCalculator (admin, sequencer feed, native symbol from chain config)  
-4. Initialize BridgeEscrow (admin, chainId, empty accounts/adapters)
-
-For **each** chain: Safe UI → New Transaction → Transaction Builder → Import JSON → upload the chain's file → sign and execute.
-
-NAV and Bridge proxy addresses are **the same on every chain** (CREATE2).
+Proxy addresses are **the same on every chain** (CREATE2). Addresses are saved to chain config.
 
 **Check:** On the block explorer, both proxy addresses have code and are initialized.
 
 ---
-### Step 7 — Verify contracts (optional but recommended)
+### Step 6 — Verify contracts (optional but recommended)
 
 Verification needs the **explorer API key** for the chain (see below). The verify script reads the chain config and prints ready-to-run `forge verify-contract` commands.
 
@@ -343,17 +239,17 @@ Verification needs the **explorer API key** for the chain (see below). The verif
    **Gnosis:** `--rpc-url "https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"`  
    **Base:** `--rpc-url "https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"`
 
-3. **Run the printed commands** — copy each `forge verify-contract ...` block, ensure the matching API key is in your env (e.g. `ETHERSCAN_API_KEY` for mainnet), then run the command. Repeat for Create2Deployer, NAVCalculator impl, NAVCalculator proxy, BridgeEscrow impl, BridgeEscrow proxy.
+3. **Run the printed commands** — copy each `forge verify-contract ...` block, ensure the matching API key is in your env (e.g. `ETHERSCAN_API_KEY` for mainnet), then run the command. Run for implementations and proxies (Create2Deployer is not used; canonical deployer is pre-deployed).
 
 ---
 
-### Step 8 — Repeat for other chains (if needed)
+### Step 7 — Repeat for other chains (if needed)
 
 To deploy on another chain (e.g. Arbitrum after Mainnet):
 
 1. Use that chain’s config: `script/config/chains/42161.json` (etc.).
 2. Set **addresses** in that file (Safe and roles can be the same or different).
-3. Run **Step 4** for that chain (Create2Deployer).
+3. **Step 4** (implementations) is once for all chains; run **Step 5** (02_DeployProxies) per chain with that chain's RPC and `--broadcast --private-key`.
 4. Run **Step 5** once (implementations Safe TX), then **Step 6** for that chain (proxies + init Safe TX; execute in Safe UI for that chain).
 
 Adapter deployment (price feeds, balance adapters, bridge adapters) and configuration come **after** NAVCalculator and BridgeEscrow are deployed; see “Phase 3” and “Phase 4” in the deployment workflow above.
@@ -414,7 +310,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 ### ✅ Deterministic Addresses (per chain)
 - Same Safe + same salt + **same creation bytecode** = same proxy address on that chain
 - Proxy addresses **differ across chains** because the proxy’s creation bytecode includes the **implementation address**, and the implementation is deployed separately on each chain (so it has a different address per chain). Thus CREATE2(deployer, salt, bytecode) yields a different proxy address per chain.
-- Works even if Create2Deployer is at different addresses per chain (Safe does delegatecall, so Safe is the deployer)
+- Canonical CREATE2 deployer (0x4e59...) is the same on all chains; proxy bytecode uses a placeholder so proxy addresses are identical everywhere
 
 ### ✅ Upgradeability
 - **UUPS pattern** for NAVCalculator and BridgeEscrow
@@ -470,12 +366,12 @@ deployments/
 ### Safe Transactions (`safe-transactions/`)
 ```
 safe-transactions/
-├── 1-deploy-implementations.json
-├── 1-deploy-proxies-and-initialize.json
-├── 42161-deploy-proxies-and-initialize.json
-├── 1-upgrade-navcalc.json
+├── {chainId}-deploy-implementations.json   # From 01 (2 txs; optional if using EOA for impl)
+├── {chainId}-configure.json                # From 06 (grant MANAGER, add oracles, authorize adapters)
+├── 1-upgrade-navcalc.json                  # From upgrade scripts
 └── ... (one per Safe transaction)
 ```
+Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX JSON).
 
 ## Prerequisites for Deployment
 
@@ -484,7 +380,7 @@ safe-transactions/
 2. ✅ `ALCHEMY_API_KEY` in `.env` for RPC (chain config uses `"rpc": "$ALCHEMY"`); explorer API keys for verification
 3. ✅ Etherscan (or chain explorer) API keys for verification
 4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.safeMultisig`, `addresses.admin`, `addresses.manager`, `addresses.assetRecoverer` (all non-zero)
-5. ✅ Deployer private key (for deploying implementations and Create2Deployer only)
+5. ✅ Deployer private key (for 01 implementations and 02_DeployProxies)
 
 ### Recommended
 1. ✅ Same Safe address across all chains (via Safe CREATE2 deployment)
@@ -497,7 +393,7 @@ safe-transactions/
 1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.safeMultisig`, `addresses.admin`, `addresses.manager`, `addresses.assetRecoverer` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
 2. **Uncomment or enable adapters** in chain config and deployment scripts as needed
 3. **Execute Safe transactions** via Safe UI after generation (multisig approval)
-4. **Create2Deployer** is written into the same chain JSON by `00_DeployCreate2Deployer.s.sol` when you broadcast; no separate “update” step
+4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step
 
 ### Manual Execution Required
 1. Safe transaction execution (multisig approval required)
@@ -506,12 +402,12 @@ safe-transactions/
 
 ## Next Steps to Deploy
 
-1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager, assetRecoverer (and RPC/explorer vars in `.env` if using `$VAR`)
-2. **Deploy Create2Deployer** - Run `00_DeployCreate2Deployer.s.sol` on each chain (broadcast; address is saved to chain JSON)
-3. **Deploy Core Contracts** - Run 01_DeployImplementations once (generates Safe TX with 2 txs; execute in Safe). Run 02a_DeployProxies per chain (EOA deployment; broadcast). Run 02b_InitializeProxies per chain (generates Safe TX with 2 txs; execute each in Safe UI).
-4. **Deploy Adapters** - Run scripts 03-05 with adapters enabled in chain config; broadcast to deploy adapter contracts
-5. **Configure Adapters** - Use ManageAdapters script (generates Safe TXs; execute in Safe UI)
-6. **Verify** - Run verification script and run the printed forge verify-contract commands
+1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager, assetRecoverer (and RPC/explorer vars in `.env` if using `$VAR`).
+2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --private-key` to deploy via EOA).
+3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --private-key` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
+4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
+5. **Configure adapters** - Run `06_Configure.s.sol` to generate Safe TX JSON; execute in Safe UI to grant MANAGER, add balance oracles, authorize bridge adapters. Alternatively use ManageAdapters/AuthorizeBridgeAdapters as needed.
+6. **Verify** - Run verification script and run the printed `forge verify-contract` commands.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 
@@ -522,34 +418,28 @@ safe-transactions/
 
 2. **Env**  
    - `.env` with `ALCHEMY_API_KEY` (used for RPC on all chains), `PRIVATE_KEY`, and explorer API key(s) for verification.  
-   - `PRIVATE_KEY` is used only for deploying the **implementation** contracts and the **Create2Deployer** (not for the proxies).
+   - `PRIVATE_KEY` is used for implementations (01, optional) and for **02_DeployProxies** (proxies + init via EOA).
 
 3. **Order of operations**  
-   - **Create2Deployer** (once per chain):  
-     `forge script script/deploy/00_DeployCreate2Deployer.s.sol --rpc-url <url> --private-key <key> --broadcast`  
-     This writes the Create2Deployer address into `script/config/chains/{chainId}.json`.  
    - **Implementations** (once):  
      Run `forge script script/deploy/01_DeployImplementations.s.sol --rpc-url <url> --chain-id <id>`.  
-     This writes `safe-transactions/{chainId}-deploy-implementations.json` (2 txs: deploy NAV impl, deploy Bridge impl). Execute that JSON in Safe UI once.  
-   - **Proxies** (per chain, via EOA):  
-     Run `forge script script/deploy/02a_DeployProxies.s.sol --rpc-url <url> --chain-id <id> --broadcast --private-key <KEY>` for each chain.  
-     This deploys both proxies and saves addresses to config. Any EOA can deploy - addresses are deterministic.
-   - **Initialize proxies** (per chain, via Safe):  
-     Run `forge script script/deploy/02b_InitializeProxies.s.sol --rpc-url <url> --chain-id <id>` for each chain.  
-     This writes `safe-transactions/{chainId}-initialize-proxies.json` (2 txs: init NAV, init Bridge). Execute each chain's JSON in Safe UI.
+     Without `--broadcast`: writes `safe-transactions/{chainId}-deploy-implementations.json` (2 txs). Execute in Safe UI once. With `--broadcast --private-key`: deploys via EOA.  
+   - **Proxies + init** (per chain, via EOA):  
+     Run `forge script script/deploy/02_DeployProxies.s.sol --rpc-url <url> --chain-id <id> --broadcast --private-key <KEY>` for each chain.  
+     Deploys placeholder + both proxies (CREATE2) and upgrades/initializes them in one atomic tx (or set `USE_LEGACY_DEPLOY=1` for legacy multi-tx). Saves addresses to config.
 
-4. **After executing the Safe TXs**  
-   - The scripts already save the **expected** proxy addresses into the chain JSON (they’re deterministic via CREATE2).  
+4. **After deployment**  
+   - Proxy addresses are deterministic (same on all chains). (they’re deterministic via CREATE2).  
    - Run the verification script and the printed `forge verify-contract` commands to verify implementations and proxies on the block explorer.
 
-So: **missing** for a first deploy are (1) filling chain config with real Safe + roles, (2) having Create2Deployer deployed and recorded on that chain, (3) running 01 and 02 and **executing the generated Safe TXs** in the Safe UI (the actual proxy deployment).
 
 ## What Is Missing or Easy to Miss
 
-- **Config file names**: The repo uses **per-chain JSONs** at `script/config/chains/{chainId}.json`, not a single `chain-config.json` or `dev-input.json`. The summary above is aligned with that.
-- **Chain coverage**: Only `1.json`, `100.json`, and `42161.json` exist under `script/config/chains/`. For Optimism (10) and Base (8453) you need to add `10.json` and `8453.json` (or reuse structure from existing files).
+- **Config file names**: The repo uses **per-chain JSONs** at `script/config/chains/{chainId}.json`, not a single `chain-config.json` or `dev-input.json`.
+- **Chain coverage**: Only `1.json`, `100.json`, and `42161.json` may exist under `script/config/chains/`. For Optimism (10) and Base (8453) add `10.json` and `8453.json` (or reuse structure from existing files).
 - **Safe TX output path**: Generated Safe transaction files are written to **`safe-transactions/`** at the **project root** (see `SafeTxBuilder.sol`).
-- **References to missing docs**: The summary mentions `DEPLOYMENT_PLAN.md` and `DEPLOYMENT_README.md`; those files are not in the repo. The detailed config reference is `script/config/README.md` and `script/config/CONFIG_GUIDE.md`.
+- **02 is EOA-only**: Proxy deploy and init are done in **02_DeployProxies.s.sol** via EOA (no separate Safe TX for init). Use atomic deploy (default) or `USE_LEGACY_DEPLOY=1` for legacy multi-tx.
+- **Docs**: Detailed config reference is `script/config/README.md` and `script/config/CONFIG_GUIDE.md`. Deployment script details: `script/deploy/README.md`.
 
 ## Documentation
 

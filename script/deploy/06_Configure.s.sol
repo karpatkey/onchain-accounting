@@ -144,12 +144,13 @@ contract Configure is BaseDeployScript {
 
     function _countDeployedBridgeAdapters() internal view returns (uint256 count) {
         // Count enabled bridge adapters that have been deployed
-        string[] memory adapterNames = new string[](5);
+        string[] memory adapterNames = new string[](6);
         adapterNames[0] = "CCIP";
         adapterNames[1] = "Across";
         adapterNames[2] = "Stargate";
-        adapterNames[3] = "CCTP";
-        adapterNames[4] = "Superchain";
+        adapterNames[3] = "Gnosis";
+        adapterNames[4] = "CCTP";
+        adapterNames[5] = "Superchain";
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", adapterNames[i])) {
@@ -213,19 +214,34 @@ contract Configure is BaseDeployScript {
         }
 
         uint256 txIndex = startIndex;
-        string[] memory adapterNames = new string[](5);
+        string[] memory adapterNames = new string[](6);
         adapterNames[0] = "CCIP";
         adapterNames[1] = "Across";
         adapterNames[2] = "Stargate";
-        adapterNames[3] = "CCTP";
-        adapterNames[4] = "Superchain";
+        adapterNames[3] = "Gnosis";
+        adapterNames[4] = "CCTP";
+        adapterNames[5] = "Superchain";
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", adapterNames[i])) {
                 address deployed = _readAdapterDeployed("bridgeAdapters", adapterNames[i]);
                 if (deployed != address(0)) {
-                    // For now, authorize without callback - can be updated later via updateAdapterConfig
-                    bytes memory authorizeData = abi.encodeWithSignature("authorizeAdapter(address)", deployed);
+                    (bool hasCallback, bytes4 selector) =
+                        ConfigReader.readAdapterCallbackSelector(vm, currentChainId, "bridgeAdapters", adapterNames[i]);
+                    bytes memory authorizeData;
+                    if (hasCallback && selector != bytes4(0)) {
+                        authorizeData =
+                            abi.encodeWithSignature("authorizeAdapterWithCallback(address,bytes4)", deployed, selector);
+                        console2.log(
+                            "Added transaction: Authorize bridge adapter (with callback)",
+                            adapterNames[i],
+                            "at",
+                            deployed
+                        );
+                    } else {
+                        authorizeData = abi.encodeWithSignature("authorizeAdapter(address)", deployed);
+                        console2.log("Added transaction: Authorize bridge adapter", adapterNames[i], "at", deployed);
+                    }
                     transactions[txIndex] = SafeTxBuilder.Transaction({
                         to: bridgeProxy,
                         value: 0,
@@ -233,7 +249,6 @@ contract Configure is BaseDeployScript {
                         operation: 0 // CALL
                     });
                     txIndex++;
-                    console2.log("Added transaction: Authorize bridge adapter", adapterNames[i], "at", deployed);
                 }
             }
         }

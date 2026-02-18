@@ -89,6 +89,6 @@ contract DeployImplementations is BaseDeployScript {
         console2.log("Generated:", filename);
         console2.log("  NAV Implementation:", navImpl);
         console2.log("  Bridge Implementation:", bridgeImpl);
-        console2.log("Addresses saved to config. Run 02a then 02b per chain.");
+        console2.log("Addresses saved to config. Run 02_DeployProxies.s.sol per chain.");
     }
 }

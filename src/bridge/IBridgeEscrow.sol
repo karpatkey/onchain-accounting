@@ -247,5 +247,13 @@ interface IBridgeEscrow {
 
     /// @notice Returns the adapter registered for a callback selector
     function getCallbackAdapter(bytes4 selector) external view returns (address);
+
+    /// @notice Returns all authorized adapters and their callback selectors
+    /// @return adapters Array of authorized adapter addresses
+    /// @return callbacks Array of callback selectors (bytes4(0) if adapter has no callback)
+    function getAuthorizedAdaptersWithCallbacks()
+        external
+        view
+        returns (address[] memory adapters, bytes4[] memory callbacks);
 }
 

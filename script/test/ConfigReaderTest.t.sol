@@ -105,8 +105,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
     /// @notice Test that readAdapterParam returns when the adapter/param path exists (no assertion on content)
     function test_ReadAdapterParam() public view {
         // Read a param that may exist (e.g. CCIP router from bridgeAdapters.initialize)
-        string memory param =
-            ConfigReader.readAdapterParam(vm, 1, "bridgeAdapters", "CCIP", "router");
+        string memory param = ConfigReader.readAdapterParam(vm, 1, "bridgeAdapters", "CCIP", "router");
 
         // We only verify the read succeeds; param may be empty or set depending on config
         assertTrue(bytes(param).length >= 0, "readAdapterParam should return when path exists");
@@ -129,6 +128,17 @@ contract ConfigReaderTest is TestEnvConfigurator {
 
         // Should be set even if adapter is disabled
         assertTrue(bytes(router).length > 0, "Router parameter should be set");
+    }
+
+    /// @notice Test reading callback selector from chain config (Arbitrum has callbackSelectors set)
+    function test_ReadAdapterCallbackSelector() public view {
+        (bool hasCcip, bytes4 ccipSel) = ConfigReader.readAdapterCallbackSelector(vm, 42161, "bridgeAdapters", "CCIP");
+        assertTrue(hasCcip, "CCIP should have callbackSelector on Arbitrum");
+        assertEq(ccipSel, bytes4(0x85572ffb), "CCIP callback selector should match ccipReceive");
+
+        (bool hasCctp, bytes4 cctpSel) = ConfigReader.readAdapterCallbackSelector(vm, 42161, "bridgeAdapters", "CCTP");
+        assertFalse(hasCctp, "CCTP should not have callbackSelector");
+        assertEq(cctpSel, bytes4(0), "CCTP selector should be 0");
     }
 
     /// @notice Test reading non-existent parameter returns empty string
@@ -168,7 +178,10 @@ contract ConfigReaderTest is TestEnvConfigurator {
         string memory reader = ConfigReader.readAdapterParam(vm, 42161, "balanceAdapters", "GMX_GLP", "reader");
         string memory usdc = ConfigReader.readAdapterParam(vm, 42161, "balanceAdapters", "GMX_GLP", "usdc");
 
-        assertTrue(bytes(market).length >= 0 && bytes(reader).length >= 0 && bytes(usdc).length >= 0, "readAdapterParam returns for complex adapter when config exists");
+        assertTrue(
+            bytes(market).length >= 0 && bytes(reader).length >= 0 && bytes(usdc).length >= 0,
+            "readAdapterParam returns for complex adapter when config exists"
+        );
     }
 
     /// @notice Test that config files are properly formatted JSON

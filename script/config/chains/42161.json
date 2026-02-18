@@ -36,7 +36,8 @@
         "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
         "version": "1.0.0"
       },
-      "deployed": "0x57DD601d0474dcC95c8C9748f6d41D967086ed9F"
+      "deployed": "0x57DD601d0474dcC95c8C9748f6d41D967086ed9F",
+      "callbackSelector": "0x85572ffb"
     },
     "Across": {
       "enabled": true,
@@ -47,7 +48,8 @@
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": "0x086e289d5Ab4B63Daa75002E034919d7dd43d611"
+      "deployed": "0x086e289d5Ab4B63Daa75002E034919d7dd43d611",
+      "callbackSelector": "0x0ea1f938"
     },
     "Stargate": {
       "enabled": true,
@@ -58,7 +60,8 @@
         "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
-      "deployed": "0x3F7DE433E2AC424921C38177CCbb586F7ab2a101"
+      "deployed": "0x3F7DE433E2AC424921C38177CCbb586F7ab2a101",
+      "callbackSelector": "0x001d3567"
     },
     "CCTP": {
       "enabled": true,

@@ -643,6 +643,22 @@ contract BridgeEscrow is
         return _callbackAdapters[selector];
     }
 
+    /// @notice Returns all authorized adapters and their callback selectors
+    function getAuthorizedAdaptersWithCallbacks()
+        external
+        view
+        override
+        returns (address[] memory adapters, bytes4[] memory callbacks)
+    {
+        uint256 n = _authorizedAdapters.length();
+        adapters = new address[](n);
+        callbacks = new bytes4[](n);
+        for (uint256 i = 0; i < n; i++) {
+            adapters[i] = _authorizedAdapters.at(i);
+            callbacks[i] = _adapterToCallbackSelector[adapters[i]];
+        }
+    }
+
     /// @notice Pauses the contract (prevents deposits and releases)
     /// @dev Only admin can pause
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {

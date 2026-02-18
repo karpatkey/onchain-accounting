@@ -20,7 +20,7 @@
   "balanceAdapters": {
     "ERC20Default": {
       "enabled": true,
-      "constructor": {  
+      "constructor": {
         "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
       "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
@@ -50,7 +50,8 @@
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": "0xb59846652D7e64FA1F0A6DfA82e25d1F1431FCEC"
+      "deployed": "0xb59846652D7e64FA1F0A6DfA82e25d1F1431FCEC",
+      "callbackSelector": "0x0ea1f938"
     },
     "Stargate": {
       "enabled": true,
@@ -61,7 +62,8 @@
         "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
-      "deployed": "0x7ced6E6660D01475E7974Ae130269BB1c14D03D6"
+      "deployed": "0x7ced6E6660D01475E7974Ae130269BB1c14D03D6",
+      "callbackSelector": "0x001d3567"
     },
     "CCTP": {
       "enabled": true,

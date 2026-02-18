@@ -280,6 +280,41 @@ library ConfigReader {
         return false;
     }
 
+    /// @notice Reads optional callback selector for a bridge adapter (e.g. "0x85572ffb").
+    /// @return hasSelector True if config has a non-empty, valid callbackSelector
+    /// @return selector The bytes4 selector, or 0 if missing/invalid
+    function readAdapterCallbackSelector(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool hasSelector, bytes4 selector)
+    {
+        string memory s = readAdapterParam(vm, chainId, adapterType, adapterName, "callbackSelector");
+        if (bytes(s).length == 0 || _isPlaceholder(s)) return (false, bytes4(0));
+        selector = _parseSelectorHex4(vm, s);
+        return (selector != bytes4(0), selector);
+    }
+
+    /// @dev Parses a "0x" + 8 hex char string to bytes4. Returns 0 if invalid.
+    function _parseSelectorHex4(Vm vm, string memory s) private view returns (bytes4) {
+        bytes memory b = bytes(s);
+        if (b.length != 10 || b[0] != "0" || (b[1] != "x" && b[1] != "X")) return bytes4(0);
+        // Pad to 64 hex chars for parseBytes32: 0x + 56 zeros + 8 hex
+        string memory padded =
+            string.concat("0x", "00000000000000000000000000000000000000000000000000000000", _substring(s, 2, 10));
+        bytes32 full = vm.parseBytes32(padded);
+        return bytes4(uint32(uint256(full) & 0xffffffff));
+    }
+
+    /// @dev Substring (start inclusive, end exclusive)
+    function _substring(string memory str, uint256 start, uint256 end) private pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        bytes memory result = new bytes(end - start);
+        for (uint256 i = start; i < end && i < strBytes.length; i++) {
+            result[i - start] = strBytes[i];
+        }
+        return string(result);
+    }
+
     /// @notice Writes adapter deployed address to chain config
     /// @param vm The Foundry Vm instance
     /// @param chainId The chain ID

@@ -21,7 +21,7 @@ contract DeployBridgeAdapters is BaseDeployScript {
         if (bridgeProxy == address(0)) {
             bridgeProxy = readDeployedAddress("BridgeEscrowProxyWithInit");
         }
-        require(bridgeProxy != address(0), "BridgeEscrow proxy not in config. Deploy 02a or 02c first.");
+        require(bridgeProxy != address(0), "BridgeEscrow proxy not in config. Deploy 02_DeployProxies.s.sol first.");
         require(chainConfig.admin != address(0), "Admin not configured.");
 
         console2.log("\n=== Deploying Bridge Adapters ===");

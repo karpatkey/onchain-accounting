@@ -5,8 +5,8 @@ This guide explains all configuration files needed for multi-chain deployments o
 ## Table of Contents
 
 1. [Configuration Files Overview](#configuration-files-overview)
-2. [chain-config.json](#chain-configjson)
-3. [dev-input.json](#dev-inputjson)
+2. [chains/{chainId}.json](#chainschainidjson)
+3. [assets.json](#assetsjson)
 4. [salt-config.json](#salt-configjson)
 5. [Deployment Output](#deployment-output)
 6. [Environment Variables](#environment-variables)
@@ -16,17 +16,24 @@ This guide explains all configuration files needed for multi-chain deployments o
 
 ## Configuration Files Overview
 
+The repo uses **per-chain config files** and a **separate assets file**. Scripts read from these; there is no single `chain-config.json` or `dev-input.json`.
+
 ```
 config/
-├── chain-config.json          # Chain-specific parameters (RPC, explorers, protocol addresses)
-├── dev-input.json             # User-provided deployment parameters (roles, initial config)
+├── chains/
+│   ├── 1.json                 # Mainnet: RPC, explorer, addresses, deployed, balanceAdapters, bridgeAdapters
+│   ├── 42161.json             # Arbitrum
+│   ├── 10.json                # Optimism
+│   ├── 8453.json              # Base
+│   ├── 100.json               # Gnosis
+│   └── ...                    # One file per chain
+├── assets.json                # Tokens and price feed params per chain (address, type, pricefeed, heartbeat)
 ├── salt-config.json           # CREATE2 salts (auto-generated, version controlled)
 └── README.md                  # This file
 
 deployments/
 ├── 1-addresses.json           # Deployed contract addresses (Mainnet)
 ├── 42161-addresses.json       # Arbitrum
-├── 10-addresses.json          # Optimism
 └── ...                        # One file per chain
 
 safe-transactions/
@@ -37,126 +44,50 @@ safe-transactions/
 
 ---
 
-## chain-config.json
+## chains/{chainId}.json
 
-Chain-specific infrastructure parameters. **Use environment variables for sensitive values.**
+One file per chain. Contains chain metadata, role addresses, deployed contract addresses, and adapter config (balance + bridge). **Use environment variables for RPC and explorer API keys (e.g. `$ALCHEMY`, `$ARBISCAN_API_KEY`).**
 
-### Template
+### Template (one chain)
 
 ```json
 {
-  "chains": {
-    "1": {
-      "name": "mainnet",
-      "rpc": "$MAINNET_RPC_URL",
-      "explorer": {
-        "url": "https://etherscan.io",
-        "apiUrl": "https://api.etherscan.io/api",
-        "apiKey": "$ETHERSCAN_API_KEY"
+  "chainId": 42161,
+  "name": "arbitrum",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://arbiscan.io",
+  "explorerApiKey": "$ARBISCAN_API_KEY",
+  "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
+  "nativeTokenSymbol": "ETH",
+  "addresses": {
+    "safeMultisig": "0x...",
+    "admin": "0x...",
+    "manager": "0x..."
+  },
+  "deployed": {
+    "NAVCalculatorImplementation": "0x...",
+    "NAVCalculatorProxy": "0x...",
+    "BridgeEscrowImplementation": "0x...",
+    "BridgeEscrowProxy": "0x..."
+  },
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": { "navCalculator": "0x..." },
+      "deployed": "0x..."
+    }
+  },
+  "bridgeAdapters": {
+    "CCIP": {
+      "enabled": true,
+      "initialize": {
+        "admin": "0x...",
+        "bridgeEscrow": "0x...",
+        "router": "0x...",
+        "feeToken": "0x...",
+        "version": "1.0.0"
       },
-      "sourcify": {
-        "apiUrl": "https://sourcify.dev/server"
-      },
-      "create2DeployerAddress": "",
-      "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
-      "nativeTokenSymbol": "ETH",
-      "nativeTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocols": {
-        "aaveV3Pool": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
-        "compoundCometUSDC": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
-        "morphoBlue": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-        "sparkPool": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987",
-        "ccipRouter": "0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D",
-        "acrossSpokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5"
-      }
-    },
-    "42161": {
-      "name": "arbitrum",
-      "rpc": "$ARBITRUM_RPC_URL",
-      "explorer": {
-        "url": "https://arbiscan.io",
-        "apiUrl": "https://api.arbiscan.io/api",
-        "apiKey": "$ARBISCAN_API_KEY"
-      },
-      "sourcify": {
-        "apiUrl": "https://sourcify.dev/server"
-      },
-      "create2DeployerAddress": "",
-      "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
-      "nativeTokenSymbol": "ETH",
-      "nativeTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocols": {
-        "aaveV3Pool": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-        "compoundCometUSDC": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
-        "morphoBlue": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-        "ccipRouter": "0x141fa059441E0ca23ce184B6A78bafD2A517DdE8",
-        "acrossSpokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A"
-      }
-    },
-    "10": {
-      "name": "optimism",
-      "rpc": "$OPTIMISM_RPC_URL",
-      "explorer": {
-        "url": "https://optimistic.etherscan.io",
-        "apiUrl": "https://api-optimistic.etherscan.io/api",
-        "apiKey": "$OPTIMISM_ETHERSCAN_API_KEY"
-      },
-      "sourcify": {
-        "apiUrl": "https://sourcify.dev/server"
-      },
-      "create2DeployerAddress": "",
-      "chainlinkSequencerFeed": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
-      "nativeTokenSymbol": "ETH",
-      "nativeTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocols": {
-        "aaveV3Pool": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-        "ccipRouter": "0x3206695CaE29952f4b0c22a169725a865bc8Ce0f",
-        "acrossSpokePool": "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
-        "superchainPortal": "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
-      }
-    },
-    "8453": {
-      "name": "base",
-      "rpc": "$BASE_RPC_URL",
-      "explorer": {
-        "url": "https://basescan.org",
-        "apiUrl": "https://api.basescan.org/api",
-        "apiKey": "$BASE_ETHERSCAN_API_KEY"
-      },
-      "sourcify": {
-        "apiUrl": "https://sourcify.dev/server"
-      },
-      "create2DeployerAddress": "",
-      "chainlinkSequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
-      "nativeTokenSymbol": "ETH",
-      "nativeTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocols": {
-        "aaveV3Pool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
-        "ccipRouter": "0x881e3A65B4d4a04dD529061dd0071cf975F58bCD",
-        "acrossSpokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
-        "superchainPortal": "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e"
-      }
-    },
-    "100": {
-      "name": "gnosis",
-      "rpc": "$GNOSIS_RPC_URL",
-      "explorer": {
-        "url": "https://gnosisscan.io",
-        "apiUrl": "https://api.gnosisscan.io/api",
-        "apiKey": "$GNOSIS_ETHERSCAN_API_KEY"
-      },
-      "sourcify": {
-        "apiUrl": "https://sourcify.dev/server"
-      },
-      "create2DeployerAddress": "",
-      "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
-      "nativeTokenSymbol": "xDAI",
-      "nativeTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocols": {
-        "aaveV3Pool": "0xb50201558B00496A145fE76f7424749556E326D8",
-        "gnosisAMB": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
-        "acrossSpokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5"
-      }
+      "deployed": "0x..."
     }
   }
 }
@@ -166,25 +97,85 @@ Chain-specific infrastructure parameters. **Use environment variables for sensit
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `chainId` | number | Chain ID (e.g. 1, 42161, 10, 8453, 100) |
 | `name` | string | Human-readable chain name |
-| `rpc` | string | RPC URL (use env var placeholder like `$MAINNET_RPC_URL`) |
-| `explorer.url` | string | Block explorer base URL |
-| `explorer.apiUrl` | string | Block explorer API endpoint |
-| `explorer.apiKey` | string | API key for verification (use env var) |
-| `sourcify.apiUrl` | string | Sourcify API endpoint |
-| ~~`create2DeployerAddress`~~ | ~~string~~ | ~~[DEPRECATED] We now use canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C)~~ |
+| `rpc` | string | RPC URL (use env var e.g. `$ALCHEMY`) |
+| `explorer` | string | Block explorer base URL |
+| `explorerApiKey` | string | API key for verification (use env var) |
 | `chainlinkSequencerFeed` | address | L2 sequencer uptime feed (use 0x0 for L1) |
 | `nativeTokenSymbol` | string | Native token symbol (ETH, xDAI, etc.) |
-| `nativeTokenAddress` | address | ERC-7528 convention address for native token |
-| `protocols.*` | address | Protocol-specific contract addresses for adapters |
+| `addresses.safeMultisig` | address | Safe multisig for this chain |
+| `addresses.admin` | address | Admin (DEFAULT_ADMIN_ROLE) |
+| `addresses.manager` | address | Manager role for NAV and bridge |
+| `deployed.*` | address | Deployed implementation and proxy addresses (written by scripts) |
+| `balanceAdapters` | object | Balance adapter config per adapter: `enabled`, `constructor`, `deployed` |
+| `bridgeAdapters` | object | Bridge adapter config per adapter: `enabled`, `initialize`, `deployed` |
 
 ---
 
-## dev-input.json
+## assets.json
 
-User-provided deployment parameters. **This is where you fill in your specific values.**
+**Single file for all token and price-feed data per chain.** Scripts use it for NAVCalculator initial assets, BridgeEscrow asset registry, and price feed constructor params. Deployed price feed addresses are stored in `chains/{chainId}.json`, not here.
 
-### Template
+### Structure
+
+- **`tokens`** — `tokens.{chainId}.{symbol}`: token address, oracle type, price feed address, heartbeat, optional note.
+- **`priceFeeds`** (if used) — custom price feed adapter constructor params per chain (e.g. sDAI, LDO).
+
+### Template (tokens section)
+
+```json
+{
+  "description": "Assets and their price feed adapters per chain.",
+  "tokens": {
+    "1": {
+      "ETH": {
+        "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "type": "Chainlink",
+        "pricefeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        "heartbeat": 3600
+      },
+      "USDC": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "type": "Chainlink",
+        "pricefeed": "0x37be050e75C7F0a80F0E8abBFC2c4Ff826728cAa",
+        "heartbeat": 86400
+      }
+    },
+    "42161": {
+      "USDC": {
+        "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "type": "None",
+        "pricefeed": "",
+        "note": "Native USDC (BridgeEscrow/CCTP)"
+      }
+    }
+  }
+}
+```
+
+### Token field descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `address` | string | Token contract address on that chain |
+| `type` | string | `"Chainlink"`, `"Custom"`, or `"None"` |
+| `pricefeed` | string | Chainlink or custom price feed address (empty if None) |
+| `heartbeat` | number | Oracle heartbeat in seconds |
+| `note` | string | Optional (e.g. "No oracle available", "Native USDC (BridgeEscrow/CCTP)") |
+
+---
+
+## Where deployment parameters live
+
+Deployment does **not** use a single `dev-input.json`. User-provided values live in:
+
+- **`config/chains/{chainId}.json`** — Per chain: `addresses` (safeMultisig, admin, manager), `deployed`, `balanceAdapters`, `bridgeAdapters`. Scripts read these for each chain.
+- **`config/assets.json`** — Tokens and price feed data per chain (`tokens.{chainId}.{symbol}` with address, type, pricefeed, heartbeat). Used for NAVCalculator initial assets and BridgeEscrow asset registry; see [assets.json](#assetsjson).
+
+The long template below is **deprecated** (single global dev-input is not used). For bridge adapter callbacks, see the table under "Bridge adapters: callbacks" in this file; CCTP and Superchain use `authorizeAdapter` only.
+
+### Deprecated dev-input-style template (not used by current scripts)
 
 ```json
 {
@@ -287,7 +278,7 @@ User-provided deployment parameters. **This is where you fill in your specific v
         "constructor": {
           "poolAddress": "$FROM_CHAIN_CONFIG",
           "navCalculator": "$DEPLOYED_NAV_ADDRESS",
-          "description": "Uses aaveV3Pool from chain-config.json"
+          "description": "Uses aaveV3Pool from chain config"
         }
       },
       "CompoundV3": {
@@ -296,7 +287,7 @@ User-provided deployment parameters. **This is where you fill in your specific v
         "constructor": {
           "cometAddress": "$FROM_CHAIN_CONFIG",
           "navCalculator": "$DEPLOYED_NAV_ADDRESS",
-          "description": "Uses compoundCometUSDC from chain-config.json"
+          "description": "Uses compoundCometUSDC from chain config"
         }
       },
       "MorphoBlue": {
@@ -334,7 +325,7 @@ User-provided deployment parameters. **This is where you fill in your specific v
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
         },
-        "callbackSelector": "0x97a657c9"
+        "callbackSelector": "0x85572ffb"
       },
       "Across": {
         "enabled": true,
@@ -344,7 +335,7 @@ User-provided deployment parameters. **This is where you fill in your specific v
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
         },
-        "callbackSelector": "0x371c4254"
+        "callbackSelector": "0x0ea1f938"
       },
       "Superchain": {
         "enabled": true,
@@ -364,7 +355,7 @@ User-provided deployment parameters. **This is where you fill in your specific v
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
         },
-        "callbackSelector": null
+        "callbackSelector": "0x0bad0c90"
       }
     }
   }
@@ -420,12 +411,29 @@ Each adapter has:
 - `enabled`: Deploy this adapter? (true/false)
 - `chains`: Array of chain IDs where this adapter should be deployed
 - `constructor`: Constructor parameters
-  - Use `$FROM_CHAIN_CONFIG` to reference `protocols.*` from chain-config.json
+  - Use `$FROM_CHAIN_CONFIG` to reference values from chain config (e.g. protocols in chains)
   - Use `$DEPLOYED_NAV_ADDRESS` or `$DEPLOYED_BRIDGE_ADDRESS` for deployed contracts
-- `callbackSelector`: (Bridge adapters only) Function selector for protocol callbacks
+- `callbackSelector`: (Bridge adapters only) Function selector for protocol callbacks. See table below.
+
+**Bridge adapters: callbacks**
+
+Adapters that receive protocol callbacks (e.g. CCIP router, LayerZero endpoint) must be authorized with `authorizeAdapterWithCallback(adapter, selector)` so BridgeEscrow can forward the callback to the correct adapter. The following adapters require a callback selector; others (CCTP, Superchain) use `authorizeAdapter(adapter)` only.
+
+| Adapter    | Callback function                    | Selector (bytes4) | Notes |
+|-----------|--------------------------------------|-------------------|-------|
+| CCIP      | `ccipReceive(Any2EVMMessage)`        | `0x85572ffb`      | Chainlink CCIP delivery |
+| Across    | `handleAcrossMessage(...)`           | `0x0ea1f938`      | Across SpokePool fill |
+| Stargate  | `lzReceive(uint16,bytes,uint64,bytes)` | `0x001d3567`    | LayerZero delivery |
+| Gnosis    | `onTokenTransfer(address,bytes32,bytes)` | `0x0bad0c90`  | Omnibridge ERC677 callback |
+| CCTP      | —                                    | none              | No callback; use `authorizeAdapter` |
+| Superchain| —                                    | none              | No callback; use `authorizeAdapter` |
+
+These bytes4 selectors are asserted in `test/bridge/BridgeAdapterCallbacks.t.sol` (`test_documentedCallbackSelectors_bytes4`). Keep this table in sync with that test.
+
+The script `AuthorizeBridgeAdapters.s.sol` uses each adapter contract's `.selector` (e.g. `CcipBridgeAdapter.ccipReceive.selector`) so the correct bytes4 is always used.
 
 **Special Values:**
-- `$FROM_CHAIN_CONFIG`: Scripts will look up the value from chain-config's `protocols` section
+- `$FROM_CHAIN_CONFIG`: Scripts look up the value from the chain config for that chain
 - `$DEPLOYED_NAV_ADDRESS`: Replaced with NAVCalculator proxy address after deployment
 - `$DEPLOYED_BRIDGE_ADDRESS`: Replaced with BridgeEscrow proxy address after deployment
 
@@ -533,7 +541,7 @@ After deployment, addresses are saved to `deployments/{chainId}-addresses.json`.
         "bridgeEscrow": "0x456...",
         "version": "1.0.0"
       },
-      "callbackSelector": "0x97a657c9",
+      "callbackSelector": "0x85572ffb",
       "authorized": true,
       "verified": {
         "etherscan": true,
@@ -701,7 +709,7 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
 - [ ] Add initial assets for NAVCalculator with correct price feeds
 - [ ] Add asset symbols for BridgeEscrow (with addresses per chain)
 - [ ] Enable/disable adapters per chain
-- [ ] Verify protocol addresses in `chain-config.json`
+- [ ] Verify protocol addresses in `chains/{chainId}.json` and `assets.json`
 - [ ] Set environment variables in `.env`
 - [ ] Test RPC URLs are working
 - [ ] Verify block explorer API keys are valid

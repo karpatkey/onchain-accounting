@@ -51,10 +51,8 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
             ));
         adapter = StargateBridgeAdapter(adapterProxy);
 
-        // Configure adapter
+        // Configure adapter (chain ID -> LZ ID for 1 and 10 are pre-configured in initialize)
         vm.startPrank(admin);
-        adapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        adapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
         // Set pool IDs (must be non-zero)
         // Note: block.chainid in tests is usually 31337 (foundry default)
         // We need to set pool IDs for the actual chain ID used in tests
@@ -204,8 +202,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
@@ -263,8 +260,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
@@ -377,8 +373,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         );
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
-        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
@@ -517,8 +512,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         );
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
-        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
         uint64 destChainId = uint64(block.chainid);
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);

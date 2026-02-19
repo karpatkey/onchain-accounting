@@ -54,6 +54,12 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
 
+    /// @dev Internal helper to set both chainId <-> chainSelector mappings
+    function _setChainSelector(uint64 chainId, uint64 chainSelector) internal {
+        chainIdToSelector[chainId] = chainSelector;
+        selectorToChainId[chainSelector] = chainId;
+    }
+
     /// @inheritdoc ICcipBridgeAdapter
     function initialize(
         address admin_,
@@ -73,6 +79,14 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         if (feeToken_ != address(0)) {
             IERC20(feeToken_).forceApprove(router_, type(uint256).max);
         }
+
+        // Pre-configure known CCIP chain selectors (mainnet). Source: https://docs.chain.link/ccip/directory/mainnet
+        _setChainSelector(1, 5009297550715157269); // Ethereum
+        _setChainSelector(43114, 6433500567565415381); // Avalanche
+        _setChainSelector(10, 3734403246176062136); // OP Mainnet
+        _setChainSelector(42161, 4949039107694359620); // Arbitrum One
+        _setChainSelector(8453, 15971525489660198786); // Base
+        _setChainSelector(137, 4051577828743386545); // Polygon PoS
     }
 
     //
@@ -81,8 +95,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
 
     /// @inheritdoc ICcipBridgeAdapter
     function setChainSelectorMapping(uint64 chainId, uint64 chainSelector) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        chainIdToSelector[chainId] = chainSelector;
-        selectorToChainId[chainSelector] = chainId;
+        _setChainSelector(chainId, chainSelector);
     }
 
     /// @inheritdoc ICcipBridgeAdapter

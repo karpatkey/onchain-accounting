@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
+import {ICircleTokenMessengerV2} from "src/bridge/adapters/interfaces/ICircleTokenMessengerV2.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 import {IRouterClient} from "@chainlink/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
@@ -23,54 +23,69 @@ interface IMintableERC20 {
 
 // ============ CCTP Mocks ============
 
-/// @notice Mock TokenMessenger for CCTP
-contract MockTokenMessenger is ITokenMessenger {
+/// @notice Mock TokenMessengerV2 for CCTP
+/// @dev Matches ICircleTokenMessengerV2: depositForBurn has no return value; nonce is exposed via getter for tests.
+contract MockTokenMessenger is ICircleTokenMessengerV2 {
     using SafeERC20 for IERC20;
 
     uint64 public nonce;
     address private _localMessageTransmitter;
     uint32 public constant MESSAGE_BODY_VERSION = 0;
-    mapping(uint32 => mapping(uint64 => bytes32)) public messageToInvoiceId; // domain -> nonce -> invoiceId
+    /// @dev Test helper: mock stores destinationCaller per (domain, nonce); adapter does not read this.
+    mapping(uint32 => mapping(uint64 => bytes32)) public messageToInvoiceId;
+
+    /// @dev Matches Circle TokenMessengerV2 DepositForBurn event (no nonce in event; use nonce getter for tests)
+    event DepositForBurn(
+        address indexed burnToken,
+        uint256 amount,
+        address indexed depositor,
+        bytes32 mintRecipient,
+        uint32 destinationDomain,
+        bytes32 destinationTokenMessenger,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 indexed minFinalityThreshold,
+        bytes hookData
+    );
 
     constructor(address _messageTransmitter) {
         _localMessageTransmitter = _messageTransmitter;
     }
 
-    function depositForBurnWithCaller(
+    function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
         address burnToken,
-        bytes32 destinationCaller
-    ) external override returns (uint64) {
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 minFinalityThreshold
+    ) external override {
         IERC20 token = IERC20(burnToken);
         token.safeTransferFrom(msg.sender, address(this), amount);
-
-        // Burn tokens (in real CCTP, this would burn the tokens)
-        // For testing, we just hold them
-        // token.burn(amount); // Would need burnable token
 
         nonce++;
         messageToInvoiceId[destinationDomain][nonce] = destinationCaller;
 
         emit DepositForBurn(
-            nonce,
             burnToken,
             amount,
             msg.sender,
             mintRecipient,
             destinationDomain,
             bytes32(0), // destinationTokenMessenger
-            destinationCaller
+            destinationCaller,
+            maxFee,
+            minFinalityThreshold,
+            "" // hookData (empty for standard depositForBurn)
         );
-        return nonce;
     }
 
-    function messageBodyVersion() external pure override returns (uint32) {
+    function messageBodyVersion() external pure returns (uint32) {
         return MESSAGE_BODY_VERSION;
     }
 
-    function localMessageTransmitter() external view override returns (address) {
+    function localMessageTransmitter() external view returns (address) {
         return _localMessageTransmitter;
     }
 }

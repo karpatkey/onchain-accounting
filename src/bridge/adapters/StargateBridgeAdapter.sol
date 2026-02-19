@@ -53,6 +53,12 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @notice Default destination gas for LayerZero calls
     uint256 public defaultDstGasForCall = 200000;
 
+    /// @dev Internal helper to set both chainId <-> LayerZero chain ID mappings
+    function _setLzChainId(uint64 chainId, uint16 lzChainId) internal {
+        chainIdToLzChainId[chainId] = lzChainId;
+        lzChainIdToChainId[lzChainId] = chainId;
+    }
+
     /// @inheritdoc IStargateBridgeAdapter
     function initialize(
         address admin_,
@@ -68,6 +74,17 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         if (endpoint_ == address(0)) revert InvalidEndpoint();
         router = IStargateRouter(router_);
         endpoint = endpoint_;
+
+        // Pre-configure known Stargate/LayerZero chain IDs (mainnet). Source: https://stargateprotocol.gitbook.io/stargate/developers/chain-ids
+        _setLzChainId(1, 101); // Ethereum
+        _setLzChainId(56, 102); // BNB Chain
+        _setLzChainId(43114, 106); // Avalanche
+        _setLzChainId(137, 109); // Polygon PoS
+        _setLzChainId(42161, 110); // Arbitrum
+        _setLzChainId(10, 111); // Optimism
+        _setLzChainId(250, 112); // Fantom
+        _setLzChainId(59144, 183); // Linea
+        _setLzChainId(8453, 184); // Base
     }
 
     //
@@ -76,8 +93,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
 
     /// @inheritdoc IStargateBridgeAdapter
     function setChainIdMapping(uint64 chainId, uint16 lzChainId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        chainIdToLzChainId[chainId] = lzChainId;
-        lzChainIdToChainId[lzChainId] = chainId;
+        _setLzChainId(chainId, lzChainId);
     }
 
     /// @inheritdoc IStargateBridgeAdapter

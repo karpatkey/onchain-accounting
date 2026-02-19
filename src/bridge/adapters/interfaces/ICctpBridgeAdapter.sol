@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
+import {ICircleTokenMessengerV2} from "./ICircleTokenMessengerV2.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 
 /// @title ICctpBridgeAdapter Interface
@@ -50,9 +50,9 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     // State Variables (Public)
     //
 
-    /// @notice TokenMessenger contract address (source chain)
-    /// @return The TokenMessenger contract instance
-    function tokenMessenger() external view returns (ITokenMessenger);
+    /// @notice TokenMessengerV2 contract address (source chain)
+    /// @return The TokenMessengerV2 contract instance
+    function tokenMessenger() external view returns (ICircleTokenMessengerV2);
 
     /// @notice MessageTransmitter contract address (source chain for sending, destination for receiving)
     /// @return The MessageTransmitter contract instance

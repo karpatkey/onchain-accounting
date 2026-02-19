@@ -47,10 +47,8 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         );
         adapter = CcipBridgeAdapter(adapterProxy);
 
-        // Configure adapter
+        // Configure adapter (chain selectors for 1 and 10 are pre-configured in initialize)
         vm.startPrank(admin);
-        adapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        adapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
         adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
@@ -221,8 +219,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
@@ -369,8 +366,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
-        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
@@ -407,8 +403,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
-        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destEscrow.authorizeAdapter(destAdapterProxy);
         vm.stopPrank();
 
@@ -540,8 +535,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
-        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destEscrow.authorizeAdapter(destAdapterProxy);
         _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
         vm.stopPrank();

@@ -428,6 +428,8 @@ Adapters that receive protocol callbacks (e.g. CCIP router, LayerZero endpoint) 
 | CCTP      | —                                    | none              | No callback; use `authorizeAdapter` |
 | Superchain| —                                    | none              | No callback; use `authorizeAdapter` |
 
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle’s CCTP domain IDs (used for `depositForBurn` and receive path). Each chain config that has CCTP can include `cctpDomain` in `bridgeAdapters.CCTP.initialize` for reference. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this—configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+
 These bytes4 selectors are asserted in `test/bridge/BridgeAdapterCallbacks.t.sol` (`test_documentedCallbackSelectors_bytes4`). Keep this table in sync with that test.
 
 The script `AuthorizeBridgeAdapters.s.sol` uses each adapter contract's `.selector` (e.g. `CcipBridgeAdapter.ccipReceive.selector`) so the correct bytes4 is always used.

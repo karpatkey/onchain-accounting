@@ -107,8 +107,7 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
         );
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
-        destAdapter.setChainSelectorMapping(SOURCE_CHAIN_ID, SOURCE_CHAIN_SELECTOR);
-        destAdapter.setChainSelectorMapping(DEST_CHAIN_ID, DEST_CHAIN_SELECTOR);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destEscrow.authorizeAdapter(destAdapterProxy);
         vm.stopPrank();
         _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
@@ -246,8 +245,7 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
         );
         StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
-        destAdapter.setChainIdMapping(SOURCE_CHAIN_ID, SOURCE_LZ_CHAIN_ID);
-        destAdapter.setChainIdMapping(DEST_CHAIN_ID, DEST_LZ_CHAIN_ID);
+        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
         destEscrow.authorizeAdapter(destAdapterProxy);

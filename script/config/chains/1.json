@@ -70,7 +70,8 @@
         "bridgeEscrow": "",
         "tokenMessenger": "0xBd3fa81B58Ba92a82136038B25aDec7066af3155",
         "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "cctpDomain": 0
       },
       "deployed": ""
     }

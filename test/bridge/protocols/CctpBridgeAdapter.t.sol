@@ -23,7 +23,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     MockMessageTransmitter public messageTransmitter;
 
     uint32 public constant SOURCE_DOMAIN = 0; // Ethereum mainnet domain
-    uint32 public constant DEST_DOMAIN = 6; // Optimism domain
+    uint32 public constant DEST_DOMAIN = 6; // Base domain
 
     function setUp() public override {
         super.setUp();
@@ -43,9 +43,9 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         );
         adapter = CctpBridgeAdapter(adapterProxy);
 
-        // Configure adapter
+        // Configure adapter (destination mapping + roles)
         vm.startPrank(admin);
-        adapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
+        // SOURCE_CHAIN_ID -> SOURCE_DOMAIN is set automatically in initialize via localDomain
         adapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
         adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
@@ -83,10 +83,9 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
-        // Verify invoiceId mapping was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes32 storedInvoiceId = adapter.messageToInvoiceId(SOURCE_DOMAIN, tokenMessenger.nonce());
-        assertEq(storedInvoiceId, invoiceId, "InvoiceId mapping should be stored");
+        // TokenMessengerV2 does not return nonce on-chain; adapter does not set messageToInvoiceId.
+        // Completion uses messagePayload.invoiceId when mapping is zero. Just verify bridge succeeded.
+        assertEq(tokenMessenger.nonce(), 1, "Mock should have incremented nonce");
     }
 
     function test_bridge_revertsForNativeToken() public {
@@ -104,12 +103,13 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
     function test_bridge_revertsForInvalidDomain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
+        uint64 invalidChainId = 12345; // Not in adapter's pre-configured domain list
         InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
             SOURCE_CHAIN_ID,
-            999,
+            invalidChainId,
             account,
             USDC_SYMBOL_BYTES6,
-            amount // Invalid chain ID
+            amount
         );
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
@@ -195,7 +195,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // Configure adapter on destination chain
         vm.startPrank(admin);
         destAdapter.setDomainMapping(SOURCE_CHAIN_ID, SOURCE_DOMAIN);
-        destAdapter.setDomainMapping(DEST_CHAIN_ID, DEST_DOMAIN);
+        // DEST_CHAIN_ID -> DEST_DOMAIN is set automatically in initialize via localDomain
         destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();

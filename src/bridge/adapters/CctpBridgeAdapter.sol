@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {ITokenMessenger} from "@chainlink/src/v0.8/ccip/pools/USDC/ITokenMessenger.sol";
+import {ICircleTokenMessengerV2} from "./interfaces/ICircleTokenMessengerV2.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 import {ICctpBridgeAdapter} from "./interfaces/ICctpBridgeAdapter.sol";
 import {InvalidArguments, InvalidInvoice} from "src/errors.sol";
@@ -22,8 +22,8 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     // State Variables
     //
 
-    /// @notice TokenMessenger contract address (source chain)
-    ITokenMessenger public tokenMessenger;
+    /// @notice TokenMessengerV2 contract address (source chain)
+    ICircleTokenMessengerV2 private _tokenMessenger;
 
     /// @notice MessageTransmitter contract address (source chain for sending, destination for receiving)
     IMessageTransmitter public messageTransmitter;
@@ -45,6 +45,17 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     mapping(uint32 => uint64) public domainToChainId;
 
     /// @inheritdoc ICctpBridgeAdapter
+    function tokenMessenger() public view returns (ICircleTokenMessengerV2) {
+        return _tokenMessenger;
+    }
+
+    /// @dev Internal helper to set both chainId -> domain and domain -> chainId mappings
+    function _setChainDomain(uint64 chainId, uint32 domain) internal {
+        chainIdToDomain[chainId] = domain;
+        domainToChainId[domain] = chainId;
+    }
+
+    /// @inheritdoc ICctpBridgeAdapter
     function initialize(
         address admin_,
         address bridgeEscrow_,
@@ -56,8 +67,28 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         super._initializeBridgeAdapter(admin_, bridgeEscrow_, "CCTP", version_);
 
         // Initialize CCTP-specific contracts
-        tokenMessenger = ITokenMessenger(tokenMessenger_);
+        _tokenMessenger = ICircleTokenMessengerV2(tokenMessenger_);
         messageTransmitter = IMessageTransmitter(messageTransmitter_);
+
+        // Pre-configure known CCTP domains for supported EVM chains (mainnets)
+        // Reference: Circle CCTP MessageTransmitterV2 domains
+        _setChainDomain(1, 0); // Ethereum
+        _setChainDomain(43114, 1); // Avalanche
+        _setChainDomain(10, 2); // OP Mainnet
+        _setChainDomain(42161, 3); // Arbitrum
+        _setChainDomain(8453, 6); // Base
+        _setChainDomain(137, 7); // Polygon PoS
+        _setChainDomain(130, 10); // Unichain
+        _setChainDomain(59144, 11); // Linea
+        _setChainDomain(81224, 12); // Codex
+        _setChainDomain(146, 13); // Sonic
+        _setChainDomain(480, 14); // World Chain
+        _setChainDomain(143, 15); // Monad
+        _setChainDomain(1329, 16); // Sei
+        _setChainDomain(50, 18); // XDC
+        _setChainDomain(999, 19); // HyperEVM
+        _setChainDomain(57073, 21); // Ink
+        _setChainDomain(98866, 22); // Plume
     }
 
     //
@@ -72,7 +103,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
     /// @inheritdoc ICctpBridgeAdapter
     function setTokenMessenger(address tokenMessenger_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        tokenMessenger = ITokenMessenger(tokenMessenger_);
+        _tokenMessenger = ICircleTokenMessengerV2(tokenMessenger_);
     }
 
     /// @inheritdoc ICctpBridgeAdapter
@@ -111,21 +142,27 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         // Approve TokenMessenger to spend tokens
         // Use forceApprove if available, otherwise use approve after resetting
-        IERC20(asset).forceApprove(address(tokenMessenger), data.amount);
+        IERC20(asset).forceApprove(address(tokenMessenger()), data.amount);
 
-        // Step 1: Burn USDC using TokenMessenger
+        // Step 1: Burn USDC using TokenMessengerV2
         // This creates a message automatically that will mint USDC on destination
         // The destinationCaller is set to this contract's address so we can receive the message
         bytes32 destinationCaller = bytes32(uint256(uint160(address(this))));
-        uint64 nonce = tokenMessenger.depositForBurnWithCaller(
-            data.amount, destinationDomain, mintRecipient, asset, destinationCaller
+        // Use zero maxFee (no fee charged) and standard finality threshold (2000) as per Circle docs
+        tokenMessenger().depositForBurn(
+            data.amount,
+            destinationDomain,
+            mintRecipient,
+            asset,
+            destinationCaller,
+            0,      // maxFee: 0 units of USDC
+            2000    // minFinalityThreshold: standard (fully finalized) transfers
         );
 
-        // Step 2: Store invoiceId mapping for correlation with CCTP message
-        // The invoiceId will be extracted from the CCTP message on the destination chain
-        // We store it keyed by the source domain and nonce (CCTP's unique message identifier)
-        uint32 sourceDomain = messageTransmitter.localDomain();
-        messageToInvoiceId[sourceDomain][nonce] = data.invoiceId;
+        // TokenMessengerV2 does not return the message nonce; it is only available in events.
+        // We do not set messageToInvoiceId here; _completeBridge uses messagePayload.invoiceId when
+        // the mapping is zero (see _completeBridge).
+        uint64 nonce = 0;
 
         emit CctpBridgeInitiated(data.invoiceId, destinationDomain, mintRecipient, bytes32(data.amount), nonce);
     }

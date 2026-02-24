@@ -3,21 +3,20 @@
 ## Prerequisites
 - Foundry installed (`foundryup`)
 - Safe multisig deployed on target chains
-- RPC endpoints and API keys ready
+- RPC and API keys ready
 
 ## Step 1: Configure Environment
 
 Create `.env` file:
 ```bash
-# RPC URLs
-MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+# RPC (chain config uses "rpc": "$ALCHEMY"; scripts build URL from this key)
+ALCHEMY_API_KEY=your_alchemy_key
 
-# API Keys
+# Explorer API keys (for verification)
 ETHERSCAN_API_KEY=YOUR_KEY
 ARBISCAN_API_KEY=YOUR_KEY
 
-# Deployer Key (only for implementations)
+# Deployer key (for implementations and 02_DeployProxies)
 PRIVATE_KEY=0x...
 ```
 
@@ -28,76 +27,71 @@ source .env
 
 ## Step 2: Edit Configuration
 
-Edit `script/config/dev-input.json`:
+Edit the chain config for each chain you deploy to, e.g. `script/config/chains/1.json` for Mainnet:
 ```json
 {
-  "global": {
-    "safeMultisigAddress": "0xYourSafeAddress",
+  "addresses": {
+    "safeMultisig": "0xYourSafeAddress",
     "admin": "0xYourSafeAddress",
-    "assetRecoverer": "0x...",
     "manager": "0x..."
   }
 }
 ```
 
-## Step 3: Deploy Implementations (One-time, via Safe)
+Set `addresses.safeMultisig`, `addresses.admin`, and `addresses.manager` (all non-zero). See `script/config/CONFIG_GUIDE.md` for the full schema.
 
-**Note:** We now use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
+## Step 3: Deploy Implementations (One-time)
 
-Generate Safe transactions to deploy implementations:
+**Note:** We use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
 
-## Step 4: Deploy Core Contracts
-
-**4a. Deploy implementations (once)** — run on any chain, execute the generated Safe TX once:
+Generate Safe transactions to deploy implementations (or deploy via EOA with `--broadcast --private-key`):
 
 ```bash
 forge script script/deploy/01_DeployImplementations.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1
 # Generates: safe-transactions/1-deploy-implementations.json (2 txs)
 ```
 
-**Execute via Safe UI:** Import `safe-transactions/1-deploy-implementations.json` → sign and execute.
+**Execute via Safe UI:** Import `safe-transactions/1-deploy-implementations.json` → sign and execute (once).
 
-**4b. Deploy proxies and initialize (per chain)** — run per chain, then execute that chain’s Safe TX:
+## Step 4: Deploy Core Contracts (Proxies + Init, per chain)
+
+**4a. Deploy implementations (once)** — already done in Step 3.
+
+**4b. Deploy proxies and initialize (per chain)** — run once per chain. This deploys placeholder + NAV + Bridge proxies and initializes them in one EOA transaction (deterministic addresses across chains):
 
 ```bash
 # Mainnet
-forge script script/deploy/02a_DeployProxies.s.sol \
-  --rpc-url "$RPC_URL" \
-  --chain-id "$CHAIN_ID" \
+forge script script/deploy/02_DeployProxies.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 1 \
   --broadcast \
   --private-key "$PRIVATE_KEY"
 
-# Then generate Safe transactions for initialization
-forge script script/deploy/02b_InitializeProxies.s.sol \
-  --rpc-url "$RPC_URL" \
-  --chain-id "$CHAIN_ID"
-  --rpc-url $MAINNET_RPC_URL \
-  --chain-id 1
-# Generates: safe-transactions/1-deploy-proxies-and-initialize.json (4 txs)
+# Other chains: same script with that chain's RPC and --chain-id (e.g. 42161, 10, 8453, 100)
 ```
 
-**Execute via Safe UI:** Import the generated JSON for that chain → sign and execute. **Proxy addresses are identical on all chains.**
+Proxy addresses are identical on all chains. No separate Safe TX for init; 02 does deploy + init via EOA.
 
 ## Step 5: Deploy on Other Chains
 
-Repeat Step 4b on each chain (run the script with that chain’s RPC and `--chain-id`, then execute the generated Safe TX on that chain).
+Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain’s RPC and `--chain-id`).
 
 ## Step 6: Deploy Adapters (Optional)
 
-Edit scripts to uncomment needed adapters, then:
+Edit chain config and scripts to enable needed adapters, then:
 
 ```bash
-# Price adapters
-forge script script/deploy/03_DeployPriceAdapters.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
+# Price feeds
+forge script script/deploy/03_DeployPriceFeeds.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --private-key $PRIVATE_KEY \
   --broadcast
 
 # Balance adapters
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --private-key $PRIVATE_KEY \
   --broadcast
 ```
@@ -106,13 +100,13 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
 
 ```bash
 forge script script/verify/VerifyEtherscan.s.sol \
-  --rpc-url $MAINNET_RPC_URL
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 
 # Copy and run the generated commands
 ```
 
 ## Need Help?
 
-- **Full guide**: See `script/DEPLOYMENT_README.md`
-- **Architecture**: See `script/DEPLOYMENT_PLAN.md`
-- **Summary**: See `script/DEPLOYMENT_SUMMARY.md`
+- **Full deployment guide**: See `script/DEPLOYMENT_SUMMARY.md`
+- **Config reference**: See `script/config/README.md` and `script/config/CONFIG_GUIDE.md`
+- **Deploy script details**: See `script/deploy/README.md`

@@ -600,7 +600,7 @@ SAFE_TX_SERVICE_URL=https://safe-transaction-mainnet.safe.global
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url $MAINNET_RPC_URL \
   --chain-id 1
-# Then run 02a_DeployProxies.s.sol per chain (EOA deployment), then 02b_InitializeProxies.s.sol per chain (generates Safe TXs; execute via Safe UI).
+# Then run 02_DeployProxies.s.sol per chain (EOA deployment; deploys and initializes proxies in one go).
 ```
 
 ---
@@ -706,13 +706,12 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
 
 ### Pre-Deployment
 
-- [ ] Fill `dev-input.json` with Safe multisig address
-- [ ] Fill admin, manager, assetRecoverer addresses
-- [ ] Add initial assets for NAVCalculator with correct price feeds
+- [ ] Fill `script/config/chains/{chainId}.json` with `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (per chain)
+- [ ] Add initial assets for NAVCalculator with correct price feeds (e.g. in `assets.json`)
 - [ ] Add asset symbols for BridgeEscrow (with addresses per chain)
-- [ ] Enable/disable adapters per chain
+- [ ] Enable/disable adapters per chain in chain config
 - [ ] Verify protocol addresses in `chains/{chainId}.json` and `assets.json`
-- [ ] Set environment variables in `.env`
+- [ ] Set environment variables in `.env` (e.g. `ALCHEMY_API_KEY`, explorer API keys)
 - [ ] Test RPC URLs are working
 - [ ] Verify block explorer API keys are valid
 

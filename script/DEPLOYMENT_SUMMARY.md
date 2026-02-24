@@ -2,7 +2,7 @@
 
 ## ✅ What Has Been Implemented
 
-This deployment system implements the complete deployment architecture from `DEPLOYMENT_PLAN.md` with **Safe multisig control** and **CREATE2 deterministic addresses** across multiple chains.
+This deployment system implements the complete deployment architecture with **Safe multisig control** and **CREATE2 deterministic addresses** across multiple chains.
 
 ### Core Infrastructure
 
@@ -152,9 +152,8 @@ In the chain JSON, find the **`addresses`** block. Replace the zero addresses wi
 - **`safeMultisig`** — Your Safe multisig address (e.g. from [app.safe.global](https://app.safe.global)).
 - **`admin`** — Address that will be the admin of NAVCalculator and BridgeEscrow (often the same Safe, or an EOA).
 - **`manager`** — Manager role (e.g. Safe or EOA).
-- **`assetRecoverer`** — Asset recoverer role (e.g. Safe or EOA).
 
-All four must be non-zero; the scripts will revert otherwise.
+All three must be non-zero; the scripts will revert otherwise.
 
 Optional for NAVCalculator (you can leave as-is):
 
@@ -163,7 +162,7 @@ Optional for NAVCalculator (you can leave as-is):
 
 Save the file.
 
-**Check:** `addresses.safeMultisig`, `admin`, `manager`, `assetRecoverer` are all valid non-zero addresses.
+**Check:** `addresses.safeMultisig`, `admin`, `manager` are all valid non-zero addresses.
 
 ---
 
@@ -379,7 +378,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 1. ✅ Safe multisig deployed on target chains
 2. ✅ `ALCHEMY_API_KEY` in `.env` for RPC (chain config uses `"rpc": "$ALCHEMY"`); explorer API keys for verification
 3. ✅ Etherscan (or chain explorer) API keys for verification
-4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.safeMultisig`, `addresses.admin`, `addresses.manager`, `addresses.assetRecoverer` (all non-zero)
+4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (all non-zero)
 5. ✅ Deployer private key (for 01 implementations and 02_DeployProxies)
 
 ### Recommended
@@ -390,7 +389,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 ## What Requires Manual Steps
 
 ### Manual Configuration Needed
-1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.safeMultisig`, `addresses.admin`, `addresses.manager`, `addresses.assetRecoverer` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
+1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
 2. **Uncomment or enable adapters** in chain config and deployment scripts as needed
 3. **Execute Safe transactions** via Safe UI after generation (multisig approval)
 4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step
@@ -402,7 +401,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 
 ## Next Steps to Deploy
 
-1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager, assetRecoverer (and RPC/explorer vars in `.env` if using `$VAR`).
+1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager (and RPC/explorer vars in `.env` if using `$VAR`).
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --private-key` to deploy via EOA).
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --private-key` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
@@ -413,7 +412,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 
 1. **Per chain (each chain where you deploy)**  
    - Have a Safe multisig and set in `script/config/chains/{chainId}.json`:  
-     `addresses.safeMultisig`, `addresses.admin`, `addresses.manager`, `addresses.assetRecoverer` (all real addresses, not zero).  
+     `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (all real addresses, not zero).  
    - Optional for NAVCalculator: set `chainlinkSequencerFeed` (L2 sequencer feed; can be zero on L1) and `nativeTokenSymbol` (e.g. `"ETH"`, `"xDAI"`).
 
 2. **Env**  

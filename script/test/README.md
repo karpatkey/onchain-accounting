@@ -4,7 +4,7 @@ This directory contains comprehensive tests for the deployment infrastructure.
 
 ## Test Files
 
-### DeploymentTest.t.sol
+### DeploymentTest.fork.t.sol
 Tests for core deployment functionality:
 - ✅ Create2Deployer deployment and functionality
 - ✅ CREATE2 address computation
@@ -38,7 +38,7 @@ forge test --match-path "script/test/*.t.sol" -vv
 ### Run Specific Test File
 ```bash
 # Deployment tests
-forge test --match-path "script/test/DeploymentTest.t.sol" -vv
+forge test --match-path "script/test/DeploymentTest.fork.t.sol" -vv
 
 # Config reader tests
 forge test --match-path "script/test/ConfigReaderTest.t.sol" -vv

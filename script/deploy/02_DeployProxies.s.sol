@@ -87,82 +87,8 @@ contract DeployProxies is BaseDeployScript {
         vm.startBroadcast();
 
         if (useLegacy) {
-            // Legacy multi-tx path (each step can be front-run).
-            if (placeholder.code.length == 0) {
-                (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltPlaceholder, placeholderBytecode));
-                require(ok, "Placeholder deploy failed");
-            }
-            if (navProxy.code.length == 0) {
-                (bool navOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltNavProxy, navProxyBytecode));
-                require(navOk, "NAV proxy deploy call failed");
-                console2.log("[OK] NAV proxy deployed at:", navProxy);
-            } else {
-                console2.log("[SKIP] NAV proxy already deployed at:", navProxy);
-            }
-            if (bridgeProxy.code.length == 0) {
-                (bool bridgeOk,) =
-                    CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeProxy, bridgeProxyBytecode));
-                require(bridgeOk, "Bridge proxy deploy call failed");
-                console2.log("[OK] Bridge proxy deployed at:", bridgeProxy);
-            } else {
-                console2.log("[SKIP] Bridge proxy already deployed at:", bridgeProxy);
-            }
-
-            bytes memory navInitData = abi.encodeCall(
-                NAVCalculator.initialize,
-                (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
-            );
-            address[] memory initialAccounts = new address[](0);
-            address[] memory initialAdapters = new address[](0);
-            // chainId fits in uint64 for all EVM chains
-            bytes memory bridgeInitData = abi.encodeCall(
-                BridgeEscrow.initialize,
-                // forge-lint: disable-next-line(unsafe-typecast)
-                (chainConfig.admin, uint64(currentChainId), initialAccounts, initialAdapters)
-            );
-            bytes32 implementationSlot = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
-
-            address currentNavImpl = address(uint160(uint256(vm.load(navProxy, implementationSlot))));
-            console2.log("NAV proxy current impl:", currentNavImpl);
-            if (currentNavImpl == navImpl) {
-                console2.log("[SKIP] NAV proxy already at target impl:", navImpl);
-            } else if (currentNavImpl == placeholder) {
-                UUPSUpgradeable(navProxy).upgradeToAndCall(navImpl, navInitData);
-                console2.log("[OK] NAV proxy upgraded & initialized via EOA. Impl:", navImpl);
-            } else {
-                revert(
-                    string(
-                        abi.encodePacked(
-                            "NAV proxy impl is ",
-                            vm.toString(currentNavImpl),
-                            "; upgrade to ",
-                            vm.toString(navImpl),
-                            " must be executed by current admin (e.g. via Safe)."
-                        )
-                    )
-                );
-            }
-
-            address currentBridgeImpl = address(uint160(uint256(vm.load(bridgeProxy, implementationSlot))));
-            console2.log("Bridge proxy current impl:", currentBridgeImpl);
-            if (currentBridgeImpl == bridgeImpl) {
-                console2.log("[SKIP] Bridge proxy already at target impl:", bridgeImpl);
-            } else if (currentBridgeImpl == placeholder) {
-                UUPSUpgradeable(bridgeProxy).upgradeToAndCall(bridgeImpl, bridgeInitData);
-                console2.log("[OK] Bridge proxy upgraded & initialized via EOA. Impl:", bridgeImpl);
-            } else {
-                revert(
-                    string(
-                        abi.encodePacked(
-                            "Bridge proxy impl is ",
-                            vm.toString(currentBridgeImpl),
-                            "; upgrade to ",
-                            vm.toString(bridgeImpl),
-                            " must be executed by current admin (e.g. via Safe)."
-                        )
-                    )
-                );
-            }
+            _deployLegacy(placeholder, navProxy, bridgeProxy);
+            _upgradeLegacy(placeholder, navProxy, bridgeProxy, navImpl, bridgeImpl);
         } else {
             // Atomic path: one transaction (no front-run window).
             console2.log("[ATOMIC] Deploying placeholder + proxies + upgrade in a single transaction");
@@ -265,5 +191,101 @@ contract DeployProxies is BaseDeployScript {
         console2.log("  BridgeEscrow proxy:", bridgeProxy);
         console2.log("    admin:", chainConfig.admin);
         console2.log("    manager:", chainConfig.manager);
+    }
+
+    function _deployLegacy(address placeholder, address navProxy, address bridgeProxy) private {
+        // Legacy multi-tx path (each step can be front-run).
+        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 2);
+        bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
+        if (placeholder.code.length == 0) {
+            (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltPlaceholder, placeholderBytecode));
+            require(ok, "Placeholder deploy failed");
+        }
+
+        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 2);
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        if (navProxy.code.length == 0) {
+            (bool navOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltNavProxy, navProxyBytecode));
+            require(navOk, "NAV proxy deploy call failed");
+            console2.log("[OK] NAV proxy deployed at:", navProxy);
+        } else {
+            console2.log("[SKIP] NAV proxy already deployed at:", navProxy);
+        }
+
+        bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", 2);
+        bytes memory bridgeProxyBytecode =
+            abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        if (bridgeProxy.code.length == 0) {
+            (bool bridgeOk,) =
+                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeProxy, bridgeProxyBytecode));
+            require(bridgeOk, "Bridge proxy deploy call failed");
+            console2.log("[OK] Bridge proxy deployed at:", bridgeProxy);
+        } else {
+            console2.log("[SKIP] Bridge proxy already deployed at:", bridgeProxy);
+        }
+    }
+
+    function _upgradeLegacy(
+        address placeholder,
+        address navProxy,
+        address bridgeProxy,
+        address navImpl,
+        address bridgeImpl
+    ) private {
+        bytes memory navInitData = abi.encodeCall(
+            NAVCalculator.initialize,
+            (chainConfig.admin, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+        );
+        address[] memory initialAccounts = new address[](0);
+        address[] memory initialAdapters = new address[](0);
+        // chainId fits in uint64 for all EVM chains
+        bytes memory bridgeInitData = abi.encodeCall(
+            BridgeEscrow.initialize,
+            // forge-lint: disable-next-line(unsafe-typecast)
+            (chainConfig.admin, uint64(currentChainId), initialAccounts, initialAdapters)
+        );
+        bytes32 implementationSlot = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+
+        address currentNavImpl = address(uint160(uint256(vm.load(navProxy, implementationSlot))));
+        console2.log("NAV proxy current impl:", currentNavImpl);
+        if (currentNavImpl == navImpl) {
+            console2.log("[SKIP] NAV proxy already at target impl:", navImpl);
+        } else if (currentNavImpl == placeholder) {
+            UUPSUpgradeable(navProxy).upgradeToAndCall(navImpl, navInitData);
+            console2.log("[OK] NAV proxy upgraded & initialized via EOA. Impl:", navImpl);
+        } else {
+            revert(
+                string(
+                    abi.encodePacked(
+                        "NAV proxy impl is ",
+                        vm.toString(currentNavImpl),
+                        "; upgrade to ",
+                        vm.toString(navImpl),
+                        " must be executed by current admin (e.g. via Safe)."
+                    )
+                )
+            );
+        }
+
+        address currentBridgeImpl = address(uint160(uint256(vm.load(bridgeProxy, implementationSlot))));
+        console2.log("Bridge proxy current impl:", currentBridgeImpl);
+        if (currentBridgeImpl == bridgeImpl) {
+            console2.log("[SKIP] Bridge proxy already at target impl:", bridgeImpl);
+        } else if (currentBridgeImpl == placeholder) {
+            UUPSUpgradeable(bridgeProxy).upgradeToAndCall(bridgeImpl, bridgeInitData);
+            console2.log("[OK] Bridge proxy upgraded & initialized via EOA. Impl:", bridgeImpl);
+        } else {
+            revert(
+                string(
+                    abi.encodePacked(
+                        "Bridge proxy impl is ",
+                        vm.toString(currentBridgeImpl),
+                        "; upgrade to ",
+                        vm.toString(bridgeImpl),
+                        " must be executed by current admin (e.g. via Safe)."
+                    )
+                )
+            );
+        }
     }
 }

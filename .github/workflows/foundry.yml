@@ -40,6 +40,9 @@ jobs:
           FOUNDRY_PROFILE: slow
         run: forge test --match-path "*fork*" -vvv --threads 1
 
+      - name: coverage
+        run: forge coverage --no-match-path "**fork**" --no-match-coverage "script/"
+
   # Format check
   lint:
     name: Format

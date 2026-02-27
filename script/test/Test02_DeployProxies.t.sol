@@ -348,6 +348,65 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("[OK] AtomicProxyDeployer full flow: proxies upgraded and admin granted");
     }
 
+    /// @notice Test that AtomicProxyDeployer cleanly handles adminToGrant == address(0).
+    /// @dev Ensures _grantDefaultAdmin short-circuits and does not grant roles to the zero address.
+    function test_AtomicProxyDeployerNoAdminGrantWhenZeroAddress() public {
+        address placeholder = _getPlaceholderAddress();
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+
+        address navProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
+        address bridgeProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
+
+        // Skip if proxies already deployed; behavior with existing roles is covered elsewhere.
+        if (navProxy.code.length > 0 || bridgeProxy.code.length > 0) {
+            console2.log(
+                "[SKIP] test_AtomicProxyDeployerNoAdminGrantWhenZeroAddress: proxies already deployed at expected addresses"
+            );
+            return;
+        }
+
+        NAVCalculator navImpl = new NAVCalculator();
+        BridgeEscrow bridgeImpl = new BridgeEscrow();
+        vm.deal(address(this), 1 ether);
+
+        AtomicProxyDeployer deployer = new AtomicProxyDeployer(
+            address(navImpl),
+            address(bridgeImpl),
+            chainConfig.chainlinkSequencerFeed,
+            chainConfig.nativeTokenSymbol,
+            address(0)
+        );
+
+        NAVCalculator nav = NAVCalculator(navProxy);
+        BridgeEscrow bridge = BridgeEscrow(payable(bridgeProxy));
+
+        // Proxies should be deployed and upgraded
+        assertTrue(_hasCode(navProxy), "NAV proxy should have code after AtomicProxyDeployer run");
+        assertTrue(_hasCode(bridgeProxy), "Bridge proxy should have code after AtomicProxyDeployer run");
+
+        // AtomicProxyDeployer itself should be an admin (initialize(..., address(this), ...))
+        assertTrue(
+            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), address(deployer)),
+            "AtomicProxyDeployer should be DEFAULT_ADMIN on NAV when adminToGrant = 0"
+        );
+        assertTrue(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), address(deployer)),
+            "AtomicProxyDeployer should be DEFAULT_ADMIN on Bridge when adminToGrant = 0"
+        );
+
+        // But zero address must NOT receive DEFAULT_ADMIN_ROLE
+        assertFalse(
+            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), address(0)), "Zero address must not be DEFAULT_ADMIN on NAV"
+        );
+        assertFalse(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), address(0)), "Zero address must not be DEFAULT_ADMIN on Bridge"
+        );
+        console2.log("[OK] AtomicProxyDeployer with adminToGrant = 0: no admin granted to zero address");
+    }
+
     /// @notice Test that config can be read for all chains; Safe must be same (proxy admin in bytecode)
     /// @dev Proxy bytecode uses a placeholder impl, so implementation addresses may differ per chain.
     ///      This test verifies Safe is consistent and logs per-chain impl addresses from config.

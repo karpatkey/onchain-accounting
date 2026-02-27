@@ -28,6 +28,13 @@ contract RegisterAssets is BaseDeployScript {
     /// @dev ERC-7528 native token sentinel; has no code but NAVCalculator handles it in init.
     address private constant NATIVE_SENTINEL = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
+    struct OracleConfig {
+        address oracle;
+        IPrices.PriceType priceType;
+        uint256 heartbeat;
+        bool ok;
+    }
+
     function run() public override {
         setUp();
 
@@ -143,54 +150,20 @@ contract RegisterAssets is BaseDeployScript {
         }
 
         // Second pass: build Safe tx batch for each token that needs registration
-        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](toRegisterCount);
-        uint256 j = 0;
-        for (uint256 i = 0; i < symbols.length; i++) {
-            string memory symbol = symbols[i];
-            string memory addrStr = ConfigReader.readTokenAddress(vm, currentChainId, symbol);
-            if (bytes(addrStr).length == 0) continue;
-            address asset = vm.parseAddress(addrStr);
-            if (asset == address(0)) continue;
-            if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) continue;
-            (bool ok, bytes memory data) =
-                navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
-            if (ok && data.length > 0 && abi.decode(data, (bool))) continue;
-            if (_hasNoCode(asset)) continue;
+        SafeTxBuilder.Transaction[] memory batch =
+            _buildRegisterTransactions(navProxy, currentChainId, symbols, toRegisterCount);
 
-            string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
-            if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) continue;
-            string memory oracleStr = ConfigReader.readTokenOracle(vm, currentChainId, symbol);
-            if (bytes(oracleStr).length == 0) continue;
-            address oracle = vm.parseAddress(oracleStr);
-            if (oracle == address(0)) continue;
-
-            uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
-            IPrices.PriceType priceType =
-                _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
-
-            transactions[j] = SafeTxBuilder.call(
-                navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat))
-            );
-            j++;
-        }
-
-        if (j == 0) {
+        if (batch.length == 0) {
             console2.log("");
             console2.log("No assets to register after re-check (already registered or invalid). Nothing written.");
             return;
-        }
-
-        // Copy to exact-sized array (in case any defensive skips happened in second pass)
-        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](j);
-        for (uint256 k = 0; k < j; k++) {
-            batch[k] = transactions[k];
         }
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-register-assets.json"));
         writeSafeTx(
             filename,
             "Register assets in NAVCalculator",
-            string(abi.encodePacked("Register ", vm.toString(j), " assets from assets.json")),
+            string(abi.encodePacked("Register ", vm.toString(batch.length), " assets from assets.json")),
             batch
         );
 
@@ -260,6 +233,80 @@ contract RegisterAssets is BaseDeployScript {
 
     function _equals(string memory a, string memory b) private pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
+
+    /// @dev Build Safe transactions to register assets that need registration.
+    function _buildRegisterTransactions(
+        address navProxy,
+        uint256 chainId,
+        string[] memory symbols,
+        uint256 toRegisterCount
+    ) private view returns (SafeTxBuilder.Transaction[] memory batch) {
+        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](toRegisterCount);
+        uint256 j = 0;
+        for (uint256 i = 0; i < symbols.length; i++) {
+            address asset = vm.parseAddress(ConfigReader.readTokenAddress(vm, chainId, symbols[i]));
+            if (!_shouldRegister(navProxy, asset)) continue;
+
+            OracleConfig memory cfg = _readOracleConfig(chainId, symbols[i]);
+            if (!cfg.ok) continue;
+
+            transactions[j] = SafeTxBuilder.call(
+                navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, cfg.oracle, cfg.priceType, cfg.heartbeat))
+            );
+            j++;
+        }
+
+        if (j == 0) {
+            return new SafeTxBuilder.Transaction[](0);
+        }
+
+        batch = new SafeTxBuilder.Transaction[](j);
+        for (uint256 k = 0; k < j; k++) {
+            batch[k] = transactions[k];
+        }
+    }
+
+    /// @dev Returns true if the asset should be registered (not already registered and has contract code).
+    function _shouldRegister(address navProxy, address asset) private view returns (bool) {
+        if (asset == address(0)) return false;
+
+        (bool ok, bytes memory data) =
+            navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
+        if (ok && data.length > 0 && abi.decode(data, (bool))) {
+            return false;
+        }
+        if (_hasNoCode(asset)) {
+            return false;
+        }
+        return true;
+    }
+
+    /// @dev Reads oracle configuration for a symbol; returns config.ok = false if unsupported or invalid.
+    function _readOracleConfig(uint256 chainId, string memory symbol) private view returns (OracleConfig memory cfg) {
+        if (!ConfigReader.hasTokenOracle(vm, chainId, symbol)) {
+            return OracleConfig(address(0), IPrices.PriceType.Chainlink, 0, false);
+        }
+
+        string memory priceTypeStr = ConfigReader.readTokenType(vm, chainId, symbol);
+        if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) {
+            return OracleConfig(address(0), IPrices.PriceType.Chainlink, 0, false);
+        }
+
+        string memory oracleStr = ConfigReader.readTokenOracle(vm, chainId, symbol);
+        address oracle_ = vm.parseAddress(oracleStr);
+        if (oracle_ == address(0)) {
+            return OracleConfig(address(0), IPrices.PriceType.Chainlink, 0, false);
+        }
+
+        uint256 heartbeat_ = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, chainId, symbol));
+        IPrices.PriceType priceType_ =
+            _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
+
+        cfg.oracle = oracle_;
+        cfg.priceType = priceType_;
+        cfg.heartbeat = heartbeat_;
+        cfg.ok = true;
     }
 
     /// @notice Encodes an array of Safe transactions into MultiSend format

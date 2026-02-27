@@ -252,7 +252,9 @@ contract RegisterAssets is BaseDeployScript {
             if (!cfg.ok) continue;
 
             transactions[j] = SafeTxBuilder.call(
-                navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, cfg.oracle, cfg.priceType, cfg.heartbeat))
+                navProxy,
+                0,
+                abi.encodeCall(NAVCalculator.registerAsset, (asset, cfg.oracle, cfg.priceType, cfg.heartbeat))
             );
             j++;
         }

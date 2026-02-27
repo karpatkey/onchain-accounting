@@ -170,6 +170,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **AaveV3SafetyModule** | Aave safety module (e.g. staked AAVE). | |
 | **Aura** | Aura vault/lp positions. | |
 | **BalancerV3** | Balancer V3 positions. | |
+| **BridgedAssetsOracle** | Manual bridged-asset positions (temporary). Operators open/close bridge positions directly via calldata; adapter reports in-transit credit balances for NAV. | Protocol string configurable (e.g. `"ManualBridge"`), debt is always `false`. |
 | **CompoundV3Comet** | Compound V3 Comet: base borrow, collaterals, rewards. | Constructor: protocol string (e.g. "Compound v3 USDC"). Uses NAVCalculator for asset metadata. |
 | **DaiDsr** | DAI Savings Rate. | |
 | **GMX** | GMX positions. | |
@@ -180,6 +181,15 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **StakeWiseV3Vault** | StakeWise V3 vault. | |
 
 Protocol adapters typically take a **NAVCalculator** (or equivalent) in the constructor to read the asset registry (and sometimes symbols/decimals) so they can build correct `Asset` and only report registered assets if desired.
+
+### 7.1 BridgedAssetsOracle (temporary manual adapter)
+
+- Tracks bridge positions by explicit operator writes (`openBridgePosition`) and settlement (`closeBridgePosition`) instead of reading any external protocol state.
+- Intended for temporary coverage of assets in transit while bridge-indexed accounting is still being built.
+- `getOraclePositions` emits one position per `(asset, destinationChainId)` with:
+  - `isDebt = false` always (credit-only bridge positions).
+  - `positionDetail = "Bridging to <destinationChainId>"`.
+- `underlyingAssetsSupported()` mirrors NAVCalculator's full registered asset set, so `getOraclesForAsset(asset)` remains aligned with assets that have price feeds configured.
 
 ---
 

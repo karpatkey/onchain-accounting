@@ -213,11 +213,9 @@ contract DeployProxies is BaseDeployScript {
         }
 
         bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", 2);
-        bytes memory bridgeProxyBytecode =
-            abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
+        bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         if (bridgeProxy.code.length == 0) {
-            (bool bridgeOk,) =
-                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeProxy, bridgeProxyBytecode));
+            (bool bridgeOk,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltBridgeProxy, bridgeProxyBytecode));
             require(bridgeOk, "Bridge proxy deploy call failed");
             console2.log("[OK] Bridge proxy deployed at:", bridgeProxy);
         } else {

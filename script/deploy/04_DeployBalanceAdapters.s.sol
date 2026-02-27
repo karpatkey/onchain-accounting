@@ -116,7 +116,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMorphoBlue(adapterName, navCalculator);
         }
 
-
         // DAI DSR
         if (_equals(adapterName, "DaiDsr")) {
             return _deployDaiDsr(navCalculator);
@@ -192,7 +191,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-  
     function _deployDaiDsr(address navCalculator) internal returns (address) {
         address dai =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dai"));

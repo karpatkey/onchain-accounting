@@ -398,9 +398,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         );
 
         // But zero address must NOT receive DEFAULT_ADMIN_ROLE
-        assertFalse(
-            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), address(0)), "Zero address must not be DEFAULT_ADMIN on NAV"
-        );
+        assertFalse(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), address(0)), "Zero address must not be DEFAULT_ADMIN on NAV");
         assertFalse(
             bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), address(0)), "Zero address must not be DEFAULT_ADMIN on Bridge"
         );

@@ -1,0 +1,79 @@
+{
+  "chainId": 1,
+  "name": "mainnet",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://etherscan.io",
+  "explorerApiKey": "$ETHERSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "ETH",
+  "addresses": {
+    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+  },
+  "deployed": {
+    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
+    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
+  },
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+      },
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    }
+  },
+  "bridgeAdapters": {
+    "CCIP": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "router": "0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D",
+        "feeToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+        "version": "1.0.0"
+      },
+      "deployed": "",
+      "callbackSelector": "0x85572ffb"
+    },
+    "Across": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "spokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+        "defaultRelayerFeePct": "5000",
+        "version": "1.0.0"
+      },
+      "deployed": "",
+      "callbackSelector": "0x0ea1f938"
+    },
+    "Stargate": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "router": "0x8731d54E9D02c286767d56ac03e8037C07e01e98",
+        "endpoint": "0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675",
+        "version": "1.0.0"
+      },
+      "deployed": "",
+      "callbackSelector": "0x001d3567"
+    },
+    "CCTP": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "tokenMessenger": "0xBd3fa81B58Ba92a82136038B25aDec7066af3155",
+        "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
+        "version": "1.0.0",
+        "cctpDomain": 0
+      },
+      "deployed": ""
+    }
+  }
+}

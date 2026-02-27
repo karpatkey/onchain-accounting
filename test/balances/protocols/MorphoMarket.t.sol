@@ -1,102 +1,104 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Id, MarketParams, Market, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
+import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract MorphoMarketTest is Test {
-    uint256 public fork;
-    uint256 public forkBlock;
+/// @notice Mock Morpho that returns a single market's params, zero position, and zero market state for unit tests (no fork).
+/// Implements only idToMarketParams, position, and market used by MorphoMarketBalanceOracle and MorphoBalancesLib.
+contract MockMorpho {
+    using MarketParamsLib for MarketParams;
 
-    address public usdc = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-    address public wsteth = (0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0);
-    address dai = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    address mkr = address(0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2);
+    MarketParams private _marketParams;
+    Id private _id;
 
+    constructor(MarketParams memory marketParams) {
+        _marketParams = marketParams;
+        _id = marketParams.id();
+    }
+
+    function idToMarketParams(Id id) external view returns (MarketParams memory) {
+        require(Id.unwrap(id) == Id.unwrap(_id), "unknown market");
+        return _marketParams;
+    }
+
+    function position(Id, address) external pure returns (Position memory) {
+        return Position({supplyShares: 0, borrowShares: 0, collateral: 0});
+    }
+
+    function market(Id) external view returns (Market memory) {
+        return Market({
+            totalSupplyAssets: 0,
+            totalSupplyShares: 0,
+            totalBorrowAssets: 0,
+            totalBorrowShares: 0,
+            lastUpdate: uint128(block.timestamp),
+            fee: 0
+        });
+    }
+}
+
+/// @title MorphoMarketBalanceOracleUnitTest
+/// @notice Unit tests using MockMorpho (no fork).
+contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
     MorphoMarketBalanceOracle public oracle;
-    IBalanceOracleCustom.PositionMetadata morphoMetadata =
-        IBalanceOracleCustom.PositionMetadata({protocol: "Morpho", position: "Some market", positionType: "Supplied"});
+    MockMorpho public mockMorpho;
+    bytes32 public marketId;
 
-    function setUp() public {
-        fork = vm.createFork(vm.envString("MAINNET_URL"));
-        vm.selectFork(fork);
+    function setUp() public override {
+        super.setUp();
+        MarketParams memory params = MarketParams({
+            loanToken: address(usdc), collateralToken: address(weth), oracle: address(1), irm: address(0), lltv: 1e18
+        });
+        marketId = Id.unwrap(MarketParamsLib.id(params));
+        mockMorpho = new MockMorpho(params);
+        oracle = new MorphoMarketBalanceOracle(address(mockMorpho), marketId, "Morpho - Mock", address(balances));
     }
 
-    function test_mainnet_balanceOf_supply_usdc() public {
-        vm.rollFork(20_361_884);
-        address user = address(0x846E7F810E08F1E2AF2c5AfD06847cc95F5CaE1B);
-        bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
-
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
-        int256 balance = oracle.balanceOf(usdc, user);
-        assertEq(balance, 25_066_203_870);
+    function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+        assertEq(amount, 0);
     }
 
-    function test_mainnet_balanceOf_borrowUsdc() public {
-        vm.rollFork(20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
-        bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
-
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
-
-        int256 balanceUSDC = oracle.balanceOf(usdc, user);
-        assertEq(balanceUSDC, -9_478_607_678_615);
-    }
-
-    function test_mainnet_balanceOf_collateralMKR() public {
-        vm.rollFork(20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
-        bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
-
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
-
-        int256 balanceMKR = oracle.balanceOf(mkr, user);
-        assertEq(balanceMKR, 15_235_145_753_614_569_323_332);
-    }
-
-    function test_mainnet_balanceOf_unsupportedToken() public {
-        vm.rollFork(20_728_491);
-        address user = address(0x06bF1e959eDad7e1F7003a9Fa122233F1Bd22f34);
-        bytes32 id = 0x97bb820669a19ba5fa6de964a466292edd67957849f9631eb8b830c382f58b7f;
-
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, id, morphoMetadata);
-
+    function test_getOracleBalanceForAsset_unsupportedToken_reverts() public {
+        address unsupported = address(1);
         vm.expectRevert(InvalidArguments.selector);
-        oracle.balanceOf(address(0), user);
+        oracle.getOracleBalanceForAsset(alice, unsupported);
     }
 
-    function test_underlyingAssetsSupported() public {
-        bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
+    function test_getOracleBalanceForAsset_zeroPosition_returnsZero() public view {
+        (uint256 amountUsdc,) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amountUsdc, 0);
+        (uint256 amountWeth,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amountWeth, 0);
+    }
 
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
+    function test_underlyingAssetsSupported() public view {
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
-        assertEq(assets[0], wsteth);
-        assertEq(assets[1], usdc);
+        assertEq(assets[0], address(weth));
+        assertEq(assets[1], address(usdc));
     }
 
-    function test_collateralAndLoanTokens() public {
-        bytes32 idWsethUsdc = 0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc;
+    function test_collateralAndLoanTokens() public view {
+        assertEq(oracle.COLLATERAL_TOKEN(), address(weth));
+        assertEq(oracle.LOAN_TOKEN(), address(usdc));
+    }
 
-        address morphoMainnet = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
+    function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
+        assertEq(assets.length, 0);
+        assertEq(amounts.length, 0);
+    }
 
-        oracle = new MorphoMarketBalanceOracle(morphoMainnet, idWsethUsdc, morphoMetadata);
-        assertEq(oracle.collateralToken(), wsteth);
-        assertEq(oracle.loanToken(), usdc);
+    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+        assertEq(positions.length, 0);
     }
 }

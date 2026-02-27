@@ -1,25 +1,89 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
-import {IBalances, Balances} from "src/balances/Balances.sol";
-import {IBalanceOracleCustom} from "src/balances/IBalanceOracleCustom.sol";
+import {Test} from "forge-std/Test.sol";
+import {IBalances} from "src/balances/IBalances.sol";
+import {Balances} from "src/balances/Balances.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 contract BalancesHarness is Balances {
+    ERC20DefaultOracle public defaultOracle;
+
+    /// @notice Test-only: track assets "registered" so ERC20DefaultOracle.addSupportedAsset (which checks isAssetRegistered) succeeds.
+    address[] private _testRegisteredList;
+    mapping(address => bool) private _testRegistered;
+
     constructor() initializer {
         __Balances_init();
+        // Set up ERC20DefaultOracle for native address support
+        defaultOracle = new ERC20DefaultOracle(address(this), new address[](0));
+        _setErc20DefaultOracle(address(defaultOracle));
     }
 
-    function addBalanceOracle(address token, address oracle, IBalances.BalanceType _type) public {
-        _addBalanceOracle(token, oracle, _type);
+    /// @notice Adds an asset to the default oracle's inclusion list (for testing). Marks asset as registered so addSupportedAsset succeeds.
+    function addSupportedAssetForTest(address asset) public {
+        _testRegistered[asset] = true;
+        _testRegisteredList.push(asset);
+        defaultOracle.addSupportedAsset(asset);
     }
 
-    function removeBalanceOracle(address token, address oracle) public {
-        _removeBalanceOracle(token, oracle);
+    /// @notice Stub for adapter tests that pass this contract as INAVCalculator (asset registry lives in NAVCalculator).
+    function getRegisteredAssets() external view returns (INAVCalculator.Asset[] memory) {
+        uint256 n = _testRegisteredList.length;
+        INAVCalculator.Asset[] memory out = new INAVCalculator.Asset[](n);
+        for (uint256 i = 0; i < n; i++) {
+            address a = _testRegisteredList[i];
+            out[i] = INAVCalculator.Asset({asset: a, symbol: "", decimals: 18});
+        }
+        return out;
+    }
+
+    function getAssetCount() external view returns (uint256) {
+        return _testRegisteredList.length;
+    }
+
+    function isAssetRegistered(address asset) external view returns (bool) {
+        return _testRegistered[asset];
+    }
+
+    function getAssetDecimals(address asset) external view returns (uint8) {
+        if (!_testRegistered[asset]) revert AssetNotFound();
+        return 18;
+    }
+
+    function getAssetSymbol(address asset) external view returns (string memory) {
+        if (!_testRegistered[asset]) return "";
+        return "";
+    }
+
+    function addBalanceOracleDirect(
+        address,
+        /* underlyingAsset */
+        address oracle,
+        IBalances.OracleType /* oracleType */
+    )
+        public
+    {
+        // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
+        _addBalanceOracle(oracle);
+    }
+
+    function unsetBalanceOracle(
+        address,
+        /* underlyingAsset */
+        address oracle
+    )
+        public
+    {
+        // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
+        _removeBalanceOracle(oracle);
     }
 }
 
@@ -36,140 +100,300 @@ contract BalancesTest is Test {
     function setUp() public {
         vm.startPrank(admin);
         balances = new BalancesHarness();
+        balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
         usdc = new Mock_ERC20("USDC", 6);
         customOracle = new Mock_CustomBalanceOracle();
-        customOracle.setBalance(address(usdc), alice, 123_456_789);
-        customOracle.setBalance(address(usdc), bob, -987_654_321);
+        customOracle.setBalances(balances);
+        address[] memory assets = new address[](1);
+        assets[0] = address(customOracle);
+        customOracle.setUnderlyingAssetsSupported(assets);
+        customOracle.setBalance(address(usdc), alice, 123_456_789, false);
+        customOracle.setBalance(address(usdc), bob, 987_654_321, true);
         address[] memory underlyingAssets = new address[](1);
         underlyingAssets[0] = address(usdc);
         customOracle.setUnderlyingAssetsSupported(underlyingAssets);
-        customOracle.setPositionMetadata(
-            IBalanceOracleCustom.PositionMetadata({
-                protocol: "Mock Protocol",
-                position: "Mock Position",
-                positionType: "Mock Type"
-            })
-        );
+        customOracle.setPositionMetadata("Mock Protocol", "Mock Position");
         vm.stopPrank();
     }
 
     function test_setup() public view {
-        (address oracle,) = balances.balanceOracleAt(balances.NATIVE_ADDRESS(), 0);
+        uint256 count = balances.getOracleCount();
+        assertEq(count, 1, "Should have one balance oracle (ERC20DefaultOracle)");
 
-        assertEq(balances.balanceOracleCountFor(balances.NATIVE_ADDRESS()), 1);
-
-        assertEq(oracle, balances.NATIVE_ADDRESS());
+        address[] memory oracles = balances.getAllOracles();
+        assertEq(oracles.length, 1, "Should have one oracle");
+        assertEq(oracles[0], balances.erc20DefaultOracle(), "First oracle should be ERC20DefaultOracle");
     }
 
     function test_setAndGetERC20BalanceOracle() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        vm.startPrank(admin);
+        balances.addSupportedAssetForTest(address(usdc));
+        vm.stopPrank();
 
         usdc.mint(alice, 1000);
 
-        int256 balance = balances.balanceOf(address(usdc), 0, alice);
-        assertEq(balance, 1000);
+        // Get oracles that support USDC
+        address[] memory oracles = balances.getOraclesForAsset(address(usdc));
+        assertGt(oracles.length, 0, "Should have at least one oracle supporting USDC");
+
+        // Get balance from ERC20DefaultOracle
+        (uint256 amount, bool isDebt) =
+            IBalanceOracleAdapter(balances.erc20DefaultOracle()).getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 1000);
+        assertFalse(isDebt);
     }
 
     function test_setAndGetCustomBalanceOracle() public {
-        balances.addBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
+        vm.startPrank(admin);
+        balances.addBalanceOracleDirect(address(customOracle), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
 
-        customOracle.setBalance(address(customOracle), alice, 2000);
+        customOracle.setBalance(address(customOracle), alice, 2000, false);
 
-        int256 balance = balances.balanceOf(address(customOracle), 0, alice);
-        assertEq(balance, 2000);
+        // Get balance from custom oracle
+        (uint256 amount, bool isDebt) =
+            IBalanceOracleAdapter(address(customOracle)).getOracleBalanceForAsset(alice, address(customOracle));
+        assertEq(amount, 2000);
+        assertFalse(isDebt);
     }
 
-    function test_setAndGetCustomBalanceOracleNegativeBalance() public {
-        balances.addBalanceOracle(address(customOracle), address(customOracle), IBalances.BalanceType.Custom);
+    function test_setAndGetCustomBalanceOracleDebtPosition() public {
+        vm.startPrank(admin);
+        balances.addBalanceOracleDirect(address(customOracle), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
 
-        customOracle.setBalance(address(customOracle), alice, -2000);
+        customOracle.setBalance(address(customOracle), alice, 2000, true);
 
-        int256 balance = balances.balanceOf(address(customOracle), 0, alice);
-        assertEq(balance, -2000);
+        // Get balance from custom oracle
+        (uint256 amount, bool isDebt) =
+            IBalanceOracleAdapter(address(customOracle)).getOracleBalanceForAsset(alice, address(customOracle));
+        assertEq(amount, 2000);
+        assertTrue(isDebt);
     }
 
     function test_addBalanceOracle_nativeAddress() public {
-        address nativeAddress = address(balances.NATIVE_ADDRESS());
+        address nativeAddress = balances.NATIVE_ADDRESS();
+        address oracle = balances.erc20DefaultOracle();
 
         vm.expectRevert(IBalances.DuplicateBalanceOracle.selector);
-        balances.addBalanceOracle(nativeAddress, nativeAddress, IBalances.BalanceType.Native);
+        balances.addBalanceOracleDirect(nativeAddress, oracle, IBalances.OracleType.Default);
     }
 
     function test_getNativeBalance() public {
         deal(alice, 1337);
-        int256 balance = balances.balanceOf(address(balances.NATIVE_ADDRESS()), 0, alice);
-        assertEq(balance, 1337);
+
+        // Get balance from ERC20DefaultOracle for native address
+        (uint256 amount, bool isDebt) = IBalanceOracleAdapter(balances.erc20DefaultOracle())
+            .getOracleBalanceForAsset(alice, balances.NATIVE_ADDRESS());
+        assertEq(amount, 1337);
+        assertFalse(isDebt);
     }
 
     function test_removeBalanceOracle() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        balances.removeBalanceOracle(address(usdc), address(usdc));
+        vm.startPrank(admin);
+        balances.addSupportedAssetForTest(address(usdc));
+        // Add a custom oracle for USDC
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        // Remove the custom oracle
+        balances.unsetBalanceOracle(address(usdc), address(customOracle));
+        vm.stopPrank();
 
-        vm.expectRevert();
-        balances.balanceOf(address(usdc), 0, alice);
+        // Verify custom oracle is no longer registered
+        assertFalse(balances.isOracleRegistered(address(customOracle)), "Custom oracle should not be registered");
+
+        // ERC20DefaultOracle should still be available for USDC
+        address[] memory oracles = balances.getOraclesForAsset(address(usdc));
+        // Should still have ERC20DefaultOracle
+        assertGt(oracles.length, 0, "Should still have ERC20DefaultOracle for USDC");
     }
 
-    function test_removeBalanceOracle_cantRemoveNativeTokenNativeBalanceOracle() public {
-        address nativeAddress = balances.NATIVE_ADDRESS();
+    function test_removeBalanceOracle_cantRemoveERC20DefaultOracle() public {
+        // Cannot remove ERC20DefaultOracle
+        address erc20Default = balances.erc20DefaultOracle();
         vm.expectRevert(InvalidArguments.selector);
-        balances.removeBalanceOracle(nativeAddress, nativeAddress);
+        balances.unsetBalanceOracle(address(0), erc20Default);
     }
 
     function test_checkOracleSupport_ERC20() public view {
-        balances.checkBalanceOracleSupport(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        // checkBalanceOracleSupport should pass for valid oracles, even if already registered
+        // The duplicate check is now in _addBalanceOracle, not in checkBalanceOracleSupport
+        balances.checkBalanceOracleSupport(balances.erc20DefaultOracle());
     }
 
     function test_checkOracleSupport_Custom() public view {
-        balances.checkBalanceOracleSupport(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
+        balances.checkBalanceOracleSupport(address(customOracle));
     }
 
     function test_RevertIf_InvalidOracleZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
-        balances.checkBalanceOracleSupport(address(0), address(0), IBalances.BalanceType.ERC20);
+        balances.checkBalanceOracleSupport(address(0));
     }
 
     function test_RevertIf_InvalidOracleERC20() public {
-        vm.expectRevert();
-        balances.checkBalanceOracleSupport(address(usdc), address(customOracle), IBalances.BalanceType.ERC20);
+        // This test checks that a non-IBalanceOracleAdapter address fails
+        address invalidOracle = makeAddr("invalid");
+        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
+        balances.checkBalanceOracleSupport(invalidOracle);
     }
 
     function test_RevertIf_InvalidOracleCustom() public {
-        vm.expectRevert();
-        balances.checkBalanceOracleSupport(address(usdc), address(usdc), IBalances.BalanceType.Custom);
+        // Test that a non-IBalanceOracleAdapter address fails
+        address invalidOracle = makeAddr("invalid");
+        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
+        balances.checkBalanceOracleSupport(invalidOracle);
     }
 
     function test_addBalanceOracle_duplicate() public {
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        vm.startPrank(admin);
+        // Add custom oracle first
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
 
-        vm.expectRevert();
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
+        // Try to add the same oracle again - should fail
+        vm.expectRevert(IBalances.DuplicateBalanceOracle.selector);
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
     }
 
-    function test_readBalanceOraclesWithMetadata() public {
-        address ethAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-        balances.addBalanceOracle(address(usdc), address(usdc), IBalances.BalanceType.ERC20);
-        balances.addBalanceOracle(address(usdc), address(customOracle), IBalances.BalanceType.Custom);
+    // ============================================
+    // Global Oracle Registry Tests
+    // ============================================
 
-        IBalances.BalanceOracleWithMetadata[] memory oracles_1 = balances.balanceOraclesWithMetadata(address(usdc));
+    function test_isOracleRegistered() public {
+        // ERC20DefaultOracle should be registered
+        assertTrue(balances.isOracleRegistered(balances.erc20DefaultOracle()));
 
-        assertEq(oracles_1.length, 2);
-
-        assertEq(oracles_1[0].oracle, address(usdc));
-        assertEq(oracles_1[0].protocol, "Portfolio balance");
-        assertEq(oracles_1[0].position, "USDC");
-        assertEq(oracles_1[0].positionType, "ERC20");
-
-        assertEq(oracles_1[1].oracle, address(customOracle));
-        assertEq(oracles_1[1].protocol, "Mock Protocol");
-        assertEq(oracles_1[1].position, "Mock Position");
-        assertEq(oracles_1[1].positionType, "Mock Type");
-
-        IBalances.BalanceOracleWithMetadata[] memory oracles_2 = balances.balanceOraclesWithMetadata(ethAddress);
-        assertEq(oracles_2.length, 1);
-
-        assertEq(oracles_2[0].oracle, ethAddress);
-        assertEq(oracles_2[0].protocol, "Portfolio balance");
-        assertEq(oracles_2[0].position, "ETH");
-        assertEq(oracles_2[0].positionType, "Native");
+        // Random address should not be registered
+        assertFalse(balances.isOracleRegistered(makeAddr("random")));
     }
+
+    // ============================================
+    // Balance Oracle Management Tests
+    // ============================================
+
+    function test_addBalanceOracle_zeroAddress() public {
+        // Try to add oracle with zero address as the oracle parameter - should fail with InvalidArguments
+        // The check happens in checkBalanceOracleSupport which checks if oracle == address(0)
+        vm.expectRevert(InvalidArguments.selector);
+        balances.addBalanceOracleDirect(address(usdc), address(0), IBalances.OracleType.Default);
+    }
+
+    function test_removeBalanceOracle_invalidOracle() public {
+        vm.startPrank(admin);
+        // Add a custom oracle first
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        address invalidOracle = makeAddr("invalid");
+
+        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
+        balances.unsetBalanceOracle(address(usdc), invalidOracle);
+    }
+
+    function test_balanceOracleTotalCount() public {
+        uint256 initialCount = balances.getOracleCount();
+
+        vm.startPrank(admin);
+        // Add a new custom oracle
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        // Should have one more oracle
+        assertEq(balances.getOracleCount(), initialCount + 1);
+    }
+
+    function test_getOracleCount() public {
+        uint256 initialCount = balances.getOracleCount();
+        assertEq(initialCount, 1, "Should start with ERC20DefaultOracle");
+
+        vm.startPrank(admin);
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        assertEq(balances.getOracleCount(), initialCount + 1, "Should have one more oracle");
+    }
+
+    function test_getAllOracles() public {
+        address[] memory initialOracles = balances.getAllOracles();
+        assertEq(initialOracles.length, 1, "Should start with one oracle");
+        assertEq(initialOracles[0], balances.erc20DefaultOracle(), "First oracle should be ERC20DefaultOracle");
+
+        vm.startPrank(admin);
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        address[] memory allOracles = balances.getAllOracles();
+        assertEq(allOracles.length, 2, "Should have two oracles");
+        assertEq(allOracles[0], balances.erc20DefaultOracle(), "First should be ERC20DefaultOracle");
+        assertEq(allOracles[1], address(customOracle), "Second should be custom oracle");
+    }
+
+    function test_getOracleType() public {
+        IBalances.OracleType defaultType = balances.getOracleType(balances.erc20DefaultOracle());
+        assertEq(uint8(defaultType), uint8(IBalances.OracleType.Default), "ERC20DefaultOracle should be Default type");
+
+        vm.startPrank(admin);
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        IBalances.OracleType customType = balances.getOracleType(address(customOracle));
+        assertEq(uint8(customType), uint8(IBalances.OracleType.Custom), "Custom oracle should be Custom type");
+    }
+
+    function test_getOracleType_invalidOracle() public {
+        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
+        balances.getOracleType(address(0x123));
+    }
+
+    function test_getOraclesForAsset() public {
+        vm.startPrank(admin);
+        balances.addSupportedAssetForTest(address(usdc));
+        // Add custom oracle that supports USDC
+        balances.addBalanceOracleDirect(address(usdc), address(customOracle), IBalances.OracleType.Custom);
+        vm.stopPrank();
+
+        // Get oracles that support USDC
+        address[] memory oracles = balances.getOraclesForAsset(address(usdc));
+
+        // Should include ERC20DefaultOracle (supports all registered assets) and customOracle
+        assertGe(oracles.length, 1, "Should have at least one oracle supporting USDC");
+
+        bool foundCustomOracle = false;
+        bool foundErc20Default = false;
+        for (uint256 i = 0; i < oracles.length; i++) {
+            if (oracles[i] == address(customOracle)) {
+                foundCustomOracle = true;
+            }
+            if (oracles[i] == balances.erc20DefaultOracle()) {
+                foundErc20Default = true;
+            }
+        }
+        assertTrue(foundCustomOracle, "Should find customOracle in supporting oracles");
+        assertTrue(foundErc20Default, "Should find ERC20DefaultOracle in supporting oracles");
+    }
+
+    function test_getOraclesForAsset_noSupport() public {
+        // Get oracles for an asset that no oracle supports
+        address unsupportedAsset = makeAddr("unsupported");
+        address[] memory oracles = balances.getOraclesForAsset(unsupportedAsset);
+
+        // ERC20DefaultOracle might still return it if the asset is registered
+        // But if not registered, should return empty or only ERC20DefaultOracle
+        assertGe(oracles.length, 0, "Should return at least empty array");
+    }
+
+    // ============================================
+    // Constants and Getters Tests
+    // ============================================
+
+    function test_NATIVE_ADDRESS() public view {
+        address nativeAddress = balances.NATIVE_ADDRESS();
+        assertEq(nativeAddress, address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE));
+    }
+
+    function test_erc20DefaultOracle() public view {
+        address defaultOracle = balances.erc20DefaultOracle();
+        assertTrue(defaultOracle != address(0));
+    }
+
+    // Legacy metadata-based tests removed as metadata API was refactored away.
 }

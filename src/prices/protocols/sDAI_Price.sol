@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceOracleCustom} from "src/prices/IPriceOracleCustom.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
-import "src/errors.sol";
 
 /// @title sDAI Custom Price Oracle
 /// @notice Returns the USD price of sDAI by combining Chainlink’s DAI/USD feed with Maker’s DSR “chi” ratio.
@@ -17,27 +16,27 @@ import "src/errors.sol";
 ///      or any input is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract sDAI_PriceOracle is IPriceOracleCustom {
+contract sDAI_PriceOracle is IPriceFeedCustom {
     //
     // State
     //
 
     /// @notice Chainlink oracle for DAI to USD
     /// solhint-disable-next-line var-name-mixedcase
-    AggregatorV3Interface public immutable DAI_to_USD_chainlinkOracle;
+    AggregatorV3Interface public immutable DAI_TO_USD_CHAINLINK_ORACLE;
 
     /// @notice rate provider for (sDAI / DAI)
     PotLike public immutable RATE_PROVIDER;
 
     /// @notice Address of the sDAI token
-    address public immutable sDAI;
+    address public immutable S_DAI;
 
     /// @notice Number of decimals for sDAI / DAI ratio
     uint8 public constant RATIO_DECIMALS = 27;
 
     /// @notice The heartbeat interval for the Chainlink oracle.
     /// solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable DAI_to_USD_chainlinkHeartbeat;
+    uint256 public immutable DAI_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
     uint8 private _decimals;
@@ -46,42 +45,42 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
     // Constructor
     //
 
-    /// @param sDAI_ The address of the sDAI token
+    /// @param sDai_ The address of the sDAI token
     /// @param dsrManager_ The address of the DSR Manager contract
-    /// @param DAI_to_USD_chainlinkOracle_ The address of the DAI to USD Chainlink oracle.
-    /// @param DAI_to_USD_chainlinkHeartbeat_ The time in seconds after which the price is considered stale if not
+    /// @param daiToUsdChainlinkOracle_ The address of the DAI to USD Chainlink oracle.
+    /// @param daiToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not
     /// updated
     constructor(
-        address sDAI_,
+        address sDai_,
         address dsrManager_,
-        address DAI_to_USD_chainlinkOracle_,
-        uint256 DAI_to_USD_chainlinkHeartbeat_
+        address daiToUsdChainlinkOracle_,
+        uint256 daiToUsdChainlinkHeartbeat_
     ) {
-        sDAI = OracleArgumentChecks.assertERC20Address(sDAI_);
+        S_DAI = OracleArgumentChecks.assertERC20Address(sDai_);
 
-        DAI_to_USD_chainlinkOracle = OracleArgumentChecks.assertChainlinkOracle(DAI_to_USD_chainlinkOracle_);
+        DAI_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(daiToUsdChainlinkOracle_);
 
-        DAI_to_USD_chainlinkHeartbeat = OracleArgumentChecks.assertNotZeroNumber(DAI_to_USD_chainlinkHeartbeat_);
+        DAI_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(daiToUsdChainlinkHeartbeat_);
 
         DsrManager dsrManager = DsrManager(OracleArgumentChecks.assertNonZeroAddress(dsrManager_));
 
-        _decimals = DAI_to_USD_chainlinkOracle.decimals();
+        _decimals = DAI_TO_USD_CHAINLINK_ORACLE.decimals();
         RATE_PROVIDER = dsrManager.pot();
     }
 
     //
-    // IPriceOracleCustom
+    // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 DAI_to_USD_price,, uint256 DAI_to_USD_updatedAt,) = DAI_to_USD_chainlinkOracle.latestRoundData();
+        (, int256 daiToUsdPrice,, uint256 daiToUsdUpdatedAt,) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (DAI_to_USD_price <= 0) {
+        if (daiToUsdPrice <= 0) {
             return (0, true);
         }
 
-        if (block.timestamp - DAI_to_USD_updatedAt > DAI_to_USD_chainlinkHeartbeat) stale = true;
+        if (block.timestamp - daiToUsdUpdatedAt > DAI_TO_USD_CHAINLINK_HEARTBEAT) stale = true;
 
         int256 ratio = int256(RATE_PROVIDER.chi());
 
@@ -89,23 +88,23 @@ contract sDAI_PriceOracle is IPriceOracleCustom {
             price = 0;
             stale = true;
         } else {
-            price = uint256((DAI_to_USD_price * ratio) / int256(10 ** RATIO_DECIMALS));
+            price = uint256((daiToUsdPrice * ratio) / int256(10 ** RATIO_DECIMALS));
         }
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
 
-    /// @inheritdoc IPriceOracleCustom
+    /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
-        return sDAI;
+        return S_DAI;
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 

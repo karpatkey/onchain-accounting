@@ -1,0 +1,969 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IBridgeEscrow} from "./IBridgeEscrow.sol";
+import {IBridgeAdapter} from "./IBridgeAdapter.sol";
+import {InvoiceDataLib} from "./InvoiceDataLib.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
+
+/// @title BridgeEscrow
+/// @notice Tracks assets in transit across chains and maintains invoice ledger
+/// @author kpk
+contract BridgeEscrow is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    PausableUpgradeable,
+    IBridgeEscrow
+{
+    using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.AddressSet;
+
+    //
+    // Constants
+    //
+
+    /// @notice Role for managers who can cancel invoices and manage assets
+    /// @dev This role is used consistently across NAVCalculator and bridge system
+    bytes32 public constant MANAGER_ROLE = MANAGER;
+
+    /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
+    address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+
+    //
+    // State Variables
+    //
+
+    /// @notice Invoice storage keyed by hashed invoice (checksum)
+    mapping(bytes32 => Invoice) public invoices;
+
+    /// @notice Active invoices per account
+    /// @dev Invariant: Should only contain invoice hashes with status BRIDGING
+    mapping(address => bytes32[]) private _activeInvoices;
+    mapping(address => mapping(bytes32 => bool)) private _activeInvoicesSet;
+
+    /// @notice Authorized accounts
+    EnumerableSet.AddressSet private _authorizedAccounts;
+
+    /// @notice Authorized bridge adapters
+    EnumerableSet.AddressSet private _authorizedAdapters;
+
+    /// @notice Current chain ID
+    uint64 public chainId;
+
+    /// @notice Tracks completed invoices by hashed invoice for bookkeeping
+    /// @dev Invariant: Should only be true for valid invoice hashes that have been released
+    mapping(bytes32 => bool) public completedInvoices;
+
+    /// @notice Maps asset symbol (bytes6, internal) to asset address on this chain
+    /// @dev address(0) is valid for native tokens (ETH) - must be explicitly registered
+    mapping(bytes6 => address) private _assetRegistry;
+
+    /// @notice List of registered asset symbols (for enumeration and registeredAssets())
+    bytes6[] private _registeredSymbols;
+    /// @notice 1-based index in _registeredSymbols for O(1) lookup/removal (0 = not registered)
+    mapping(bytes6 => uint256) private _registeredSymbolsIndex;
+
+    /// @notice Cached in-transit balances per account and asset
+    /// @dev _inTransitBalances[account][asset] = total amount in transit for that account and asset
+    /// @dev Invariant: Should equal sum of amounts from all BRIDGING invoices for that account and asset
+    mapping(address => mapping(address => uint256)) private _inTransitBalances;
+
+    /// @notice Cached in-transit balances across all accounts per asset
+    /// @dev _inTransitBalancesAllAccounts[asset] = total amount in transit across all accounts for that asset
+    /// @dev Invariant: Should equal sum of _inTransitBalances[account][asset] across all accounts
+    mapping(address => uint256) private _inTransitBalancesAllAccounts;
+
+    /// @notice Adapter per selector (delegatecall target for protocol callbacks, e.g. ccipReceive)
+    mapping(bytes4 => address) private _callbackAdapters;
+
+    /// @notice Callback selector per adapter (reverse mapping for clearing on revoke/update)
+    /// @dev bytes4(0) means no callback configured for this adapter
+    mapping(address => bytes4) private _adapterToCallbackSelector;
+
+    //
+    // Constructor
+    //
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    //
+    // Initialization
+    //
+
+    /// @notice Initializes the BridgeEscrow contract
+    /// @param admin_ The admin address
+    /// @param chainId_ The chain ID where this contract is deployed
+    /// @param initialAccounts Array of initial authorized accounts
+    /// @param initialAdapters Array of initial authorized adapters
+    function initialize(
+        address admin_,
+        uint64 chainId_,
+        address[] memory initialAccounts,
+        address[] memory initialAdapters
+    ) external initializer {
+        __AccessControl_init();
+        __Pausable_init();
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
+        chainId = chainId_;
+
+        // Authorize initial accounts
+        for (uint256 i = 0; i < initialAccounts.length; i++) {
+            _authorizeAccount(initialAccounts[i]);
+        }
+
+        // Authorize initial adapters
+        for (uint256 i = 0; i < initialAdapters.length; i++) {
+            _authorizeAdapter(initialAdapters[i]);
+        }
+    }
+
+    //
+    // Receive Function
+    //
+
+    /// @notice Allows contract to receive native tokens
+    receive() external payable {}
+
+    /// @notice Dispatches unknown selectors to the registered adapter (call). Adapter implements the protocol callback and calls releaseByInvoiceId.
+    fallback() external payable {
+        address adapter = _callbackAdapters[msg.sig];
+        if (adapter == address(0)) revert InvalidArguments();
+        (bool success,) = adapter.call(msg.data);
+        if (!success) {
+            assembly ("memory-safe") {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
+    }
+
+    //
+    // Core Functions
+    //
+
+    /// @inheritdoc IBridgeEscrow
+    function depositAndBridge(uint64 destinationChainId, string calldata assetSymbol, uint256 amount, address adapter)
+        external
+        payable
+        whenNotPaused
+        returns (bytes32 invoiceHash)
+    {
+        // Only authorized accounts can deposit
+        if (!_authorizedAccounts.contains(msg.sender)) {
+            revert NotAuthorized();
+        }
+
+        // Verify adapter is authorized
+        if (!_authorizedAdapters.contains(adapter)) {
+            revert NotAuthorized();
+        }
+
+        if (amount == 0) revert InvalidArguments();
+        if (destinationChainId == chainId) revert InvalidArguments(); // Can't bridge to same chain
+
+        bytes6 sym = InvoiceDataLib.strToBytes6(assetSymbol);
+        // Look up asset address from symbol
+        address asset = _assetRegistry[sym];
+        // Verify asset is registered (_registeredSymbolsIndex != 0 distinguishes unregistered from native ETH)
+        if (_registeredSymbolsIndex[sym] == 0) revert InvalidArguments(); // Asset not registered
+
+        // Create and store invoice (returns invoiceHash, invoiceId, and messagePayload)
+        bytes32 invoiceId;
+        bytes memory messagePayload;
+        (invoiceHash, invoiceId, messagePayload) =
+            _createAndStoreInvoice(destinationChainId, msg.sender, sym, asset, amount, adapter);
+
+        // Emit event after invoice creation
+        emit InvoiceCreated(invoiceId, msg.sender, asset, amount, chainId, destinationChainId);
+
+        // Transfer assets from account
+        if (_isNativeToken(asset)) {
+            // Native token
+            if (msg.value != amount) revert InvalidArguments();
+            // Contract already holds native tokens via receive()
+        } else {
+            // ERC20 token
+            IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+        }
+
+        emit AssetsDeposited(invoiceId, asset, amount);
+
+        // For ERC20: Approve adapter to pull assets
+        // For Native: Transfer assets to adapter
+        if (_isNativeToken(asset)) {
+            // Native token - must transfer
+            (bool success,) = adapter.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            // ERC20 token - approve adapter to pull
+            // Use forceApprove (replaces deprecated safeApprove)
+            IERC20(asset).forceApprove(adapter, amount);
+        }
+
+        // Call adapter's bridge function with messagePayload
+        // Adapter will pull ERC20 tokens in _bridge() if approved
+        // BridgeAdapter will decode it once and pass struct to _bridge()
+        IBridgeAdapter(adapter).bridge(messagePayload);
+
+        return invoiceHash;
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function releaseByInvoiceId(bytes memory messagePayload) external nonReentrant whenNotPaused {
+        if (!_authorizedAdapters.contains(msg.sender) && !hasRole(MANAGER_ROLE, msg.sender)) {
+            revert NotAuthorized();
+        }
+
+        // Extract invoiceId, amount, and meta from messagePayload (exactly 3 slots)
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+        bytes32 invoiceId = data.invoiceId;
+        uint256 amount = data.amount;
+        uint64 timestamp = data.timestamp;
+        bytes24 checksum24 = data.checksum24;
+
+        // MANDATORY: Validate timestamp is in the past (no wrapping issues with uint64)
+        uint64 currentTimestamp = uint64(block.timestamp);
+        if (timestamp > currentTimestamp) {
+            revert InvalidTimestamp(timestamp, currentTimestamp);
+        }
+
+        // MANDATORY: Validate checksum matches invoiceId + amount + timestamp - revert if invalid
+        bytes24 expectedChecksum = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
+        if (checksum24 != expectedChecksum) {
+            revert InvalidChecksum(invoiceId, checksum24, expectedChecksum);
+        }
+
+        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
+        bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
+
+        // Check if already completed (prevents double-spending/replay attacks)
+        // Note: The invoice itself is not stored on destination chain - it only exists on source chain
+        // The checksum validation above ensures the invoice data is valid and authentic
+        if (completedInvoices[invoiceHash]) {
+            revert InvoiceAlreadyExists();
+        }
+
+        // Use already-decoded data from InvoiceDataLib.decode() instead of decoding again
+        // Validate destination chain
+        if (uint64(data.destinationChainId) != chainId) {
+            revert InvalidArguments();
+        }
+
+        // Verify account is authorized
+        if (!_authorizedAccounts.contains(data.account)) {
+            revert NotAuthorized();
+        }
+
+        // Look up asset address from symbol
+        address asset = _assetRegistry[data.assetSymbol];
+        // Verify asset is registered
+        if (_registeredSymbolsIndex[data.assetSymbol] == 0) revert InvalidArguments();
+
+        uint256 balance;
+        if (_isNativeToken(asset)) {
+            balance = address(this).balance;
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+        } else {
+            balance = IERC20(asset).balanceOf(address(this));
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+        }
+
+        completedInvoices[invoiceHash] = true;
+        emit InvoiceCompleted(invoiceHash, invoiceId);
+        if (_isNativeToken(asset)) {
+            (bool success,) = data.account.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            IERC20(asset).safeTransfer(data.account, amount);
+        }
+
+        emit AssetsReleased(invoiceId, data.sourceChainId, asset, amount, data.account);
+    }
+
+    //
+    // Manager Functions
+    //
+
+    /// @inheritdoc IBridgeEscrow
+    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(MANAGER_ROLE) {
+        Invoice storage invoice = invoices[invoiceHash];
+
+        if (invoice.invoiceId == bytes32(0)) revert InvoiceNotFound();
+        if (invoice.status == InvoiceStatus.COMPLETED) revert InvalidInvoiceStatus();
+        if (invoice.status == InvoiceStatus.CANCELLED) revert InvalidInvoiceStatus();
+
+        address asset = invoice.asset;
+        uint256 amount = invoice.amount;
+
+        // Verify assets are in the contract before allowing cancellation
+        uint256 balance;
+        if (_isNativeToken(asset)) {
+            // Native token - check contract balance
+            balance = address(this).balance;
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+        } else {
+            // ERC20 token - check contract balance
+            balance = IERC20(asset).balanceOf(address(this));
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+        }
+
+        InvoiceStatus oldStatus = invoice.status;
+        invoice.status = InvoiceStatus.CANCELLED;
+
+        // Update in-transit balance cache (invoice is no longer in BRIDGING status)
+        _updateInTransitBalance(invoice.account, asset, amount, false);
+
+        // Return assets to account
+        if (_isNativeToken(asset)) {
+            (bool success,) = invoice.account.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            IERC20(asset).safeTransfer(invoice.account, amount);
+        }
+
+        // Remove from active invoices
+        if (_activeInvoicesSet[invoice.account][invoiceHash]) {
+            _removeActiveInvoice(invoice.account, invoiceHash);
+        }
+
+        emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.CANCELLED);
+        emit AssetsReleased(invoice.invoiceId, invoice.sourceChainId, asset, amount, invoice.account);
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external override onlyRole(MANAGER_ROLE) {
+        uint256 length = invoiceHashes.length;
+        bytes32[] memory failedInvoiceIds = new bytes32[](length);
+        uint256 failedCount = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 invoiceHash = invoiceHashes[i];
+            Invoice storage invoice = invoices[invoiceHash];
+
+            // Skip if invoice doesn't exist or is not in BRIDGING status
+            if (invoice.invoiceId == bytes32(0)) {
+                failedInvoiceIds[failedCount] = bytes32(0);
+                failedCount++;
+                continue;
+            }
+            if (invoice.status != InvoiceStatus.BRIDGING) {
+                failedInvoiceIds[failedCount] = invoice.invoiceId;
+                failedCount++;
+                continue;
+            }
+
+            InvoiceStatus oldStatus = invoice.status;
+            invoice.status = InvoiceStatus.COMPLETED;
+            completedInvoices[invoiceHash] = true;
+
+            // Update in-transit balance cache (invoice is no longer in BRIDGING status)
+            _updateInTransitBalance(invoice.account, invoice.asset, invoice.amount, false);
+
+            // Remove from active invoices
+            if (_activeInvoicesSet[invoice.account][invoiceHash]) {
+                _removeActiveInvoice(invoice.account, invoiceHash);
+            }
+
+            emit InvoiceStatusUpdated(invoice.invoiceId, oldStatus, InvoiceStatus.COMPLETED);
+        }
+
+        // Emit event for failed invoice completions if any
+        if (failedCount > 0) {
+            // Resize array to actual failed count
+            bytes32[] memory failed = new bytes32[](failedCount);
+            for (uint256 i = 0; i < failedCount; i++) {
+                failed[i] = failedInvoiceIds[i];
+            }
+            emit InvoiceCompletionFailed(failed);
+        }
+    }
+
+    /// @notice Registers an asset with its symbol on this chain
+    /// @param symbol The asset symbol as string (e.g. "USDC" or "WETH"; max 6 chars, right-padded internally)
+    /// @param asset The asset address (address(0) for native ETH/tokens)
+    function registerAsset(string calldata symbol, address asset) external onlyRole(MANAGER_ROLE) {
+        bytes6 sym = InvoiceDataLib.strToBytes6(symbol);
+        _assetRegistry[sym] = asset;
+        if (_registeredSymbolsIndex[sym] == 0) {
+            _registeredSymbols.push(sym);
+            _registeredSymbolsIndex[sym] = _registeredSymbols.length; // 1-based
+        }
+        emit AssetRegistered(sym, asset);
+    }
+
+    /// @notice Unregisters an asset symbol
+    /// @param symbol The asset symbol as string (must match registered symbol)
+    /// @dev Reverts if symbol was never registered or has active invoices
+    function unregisterAsset(string calldata symbol) external onlyRole(MANAGER_ROLE) {
+        bytes6 sym = InvoiceDataLib.strToBytes6(symbol);
+        uint256 idx = _registeredSymbolsIndex[sym];
+        if (idx == 0) revert AssetNotRegistered(symbol);
+        if (_hasActiveInvoicesForAsset(sym)) {
+            revert AssetHasActiveInvoices(symbol);
+        }
+
+        uint256 lastIdx = _registeredSymbols.length;
+        bytes6 lastSymbol = _registeredSymbols[lastIdx - 1];
+        _registeredSymbols[idx - 1] = lastSymbol;
+        _registeredSymbolsIndex[lastSymbol] = idx;
+        _registeredSymbols.pop();
+        delete _registeredSymbolsIndex[sym];
+        delete _assetRegistry[sym];
+
+        emit AssetUnregistered(sym);
+    }
+
+    //
+    // View Functions
+    //
+
+    /// @inheritdoc IBridgeEscrow
+    function assetRegistry(string calldata symbol) external view override returns (address) {
+        return _assetRegistry[InvoiceDataLib.strToBytes6(symbol)];
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function registeredAssets() external view override returns (string[] memory symbols, address[] memory assets) {
+        uint256 n = _registeredSymbols.length;
+        symbols = new string[](n);
+        assets = new address[](n);
+        for (uint256 i; i < n; i++) {
+            symbols[i] = InvoiceDataLib.bytes6ToStr(_registeredSymbols[i]);
+            assets[i] = _assetRegistry[_registeredSymbols[i]];
+        }
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function getInvoice(bytes32 invoiceHash) external view override returns (Invoice memory) {
+        return invoices[invoiceHash];
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function getActiveInvoices(address account) external view override returns (Invoice[] memory) {
+        bytes32[] memory activeInvoiceHashes = _activeInvoices[account];
+        uint256 length = activeInvoiceHashes.length;
+        Invoice[] memory activeInvoices = new Invoice[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 invoiceHash = activeInvoiceHashes[i];
+            Invoice storage invoice = invoices[invoiceHash];
+            activeInvoices[i] = invoice;
+        }
+
+        return activeInvoices;
+    }
+
+    /// @notice Returns all assets in-transit for a specific account with their amounts
+    /// @param account The account address
+    /// @return assets Array of asset addresses
+    /// @return amounts Array of amounts corresponding to each asset
+    /// @dev Aggregates amounts per asset from all active invoices with BRIDGING status
+    function getInTransitBalancesForAccount(address account)
+        external
+        view
+        returns (address[] memory assets, uint256[] memory amounts)
+    {
+        bytes32[] memory activeInvoiceHashes = _activeInvoices[account];
+        uint256 length = activeInvoiceHashes.length;
+
+        // Use a temporary mapping to aggregate amounts per asset
+        // Since we can't use mappings in memory, we'll use arrays and iterate
+        address[] memory tempAssets = new address[](length);
+        uint256[] memory tempAmounts = new uint256[](length);
+        uint256 uniqueCount = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 invoiceHash = activeInvoiceHashes[i];
+            Invoice storage invoice = invoices[invoiceHash];
+
+            // Invoices in _activeInvoices are guaranteed to be BRIDGING (cancelled/completed invoices are removed)
+            address asset = invoice.asset;
+            uint256 amount = invoice.amount;
+
+            // Find if asset already exists in temp arrays
+            bool found = false;
+            for (uint256 j = 0; j < uniqueCount; j++) {
+                if (tempAssets[j] == asset) {
+                    tempAmounts[j] += amount;
+                    found = true;
+                    break;
+                }
+            }
+
+            // If not found, add new asset
+            if (!found) {
+                tempAssets[uniqueCount] = asset;
+                tempAmounts[uniqueCount] = amount;
+                uniqueCount++;
+            }
+        }
+
+        // Resize arrays to actual unique count
+        assets = new address[](uniqueCount);
+        amounts = new uint256[](uniqueCount);
+
+        for (uint256 i = 0; i < uniqueCount; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+    }
+
+    /// @notice Calculates the total in-transit balance for an asset using cached balances
+    /// @param asset The asset address to calculate balance for
+    /// @param account Optional account address to filter by. If address(0), sums across all accounts
+    /// @return The total amount in transit for this asset (optionally filtered by account)
+    /// @dev Uses cached balances for O(1) lookup instead of iterating through all invoices
+    function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256) {
+        if (account == address(0)) {
+            // Return total across all accounts
+            return _inTransitBalancesAllAccounts[asset];
+        } else {
+            // Return balance for specific account
+            return _inTransitBalances[account][asset];
+        }
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function isAuthorizedAccount(address safe) external view override returns (bool) {
+        return _authorizedAccounts.contains(safe);
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function isAuthorizedAdapter(address adapter) external view override returns (bool) {
+        return _authorizedAdapters.contains(adapter);
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function isInvoiceCompleted(bytes32 invoiceHash) external view override returns (bool) {
+        return completedInvoices[invoiceHash];
+    }
+
+    /// @notice Gets the completion status for an array of invoices
+    /// @param invoiceHashes Array of invoice hashes to check
+    /// @return isCompleted Array of booleans indicating completion status (indexed by input array)
+    /// @dev Returns bool array where isCompleted[i] = true if invoiceHashes[i] is completed
+    function getInvoicesCompletionStatus(bytes32[] calldata invoiceHashes)
+        external
+        view
+        returns (bool[] memory isCompleted)
+    {
+        uint256 length = invoiceHashes.length;
+        isCompleted = new bool[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            isCompleted[i] = completedInvoices[invoiceHashes[i]];
+        }
+    }
+
+    //
+    // Admin Functions
+    //
+
+    /// @notice Authorizes an account
+    /// @param safe The account address to authorize
+    function authorizeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _authorizeAccount(safe);
+        emit AccountAuthorized(safe);
+    }
+
+    /// @notice Revokes authorization for an account
+    /// @param safe The account address to revoke
+    function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _authorizedAccounts.remove(safe);
+        emit AccountRevoked(safe);
+    }
+
+    /// @notice Authorizes a bridge adapter (no callback; use updateAdapterConfig to add callback later if needed)
+    /// @param adapter The adapter address to authorize
+    function authorizeAdapter(address adapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _authorizeAdapter(adapter);
+        emit AdapterAuthorized(adapter);
+    }
+
+    /// @notice Authorizes a bridge adapter and registers its callback. The adapter is the delegatecall target (it implements the protocol callback, e.g. handleAcrossMessage).
+    /// @param adapter The adapter address to authorize
+    /// @param selector The function selector the bridge protocol calls (e.g. handleAcrossMessage.selector)
+    function authorizeAdapterWithCallback(address adapter, bytes4 selector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (selector == bytes4(0)) revert InvalidArguments();
+        if (_authorizedAdapters.contains(adapter)) revert InvalidArguments(); // use updateAdapterConfig to add callback
+        _authorizeAdapter(adapter);
+        _callbackAdapters[selector] = adapter;
+        _adapterToCallbackSelector[adapter] = selector;
+        emit AdapterAuthorized(adapter);
+    }
+
+    /// @notice Revokes authorization for a bridge adapter and clears its callback config if any
+    /// @param adapter The adapter address to revoke
+    function revokeAdapter(address adapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        bytes4 selector = _adapterToCallbackSelector[adapter];
+        if (selector != bytes4(0)) {
+            delete _callbackAdapters[selector];
+            delete _adapterToCallbackSelector[adapter];
+        }
+        _authorizedAdapters.remove(adapter);
+        emit AdapterRevoked(adapter);
+    }
+
+    /// @notice Updates callback config for an authorized adapter (set or clear). The adapter is the delegatecall target.
+    /// @param adapter The authorized adapter
+    /// @param selector Callback selector (0 to clear)
+    function updateAdapterConfig(address adapter, bytes4 selector) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_authorizedAdapters.contains(adapter)) revert NotAuthorized();
+        bytes4 oldSelector = _adapterToCallbackSelector[adapter];
+        if (oldSelector != bytes4(0)) {
+            delete _callbackAdapters[oldSelector];
+            delete _adapterToCallbackSelector[adapter];
+        }
+        if (selector != bytes4(0)) {
+            _callbackAdapters[selector] = adapter;
+            _adapterToCallbackSelector[adapter] = selector;
+        }
+        emit AdapterCallbackConfigUpdated(adapter, selector, adapter);
+    }
+
+    /// @notice Returns the adapter registered for a callback selector
+    function getCallbackAdapter(bytes4 selector) external view returns (address) {
+        return _callbackAdapters[selector];
+    }
+
+    /// @notice Returns all authorized adapters and their callback selectors
+    function getAuthorizedAdaptersWithCallbacks()
+        external
+        view
+        override
+        returns (address[] memory adapters, bytes4[] memory callbacks)
+    {
+        uint256 n = _authorizedAdapters.length();
+        adapters = new address[](n);
+        callbacks = new bytes4[](n);
+        for (uint256 i = 0; i < n; i++) {
+            adapters[i] = _authorizedAdapters.at(i);
+            callbacks[i] = _adapterToCallbackSelector[adapters[i]];
+        }
+    }
+
+    /// @notice Pauses the contract (prevents deposits and releases)
+    /// @dev Only admin can pause
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    /// @notice Unpauses the contract
+    /// @dev Only admin can unpause
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    /// @notice Emergency withdrawal function for when contract is paused
+    /// @param asset The asset address to withdraw (address(0) for native tokens)
+    /// @param amount The amount to withdraw
+    /// @param to The address to send assets to
+    /// @dev Only admin can call this, and only when contract is paused
+    /// @dev This is a safety mechanism for critical situations or bugs
+    function emergencyWithdraw(address asset, uint256 amount, address to)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenPaused
+        nonReentrant
+    {
+        if (to == address(0)) revert InvalidArguments();
+        if (amount == 0) revert InvalidArguments();
+
+        // Transfer assets
+        if (_isNativeToken(asset)) {
+            uint256 balance = address(this).balance;
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+            (bool success,) = to.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            uint256 balance = IERC20(asset).balanceOf(address(this));
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+            IERC20(asset).safeTransfer(to, amount);
+        }
+
+        emit EmergencyWithdrawal(asset, amount, to);
+    }
+
+    //
+    // Internal Functions
+    //
+
+    /// @notice Generates a 32-byte invoice ID (excludes amount)
+    /// @param sourceChainId Source chain ID
+    /// @param destinationChainId Destination chain ID
+    /// @param account Account address (full 20 bytes)
+    /// @param assetSymbol Asset symbol (bytes6)
+    /// @return invoiceId The 32-byte invoice ID
+    function _generateInvoiceId(uint64 sourceChainId, uint64 destinationChainId, address account, bytes6 assetSymbol)
+        internal
+        pure
+        returns (bytes32)
+    {
+        // Pack data: 3 + 3 + 20 + 6 = 32 bytes exactly
+        return bytes32(
+            (uint256(SafeCast.toUint24(sourceChainId)) << 232) // Bits 232-255 (3 bytes)
+                | (uint256(SafeCast.toUint24(destinationChainId)) << 208) // Bits 208-231 (3 bytes)
+                | (uint256(uint160(account)) << 48) // Bits 48-207 (20 bytes)
+                | (uint256(uint48(assetSymbol))) // Bits 0-47 (6 bytes)
+        );
+    }
+
+    /// @notice Calculates checksum for invoiceId + amount + timestamp (returns 24 bytes)
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @param amount The amount being bridged
+    /// @param timestamp The timestamp (uint64)
+    /// @return checksum24 The 24-byte checksum (first 24 bytes of keccak256 hash of invoiceId + amount + timestamp)
+    function _calculateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp)
+        internal
+        pure
+        returns (bytes24)
+    {
+        // Use inline assembly for more efficient keccak256 hashing
+        // forge-lint: disable-next-line(asm-keccak256)
+        bytes32 fullHash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
+        // casting to 'bytes24' is safe because we're truncating the last 8 bytes of a 32-byte hash
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return bytes24(fullHash);
+    }
+
+    /// @notice Checks if an address represents a native token
+    /// @param token The token address to check
+    /// @return True if the address is address(0) or NATIVE_ADDRESS_ERC7528
+    /// @dev Some L2s use 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE instead of address(0) for native tokens
+    function _isNativeToken(address token) internal pure returns (bool) {
+        return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
+    }
+
+    /// @notice Decodes a 32-byte invoice ID into its components
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @return sourceChainId Source chain ID
+    /// @return destinationChainId Destination chain ID
+    /// @return account Account address (full 20 bytes)
+    /// @return assetSymbol Asset symbol as string (trimmed)
+    function decodeInvoiceId(bytes32 invoiceId)
+        external
+        pure
+        returns (uint24 sourceChainId, uint24 destinationChainId, address account, string memory assetSymbol)
+    {
+        uint256 id = uint256(invoiceId);
+
+        sourceChainId = SafeCast.toUint24(id >> 232); // Bits 232-255 (3 bytes)
+        destinationChainId = SafeCast.toUint24((id >> 208) & type(uint24).max); // Bits 208-231 (3 bytes); mask to avoid 48-bit overflow
+        account = address(uint160((id >> 48) & type(uint160).max)); // Bits 48-207 (20 bytes); mask so chain IDs don't overflow uint160
+        // forge-lint: disable-next-line(unsafe-typecast)
+        bytes6 sym = bytes6(uint48(id & type(uint48).max)); // Bits 0-47 (6 bytes)
+        assetSymbol = InvoiceDataLib.bytes6ToStr(sym);
+    }
+
+    /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload
+    /// @param invoiceId The 32-byte invoice ID (excludes amount)
+    /// @param amount The amount being bridged
+    /// @param timestamp The timestamp (uint64)
+    /// @param checksum24 The 24-byte checksum from messagePayload
+    /// @return True if checksum is valid
+    function validateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp, bytes24 checksum24)
+        external
+        pure
+        returns (bool)
+    {
+        bytes24 expectedChecksum = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
+        return checksum24 == expectedChecksum;
+    }
+
+    /// @notice Creates and stores an invoice with all necessary bookkeeping
+    /// @param destinationChainId Destination chain ID
+    /// @param account Account address
+    /// @param assetSymbol Asset symbol
+    /// @param asset Asset address
+    /// @param amount Amount to bridge
+    /// @param adapter Bridge adapter address
+    /// @return invoiceHash The invoice hash (checksum24 padded to bytes32)
+    /// @return invoiceId The invoice ID
+    /// @return messagePayload Encoded invoice data for bridge adapter
+    /// @dev This function handles invoice ID generation, checksum calculation, storage, and state updates
+    function _createAndStoreInvoice(
+        uint64 destinationChainId,
+        address account,
+        bytes6 assetSymbol,
+        address asset,
+        uint256 amount,
+        address adapter
+    ) internal returns (bytes32 invoiceHash, bytes32 invoiceId, bytes memory messagePayload) {
+        // Generate invoice ID (32 bytes, excludes amount)
+        invoiceId = _generateInvoiceId(chainId, destinationChainId, account, assetSymbol);
+
+        // Use full uint64 timestamp (8 bytes) - no truncation needed
+        uint64 timestamp = uint64(block.timestamp);
+
+        // Calculate checksum for invoiceId + amount + timestamp (24 bytes)
+        bytes24 checksum24 = _calculateInvoiceIdChecksum(invoiceId, amount, timestamp);
+
+        // Create invoiceHash from checksum24 (padded to bytes32 for mapping key)
+        invoiceHash = bytes32(uint256(uint192(checksum24)));
+
+        // Check if invoice already exists (hash must be unique)
+        if (invoices[invoiceHash].invoiceId != bytes32(0)) {
+            revert InvoiceAlreadyExists();
+        }
+
+        // Encode invoice data - do this first to avoid stack pressure
+        messagePayload = InvoiceDataLib.encode(
+            InvoiceDataLib.InvoiceData({
+                invoiceId: invoiceId,
+                sourceChainId: SafeCast.toUint24(chainId),
+                destinationChainId: SafeCast.toUint24(destinationChainId),
+                account: account,
+                assetSymbol: assetSymbol,
+                amount: amount,
+                timestamp: timestamp,
+                checksum24: checksum24
+            })
+        );
+
+        // Write invoice directly to storage to avoid creating memory struct
+        Invoice storage invoice = invoices[invoiceHash];
+        invoice.invoiceId = invoiceId;
+        invoice.sourceChainId = chainId;
+        invoice.destinationChainId = destinationChainId;
+        invoice.account = account;
+        invoice.asset = asset;
+        invoice.amount = amount;
+        invoice.timestamp = block.timestamp;
+        invoice.status = InvoiceStatus.BRIDGING;
+        invoice.adapter = adapter;
+
+        // Add to active invoices (invoiceIds are unique, so no need to check for duplicates)
+        _activeInvoices[account].push(invoiceHash);
+        _activeInvoicesSet[account][invoiceHash] = true;
+
+        // Update in-transit balance cache (invoice is in BRIDGING status)
+        _updateInTransitBalance(account, asset, amount, true);
+
+        return (invoiceHash, invoiceId, messagePayload);
+    }
+
+    /// @notice Internal function to authorize an account
+    /// @param safe The account address
+    function _authorizeAccount(address safe) internal {
+        if (safe == address(0)) revert InvalidArguments();
+        _authorizedAccounts.add(safe);
+    }
+
+    /// @notice Internal function to authorize an adapter
+    /// @param adapter The adapter address
+    function _authorizeAdapter(address adapter) internal {
+        if (adapter == address(0)) revert InvalidArguments();
+        // Verify adapter implements IBridgeAdapter interface
+        // Note: We check this by attempting to call a view function
+        try IBridgeAdapter(adapter).bridgeProvider() returns (
+            string memory
+        ) {
+        // Interface check passed
+        }
+        catch {
+            revert InvalidArguments();
+        }
+        _authorizedAdapters.add(adapter);
+    }
+
+    /// @notice Updates in-transit balance caches when invoices are created or completed/cancelled
+    /// @param safe The account address
+    /// @param asset The asset address
+    /// @param amount The amount to add or subtract
+    /// @param increment True to increment, false to decrement
+    /// @dev Updates both per-account and all-accounts balances atomically
+    function _updateInTransitBalance(address safe, address asset, uint256 amount, bool increment) internal {
+        if (increment) {
+            _inTransitBalances[safe][asset] += amount;
+            _inTransitBalancesAllAccounts[asset] += amount;
+        } else {
+            // Defensive: prevent underflow (shouldn't happen in normal operation)
+            if (_inTransitBalances[safe][asset] >= amount) {
+                _inTransitBalances[safe][asset] -= amount;
+            }
+            if (_inTransitBalancesAllAccounts[asset] >= amount) {
+                _inTransitBalancesAllAccounts[asset] -= amount;
+            }
+        }
+    }
+
+    /// @notice Internal function to remove an active invoice
+    /// @param account The account address
+    /// @param invoiceId The invoice ID to remove
+    function _removeActiveInvoice(address account, bytes32 invoiceId) internal {
+        bytes32[] storage activeList = _activeInvoices[account];
+        uint256 length = activeList.length;
+
+        for (uint256 i = 0; i < length; i++) {
+            if (activeList[i] == invoiceId) {
+                // Move last element to current position
+                activeList[i] = activeList[length - 1];
+                // Remove last element
+                activeList.pop();
+                // Remove from set
+                _activeInvoicesSet[account][invoiceId] = false;
+                break;
+            }
+        }
+    }
+
+    /// @notice Checks if an asset symbol has any active invoices
+    /// @param assetSymbol The asset symbol to check
+    /// @return True if there are active invoices for this asset symbol
+    /// @dev Iterates through all authorized accounts and checks their active invoices
+    /// @dev This is gas-intensive but only called during unregisterAsset (admin operation)
+    function _hasActiveInvoicesForAsset(bytes6 assetSymbol) internal view returns (bool) {
+        // Get all authorized accounts
+        uint256 safeCount = _authorizedAccounts.length();
+
+        // Iterate through each account
+        for (uint256 i = 0; i < safeCount; i++) {
+            address safe = _authorizedAccounts.at(i);
+            bytes32[] memory activeInvoiceHashes = _activeInvoices[safe];
+
+            // Check each active invoice for this safe
+            for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
+                bytes32 invoiceHash = activeInvoiceHashes[j];
+                Invoice storage invoice = invoices[invoiceHash];
+
+                // Decode invoiceId to get assetSymbol
+                // invoiceId format: sourceChainId (3 bytes) + destinationChainId (3 bytes) + account (20 bytes) + assetSymbol (6 bytes)
+                bytes6 invoiceAssetSymbol = bytes6(uint48(uint256(invoice.invoiceId)));
+
+                // Check if this invoice uses the asset symbol we're checking
+                if (invoiceAssetSymbol == assetSymbol) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// @notice Authorizes upgrades to new implementations
+    /// @param newImplementation Address of the new implementation
+    /// @dev Only accounts with DEFAULT_ADMIN_ROLE can authorize upgrades
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /// @dev Storage gap for future upgrades (allows adding new state variables without affecting storage layout)
+    /// @dev 50 slots reserved for future use
+    uint256[50] private _gap;
+}
+

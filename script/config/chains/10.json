@@ -1,0 +1,57 @@
+{
+  "chainId": 10,
+  "name": "optimism",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://optimistic.etherscan.io",
+  "explorerApiKey": "$OPTIMISM_ETHERSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
+  "nativeTokenSymbol": "ETH",
+  "addresses": {
+    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+  },
+  "deployed": {
+    "NAVCalculatorImplementation": "0xf141150092f88f3c3516D825E2FD3CeF57283442",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "BridgeEscrowImplementation": "0xB9330561EA35a7643A95b68D8A70fA6D6c004773",
+    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
+  },
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+      },
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    }
+  },
+  "bridgeAdapters": {
+    "Superchain": {
+      "enabled": true,
+      "initialize": {
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "l1Bridge": "0x636Af16bf2f682dD3109e60102b8E1A089FedAa8",
+        "l2Bridge": "0x4200000000000000000000000000000000000010",
+        "l1Messenger": "0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1",
+        "l2Messenger": "0x4200000000000000000000000000000000000007",
+        "optimismPortal": "0xbEb5Fc579115071764c7423A4f12eDde41f106EdC",
+        "version": "1.0.0"
+      },
+      "deployed": ""
+    },
+    "CCTP": {
+      "enabled": true,
+      "initialize": {
+        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+        "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+        "version": "1.0.0",
+        "cctpDomain": 2
+      },
+      "deployed": ""
+    }
+  }
+}

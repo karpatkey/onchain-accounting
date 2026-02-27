@@ -2,20 +2,33 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IBalanceOracleCustom} from "../IBalanceOracleCustom.sol";
+import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
-contract Aura is IBalanceOracleCustom {
+contract Aura is IBalanceOracleAdapter {
     //
     // Libraries
     //
     using SafeCast for uint256;
     using SafeCast for int256;
+
+    //
+    // Type Definitions
+    //
+
+    /// @notice Asset balance data structure
+    struct AssetBalanceData {
+        address asset;
+        uint256 amount;
+        bool isDebt;
+    }
 
     //
     // State
@@ -39,8 +52,12 @@ contract Aura is IBalanceOracleCustom {
     /// @notice Aura rewards pool contract that distributes rewards to stakers
     IBaseRewardPool4626 public immutable AURA_REWARDS;
 
-    /// @notice Position tags associated with the balance oracle.
-    PositionMetadata internal _positionMetadata;
+    /// @notice Protocol identifier for this oracle
+    string private _protocol;
+    /// @notice Position detail identifier for this oracle
+    string private _positionDetail;
+    /// @notice Reference to NAVCalculator for asset registry access
+    INAVCalculator public immutable NAV_CALCULATOR;
 
     //
     // Constructor
@@ -52,7 +69,9 @@ contract Aura is IBalanceOracleCustom {
     /// @param booster_ Address of the Aura Booster contract
     /// @param pid_ Pool ID in the Aura Booster contract
     /// @param auraToken_ Address of the Aura token contract
-    /// @param positionMetadata_ Metadata for the DeFi position associated with this oracle.
+    /// @param protocol_ Protocol identifier (e.g., "Aura").
+    /// @param positionDetail_ Position detail identifier (e.g., "Some Aura Pool").
+    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
     /// @dev Validates that the gauge's LP token matches the pool address
     constructor(
         address pool_,
@@ -60,11 +79,17 @@ contract Aura is IBalanceOracleCustom {
         address booster_,
         uint256 pid_,
         address auraToken_,
-        PositionMetadata memory positionMetadata_
+        string memory protocol_,
+        string memory positionDetail_,
+        address navCalculator_
     ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
             revert InvalidArguments();
         }
+        require(pool_.code.length > 0, "Pool must be a contract");
+        require(gauge_.code.length > 0, "Gauge must be a contract");
+        require(booster_.code.length > 0, "Booster must be a contract");
+        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         POOL = IStablePool(pool_);
         BOOSTER = IBooster(booster_);
@@ -93,23 +118,13 @@ contract Aura is IBalanceOracleCustom {
             revert InvalidArguments();
         }
 
-        _positionMetadata = positionMetadata_;
+        _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
     //
-    // IBalanceOracleCustom
-    //
-
-    /// @inheritdoc IBalanceOracleCustom
-    function balanceOf(address token, address safe) external view override returns (int256) {
-        uint256 userGaugeBalance = AURA_REWARDS.balanceOf(safe);
-
-        return poolBalanceOf(userGaugeBalance, token) + rewards(token, safe);
-        //return rewards(token, safe);
-    }
-
-    //
-    // Internal API
+    // Public API
     //
 
     /// @notice Calculates the total rewards for a given token and safe address
@@ -131,7 +146,7 @@ contract Aura is IBalanceOracleCustom {
             uint256 earned = previewEarned(AURA_REWARDS, safe);
             uint256 claimed = auraMintAmountConversion(rewardClaimed(address(AURA_REWARDS), earned));
 
-            total += int256(claimed);
+            total += claimed.toInt256();
         }
         // getRewards()
 
@@ -145,7 +160,7 @@ contract Aura is IBalanceOracleCustom {
                 uint256 earned = previewEarned(pool, safe);
                 uint256 claimed = auraMintAmountConversion(rewardClaimed(address(pool), earned));
 
-                total += int256(claimed);
+                total += claimed.toInt256();
             }
         }
     }
@@ -160,7 +175,7 @@ contract Aura is IBalanceOracleCustom {
 
         uint256 earned = previewEarned(pool, safe);
 
-        return int256(earned);
+        return earned.toInt256();
     }
 
     /// @notice Previews the earned rewards for a given pool and account
@@ -177,7 +192,8 @@ contract Aura is IBalanceOracleCustom {
 
         if (pool.totalSupply() != 0) {
             secondRewardPerToken = rewardPerTokenStored
-                + (((pool.lastTimeRewardApplicable() - lastUpdateTime) * (pool.rewardRate()) * (1e18)) / pool.totalSupply());
+                + (((pool.lastTimeRewardApplicable() - lastUpdateTime) * (pool.rewardRate()) * (1e18))
+                    / pool.totalSupply());
         }
 
         return
@@ -233,15 +249,14 @@ contract Aura is IBalanceOracleCustom {
         assembly {
             let ptr := mload(0x40)
             mstore(ptr, slot)
-            result :=
-                staticcall(
-                    gas(), // forward all gas
-                    auraToken, // to Aura token
-                    ptr,
-                    0x20, // input at ptr, 32 bytes (slot)
-                    ptr,
-                    0x20 // store output in same ptr
-                )
+            result := staticcall(
+                gas(), // forward all gas
+                auraToken, // to Aura token
+                ptr,
+                0x20, // input at ptr, 32 bytes (slot)
+                ptr,
+                0x20 // store output in same ptr
+            )
             result := mload(ptr)
         }
     }
@@ -320,32 +335,336 @@ contract Aura is IBalanceOracleCustom {
     /// @param safe Address of the user
     /// @param token Address of the reward token
     /// @return Amount of claimable reward tokens
-    /// @dev Returns 0 if the token is not a reward token or if the call fails
     function gaugeRewards(address safe, address token) public view returns (int256) {
-        try GAUGE.claimable_reward(safe, token) returns (uint256 claimableReward) {
-            return claimableReward.toInt256();
-        } catch {
-            return 0;
+        uint256 claimableReward = GAUGE.claimable_reward(safe, token);
+        return claimableReward.toInt256();
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function underlyingAssetsSupported() external view override returns (address[] memory) {
+        return _underlyingAssetsSupported();
+    }
+
+    /// @notice Internal helper to list all underlying assets supported by the Aura pool.
+    /// @dev Includes pool underlying tokens (unwrapping ERC4626) and reward tokens from Aura rewards.
+    /// @return assets Array of supported underlying asset addresses.
+    function _underlyingAssetsSupported() internal view returns (address[] memory assets) {
+        address[] memory poolTokens = _getPoolTokens();
+        address[] memory rewardTokens = _getRewardTokens();
+
+        uint256 totalLen = poolTokens.length + rewardTokens.length;
+        address[] memory temp = new address[](totalLen);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < poolTokens.length; i++) {
+            temp[count++] = poolTokens[i];
+        }
+
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            if (!_isDuplicate(temp, count, rewardTokens[i])) {
+                temp[count++] = rewardTokens[i];
+            }
+        }
+
+        assets = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = temp[i];
         }
     }
 
-    /// @inheritdoc IBalanceOracleCustom
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = address(0); // FIXME
-        return assets;
+    /// @notice Gets pool tokens, unwrapping ERC4626 tokens to their underlying assets.
+    /// @return Pool token addresses (underlying where the pool token is an ERC4626 vault).
+    function _getPoolTokens() internal view returns (address[] memory) {
+        IStablePool.StablePoolImmutableData memory immutableData = POOL.getStablePoolImmutableData();
+        address[] memory tokens = new address[](immutableData.tokens.length);
+
+        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
+            address currentToken = address(immutableData.tokens[i]);
+            (bool success, bytes memory data) = currentToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
+            if (success && data.length >= 32) {
+                tokens[i] = abi.decode(data, (address));
+            } else {
+                tokens[i] = currentToken;
+            }
+        }
+        return tokens;
     }
 
-    /// @inheritdoc IBalanceOracleCustom
-    function positionMetadata() external view override returns (PositionMetadata memory) {
-        return _positionMetadata;
+    /// @notice Gets reward tokens from the Aura rewards pool (base reward, AURA, and extra rewards).
+    /// @return Reward token addresses (base tokens where reward is a stash wrapper).
+    function _getRewardTokens() internal view returns (address[] memory) {
+        uint256 maxRewards = 10;
+        address[] memory temp = new address[](maxRewards);
+        uint256 count = 0;
+
+        (bool success, bytes memory data) =
+            address(AURA_REWARDS).staticcall(abi.encodeWithSelector(IBaseRewardPool4626.rewardToken.selector));
+        if (success && data.length >= 32) {
+            address rewardToken = abi.decode(data, (address));
+            if (rewardToken != address(0)) {
+                temp[count++] = rewardToken;
+            }
+        }
+
+        temp[count++] = address(AURA_TOKEN);
+
+        (bool lengthSuccess, bytes memory lengthData) =
+            address(AURA_REWARDS).staticcall(abi.encodeWithSelector(IBaseRewardPool4626.extraRewardsLength.selector));
+        if (lengthSuccess && lengthData.length >= 32) {
+            uint256 extraLength = abi.decode(lengthData, (uint256));
+            uint256 maxExtra = extraLength > 8 ? 8 : extraLength;
+            for (uint256 i = 0; i < maxExtra; i++) {
+                (bool extraSuccess, bytes memory extraData) = address(AURA_REWARDS)
+                    .staticcall(abi.encodeWithSelector(IBaseRewardPool4626.extraRewards.selector, i));
+                if (extraSuccess && extraData.length >= 32) {
+                    address extraPool = abi.decode(extraData, (address));
+                    address baseToken = _getBaseToken(extraPool);
+                    if (baseToken != address(0) && !_isDuplicate(temp, count, baseToken)) {
+                        temp[count++] = baseToken;
+                    }
+                }
+            }
+        }
+
+        address[] memory result = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = temp[i];
+        }
+        return result;
+    }
+
+    /// @notice Resolves base token for an extra reward pool (unstashes wrapper tokens).
+    /// @param extraPool Address of the extra reward pool.
+    /// @return The base token address, or the reward token if not a stash.
+    function _getBaseToken(address extraPool) internal view returns (address) {
+        (bool success, bytes memory data) =
+            extraPool.staticcall(abi.encodeWithSelector(IBaseRewardPool4626.rewardToken.selector));
+        if (!success || data.length < 32) {
+            return address(0);
+        }
+        address rewardToken = abi.decode(data, (address));
+        (bool baseSuccess, bytes memory baseData) =
+            rewardToken.staticcall(abi.encodeWithSelector(IStashToken.baseToken.selector));
+        if (baseSuccess && baseData.length >= 32) {
+            return abi.decode(baseData, (address));
+        }
+        return rewardToken;
+    }
+
+    /// @notice Returns true if token is already present in the array within the given length.
+    function _isDuplicate(address[] memory arr, uint256 len, address token) internal pure returns (bool) {
+        for (uint256 i = 0; i < len; i++) {
+            if (arr[i] == token) return true;
+        }
+        return false;
     }
 
     /// @notice Implementation of IERC165 interface detection
     /// @param interfaceId The interface id to check
     /// @return True if this contract implements the interface
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IBalanceOracleAdapter
+    //
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalanceForAsset(address account, address asset)
+        external
+        view
+        returns (uint256 amount, bool isDebt)
+    {
+        return _calculateBalance(asset, account);
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    function getOracleBalances(address account)
+        external
+        view
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        address[] memory tempAssets = new address[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            (uint256 amt, bool debt) = _calculateBalance(asset, account);
+            if (amt != 0) {
+                tempAssets[count] = asset;
+                tempAmounts[count] = amt;
+                tempIsDebt[count] = debt;
+                count++;
+            }
+        }
+
+        assets = new address[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
+        }
+    }
+
+    /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns balance-only positions for the account's Aura positions
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @dev Only returns positions for assets that are both supported by the protocol and registered in NAVCalculator.
+    function getOraclePositions(address account, address assetFilter)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        // Get supported assets from pool tokens
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+
+        // Get registered assets from NAVCalculator
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        address[] memory registeredAssets = new address[](reg.length);
+        for (uint256 i = 0; i < reg.length; i++) {
+            registeredAssets[i] = reg[i].asset;
+        }
+
+        // Find intersection: assets that are both supported and registered
+        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
+
+        // Apply asset filter if specified
+        address[] memory filteredAssets;
+        if (assetFilter != address(0)) {
+            // Check if assetFilter is in the registered supported assets
+            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+                if (registeredSupportedAssets[i] == assetFilter) {
+                    filteredAssets = new address[](1);
+                    filteredAssets[0] = assetFilter;
+                    break;
+                }
+            }
+            if (filteredAssets.length == 0) {
+                return new INAVCalculator.PositionBalance[](0);
+            }
+        } else {
+            filteredAssets = registeredSupportedAssets;
+        }
+
+        // Pre-fetch balance data for filtered assets
+        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](filteredAssets.length);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < filteredAssets.length; i++) {
+            address asset = filteredAssets[i];
+            (uint256 amount, bool isDebt) = _calculateBalance(asset, account);
+            if (amount != 0) {
+                assetBalanceData[count] = AssetBalanceData({asset: asset, amount: amount, isDebt: isDebt});
+                count++;
+            }
+        }
+
+        // Resize to actual count
+        AssetBalanceData[] memory finalAssetBalanceData = new AssetBalanceData[](count);
+        for (uint256 i = 0; i < count; i++) {
+            finalAssetBalanceData[i] = assetBalanceData[i];
+        }
+
+        // Build positions from pre-fetched data
+        return _buildPositions(finalAssetBalanceData);
+    }
+
+    //
+    // Internal Functions
+    //
+
+    /// @notice Internal helper to calculate balance for a specific asset
+    /// @param token The asset address
+    /// @param account The account address
+    /// @return amount Balance magnitude (non-negative)
+    /// @return isDebt True if debt, false if credit
+    function _calculateBalance(address token, address account) internal view returns (uint256 amount, bool isDebt) {
+        uint256 userGaugeBalance = AURA_REWARDS.balanceOf(account);
+        int256 balance = poolBalanceOf(userGaugeBalance, token) + rewards(token, account);
+        if (balance < 0) {
+            return (SafeCast.toUint256(-balance), true);
+        }
+        if (balance > 0) {
+            return (SafeCast.toUint256(balance), false);
+        }
+        return (0, false);
+    }
+
+    //
+    // Internal Functions - Asset Registry & Lookup
+    //
+
+    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
+    /// @param asset The asset address to look up
+    /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
+    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        for (uint256 i = 0; i < reg.length; i++) {
+            if (reg[i].asset == asset) {
+                return reg[i];
+            }
+        }
+        revert("Asset not found in NAVCalculator");
+    }
+
+    //
+    // Internal Functions - Position Building
+    //
+
+    /// @notice Internal helper that builds all positions for this oracle
+    /// @param assetBalanceData Array of AssetBalanceData with pre-fetched balance information
+    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
+    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @dev All assets in assetBalanceData are guaranteed to be registered in NAVCalculator.
+    function _buildPositions(AssetBalanceData[] memory assetBalanceData)
+        internal
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (assetBalanceData.length == 0) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
+        // Pre-allocate array
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](assetBalanceData.length);
+        uint256 positionCount = 0;
+
+        for (uint256 i = 0; i < assetBalanceData.length; i++) {
+            address asset = assetBalanceData[i].asset;
+
+            // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
+            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
+
+            // Build position (balance-only, pricing will be added by NAVCalculator)
+            tempPositions[positionCount] = INAVCalculator.PositionBalance({
+                underlyingAsset: underlyingAsset,
+                balanceOracle: address(this),
+                amount: assetBalanceData[i].amount,
+                isDebt: assetBalanceData[i].isDebt,
+                protocol: _protocol,
+                positionDetail: _positionDetail
+            });
+
+            positionCount++;
+        }
+
+        // Resize to actual count
+        positions = new INAVCalculator.PositionBalance[](positionCount);
+        for (uint256 i = 0; i < positionCount; i++) {
+            positions[i] = tempPositions[i];
+        }
     }
 }
 
@@ -355,6 +674,7 @@ interface IGaugeV3 is IERC20 {
     /// @notice Returns the address of the LP token that can be staked in this gauge
     /// @return The address of the LP token
     //solhint-disable-next-line func-name-mixedcase
+    // forge-lint: disable-next-line(mixed-case-function)
     function lp_token() external view returns (address);
 
     /// @notice Returns the amount of reward tokens claimable by a user
@@ -362,6 +682,7 @@ interface IGaugeV3 is IERC20 {
     /// @param token Address of the reward token to check
     /// @return The amount of reward tokens claimable
     //solhint-disable-next-line func-name-mixedcase
+    // forge-lint: disable-next-line(mixed-case-function)
     function claimable_reward(address user, address token) external view returns (uint256);
 }
 

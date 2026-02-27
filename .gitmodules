@@ -13,3 +13,15 @@
 [submodule "lib/morpho-blue"]
 	path = lib/morpho-blue
 	url = https://github.com/morpho-org/morpho-blue
+[submodule "lib/optimism"]
+	path = lib/optimism
+	url = https://github.com/ethereum-optimism/optimism
+[submodule "lib/comet"]
+	path = lib/comet
+	url = https://github.com/compound-finance/comet
+[submodule "lib/aave-v3-core"]
+	path = lib/aave-v3-core
+	url = https://github.com/aave/aave-v3-core
+[submodule "lib/gmx-contracts"]
+	path = lib/gmx-contracts
+	url = https://github.com/gmx-io/gmx-contracts

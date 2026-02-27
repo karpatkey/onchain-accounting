@@ -1,0 +1,56 @@
+name: Foundry
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize]
+
+env:
+  FOUNDRY_PROFILE: default
+  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+  MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
+  ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
+  BASE_URL: ${{ vars.KNODE_URL }}/base?key=${{ secrets.KNODE_API_KEY }}
+  OP_URL: ${{ vars.KNODE_URL }}/optimism?key=${{ secrets.KNODE_API_KEY }}
+  GNOSIS_URL: ${{ vars.KNODE_URL }}/gnosis?key=${{ secrets.KNODE_API_KEY }}
+
+jobs:
+  # Forge build + unit/integration tests + fork tests (single job, one build)
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test --no-match-path "*fork*" -vvv
+
+      - name: Fork tests
+        env:
+          FOUNDRY_PROFILE: slow
+        run: forge test --match-path "*fork*" -vvv --threads 1
+
+  # Format check
+  lint:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
+
+      - run: forge fmt --check

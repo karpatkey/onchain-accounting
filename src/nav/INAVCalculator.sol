@@ -1,257 +1,279 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8;
 
-import {IPrices} from "src/prices/Prices.sol";
-import {IBalances} from "src/balances/Balances.sol";
+import {IBalances} from "src/balances/IBalances.sol";
+import {IPrices} from "src/prices/IPrices.sol";
 
-/// @title INAVCalculator Interface
-/// @notice Interface for NAVCalculator contract
+/// @title INAVCalculator
+/// @notice Interface for the NAV Calculator contract. Defines the full API for asset registration, price feeds,
+///         balance oracles, and NAV/position queries in one or more quote currencies.
+/// @dev Extends IBalances for oracle registry and IPrices for price feed types. Implementations are typically
+///      UUPS-upgradeable and use AccessControl (MANAGER for mutations, DEFAULT_ADMIN_ROLE for upgrades).
 /// @author kpk
-interface INAVCalculator {
-    /// @notice A holding a specific asset, and its corresponding usd equivalent
-    ///   This can represent a direct ERC20 balance, or a position deposited in a 3rd party contract
-    /// @param underlyingAsset Address of the token
-    /// @param balance The amount of the asset
-    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
-    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
-    /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param bridging Whether this asset is undergoing a bridge operation
-    /// @param stale Whether this asset's USD price is currently considered stale
-    struct Position {
-        address underlyingAsset;
-        int256 balance;
-        int256 usd;
-        uint256 usdRate;
-        uint256 usdRateDecimals;
-        bool bridging;
-        bool stale;
-    }
+interface INAVCalculator is IBalances {
+    //
+    // Structs
+    //
 
-    /// @notice An enriched position record including on‑chain amounts plus human‑readable metadata
-    /// @param protocol The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
-    /// @param position The specified position within the protocol
-    /// @param positionType The type of the position (e.g., "Supplied", "Borrowed", "Native", "ERC20", etc.).
-    /// @param underlyingAsset The address of the underlying token
-    /// @param underlyingAssetSymbol The symbol of the underlying asset (e.g. "USDC", "ETH")
-    /// @param underlyingAssetDecimals Number of decimals of the underlying asset
-    /// @param usdRate The usd rate used, i.e. the USD price per one full token unit, scaled by `usdRateDecimals`
-    /// @param usdRateDecimals The decimals with which usdRate is represented
-    /// @param stale Whether this asset's USD price is currently considered stale
-    /// @param balance The equivalent balance of this underlyng asset (signed to allow negative/debt positions)
-    /// @param usd Amount of USD equivalent represented with NAV_DECIMALS decimals
-    /// @param bridging Whether this asset is undergoing a bridge operation
-    struct PositionWithMetadata {
-        string protocol;
-        string position;
-        string positionType;
-        address underlyingAsset;
-        string underlyingAssetSymbol;
-        uint8 underlyingAssetDecimals;
-        uint256 usdRate;
-        uint256 usdRateDecimals;
-        bool stale;
-        int256 balance;
-        int256 usd;
-        bool bridging;
-    }
-
-    /// @notice The complete NAV snapshot
-    /// @param block Block number this reading refers to
-    /// @param timestamp Block timestamp this reading refers to
-    /// @param usd Total USD calculated
-    /// @param issues Counter of issues found (bridging & stale operations).
-    /// @notice   Anything other than 0 means this reading should not be used to compute deposits/withdrawals,
-    /// @notice   but may still be kept for notifications & historical purposes
-    struct NAV {
-        uint64 block;
-        uint64 timestamp;
-        int256 usd;
-        uint16 issues;
-    }
-
-    /// @notice A known ERC20 asset
-    /// @param addr The address of the asset
-    /// @param decimals The number of decimals the asset uses
+    /// @notice Registered asset metadata used by the NAV/Pricing registry and balance oracles.
+    /// @param asset Token address (or NATIVE_ADDRESS for chain native token).
+    /// @param symbol Display symbol (e.g. "ETH", "USDC").
+    /// @param decimals Number of decimals for amounts.
     struct Asset {
-        address addr;
+        address asset;
+        string symbol;
         uint8 decimals;
+    }
+
+    /// @notice Balance-only position data returned by balance oracles (no pricing).
+    /// @dev NAVCalculator enriches these with pricing to produce Position structs.
+    /// @param underlyingAsset Asset metadata (address, symbol, decimals).
+    /// @param balanceOracle Address of the oracle that reported this position.
+    /// @param amount Balance magnitude (always positive); sign is implied by isDebt.
+    /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV).
+    /// @param protocol Protocol or source identifier (e.g. "aave", "wallet").
+    /// @param positionDetail Optional detail string (e.g. pool id, market).
+    struct PositionBalance {
+        Asset underlyingAsset;
+        address balanceOracle;
+        uint256 amount;
+        bool isDebt;
+        string protocol;
+        string positionDetail;
+    }
+
+    /// @notice Enriched position including pricing and quote-currency value.
+    /// @dev Returned by getAccountPositions and getAccountPositionsForAsset.
+    /// @param underlyingAsset Asset metadata from registry (canonical symbol/decimals).
+    /// @param balanceOracle Oracle that reported the balance.
+    /// @param amount Balance magnitude (positive); sign implied by isDebt.
+    /// @param isDebt True if debt, false if credit.
+    /// @param quoteAsset Quote currency for value (e.g. USD when address(0)).
+    /// @param value Value in quote asset (negative for debt).
+    /// @param price Price used (e.g. USD per unit of asset).
+    /// @param priceDecimals Decimals of price.
+    /// @param stale True if the price was stale at query time.
+    /// @param protocol Protocol/source identifier.
+    /// @param positionDetail Optional detail.
+    struct Position {
+        Asset underlyingAsset;
+        address balanceOracle;
+        uint256 amount;
+        bool isDebt;
+        Asset quoteAsset;
+        int256 value;
+        int256 price;
+        uint8 priceDecimals;
+        bool stale;
+        string protocol;
+        string positionDetail;
+    }
+
+    /// @notice NAV snapshot for an account in a given quote currency.
+    /// @param value Total portfolio value in quoteAsset (can be negative if net debt).
+    /// @param quoteAsset Quote currency; address(0) denotes USD.
+    /// @param timestamp Block timestamp of the reading.
+    /// @param stalePriceAssets Assets whose prices were stale at query time.
+    /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
+    // forge-lint: disable-next-line(pascal-case-struct)
+    struct NAV {
+        int256 value;
+        Asset quoteAsset;
+        uint64 timestamp;
+        Asset[] stalePriceAssets;
+        bool sequencerDown;
+    }
+
+    /// @notice Detailed price feed data for a single asset.
+    /// @param priceFeed Address of the price feed contract.
+    /// @param priceType Chainlink or Custom.
+    /// @param price Current price (e.g. USD per unit).
+    /// @param decimals Decimals of the price.
+    /// @param chainlinkHeartbeat Heartbeat for staleness (Chainlink only).
+    /// @param updatedAt Last update timestamp (Chainlink: from latestRoundData; Custom: 0).
+    /// @param stale True if price is stale (heartbeat or custom logic).
+    /// @param sequencerDown True if L2 sequencer is down (L2 only).
+    struct PriceFeedData {
+        address priceFeed;
+        IPrices.PriceType priceType;
+        int256 price;
+        uint8 decimals;
+        uint256 chainlinkHeartbeat;
+        uint256 updatedAt;
+        bool stale;
+        bool sequencerDown;
     }
 
     //
     // Events
     //
 
-    /// @notice Event emitted when the string for the native token symbol is set
-    /// @param nativeTokenSymbol The symbol of the chain's native token
-    event NativeTokenSymbolSet(string indexed nativeTokenSymbol);
-
-    /// @notice Event emitted when the asset recoverer is updated by a call to `setAssetRecoverer`
-    /// @param oldAssetRecoverer The address of the old asset recoverer
-    /// @param newAssetRecoverer The address of the new asset recoverer
-    event AssetRecovererUpdated(address indexed oldAssetRecoverer, address indexed newAssetRecoverer);
-
-    /// @notice Event emitted when the Chainlink uptime feed is updated by a call to `setChainlinkUptimeFeed`
-    /// @param oldChainlinkUptimeFeed The address of the old Chainlink uptime feed
-    /// @param newChainlinkUptimeFeed The address of the new Chainlink uptime feed
+    /// @notice Emitted when the Chainlink L2 sequencer uptime feed is updated.
+    /// @param oldChainlinkUptimeFeed Previous uptime feed address.
+    /// @param newChainlinkUptimeFeed New uptime feed address.
     event ChainlinkUptimeFeedUpdated(address indexed oldChainlinkUptimeFeed, address indexed newChainlinkUptimeFeed);
 
-    /// @notice Event emitted when the L2 sequencer grace period is updated by a call to `setSequencerGracePeriod`
-    /// @param oldSequencerGracePeriod The old sequencer grace period in seconds
-    /// @param newSequencerGracePeriod The new sequencer grace period in seconds
+    /// @notice Emitted when the L2 sequencer grace period is updated.
+    /// @param oldSequencerGracePeriod Previous grace period in seconds.
+    /// @param newSequencerGracePeriod New grace period in seconds.
     event L2SequencerGracePeriodUpdated(uint256 oldSequencerGracePeriod, uint256 newSequencerGracePeriod);
+
+    /// @notice Emitted when an asset is registered.
+    /// @param asset Registered asset address.
+    /// @param decimals Asset decimals.
+    event AssetRegistered(address indexed asset, uint8 decimals);
+
+    /// @notice Emitted when an asset is unregistered.
+    /// @param asset Unregistered asset address.
+    event AssetUnregistered(address indexed asset);
 
     //
     // Errors
     //
 
-    /// @notice Emitted when an asset is not found
-    error AssetNotFound();
-
-    /// @notice Emitted when 'setSequencerGracePeriod' is called and 'chainlinkUptimeFeed' is the zero address
+    /// @notice Thrown when the L2 sequencer uptime feed is not set but the grace period is being updated.
     error UptimeFeedNotSet();
 
-    /// @notice Adds a new asset to the calculator along with its price oracle
-    /// @param asset The address of the asset to add
-    /// @param oracle The address of the price oracle to use
-    /// @param priceType The type of the price oracle
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink oracle. This is relevant only for Chainlink
-    /// oracles.
-    function addPrice(address asset, address oracle, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    //
+    // Mutating functions (require MANAGER role)
+    //
+
+    /// @notice Registers an asset and sets its price feed.
+    /// @dev Fetches decimals/symbol from ERC20 or uses native token symbol. Adds asset to default oracle inclusion list.
+    /// @param asset Asset address to register (cannot be zero).
+    /// @param priceFeed Price feed address (cannot be zero).
+    /// @param priceType Chainlink or Custom.
+    /// @param chainlinkHeartbeat Heartbeat for Chainlink staleness (ignored for Custom).
+    function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Adds a new balance source to an existing underlying asset.
-    /// @param underlyingAsset The address of the token to add a balance oracle to.
-    /// @param oracle The address of the balance oracle to use.
-    /// @param balanceType The type of the balance.
-    function addBalance(address underlyingAsset, address oracle, IBalances.BalanceType balanceType) external;
+    /// @notice Sets or replaces the price feed for an already registered asset.
+    /// @param asset Registered asset address.
+    /// @param priceFeed New price feed address (cannot be zero).
+    /// @param priceType Chainlink or Custom.
+    /// @param chainlinkHeartbeat Heartbeat for Chainlink (ignored for Custom).
+    function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
 
-    /// @notice Removes the oracle for a given token.
-    /// @param underlyingAsset The address of the token.
-    function removePrice(address underlyingAsset) external;
+    /// @notice Registers a balance oracle in the global registry.
+    /// @dev Reverts with DuplicateBalanceOracle if already registered.
+    /// @param oracle Oracle address (must implement IBalanceOracleAdapter).
+    function addBalanceOracle(address oracle) external;
 
-    /// @notice Removes the oracle for a given token.
-    /// @param underlyingAsset The address of the token.
-    /// @param oracle The address of the oracle.
-    function removeBalance(address underlyingAsset, address oracle) external;
+    /// @notice Removes the price feed for an asset; asset remains registered.
+    /// @param underlyingAsset Registered asset address.
+    function unsetPriceFeed(address underlyingAsset) external;
 
-    /// @notice Sets the symbol of the native token used for display purposes (e.g. "xDAI")
-    /// @dev This function can only be called by the manager role
-    /// @param nativeTokenSymbol The symbol of the native token
-    function setNativeTokenSymbol(string memory nativeTokenSymbol) external;
+    /// @notice Removes a balance oracle from the global registry.
+    /// @param oracle Oracle address to remove (cannot be the default ERC20 oracle).
+    function removeBalanceOracle(address oracle) external;
 
-    /// @notice Update The asset recoverer address
-    /// @param addr The new asset recoverer
-    function setAssetRecoverer(address addr) external;
+    /// @notice Excludes an asset from the default oracle so wallet balances are not reported for it.
+    /// @param asset Registered asset address.
+    function excludeAssetFromDefaultOracle(address asset) external;
 
-    /// @notice Update the Chainlink L2 sequencer uptime feed address
-    /// @param newChainlinkL2UptimeFeed The new Chainlink L2 sequencer uptime feed address
+    /// @notice Includes an asset in the default oracle so wallet balances are reported again.
+    /// @param asset Registered asset address.
+    function includeAssetInDefaultOracle(address asset) external;
+
+    /// @notice Unregisters an asset: unsets price feed, removes from default oracle list, and removes from registry.
+    /// @param underlyingAsset Asset address to unregister.
+    function unregisterAsset(address underlyingAsset) external;
+
+    /// @notice Sets the Chainlink L2 sequencer uptime feed (use address(0) on L1).
+    /// @param newChainlinkL2UptimeFeed New uptime feed address.
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
 
-    /// @notice Sets the Chainlink L2 sequencer grace period
-    /// @param newSequencerGracePeriod The new Chainlink L2 sequencer grace period in seconds
+    /// @notice Sets the L2 sequencer grace period (reverts if uptime feed not set).
+    /// @param newSequencerGracePeriod Grace period in seconds.
     function setChainlinkL2SequencerGracePeriod(uint256 newSequencerGracePeriod) external;
 
-    /// @notice Counts the number of assets known by this calculator.
-    /// @return the number of assets known by this calculator.
+    //
+    // View functions — registry
+    //
+
+    /// @notice Returns the number of registered assets (alias for getAssetCount).
+    /// @return Number of registered assets.
     function assetCount() external view returns (uint256);
 
-    /// @notice Reads the current NAV of a given account.
-    /// @param account The address of the account to calculate for.
-    /// @dev This function reads all known assets, and might exhaust gas if there are too many
-    /// assets known by the calculator contract at the time of calling.
-    /// It is recommended to use the readPositionsRange function instead, with an appropriate range of assets and call
-    /// it multiple times if necessary.
-    /// @return The NAV of the account.
-    function read(address account) external view returns (NAV memory);
+    /// @notice Returns whether an asset is registered.
+    /// @param asset Asset address to check.
+    /// @return True if registered.
+    function isAssetRegistered(address asset) external view returns (bool);
 
-    /// @notice Reads the holdings of a given account, for a limited range of assets
-    ///   Also includes the corresponding usd total, and the amount of issues found long the way
-    ///
-    /// Important :
-    /// - The ordering of oracles in the underlying data structure is not guaranteed. Entries may change order as
-    ///    oracles are added or removed . It is not safe to assume a fixed order or that the same
-    ///    query will yield a consistent oracle order.
-    ///
-    /// - Ensure that any external integrations using
-    ///    the oracle data accounts for potential reordering, and calls `balanceOracleAt` directly for
-    ///    verification if needed.
-    ///
-    /// @param account The address to calculate for
-    /// @param underlyingAsset The address of the token to calculate
-    /// @param idx The index of the balance oracle
-    /// @return p A `Position` struct containing:
-    ///              • `underlyingAsset` – the token address
-    ///              • `balance` – the on‑chain asset amount (signed to allow negative/debt)
-    ///              • `usdRate` – USD price per full token unit (scaled by `usdRateDecimals`)
-    ///              • `usdRateDecimals` – decimals used in `usdRate`
-    ///              • `usd` – amount of USD equivalent represented with NAV_DECIMALS decimals
-    ///              • `bridging` – whether this asset is undergoing a bridge operation
-    ///              • `stale` – whether this asset's USD price is currently considered stale
-    function readPosition(address account, address underlyingAsset, uint256 idx)
+    /// @notice Returns all registered assets with metadata.
+    /// @return assets Array of Asset (address, symbol, decimals).
+    function getRegisteredAssets() external view returns (Asset[] memory assets);
+
+    /// @notice Returns the number of registered assets.
+    /// @return Number of registered assets.
+    function getAssetCount() external view returns (uint256);
+
+    /// @notice Returns the current implementation version (Initializable storage).
+    /// @return Version number.
+    function version() external view returns (uint64);
+
+    //
+    // View functions — NAV and positions
+    //
+
+    /// @notice Computes NAV for an account in the given quote currency.
+    /// @param account Account address.
+    /// @param quoteAsset Quote currency; address(0) for USD. Must have a price feed if not zero.
+    /// @return nav NAV struct (value, quoteAsset, timestamp, stalePriceAssets, sequencerDown).
+    function getAccountNav(address account, address quoteAsset) external view returns (NAV memory nav);
+
+    /// @notice Returns all positions for an account with pricing in the quote currency.
+    /// @param account Account address.
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return positions Array of enriched Position structs.
+    function getAccountPositions(address account, address quoteAsset)
         external
         view
-        returns (Position memory p);
+        returns (Position[] memory positions);
 
-    /// @notice Reads a single enriched position record—including human‑readable metadata for a given account and
-    /// balance oracle.
-    /// @param account The address to calculate for
-    /// @param underlyingAsset The address of the token to calculate
-    /// @param idx The index of the balance oracle
-    /// @return p A `PositionWithMetadata` struct containing:
-    ///               • `protocol` — The protocol name for the position (e.g. "Portfolio balance", "Aave", etc.)
-    ///               • `position` — The specified position within the protocol
-    ///               • `positionType` — The type of the position (e.g., "Supplied", "Borrowed", "ERC20", etc.)
-    ///               • `underlyingAsset`— The address of the underlying token
-    ///               • `underlyingAssetSymbol` — The symbol of the underlying asset (e.g. "USDC", "ETH")
-    ///               • `underlyingAssetDecimals` — Number of decimals of the underlying asset
-    ///               • `usdRate` — The USD price per one full token unit, scaled by `usdRateDecimals`
-    ///               • `usdRateDecimals` — How many decimals are used in `usdRate`
-    ///               • `stale` — Whether this asset’s USD price is currently considered stale
-    ///               • `balance` — The equivalent balance of this underlying asset (signed to allow negative/debt
-    /// positions)
-    ///               • `usd` — Amount of USD equivalent represented with `NAV_DECIMALS` decimals
-    ///               • `bridging` — Whether this asset is undergoing a bridge operation
-    function readPositionWithMetadata(address account, address underlyingAsset, uint256 idx)
+    /// @notice Returns positions for an account filtered by a single asset.
+    /// @param account Account address.
+    /// @param asset Asset to filter by (must be registered).
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return positions Array of enriched Position structs for the asset.
+    function getAccountPositionsForAsset(address account, address asset, address quoteAsset)
         external
         view
-        returns (PositionWithMetadata memory p);
+        returns (Position[] memory positions);
 
-    /// @notice Reads the holdings of a given account, for a limited range of assets.
-    /// Also includes the corresponding usd total, and the amount of issues found long the way.
-    ///
-    /// Important:
-    /// - The ordering of balances in the returned array is not guaranteed. Entries may change order as oracles
-    ///    are added or removed from the nav calculator. It is not safe to assume a fixed order or that the same
-    ///    query will yield a consistent oracle order.
-    ///
-    /// - To ensure complete and consistent data, it is recommended to retrieve the full range in a single query.
-    ///
-    /// - If a caller splits their query range into smaller parts (e.g., retrieving assets 0 to 20 in two
-    ///    separate calls: 0-10 and 11-20), there is a risk of duplicating or missing assets if a oracle for that asset
-    /// was added or removed. Ensure that any external integrations using
-    ///    the oracle data account for potential reordering, and calls `balanceOracleAt` directly for
-    ///    verification if needed.
-    ///
-    /// @param account The address to calculate for
-    /// @param from The index of the first balance oracle
-    /// @param to The index of the last balance oracle
-    /// @return usd The total USD value of the positions
-    /// @return issues The amount of issues found
-    function readPositionsRange(address account, uint256 from, uint256 to)
-        external
-        view
-        returns (int256 usd, uint16 issues);
-
-    /// @notice The amount of decimals returned with each USD value
-    /// @return The amount of decimals
+    /// @notice Returns the number of decimals used for USD values (e.g. 8).
+    /// @return USD decimals.
     function usdDecimals() external view returns (uint8);
 
-    /// @notice Returns the asset at a given index
-    /// @param idx The index of the asset
-    /// @return The asset at the given index
-    function assetAt(uint256 idx) external view returns (Asset memory);
+    /// @notice Returns detailed price feed data for an asset.
+    /// @param underlyingAsset Registered asset address.
+    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale, sequencerDown).
+    function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
-    /// @notice Returns the assets for this calculator
-    /// @return The assets known by this calculator
-    function assets() external view returns (address[] memory);
+    /// @notice Returns health status: sequencer down flag and list of assets with stale prices.
+    /// @return sequencerDown True if L2 sequencer is down or in grace period (false on L1).
+    /// @return stalePriceAssets Addresses of assets with stale prices.
+    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets);
+
+    /// @notice Returns whether the account has any non-zero balance across oracles and registered assets.
+    /// @param account Account address.
+    /// @return has True if at least one position has non-zero amount.
+    function hasPositions(address account) external view returns (bool has);
+
+    /// @notice Returns the list of assets for which the account has at least one non-zero position.
+    /// @param account Account address.
+    /// @return assets Array of asset addresses.
+    function getAssetsWithPositions(address account) external view returns (address[] memory assets);
+
+    /// @notice Converts a list of (asset, amount) pairs into a total value in the quote currency.
+    /// @dev Only positive amounts; zero amounts are skipped. All assets must be registered with a price feed.
+    /// @param assets Asset addresses.
+    /// @param amounts Corresponding amounts (same length as assets).
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return value Sum of values in quote asset (non-negative for valid inputs).
+    function calculateValue(address[] memory assets, uint256[] memory amounts, address quoteAsset)
+        external
+        view
+        returns (int256 value);
 }

@@ -1,27 +1,53 @@
 [profile.default]
 src = "src"
 out = "out"
-libs = ["lib"]
+
 fs_permissions = [
   { access = "read-write", path = "script" },
   { access = "read-write", path = "out" },
+  { access = "read-write", path = "safe-transactions" },
 ]
 ffi = true
 ast = true
 build_info = true
 extra_output = ["storageLayout"]
 
-
 # Default behaviour changed on commit https://github.com/foundry-rs/foundry/commit/39f13df8971b02f5961d4fd2cb278f44e19a717a
 optimizer = true
-optimizer_runs = 2000
+optimizer_runs = 200
 via_ir = true
 
+# Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.
+# See: https://book.getfoundry.sh/reference/config/solidity-compiler
+# deny = "warnings"
+ignored_warnings_from = ["lib"]
+
+# Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.
+[lint]
 no_match_test = "upgrade"
 
 [profile.coverage]
 # Exclude script folder from coverage reports (regex pattern)
 no_match_coverage = "^script/"
+
+# Fuzz testing configuration
+[fuzz]
+runs = 2000
+max_test_rejects = 65536
+
+# Invariant testing configuration
+[invariant]
+runs = 256
+depth = 15
+fail_on_revert = false
+show_metrics = true
+
+# Fork tests: single thread + throttle RPC to avoid rate limits. Use with FOUNDRY_PROFILE=slow.
+# threads: see book.getfoundry.sh/reference/config/testing (FOUNDRY_THREADS)
+# compute_units_per_second: mirrors --compute-units-per-second (throttles RPC during fork; default 330)
+[profile.slow]
+threads = 1
+
 
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}" }

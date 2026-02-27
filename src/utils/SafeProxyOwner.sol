@@ -2,6 +2,7 @@
 // solhint-disable one-contract-per-file
 pragma solidity ^0.8.0;
 
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @dev Tuple describing a call to batch through `MultiSend` and `MultiSendCallOnly`
@@ -200,18 +201,19 @@ contract SafeProxyOwner is Ownable {
     function _execFromSafe(address safe, address to, uint256 value, bytes memory data, Enum.Operation operation)
         private
     {
-        bool ok = ISafe(safe).execTransaction(
-            to,
-            value,
-            data,
-            operation,
-            0, // safeTxGas
-            0, // baseGas
-            0, // gasPrice
-            address(0), // gasToken
-            payable(address(0)),
-            _selfSignature()
-        );
+        bool ok = ISafe(safe)
+            .execTransaction(
+                to,
+                value,
+                data,
+                operation,
+                0, // safeTxGas
+                0, // baseGas
+                0, // gasPrice
+                address(0), // gasToken
+                payable(address(0)),
+                _selfSignature()
+            );
         if (!ok) revert SafeTransactionFailed();
     }
 }

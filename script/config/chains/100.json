@@ -1,0 +1,43 @@
+{
+  "chainId": 100,
+  "name": "gnosis",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://gnosisscan.io",
+  "explorerApiKey": "$GNOSISSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "xDAI",
+  "addresses": {
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+  },
+  "deployed": {
+    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
+    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
+  },
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {
+        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+      },
+      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    }
+  },
+  "bridgeAdapters": {
+    "Gnosis": {
+      "enabled": false,
+      "initialize": {
+        "admin": "",
+        "bridgeEscrow": "",
+        "omnibridge": "0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d",
+        "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
+        "version": "1.0.0"
+      },
+      "deployed": "",
+      "callbackSelector": "0x0bad0c90"
+    }
+  }
+}

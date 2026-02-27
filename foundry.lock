@@ -1,15 +1,27 @@
 {
+  "lib/aave-v3-core": {
+    "tag": {
+      "name": "v1.19.4",
+      "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
+    }
+  },
   "lib/chainlink-brownie-contracts": {
     "tag": {
       "name": "1.3.0",
       "rev": "5cb41fbc9b525338b6098da5ea7dd0b7e92f89e4"
     }
   },
+  "lib/comet": {
+    "rev": "ed6ebcd84ac00906e8e725716891d482f4bef8b9"
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.12.0",
       "rev": "7117c90c8cf6c68e5acce4f09a6b24715cea4de6"
     }
+  },
+  "lib/gmx-contracts": {
+    "rev": "fe55c4ba8911ae2378b50bfb9bece5ee50cf2af8"
   },
   "lib/morpho-blue": {
     "tag": {
@@ -28,5 +40,8 @@
       "name": "v0.4.0",
       "rev": "cbce1e00305e943aa1661d43f41e5ac72c662b07"
     }
+  },
+  "lib/optimism": {
+    "rev": "096942479b8a2434bb63458e661cf467ed5d41ba"
   }
 }

@@ -168,7 +168,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
         bytes32 expectedTopic = keccak256("CctpBridgeInitiated(bytes32,uint32,bytes32,bytes32,uint64)");
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length >= 1 && logs[i].topics[0] == expectedTopic && logs[i].data.length >= 32 * 4) {
-                (, , , nonce) = abi.decode(logs[i].data, (uint32, bytes32, bytes32, uint64));
+                (,,, nonce) = abi.decode(logs[i].data, (uint32, bytes32, bytes32, uint64));
                 break;
             }
         }

@@ -104,13 +104,8 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     function test_bridge_revertsForInvalidDomain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         uint64 invalidChainId = 12345; // Not in adapter's pre-configured domain list
-        InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
-            SOURCE_CHAIN_ID,
-            invalidChainId,
-            account,
-            USDC_SYMBOL_BYTES6,
-            amount
-        );
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, invalidChainId, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Simulate bridge initiation (transfer tokens to BridgeEscrow, then approve adapter)

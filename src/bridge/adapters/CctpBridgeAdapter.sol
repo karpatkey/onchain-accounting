@@ -149,15 +149,16 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // The destinationCaller is set to this contract's address so we can receive the message
         bytes32 destinationCaller = bytes32(uint256(uint160(address(this))));
         // Use zero maxFee (no fee charged) and standard finality threshold (2000) as per Circle docs
-        tokenMessenger().depositForBurn(
-            data.amount,
-            destinationDomain,
-            mintRecipient,
-            asset,
-            destinationCaller,
-            0,      // maxFee: 0 units of USDC
-            2000    // minFinalityThreshold: standard (fully finalized) transfers
-        );
+        tokenMessenger()
+            .depositForBurn(
+                data.amount,
+                destinationDomain,
+                mintRecipient,
+                asset,
+                destinationCaller,
+                0, // maxFee: 0 units of USDC
+                2000 // minFinalityThreshold: standard (fully finalized) transfers
+            );
 
         // TokenMessengerV2 does not return the message nonce; it is only available in events.
         // We do not set messageToInvoiceId here; _completeBridge uses messagePayload.invoiceId when

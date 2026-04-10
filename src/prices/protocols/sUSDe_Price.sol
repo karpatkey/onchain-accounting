@@ -82,7 +82,8 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
 
         uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** IERC4626(S_USDE).decimals());
 
-        price = sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** IERC4626(S_USDE).decimals(), Math.Rounding.Floor);
+        price =
+            sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** IERC4626(S_USDE).decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

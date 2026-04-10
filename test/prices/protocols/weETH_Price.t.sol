@@ -22,7 +22,9 @@ contract weETH_PriceOracleTest is Test {
 
     function test_invalidConstructorArgs() public {
         vm.expectRevert();
-        new weETH_PriceOracle(address(0), weEthToEthChainlink, ethToUsdChainlink, weEthToEthHeartbeat, ethToUsdHeartbeat);
+        new weETH_PriceOracle(
+            address(0), weEthToEthChainlink, ethToUsdChainlink, weEthToEthHeartbeat, ethToUsdHeartbeat
+        );
 
         vm.expectRevert();
         new weETH_PriceOracle(weEthAddress, address(0), ethToUsdChainlink, weEthToEthHeartbeat, ethToUsdHeartbeat);

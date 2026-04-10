@@ -19,8 +19,9 @@ contract weETH_PriceOracleForkTest is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        weEthPriceOracle =
-            new weETH_PriceOracle(WEETH, WEETH_TO_ETH_CHAINLINK, ETH_TO_USD_CHAINLINK, WEETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT);
+        weEthPriceOracle = new weETH_PriceOracle(
+            WEETH, WEETH_TO_ETH_CHAINLINK, ETH_TO_USD_CHAINLINK, WEETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
+        );
     }
 
     function test_getLatestPrice() public view {

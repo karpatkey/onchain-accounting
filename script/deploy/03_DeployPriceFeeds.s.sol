@@ -218,10 +218,12 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         address syrupUsdc =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "syrupUsdc"));
-        address usdcUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkAddress"));
-        uint256 usdcUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat"));
+        address usdcUsdOracle = vm.parseAddress(
+            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkAddress")
+        );
+        uint256 usdcUsdHeartbeat = vm.parseUint(
+            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat")
+        );
 
         syrupUSDC_PriceOracle syrupUsdcAdapter = new syrupUSDC_PriceOracle(syrupUsdc, usdcUsdOracle, usdcUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));

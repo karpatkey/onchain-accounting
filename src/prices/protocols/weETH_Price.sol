@@ -90,9 +90,8 @@ contract weETH_PriceOracle is IPriceFeedCustom {
         }
 
         // weETH/ETH is 18 decimals (Chainlink), ETH/USD is 8 decimals → result is 8 decimals
-        price = weEthToEthRate.toUint256().mulDiv(
-            ethToUsdPrice.toUint256(), 10 ** WEETH_TO_ETH_CHAINLINK.decimals(), Math.Rounding.Floor
-        );
+        price = weEthToEthRate.toUint256()
+            .mulDiv(ethToUsdPrice.toUint256(), 10 ** WEETH_TO_ETH_CHAINLINK.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

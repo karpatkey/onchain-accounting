@@ -73,7 +73,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3UsdcComet =

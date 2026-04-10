@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {MockAaveProtocolDataProvider, MockAaveRewardsDistributor} from "test/balances/protocols/AaveV3Instance.t.sol";
+import {MockAaveProtocolDataProvider} from "test/balances/protocols/AaveV3Instance.t.sol";
 
 /// @title SparkLendBalanceOracleTest
 /// @notice Unit and implementation tests for SparkLendBalanceOracle
@@ -13,15 +13,11 @@ import {MockAaveProtocolDataProvider, MockAaveRewardsDistributor} from "test/bal
 contract SparkLendBalanceOracleTest is BalanceAdapterTestBase {
     SparkLendBalanceOracle public oracle;
     MockAaveProtocolDataProvider public mockDataProvider;
-    MockAaveRewardsDistributor public mockRewardsDistributor;
 
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        mockRewardsDistributor = new MockAaveRewardsDistributor();
-        oracle = new SparkLendBalanceOracle(
-            address(mockDataProvider), address(mockRewardsDistributor), "Spark", address(balances)
-        );
+        oracle = new SparkLendBalanceOracle(address(mockDataProvider), "Spark", address(balances));
     }
 
     // ============================================

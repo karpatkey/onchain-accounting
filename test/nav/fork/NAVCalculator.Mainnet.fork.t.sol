@@ -137,7 +137,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
     function setupBalanceOracle() internal override {
         aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
+            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
 
         AaveV3SafetyModuleBalanceOracle stkGhoOracle =
             new AaveV3SafetyModuleBalanceOracle(stkGho, "Aave v3", "Safety Module", address(nav));

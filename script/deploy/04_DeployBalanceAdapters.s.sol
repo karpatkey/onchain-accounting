@@ -9,7 +9,6 @@ import {console2} from "forge-std/console2.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
-import {GmxBalanceOracle} from "../../src/balances/protocols/GMX.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
@@ -37,9 +36,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // Deploy Spark Lend adapters
         _deployIfEnabled("SparkLend_USDC");
-
-        // Deploy GMX adapters
-        _deployIfEnabled("GMX_GLP");
 
         // Deploy DAI DSR
         _deployIfEnabled("DaiDsr");
@@ -120,11 +116,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMorphoBlue(adapterName, navCalculator);
         }
 
-        // GMX adapters
-        if (_startsWith(adapterName, "GMX_")) {
-            return _deployGmx(adapterName, navCalculator);
-        }
-
         // DAI DSR
         if (_equals(adapterName, "DaiDsr")) {
             return _deployDaiDsr(navCalculator);
@@ -144,14 +135,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        address rewardsDistributor = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsDistributor")
-        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        AaveV3InstanceBalanceOracle adapter =
-            new AaveV3InstanceBalanceOracle(dataProvider, rewardsDistributor, protocol, navCalculator);
+        AaveV3InstanceBalanceOracle adapter = new AaveV3InstanceBalanceOracle(dataProvider, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -175,14 +162,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        address rewardsDistributor = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsDistributor")
-        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        SparkLendBalanceOracle adapter =
-            new SparkLendBalanceOracle(dataProvider, rewardsDistributor, protocol, navCalculator);
+        SparkLendBalanceOracle adapter = new SparkLendBalanceOracle(dataProvider, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -197,49 +180,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
         MorphoMarketBalanceOracle adapter = new MorphoMarketBalanceOracle(morpho, marketId, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployGmx(string memory adapterName, address navCalculator) internal returns (address) {
-        // GMX has complex constructor - reading all params
-        address market = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
-        );
-        address reader = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "reader")
-        );
-        address referralStorage = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "referralStorage")
-        );
-        address usdc =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "usdc"));
-        address collateralToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "collateralToken")
-        );
-        bool isLong =
-            vm.parseBool(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "isLong"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-
-        // TokenFeeds array - reading from config
-        // Note: This is simplified - in practice you may need to parse an array from config
-        // For now, using empty array as GMX config may not have tokenFeeds in the expected format
-        GmxBalanceOracle.TokenFeed[] memory tokenFeeds = new GmxBalanceOracle.TokenFeed[](0);
-
-        GmxBalanceOracle adapter = new GmxBalanceOracle(
-            market,
-            reader,
-            referralStorage,
-            usdc,
-            collateralToken,
-            isLong,
-            tokenFeeds,
-            protocol,
-            positionDetail,
-            navCalculator
-        );
         return address(adapter);
     }
 

@@ -14,19 +14,10 @@ contract MockAaveProtocolDataProvider {
         address tokenAddress;
     }
 
-    struct ReserveData {
-        address aTokenAddress;
-    }
-
     TokenData[] public reserves;
-    mapping(address => ReserveData) public reserveData;
 
     function getAllReservesTokens() external view returns (TokenData[] memory) {
         return reserves;
-    }
-
-    function getReserveData(address asset) external view returns (ReserveData memory) {
-        return reserveData[asset];
     }
 
     function getUserReserveData(
@@ -52,31 +43,8 @@ contract MockAaveProtocolDataProvider {
         return (0, 0, 0, 0, 0, 0, 0, 0, false);
     }
 
-    function addReserve(string memory symbol, address tokenAddress, address aTokenAddress) external {
+    function addReserve(string memory symbol, address tokenAddress) external {
         reserves.push(TokenData({symbol: symbol, tokenAddress: tokenAddress}));
-        reserveData[tokenAddress] = ReserveData({aTokenAddress: aTokenAddress});
-    }
-}
-
-/// @title Mock Aave Rewards Distributor
-contract MockAaveRewardsDistributor {
-    mapping(address => mapping(address => uint256)) public userRewards;
-    address[] public rewardsList;
-
-    function getRewardsList() external view returns (address[] memory) {
-        return rewardsList;
-    }
-
-    function getUserAccruedRewards(address user, address reward) external view returns (uint256) {
-        return userRewards[user][reward];
-    }
-
-    function setUserRewards(address user, address reward, uint256 amount) external {
-        userRewards[user][reward] = amount;
-    }
-
-    function addReward(address reward) external {
-        rewardsList.push(reward);
     }
 }
 
@@ -86,15 +54,11 @@ contract MockAaveRewardsDistributor {
 contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
     AaveV3InstanceBalanceOracle public oracle;
     MockAaveProtocolDataProvider public mockDataProvider;
-    MockAaveRewardsDistributor public mockRewardsDistributor;
 
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        mockRewardsDistributor = new MockAaveRewardsDistributor();
-        oracle = new AaveV3InstanceBalanceOracle(
-            address(mockDataProvider), address(mockRewardsDistributor), "Aave v3", address(balances)
-        );
+        oracle = new AaveV3InstanceBalanceOracle(address(mockDataProvider), "Aave v3", address(balances));
     }
 
     // ============================================
@@ -103,9 +67,6 @@ contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_setsCorrectValues() public view {
         assertEq(address(oracle.DATA_PROVIDER()), address(mockDataProvider));
-        assertEq(address(oracle.REWARDS_DISTRIBUTOR()), address(mockRewardsDistributor));
-        // Note: protocol() is private, so we can't test it directly
-        // It's tested indirectly through position metadata in fork tests
     }
 
     // ============================================

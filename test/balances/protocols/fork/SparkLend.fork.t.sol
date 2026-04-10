@@ -12,7 +12,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Spark contract addresses (mainnet)
     address public constant DATA_PROVIDER = 0xFc21d6d146E6086B8359705C8b28512a983db0cb;
-    address public constant REWARDS_DISTRIBUTOR = 0x4370D3b6C9588E02ce9D22e684387859c7Ff5b34;
 
     // Token addresses
     address public constant DAI = MAINNET_DAI;
@@ -54,7 +53,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[3] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
         assertGt(amount, 0, "User should have DAI supply position");
@@ -71,7 +70,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[3] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
         assertGt(amount, 0, "User should have WBTC supply position");
@@ -88,7 +87,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[3] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
         assertTrue(isDebt, "User should have WETH borrow position (negative balance)");
@@ -107,7 +106,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = DAI;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
         assertGt(amount, 0, "User should have GNO supply position");
@@ -122,7 +121,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = DAI;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
         assertTrue(isDebt, "User should have DAI debt position (negative balance)");
@@ -138,10 +137,10 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
 
         balances = _deployBalancesForOracle(STETH);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(REWARD_STETH_USER, STETH);
-        assertGt(amount, 0, "User should have stETH reward position");
+        assertGt(amount, 0, "User should have stETH position");
         assertFalse(isDebt);
     }
 
@@ -159,7 +158,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[3] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         (address[] memory resultAssets, uint256[] memory amounts,) =
             oracle.getOracleBalances(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
@@ -179,7 +178,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[3] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), REWARDS_DISTRIBUTOR, "Spark", address(balances));
+        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
 
         INAVCalculator.PositionBalance[] memory positions =
             oracle.getOraclePositions(SUPPLY_DAI_WBTC_BORROW_WETH_USER, address(0));

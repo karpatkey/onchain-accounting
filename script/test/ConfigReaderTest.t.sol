@@ -174,12 +174,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
     /// @notice Test that we can read multiple adapter params when they exist (no assertion on content)
     function test_ReadComplexAdapterParams() public view {
         // Read complex adapter params; we only verify the reads succeed (values may be empty or set)
-        string memory market = ConfigReader.readAdapterParam(vm, 42161, "balanceAdapters", "GMX_GLP", "market");
-        string memory reader = ConfigReader.readAdapterParam(vm, 42161, "balanceAdapters", "GMX_GLP", "reader");
-        string memory usdc = ConfigReader.readAdapterParam(vm, 42161, "balanceAdapters", "GMX_GLP", "usdc");
+        string memory morpho = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "morpho");
+        string memory marketId = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "marketId");
+        string memory protocol = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "protocol");
 
         assertTrue(
-            bytes(market).length >= 0 && bytes(reader).length >= 0 && bytes(usdc).length >= 0,
+            bytes(morpho).length >= 0 && bytes(marketId).length >= 0 && bytes(protocol).length >= 0,
             "readAdapterParam returns for complex adapter when config exists"
         );
     }

@@ -92,8 +92,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3Comet =

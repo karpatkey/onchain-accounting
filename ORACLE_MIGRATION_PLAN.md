@@ -455,15 +455,12 @@ The 10 balance oracles and 4 price oracles already in `onchain-accounting` were 
 
 ### Balance oracles to reconcile
 
-- [ ] **AaveV3Instance** — diff vs source first; then **remove reward position** (Aave lending rewards inactive)
-  - Diff remaining logic (data provider calls, rounding) against source and resolve any gaps
-  - Strip `RewardsDistributor` constructor param, rewards balance logic, and third `PositionBalance` entry
-  - Only two positions remain: Supply/Collateral and Borrow
-  - Update constructor and tests accordingly
+- [x] **AaveV3Instance** — diff vs source first; then **remove reward position** (Aave lending rewards inactive)
   - [x] Source diff done. Key decisions: stable debt omitted intentionally (Aave v3 deprecated it — NatSpec comment added); try/catch omitted intentionally (v2 reverts explicitly); collateral label and separate positions are v2 improvements.
   - [x] Unit tests pass (6/6, confirmed PR 1)
   - [x] Fork tests pass (7/7)
-  - [x] Deploy script: fixed in PR 1 (`rewardsDistributor` param removed from `_deployAaveV3()`)
+  - [x] Deploy script (`04_DeployBalanceAdapters.s.sol`): `rewardsDistributor` param removed from `_deployAaveV3()`
+  - [x] Verify script (`VerifyEtherscan.s.sol`): `rewardsDistributor` removed from AaveV3 constructor arg encoding
 
 - [ ] **AaveV3SafetyModule** — diff vs source; staking rewards are the core purpose — do **not** remove them
   - [ ] `forge test --match-path "test/balances/protocols/AaveV3SafetyModule*"` passes ✓
@@ -475,7 +472,8 @@ The 10 balance oracles and 4 price oracles already in `onchain-accounting` were 
   - Removed `test_getOracleBalanceForAsset_reward_steth` (user had zero supply/debt at fork block — rewards-only position no longer tracked).
   - [x] Unit tests pass (4/4)
   - [x] Fork tests pass (7/7 after removing rewards test)
-  - [x] Deploy script: fixed in PR 1 (`rewardsDistributor` param removed from `_deploySparkLend()`)
+  - [x] Deploy script (`04_DeployBalanceAdapters.s.sol`): `rewardsDistributor` param removed from `_deploySparkLend()`
+  - [x] Verify script (`VerifyEtherscan.s.sol`): `rewardsDistributor` removed from SparkLend constructor arg encoding
 
 - [ ] **MorphoMarket** — diff vs source; check collateral + loan token dual-asset handling and rounding
   - [ ] `forge test --match-path "test/balances/protocols/MorphoMarket*"` passes ✓
@@ -574,6 +572,8 @@ Run each group and confirm green:
 - [x] **`src/balances/protocols/GMX.sol`** — deleted in PR 1
 - [x] **`test/balances/protocols/GMX.t.sol`** — deleted in PR 1
 - [x] **`test/balances/protocols/fork/GMX.fork.t.sol`** — deleted in PR 1
+- [x] **`script/deploy/06_Configure.s.sol`** — GMX_GLP removed from both balance adapter name arrays (PR 1 follow-up)
+- [x] **`script/test/ConfigReaderTest.t.sol`** — GMX_GLP references replaced with MorphoBlue_USDC (PR 1 follow-up)
 
 ---
 

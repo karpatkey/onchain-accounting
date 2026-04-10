@@ -9,6 +9,14 @@ import {console2} from "forge-std/console2.sol";
 import {sDAI_PriceOracle} from "../../src/prices/protocols/sDAI_Price.sol";
 import {LDO_PriceOracle} from "../../src/prices/protocols/LDO_Price.sol";
 import {sUSDS_PriceOracle} from "../../src/prices/protocols/sUSDS_Price.sol";
+import {sUSDe_PriceOracle} from "../../src/prices/protocols/sUSDe_Price.sol";
+import {syrupUSDC_PriceOracle} from "../../src/prices/protocols/syrupUSDC_Price.sol";
+import {wstETH_PriceOracle} from "../../src/prices/protocols/wstETH_Price.sol";
+import {rETH_PriceOracle} from "../../src/prices/protocols/rETH_Price.sol";
+import {cbETH_PriceOracle} from "../../src/prices/protocols/cbETH_Price.sol";
+import {weETH_PriceOracle} from "../../src/prices/protocols/weETH_Price.sol";
+import {rsETH_PriceOracle} from "../../src/prices/protocols/rsETH_Price.sol";
+import {eETH_PriceOracle} from "../../src/prices/protocols/eETH_Price.sol";
 
 // import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
 
@@ -69,6 +77,46 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy sUSDS Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sUSDS")) {
             _deploySusds();
+        }
+
+        // Deploy sUSDe Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sUSDe")) {
+            _deploySUsde();
+        }
+
+        // Deploy syrupUSDC Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC")) {
+            _deploySyrupUsdc();
+        }
+
+        // Deploy wstETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wstETH")) {
+            _deployWstEth();
+        }
+
+        // Deploy rETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rETH")) {
+            _deployREth();
+        }
+
+        // Deploy cbETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "cbETH")) {
+            _deployCbEth();
+        }
+
+        // Deploy weETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "weETH")) {
+            _deployWeEth();
+        }
+
+        // Deploy rsETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rsETH")) {
+            _deployRsEth();
+        }
+
+        // Deploy eETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "eETH")) {
+            _deployEEth();
         }
 
         vm.stopBroadcast();
@@ -141,6 +189,164 @@ contract DeployPriceFeeds is BaseDeployScript {
         sUSDS_PriceOracle susdsAdapter = new sUSDS_PriceOracle(sUsds, usdsUsdOracle, usdsUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sUSDS", address(susdsAdapter));
         console2.log("sUSDS_PriceOracle deployed at:", address(susdsAdapter));
+    }
+
+    function _deploySUsde() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "sUSDe");
+        if (deployed != address(0)) {
+            console2.log("sUSDe_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address sUsde = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "sUsde"));
+        address usdeUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "usdeToUsdChainlinkAddress"));
+        uint256 usdeUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "usdeToUsdChainlinkHeartbeat"));
+
+        sUSDe_PriceOracle susdeAdapter = new sUSDe_PriceOracle(sUsde, usdeUsdOracle, usdeUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sUSDe", address(susdeAdapter));
+        console2.log("sUSDe_PriceOracle deployed at:", address(susdeAdapter));
+    }
+
+    function _deploySyrupUsdc() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "syrupUSDC");
+        if (deployed != address(0)) {
+            console2.log("syrupUSDC_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address syrupUsdc =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "syrupUsdc"));
+        address usdcUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkAddress"));
+        uint256 usdcUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat"));
+
+        syrupUSDC_PriceOracle syrupUsdcAdapter = new syrupUSDC_PriceOracle(syrupUsdc, usdcUsdOracle, usdcUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
+        console2.log("syrupUSDC_PriceOracle deployed at:", address(syrupUsdcAdapter));
+    }
+
+    function _deployWstEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "wstETH");
+        if (deployed != address(0)) {
+            console2.log("wstETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "wstEth"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
+
+        wstETH_PriceOracle wstEthAdapter = new wstETH_PriceOracle(wstEth, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH", address(wstEthAdapter));
+        console2.log("wstETH_PriceOracle deployed at:", address(wstEthAdapter));
+    }
+
+    function _deployREth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "rETH");
+        if (deployed != address(0)) {
+            console2.log("rETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address rEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "rEth"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "ethToUsdChainlinkHeartbeat"));
+
+        rETH_PriceOracle rEthAdapter = new rETH_PriceOracle(rEth, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rETH", address(rEthAdapter));
+        console2.log("rETH_PriceOracle deployed at:", address(rEthAdapter));
+    }
+
+    function _deployCbEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "cbETH");
+        if (deployed != address(0)) {
+            console2.log("cbETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address cbEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "cbEth"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "ethToUsdChainlinkHeartbeat"));
+
+        cbETH_PriceOracle cbEthAdapter = new cbETH_PriceOracle(cbEth, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "cbETH", address(cbEthAdapter));
+        console2.log("cbETH_PriceOracle deployed at:", address(cbEthAdapter));
+    }
+
+    function _deployWeEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "weETH");
+        if (deployed != address(0)) {
+            console2.log("weETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEth"));
+        address weEthToEthOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkOracle"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "ethToUsdChainlinkOracle"));
+        uint256 weEthToEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkHeartbeat"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "ethToUsdChainlinkHeartbeat"));
+
+        weETH_PriceOracle weEthAdapter =
+            new weETH_PriceOracle(weEth, weEthToEthOracle, ethUsdOracle, weEthToEthHeartbeat, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "weETH", address(weEthAdapter));
+        console2.log("weETH_PriceOracle deployed at:", address(weEthAdapter));
+    }
+
+    function _deployRsEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "rsETH");
+        if (deployed != address(0)) {
+            console2.log("rsETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address rsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "rsEth"));
+        address rateProvider =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "rateProvider"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "ethToUsdChainlinkHeartbeat"));
+
+        rsETH_PriceOracle rsEthAdapter = new rsETH_PriceOracle(rsEth, rateProvider, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rsETH", address(rsEthAdapter));
+        console2.log("rsETH_PriceOracle deployed at:", address(rsEthAdapter));
+    }
+
+    function _deployEEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "eETH");
+        if (deployed != address(0)) {
+            console2.log("eETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "eEth"));
+        address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEth"));
+        address weEthToEthOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkOracle"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "ethToUsdChainlinkOracle"));
+        uint256 weEthToEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkHeartbeat"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "ethToUsdChainlinkHeartbeat"));
+
+        eETH_PriceOracle eEthAdapter =
+            new eETH_PriceOracle(eEth, weEth, weEthToEthOracle, ethUsdOracle, weEthToEthHeartbeat, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "eETH", address(eEthAdapter));
+        console2.log("eETH_PriceOracle deployed at:", address(eEthAdapter));
     }
 
     /// @notice Helper to read deployed adapter address

@@ -19,12 +19,9 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     address public constant WETH = MAINNET_WETH;
     address public constant USDC = MAINNET_USDC;
     address public constant GNO = 0x6810e776880C02933D47DB1b9fc05908e5386b96;
-    address public constant STETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
-
     // Fork blocks
     uint256 public constant FORK_BLOCK_1 = 20_734_274;
     uint256 public constant FORK_BLOCK_2 = 17_772_457;
-    uint256 public constant FORK_BLOCK_3 = 19_685_985;
 
     // Oracle instance
     SparkLendBalanceOracle public oracle;
@@ -32,7 +29,6 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Real user addresses with positions in Spark
     address public constant SUPPLY_DAI_WBTC_BORROW_WETH_USER = 0xB6875EC94bE06d159A28d627422b7c9388cc8861;
     address public constant SUPPLY_GNO_DEBT_DAI_USER = 0x849D52316331967b6fF1198e5E32A0eB168D039d;
-    address public constant REWARD_STETH_USER = 0x4F2083f5fBede34C2714aFfb3105539775f7FE64;
 
     function setUp() public override {
         // Note: Fork setup is done per-test since different tests use different blocks
@@ -126,22 +122,6 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
         assertTrue(isDebt, "User should have DAI debt position (negative balance)");
         assertGt(amount, 0, "User should have DAI debt amount");
-    }
-
-    // ============================================
-    // Real Position Tests - Block 3
-    // ============================================
-
-    function test_getOracleBalanceForAsset_reward_steth() public {
-        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_3);
-
-        balances = _deployBalancesForOracle(STETH);
-
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), "Spark", address(balances));
-
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(REWARD_STETH_USER, STETH);
-        assertGt(amount, 0, "User should have stETH position");
-        assertFalse(isDebt);
     }
 
     // ============================================

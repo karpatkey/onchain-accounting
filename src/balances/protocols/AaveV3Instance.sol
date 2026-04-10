@@ -235,7 +235,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @return UserReserveData struct containing aToken balance, variable debt, and collateral status
     function _getUserAssetData(address user, address asset) internal view returns (UserReserveData memory) {
         (
-            uint256 currentATokenBalance,, // currentStableDebt - unused
+            uint256 currentATokenBalance,, // currentStableDebt - omitted: Aave v3 deprecated stable borrow (frozen/paused); all active positions use variable debt only
             uint256 currentVariableDebt,, // principalStableDebt - unused
             , // scaledVariableDebt - unused
             , // stableBorrowRate - unused

@@ -171,17 +171,16 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(arbitrum || !arbitrum, "arbitrum read succeeds");
     }
 
-    /// @notice Test that we can read multiple adapter params when they exist (no assertion on content)
-    function test_ReadComplexAdapterParams() public view {
-        // Read complex adapter params; we only verify the reads succeed (values may be empty or set)
+    /// @notice Test that reading params for a non-existent adapter returns empty strings (no revert)
+    function test_ReadMissingAdapterParamsReturnsEmpty() public view {
+        // MorphoBlue_USDC is not present in chain 1 config — reads should return "" not revert
         string memory morpho = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "morpho");
         string memory marketId = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "marketId");
         string memory protocol = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "protocol");
 
-        assertTrue(
-            bytes(morpho).length >= 0 && bytes(marketId).length >= 0 && bytes(protocol).length >= 0,
-            "readAdapterParam returns for complex adapter when config exists"
-        );
+        assertEq(bytes(morpho).length, 0, "missing adapter param should return empty string");
+        assertEq(bytes(marketId).length, 0, "missing adapter param should return empty string");
+        assertEq(bytes(protocol).length, 0, "missing adapter param should return empty string");
     }
 
     /// @notice Test that config files are properly formatted JSON

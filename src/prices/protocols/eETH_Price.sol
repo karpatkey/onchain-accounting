@@ -13,9 +13,9 @@ import "src/errors.sol";
 /// @title eETH Custom Price Oracle
 /// @notice Returns the USD price of eETH by deriving eETH/ETH from weETH data and combining with ETH/USD.
 /// @dev The price is computed as `price = (eETH/ETH) * (ETH/USD)`, where:
-///      - `eETH/ETH = (weETH/ETH) ÷ (weETH/eETH)`
+///      - `eETH/ETH = (weETH/ETH) ÷ (eETH/weETH)`
 ///      - `weETH/ETH` comes from Chainlink weETH/ETH oracle (18 decimals)
-///      - `weETH/eETH` comes from weETH contract's `getRate()` function (18 decimals)
+///      - `eETH/weETH` comes from weETH contract's `getRate()` function (18 decimals, eETH per weETH)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
@@ -104,7 +104,7 @@ contract eETH_PriceOracle is IPriceFeedCustom {
             stale = true;
         }
 
-        // eETH/ETH = weETH/ETH ÷ weETH/eETH (both 18 dec → result 18 dec)
+        // eETH/ETH = weETH/ETH ÷ eETH/weETH (both 18 dec → result 18 dec)
         uint256 eEthToEthRate = weEthToEthRate.toUint256().mulDiv(1e18, weEthToEEthRate, Math.Rounding.Floor);
 
         // eETH/ETH (18 dec) * ETH/USD (8 dec) / 1e18 = 8 dec
@@ -128,6 +128,6 @@ contract eETH_PriceOracle is IPriceFeedCustom {
 }
 
 interface IweETH {
-    /// @notice Get amount of eETH per weETH (18 decimals).
+    /// @notice Get amount of eETH per weETH (18 decimals). Used as divisor to derive eETH/ETH from weETH/ETH.
     function getRate() external view returns (uint256);
 }

@@ -21,7 +21,8 @@ import "src/errors.sol";
 ///      - `convertToAssets` uses the vault's decimals; multiplication is scaled via `Math.mulDiv`
 ///        so the returned USD price has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDC_TO_USD_CHAINLINK_HEARTBEAT`.
-///      If the feed is stale or the quoted price is non-positive, the function returns `(0, true)` to signal staleness.
+///      If the feed is stale, the function still returns the computed `price` with `stale = true`.
+///      If the quoted Chainlink price is non-positive, the function returns `(0, true)`.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract syrupUSDC_PriceOracle is IPriceFeedCustom {

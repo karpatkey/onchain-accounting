@@ -11,8 +11,8 @@ import "src/errors.sol";
 
 /// @title wstETH Custom Price Oracle
 /// @notice Returns the USD price of wstETH by combining wstETH's stEthPerToken rate with Chainlink's ETH/USD feed.
-/// @dev The price is computed as `price = (wstETH/stETH) * (ETH/USD)`, where:
-///      - `wstETH/stETH` comes from wstETH contract's `stEthPerToken()` function (18 decimals)
+/// @dev The price is computed as `price = (stETH/wstETH) * (ETH/USD)`, where:
+///      - `stETH/wstETH` comes from wstETH contract's `stEthPerToken()` function (18 decimals)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
 ///      Multiplied and scaled to 8 decimals: `price = stEthPerToken * ETH/USD / 1e18`
 /// @author kpk

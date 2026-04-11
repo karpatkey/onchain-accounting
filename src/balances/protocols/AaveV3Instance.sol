@@ -122,8 +122,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
         uint256 count = 0;
 
         for (uint256 i = 0; i < userReserveData.length; i++) {
-            UserReserveData memory data = _getUserAssetData(account, userReserveData[i].asset);
-            (uint256 amount, bool isDebt_) = _netToAmountAndDebt(data.currentATokenBalance, data.currentVariableDebt);
+            (uint256 amount, bool isDebt_) =
+                _netToAmountAndDebt(userReserveData[i].currentATokenBalance, userReserveData[i].currentVariableDebt);
             if (amount != 0) {
                 tempAssets[count] = userReserveData[i].asset;
                 tempAmounts[count] = amount;

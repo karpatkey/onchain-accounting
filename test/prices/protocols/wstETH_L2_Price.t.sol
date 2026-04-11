@@ -23,13 +23,17 @@ contract wstETH_L2_PriceOracleTest is Test {
 
     function test_invalidConstructorArgs() public {
         vm.expectRevert();
-        new wstETH_L2_PriceOracle(address(0), wstEthToEthChainlink, ethToUsdChainlink, wstEthToEthHeartbeat, ethToUsdHeartbeat);
+        new wstETH_L2_PriceOracle(
+            address(0), wstEthToEthChainlink, ethToUsdChainlink, wstEthToEthHeartbeat, ethToUsdHeartbeat
+        );
 
         vm.expectRevert();
         new wstETH_L2_PriceOracle(wstEthAddress, address(0), ethToUsdChainlink, wstEthToEthHeartbeat, ethToUsdHeartbeat);
 
         vm.expectRevert();
-        new wstETH_L2_PriceOracle(wstEthAddress, wstEthToEthChainlink, address(0), wstEthToEthHeartbeat, ethToUsdHeartbeat);
+        new wstETH_L2_PriceOracle(
+            wstEthAddress, wstEthToEthChainlink, address(0), wstEthToEthHeartbeat, ethToUsdHeartbeat
+        );
 
         vm.expectRevert();
         new wstETH_L2_PriceOracle(wstEthAddress, wstEthToEthChainlink, ethToUsdChainlink, 0, ethToUsdHeartbeat);

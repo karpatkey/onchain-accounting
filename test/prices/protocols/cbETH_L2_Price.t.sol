@@ -22,7 +22,9 @@ contract cbETH_L2_PriceOracleTest is Test {
 
     function test_invalidConstructorArgs() public {
         vm.expectRevert();
-        new cbETH_L2_PriceOracle(address(0), cbEthToEthChainlink, ethToUsdChainlink, cbEthToEthHeartbeat, ethToUsdHeartbeat);
+        new cbETH_L2_PriceOracle(
+            address(0), cbEthToEthChainlink, ethToUsdChainlink, cbEthToEthHeartbeat, ethToUsdHeartbeat
+        );
 
         vm.expectRevert();
         new cbETH_L2_PriceOracle(cbEthAddress, address(0), ethToUsdChainlink, cbEthToEthHeartbeat, ethToUsdHeartbeat);

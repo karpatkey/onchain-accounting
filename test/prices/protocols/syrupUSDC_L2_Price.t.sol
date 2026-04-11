@@ -22,18 +22,28 @@ contract syrupUSDC_L2_PriceOracleTest is Test {
 
     function test_invalidConstructorArgs() public {
         vm.expectRevert();
-        new syrupUSDC_L2_PriceOracle(address(0), syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat);
+        new syrupUSDC_L2_PriceOracle(
+            address(0), syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
+        );
 
         vm.expectRevert();
-        new syrupUSDC_L2_PriceOracle(syrupUsdcAddress, address(0), usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat);
+        new syrupUSDC_L2_PriceOracle(
+            syrupUsdcAddress, address(0), usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
+        );
 
         vm.expectRevert();
-        new syrupUSDC_L2_PriceOracle(syrupUsdcAddress, syrupUsdcToUsdcChainlink, address(0), syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat);
+        new syrupUSDC_L2_PriceOracle(
+            syrupUsdcAddress, syrupUsdcToUsdcChainlink, address(0), syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
+        );
 
         vm.expectRevert();
-        new syrupUSDC_L2_PriceOracle(syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, 0, usdcToUsdHeartbeat);
+        new syrupUSDC_L2_PriceOracle(
+            syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, 0, usdcToUsdHeartbeat
+        );
 
         vm.expectRevert();
-        new syrupUSDC_L2_PriceOracle(syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, 0);
+        new syrupUSDC_L2_PriceOracle(
+            syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, 0
+        );
     }
 }

@@ -58,15 +58,22 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
             stale = true;
         }
 
-        price = syrupUsdcToUsdcRate.toUint256().mulDiv(
-            usdcToUsdPrice.toUint256(), 10 ** SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
-        );
+        price = syrupUsdcToUsdcRate.toUint256()
+            .mulDiv(
+                usdcToUsdPrice.toUint256(), 10 ** SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
+            );
     }
 
     /// @inheritdoc IPriceFeedCustom
-    function underlyingAssetSupported() external view override returns (address) { return SYRUP_USDC; }
+    function underlyingAssetSupported() external view override returns (address) {
+        return SYRUP_USDC;
+    }
+
     /// @inheritdoc IPriceFeedCustom
-    function decimals() external view override returns (uint8) { return _decimals; }
+    function decimals() external view override returns (uint8) {
+        return _decimals;
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;

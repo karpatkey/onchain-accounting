@@ -75,8 +75,7 @@ contract wstETH_L2_PriceOracle is IPriceFeedCustom {
 
     /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 wstEthToEthRate,, uint256 wstEthToEthUpdatedAt,) =
-            WSTETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
+        (, int256 wstEthToEthRate,, uint256 wstEthToEthUpdatedAt,) = WSTETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
         (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
         if (wstEthToEthRate <= 0 || ethToUsdPrice <= 0) {
@@ -91,9 +90,8 @@ contract wstETH_L2_PriceOracle is IPriceFeedCustom {
         }
 
         // wstETH/ETH is 18 decimals (Chainlink), ETH/USD is 8 decimals → result is 8 decimals
-        price = wstEthToEthRate.toUint256().mulDiv(
-            ethToUsdPrice.toUint256(), 10 ** WSTETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
-        );
+        price = wstEthToEthRate.toUint256()
+            .mulDiv(ethToUsdPrice.toUint256(), 10 ** WSTETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

@@ -107,11 +107,7 @@ contract wstETH_L2_PriceOracleForkTest_Optimism is TestEnvConfigurator {
         vm.rollFork(FORK_BLOCK);
 
         oracle = new wstETH_L2_PriceOracle(
-            WSTETH,
-            WSTETH_TO_ETH_RATIO_PROVIDER,
-            ETH_TO_USD_CHAINLINK,
-            WSTETH_TO_ETH_HEARTBEAT,
-            ETH_TO_USD_HEARTBEAT
+            WSTETH, WSTETH_TO_ETH_RATIO_PROVIDER, ETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
         );
     }
 
@@ -155,11 +151,7 @@ contract wstETH_L2_PriceOracleForkTest_Gnosis is TestEnvConfigurator {
         vm.rollFork(FORK_BLOCK);
 
         oracle = new wstETH_L2_PriceOracle(
-            WSTETH,
-            WSTETH_TO_ETH_RATIO_PROVIDER,
-            WETH_TO_USD_CHAINLINK,
-            WSTETH_TO_ETH_HEARTBEAT,
-            WETH_TO_USD_HEARTBEAT
+            WSTETH, WSTETH_TO_ETH_RATIO_PROVIDER, WETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, WETH_TO_USD_HEARTBEAT
         );
     }
 

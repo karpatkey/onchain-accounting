@@ -57,9 +57,8 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
             stale = true;
         }
 
-        price = weEthToEethRate.toUint256().mulDiv(
-            ethToUsdPrice.toUint256(), 10 ** WEETH_TO_EETH_CHAINLINK.decimals(), Math.Rounding.Floor
-        );
+        price = weEthToEethRate.toUint256()
+            .mulDiv(ethToUsdPrice.toUint256(), 10 ** WEETH_TO_EETH_CHAINLINK.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

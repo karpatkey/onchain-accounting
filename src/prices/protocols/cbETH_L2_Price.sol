@@ -57,9 +57,8 @@ contract cbETH_L2_PriceOracle is IPriceFeedCustom {
             stale = true;
         }
 
-        price = cbEthToEthRate.toUint256().mulDiv(
-            ethToUsdPrice.toUint256(), 10 ** CBETH_TO_ETH_CHAINLINK.decimals(), Math.Rounding.Floor
-        );
+        price = cbEthToEthRate.toUint256()
+            .mulDiv(ethToUsdPrice.toUint256(), 10 ** CBETH_TO_ETH_CHAINLINK.decimals(), Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

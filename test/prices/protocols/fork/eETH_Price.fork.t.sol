@@ -27,7 +27,7 @@ contract eETH_PriceOracleForkTest is TestEnvConfigurator {
 
     function test_getLatestPrice() public view {
         (uint256 price, bool stale) = eEthPriceOracle.getLatestPrice();
-        // (weETH/ETH ÷ weETH/eETH) * ETH/USD
+        // (weETH/ETH ÷ eETH/weETH) * ETH/USD
         assertEq(price, 212_428_861_910, "Price should match calculated value");
         assertEq(stale, false);
     }

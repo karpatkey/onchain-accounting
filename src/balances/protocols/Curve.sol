@@ -293,7 +293,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     function _getCrvRewardsLowerBound(address account) internal view returns (int256) {
         (bool okIf, uint256 integrateFraction) =
             _safeCallUint(GAUGE, abi.encodeWithSignature("integrate_fraction(address)", account));
-        if (!okIF) return 0;
+        if (!okIf) return 0;
 
         (bool okMinted, uint256 alreadyMinted) =
             _safeCallUint(_CURVE_MINTER, abi.encodeWithSignature("minted(address,address)", account, GAUGE));

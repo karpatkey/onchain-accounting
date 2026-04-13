@@ -64,12 +64,7 @@ contract CapBalanceOracleTest is Test {
         mockCUsd = new MockCUsd(address(mockUsdc));
         mockStcUsd = new MockStcUsd();
         oracle = new CapBalanceOracle(
-            address(mockCUsd),
-            address(mockStcUsd),
-            address(mockUsdc),
-            "Cap",
-            "cUSD + stcUSD",
-            address(mockBalances)
+            address(mockCUsd), address(mockStcUsd), address(mockUsdc), "Cap", "cUSD + stcUSD", address(mockBalances)
         );
     }
 

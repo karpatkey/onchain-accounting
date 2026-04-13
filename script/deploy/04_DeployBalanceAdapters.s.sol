@@ -292,8 +292,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
+        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
 
@@ -317,14 +316,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewarder = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewarder")
         );
-        address lpToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken"));
+        address lpToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken")
+        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
 
-        ConvexBalanceOracle adapter = new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navCalculator);
+        ConvexBalanceOracle adapter =
+            new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

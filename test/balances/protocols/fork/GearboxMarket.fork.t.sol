@@ -163,8 +163,7 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WSTETH));
-        oracle =
-            new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "kpk wstETH Market", address(balances));
+        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "kpk wstETH Market", address(balances));
     }
 
     // ============================================

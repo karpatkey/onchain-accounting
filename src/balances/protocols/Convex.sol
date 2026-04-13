@@ -83,7 +83,9 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
         string memory positionDetail_,
         address navCalculator_
     ) {
-        if (convexRewards_ == address(0) || lpToken_ == address(0)) revert InvalidArguments();
+        if (convexRewards_ == address(0) || lpToken_ == address(0)) {
+            revert InvalidArguments();
+        }
         require(convexRewards_.code.length > 0, "Rewarder must be a contract");
         require(lpToken_.code.length > 0, "LP token must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -248,8 +250,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
         if (!supplySuccess || totalSupply == 0) return 0;
 
         for (uint256 i = 0; i < _MAX_ITERATIONS; i++) {
-            (bool coinSuccess, address poolToken) =
-                _safeCallAddress(LP_TOKEN, abi.encodeCall(ICurveLPToken.coins, (i)));
+            (bool coinSuccess, address poolToken) = _safeCallAddress(LP_TOKEN, abi.encodeCall(ICurveLPToken.coins, (i)));
             if (!coinSuccess) break;
 
             if (poolToken == token) {
@@ -275,8 +276,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Gets balance for extra Convex reward tokens (handles stash wrappers → CVX derivation).
     function _getExtraRewardBalance(address account, address token) internal view returns (uint256) {
-        (bool lenSuccess, uint256 len) =
-            _safeCallUint(REWARDER, abi.encodeCall(IConvexRewarder.extraRewardsLength, ()));
+        (bool lenSuccess, uint256 len) = _safeCallUint(REWARDER, abi.encodeCall(IConvexRewarder.extraRewardsLength, ()));
         if (!lenSuccess) return 0;
 
         uint256 maxLen = len > _MAX_ITERATIONS ? _MAX_ITERATIONS : len;
@@ -476,11 +476,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @notice Safely calls a function that returns address.
-    function _safeCallAddress(address target, bytes memory data)
-        internal
-        view
-        returns (bool success, address result)
-    {
+    function _safeCallAddress(address target, bytes memory data) internal view returns (bool success, address result) {
         bytes memory returnData;
         (success, returnData) = target.staticcall(data);
         if (success && returnData.length >= 32) {

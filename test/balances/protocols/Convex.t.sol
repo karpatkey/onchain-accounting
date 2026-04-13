@@ -160,7 +160,9 @@ contract ConvexBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new ConvexBalanceOracle(address(mockRewarder), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(0xdead));
+        new ConvexBalanceOracle(
+            address(mockRewarder), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(0xdead)
+        );
     }
 
     function test_constructor_stores_immutables() public view {

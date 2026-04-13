@@ -76,7 +76,9 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
         string memory positionDetail_,
         address navCalculator_
     ) {
-        if (cUsd_ == address(0) || stcUsd_ == address(0) || usdc_ == address(0)) revert InvalidArguments();
+        if (cUsd_ == address(0) || stcUsd_ == address(0) || usdc_ == address(0)) {
+            revert InvalidArguments();
+        }
         require(cUsd_.code.length > 0, "cUSD must be a contract");
         require(stcUsd_.code.length > 0, "stcUSD must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");

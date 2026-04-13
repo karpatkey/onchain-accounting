@@ -269,16 +269,14 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
         (bool unstakedSuccess, uint256 unstakedLp) =
             _safeCallUint(LP_TOKEN, abi.encodeCall(ICurveLPToken.balanceOf, (account)));
-        (bool stakedSuccess, uint256 stakedLp) =
-            _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.balanceOf, (account)));
+        (bool stakedSuccess, uint256 stakedLp) = _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.balanceOf, (account)));
 
         uint256 totalLp = (unstakedSuccess ? unstakedLp : 0) + (stakedSuccess ? stakedLp : 0);
         if (totalLp == 0) return 0;
 
         // Find token in pool and compute proportional share
         for (uint256 i = 0; i < _MAX_ITERATIONS; i++) {
-            (bool coinSuccess, address poolToken) =
-                _safeCallAddress(LP_TOKEN, abi.encodeCall(ICurveLPToken.coins, (i)));
+            (bool coinSuccess, address poolToken) = _safeCallAddress(LP_TOKEN, abi.encodeCall(ICurveLPToken.coins, (i)));
             if (!coinSuccess) break;
 
             if (poolToken == token) {
@@ -293,7 +291,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Computes the CRV lower-bound: integrate_fraction(account) - minter.minted(account, gauge).
     function _getCrvRewardsLowerBound(address account) internal view returns (int256) {
-        (bool okIF, uint256 integrateFraction) =
+        (bool okIf, uint256 integrateFraction) =
             _safeCallUint(GAUGE, abi.encodeWithSignature("integrate_fraction(address)", account));
         if (!okIF) return 0;
 
@@ -309,8 +307,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Gets balance for extra gauge reward tokens via claimable_reward().
     function _getExtraRewardBalance(address account, address token) internal view returns (uint256) {
-        (bool countSuccess, uint256 rewardCount) =
-            _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.reward_count, ()));
+        (bool countSuccess, uint256 rewardCount) = _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.reward_count, ()));
 
         uint256 maxIter = _MAX_ITERATIONS;
         if (countSuccess && rewardCount < maxIter) maxIter = rewardCount;
@@ -355,8 +352,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
         temp[count] = _CRV_TOKEN;
         count++;
 
-        (bool countSuccess, uint256 rewardCount) =
-            _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.reward_count, ()));
+        (bool countSuccess, uint256 rewardCount) = _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.reward_count, ()));
 
         uint256 maxIter = _MAX_ITERATIONS;
         if (countSuccess && rewardCount < maxIter) maxIter = rewardCount;
@@ -439,11 +435,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @notice Safely calls a function that returns address.
-    function _safeCallAddress(address target, bytes memory data)
-        internal
-        view
-        returns (bool success, address result)
-    {
+    function _safeCallAddress(address target, bytes memory data) internal view returns (bool success, address result) {
         bytes memory returnData;
         (success, returnData) = target.staticcall(data);
         if (success && returnData.length >= 32) {

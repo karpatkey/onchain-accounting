@@ -207,14 +207,12 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
-        INAVCalculator.PositionBalance[] memory positions =
-            oracle.getOraclePositions(USER_FULLY_STAKED, WETH);
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(USER_FULLY_STAKED, WETH);
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, WETH);
         assertGt(positions[0].amount, 0);
 
-        INAVCalculator.PositionBalance[] memory empty =
-            oracle.getOraclePositions(USER_FULLY_STAKED, address(0xdead));
+        INAVCalculator.PositionBalance[] memory empty = oracle.getOraclePositions(USER_FULLY_STAKED, address(0xdead));
         assertEq(empty.length, 0);
     }
 }

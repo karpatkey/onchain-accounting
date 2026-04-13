@@ -12,6 +12,7 @@ import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMark
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
+import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -42,6 +43,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // Deploy Sky Savings USDS
         _deployIfEnabled("SkySavingsUsds");
+
+        // Deploy Morpho Vault adapters (one per vault, prefix MorphoVault_)
+        _deployIfEnabled("MorphoVault_kpkUSDC_V1");
+        _deployIfEnabled("MorphoVault_kpkUSDC_V2");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
@@ -124,6 +129,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Sky Savings USDS
         if (_equals(adapterName, "SkySavingsUsds")) {
             return _deploySkySavingsUsds(navCalculator);
+        }
+
+        // Morpho Vault adapters
+        if (_startsWith(adapterName, "MorphoVault_")) {
+            return _deployMorphoVault(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -209,6 +219,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         SkySavingsUsdsBalanceOracle adapter =
             new SkySavingsUsdsBalanceOracle(savingsUsds, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployMorphoVault(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        MorphoVaultBalanceOracle adapter = new MorphoVaultBalanceOracle(vault, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

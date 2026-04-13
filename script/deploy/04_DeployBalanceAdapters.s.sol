@@ -13,6 +13,7 @@ import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
+import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -47,6 +48,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Deploy Morpho Vault adapters (one per vault, prefix MorphoVault_)
         _deployIfEnabled("MorphoVault_kpkUSDC_V1");
         _deployIfEnabled("MorphoVault_kpkUSDC_V2");
+
+        // Deploy Gearbox Market adapters (one per market, prefix GearboxMarket_)
+        _deployIfEnabled("GearboxMarket_kpkWETH");
+        _deployIfEnabled("GearboxMarket_kpkwstETH");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
@@ -134,6 +139,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Morpho Vault adapters
         if (_startsWith(adapterName, "MorphoVault_")) {
             return _deployMorphoVault(adapterName, navCalculator);
+        }
+
+        // Gearbox Market adapters
+        if (_startsWith(adapterName, "GearboxMarket_")) {
+            return _deployGearboxMarket(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -231,6 +241,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
 
         MorphoVaultBalanceOracle adapter = new MorphoVaultBalanceOracle(vault, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployGearboxMarket(string memory adapterName, address navCalculator) internal returns (address) {
+        address market = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        GearboxMarketBalanceOracle adapter =
+            new GearboxMarketBalanceOracle(market, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

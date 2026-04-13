@@ -14,6 +14,7 @@ import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
+import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -52,6 +53,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Deploy Gearbox Market adapters (one per market, prefix GearboxMarket_)
         _deployIfEnabled("GearboxMarket_kpkWETH");
         _deployIfEnabled("GearboxMarket_kpkwstETH");
+
+        // Deploy Cap Finance adapter
+        _deployIfEnabled("Cap");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
@@ -144,6 +148,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Gearbox Market adapters
         if (_startsWith(adapterName, "GearboxMarket_")) {
             return _deployGearboxMarket(adapterName, navCalculator);
+        }
+
+        // Cap Finance adapter
+        if (_equals(adapterName, "Cap")) {
+            return _deployCap(navCalculator);
         }
 
         // Unknown adapter type
@@ -255,6 +264,22 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         GearboxMarketBalanceOracle adapter =
             new GearboxMarketBalanceOracle(market, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployCap(address navCalculator) internal returns (address) {
+        address cUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "cUsd"));
+        address stcUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
+        address usdc =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
+
+        CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

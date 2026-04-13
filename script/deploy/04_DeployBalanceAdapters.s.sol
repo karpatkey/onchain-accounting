@@ -15,6 +15,8 @@ import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavin
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
+import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
+import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -56,6 +58,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // Deploy Cap Finance adapter
         _deployIfEnabled("Cap");
+
+        // Deploy Curve adapters (one per gauge, prefix Curve_)
+        _deployIfEnabled("Curve_weETH_WETH");
+
+        // Deploy Convex adapters (one per rewarder, prefix Convex_)
+        _deployIfEnabled("Convex_crvUSD_USDT");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
@@ -153,6 +161,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Cap Finance adapter
         if (_equals(adapterName, "Cap")) {
             return _deployCap(navCalculator);
+        }
+
+        // Curve adapters
+        if (_startsWith(adapterName, "Curve_")) {
+            return _deployCurve(adapterName, navCalculator);
+        }
+
+        // Convex adapters
+        if (_startsWith(adapterName, "Convex_")) {
+            return _deployConvex(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -280,6 +298,33 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
 
         CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployCurve(string memory adapterName, address navCalculator) internal returns (address) {
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployConvex(string memory adapterName, address navCalculator) internal returns (address) {
+        address rewarder = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewarder")
+        );
+        address lpToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        ConvexBalanceOracle adapter = new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

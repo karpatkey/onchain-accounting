@@ -94,8 +94,8 @@ contract wstETH_L2_PriceOracleForkTest_Optimism is TestEnvConfigurator {
     wstETH_L2_PriceOracle oracle;
 
     address constant WSTETH = 0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb;
-    // Optimism uses Aave ratio provider instead of Chainlink for wstETH/ETH
-    address constant WSTETH_TO_ETH_RATIO_PROVIDER = 0xe59EBa0D492cA53C6f46015EEa00517F2707dc77;
+    // Optimism: Aave-managed wstETH/ETH rate feed — exposes AggregatorV3Interface (latestRoundData/decimals)
+    address constant WSTETH_TO_ETH_CHAINLINK = 0xe59EBa0D492cA53C6f46015EEa00517F2707dc77;
     address constant ETH_TO_USD_CHAINLINK = 0x13e3Ee699D1909E989722E753853AE30b17e08c5;
     uint256 constant WSTETH_TO_ETH_HEARTBEAT = 86_400;
     uint256 constant ETH_TO_USD_HEARTBEAT = 1200;
@@ -107,7 +107,7 @@ contract wstETH_L2_PriceOracleForkTest_Optimism is TestEnvConfigurator {
         vm.rollFork(FORK_BLOCK);
 
         oracle = new wstETH_L2_PriceOracle(
-            WSTETH, WSTETH_TO_ETH_RATIO_PROVIDER, ETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
+            WSTETH, WSTETH_TO_ETH_CHAINLINK, ETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
         );
     }
 
@@ -138,8 +138,8 @@ contract wstETH_L2_PriceOracleForkTest_Gnosis is TestEnvConfigurator {
     wstETH_L2_PriceOracle oracle;
 
     address constant WSTETH = 0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6;
-    // Gnosis uses Aave ratio provider instead of Chainlink for wstETH/ETH
-    address constant WSTETH_TO_ETH_RATIO_PROVIDER = 0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA;
+    // Gnosis: Aave-managed wstETH/ETH rate feed — exposes AggregatorV3Interface (latestRoundData/decimals)
+    address constant WSTETH_TO_ETH_CHAINLINK = 0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA;
     address constant WETH_TO_USD_CHAINLINK = 0xa767f745331D267c7751297D982b050c93985627;
     uint256 constant WSTETH_TO_ETH_HEARTBEAT = 86_400;
     uint256 constant WETH_TO_USD_HEARTBEAT = 86_400;
@@ -151,7 +151,7 @@ contract wstETH_L2_PriceOracleForkTest_Gnosis is TestEnvConfigurator {
         vm.rollFork(FORK_BLOCK);
 
         oracle = new wstETH_L2_PriceOracle(
-            WSTETH, WSTETH_TO_ETH_RATIO_PROVIDER, WETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, WETH_TO_USD_HEARTBEAT
+            WSTETH, WSTETH_TO_ETH_CHAINLINK, WETH_TO_USD_CHAINLINK, WSTETH_TO_ETH_HEARTBEAT, WETH_TO_USD_HEARTBEAT
         );
     }
 

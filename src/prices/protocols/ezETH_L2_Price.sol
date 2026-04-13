@@ -40,7 +40,7 @@ contract ezETH_L2_PriceOracle is IPriceFeedCustom {
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (ethToUsdPrice < 0) {
+        if (ethToUsdPrice <= 0) {
             return (0, true);
         }
 

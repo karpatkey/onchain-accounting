@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -158,6 +159,3 @@ contract MorphoVaultBalanceOracleTest is Test {
         assertEq(positions.length, 0);
     }
 }
-
-// Minimal import needed for the struct reference in tests
-import {INAVCalculator} from "src/nav/INAVCalculator.sol";

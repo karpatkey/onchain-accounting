@@ -297,7 +297,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
         (bool okMinted, uint256 alreadyMinted) =
             _safeCallUint(_CURVE_MINTER, abi.encodeWithSignature("minted(address,address)", account, GAUGE));
-        if (!okMinted) return integrateFraction.toInt256();
+        if (!okMinted) return 0;
 
         if (integrateFraction > alreadyMinted) {
             return (integrateFraction - alreadyMinted).toInt256();

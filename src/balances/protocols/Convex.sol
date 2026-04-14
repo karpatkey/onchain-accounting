@@ -42,7 +42,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
     // State
     //
 
-    /// @notice Curve LP token staked in Convex (derived from rewarder.stakingToken())
+    /// @notice Curve LP token staked in Convex (provided explicitly via constructor parameter `lpToken_`)
     address public immutable LP_TOKEN;
 
     /// @notice Convex main rewarder contract

@@ -134,7 +134,7 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
 
         address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
-        AssetBalanceData[] memory assetBalanceData;
+        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](0);
         if (registeredSupportedAssets.length == 0) {
             assetBalanceData = new AssetBalanceData[](0);
         } else if (assetFilter != address(0)) {

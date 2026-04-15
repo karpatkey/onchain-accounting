@@ -191,11 +191,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             // Try mainnet calculation first
             try this.calculateIntegrateFraction(account, GAUGE) returns (uint256 integrateFraction) {
                 uint256 minted = BALANCER_MINTER.minted(account, address(GAUGE));
+                if (minted >= integrateFraction) return 0;
                 return (integrateFraction - minted).toInt256();
             } catch {
                 // If mainnet calculation fails (e.g., on L2s like Arbitrum), try L2 calculation
                 try this.calculateIntegrateFractionL2(account, GAUGE) returns (uint256 integrateFraction) {
                     uint256 minted = BALANCER_MINTER.minted(account, address(GAUGE));
+                    if (minted >= integrateFraction) return 0;
                     return (integrateFraction - minted).toInt256();
                 } catch {
                     // If both fail, return 0

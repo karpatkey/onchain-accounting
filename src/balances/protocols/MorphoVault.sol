@@ -157,8 +157,8 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
             AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length);
             uint256 count = 0;
 
+            uint256 balance = _calculateBalance(account);
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                uint256 balance = _calculateBalance(account);
                 if (balance != 0) {
                     tempData[count] =
                         AssetBalanceData({asset: registeredSupportedAssets[i], amount: balance, isDebt: false});

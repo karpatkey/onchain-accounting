@@ -152,8 +152,17 @@ contract Aura is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < AURA_REWARDS.extraRewardsLength(); i++) {
             IBaseRewardPool4626 pool = IBaseRewardPool4626(AURA_REWARDS.extraRewards(i));
-            if (IStashToken(pool.rewardToken()).baseToken() == token) {
-                total += baseRewards(pool, safe);
+            address extraRewardToken = pool.rewardToken();
+
+            try IStashToken(extraRewardToken).baseToken() returns (address baseToken) {
+                if (baseToken == token) {
+                    total += baseRewards(pool, safe);
+                }
+            } catch {
+                // Not a stash token — check direct match
+                if (extraRewardToken == token) {
+                    total += baseRewards(pool, safe);
+                }
             }
 
             if (address(AURA_TOKEN) == token) {
@@ -324,8 +333,15 @@ contract Aura is IBalanceOracleAdapter {
 
             // transform wrapped token to underlying again
             //https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-
-            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares - 1) - 1;
+            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares);
+        } else {
+            // Convert from live scaled balance back to raw token units
+            // tokenBalance.toRawUndoRateRoundDown(scalingFactor , tokenRate)
+            // FixedPoint.divDown(amount, scalingFactor * tokenRate)
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/helpers/ScalingHelpers.sol#L74
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/math/FixedPoint.sol#L38
+            tokenBalance = (tokenBalance * 1e18)
+                / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
         }
 
         return tokenBalance.toInt256();

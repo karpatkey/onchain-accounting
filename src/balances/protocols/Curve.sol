@@ -236,6 +236,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     /// @return CRV reward lower bound (integrate_fraction − minted)
     function getCrvRewardsLowerBound(address account) external view returns (uint256) {
         int256 lb = _getCrvRewardsLowerBound(account);
+        // forge-lint: disable-next-line(unsafe-typecast)
         return lb > 0 ? uint256(lb) : 0;
     }
 
@@ -253,6 +254,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
         if (asset == _CRV_TOKEN) {
             // CRV: lower bound only (see contract-level limitation note)
             int256 crvLb = _getCrvRewardsLowerBound(account);
+            // forge-lint: disable-next-line(unsafe-typecast)
             if (crvLb > 0) balance += uint256(crvLb);
         }
 

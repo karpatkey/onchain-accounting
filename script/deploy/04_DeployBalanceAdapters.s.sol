@@ -17,6 +17,11 @@ import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMa
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
+import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
+import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
+import {Aura} from "../../src/balances/protocols/Aura.sol";
+import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -64,6 +69,22 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // Deploy Convex adapters (one per rewarder, prefix Convex_)
         _deployIfEnabled("Convex_crvUSD_USDT");
+
+        // Deploy Aave V3 Safety Module adapters (one per stake token, prefix AaveV3SafetyModule_)
+        _deployIfEnabled("AaveV3SafetyModule_stkAAVE");
+        _deployIfEnabled("AaveV3SafetyModule_stkGHO");
+
+        // Deploy Balancer V3 adapters (one per pool, prefix BalancerV3_)
+        _deployIfEnabled("BalancerV3_weETH_WETH");
+
+        // Deploy Aura adapters (one per pool, prefix Aura_)
+        _deployIfEnabled("Aura_weETH_WETH");
+
+        // Deploy StakeWise V3 Vault adapters (one per vault, prefix StakeWiseV3Vault_)
+        _deployIfEnabled("StakeWiseV3Vault_WETH");
+
+        // Deploy StakeWise V3 OsToken adapters (one per vault controller, prefix StakeWiseV3OsToken_)
+        _deployIfEnabled("StakeWiseV3OsToken_WETH");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
 
@@ -171,6 +192,31 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Convex adapters
         if (_startsWith(adapterName, "Convex_")) {
             return _deployConvex(adapterName, navCalculator);
+        }
+
+        // AaveV3 Safety Module adapters
+        if (_startsWith(adapterName, "AaveV3SafetyModule_")) {
+            return _deployAaveV3SafetyModule(adapterName, navCalculator);
+        }
+
+        // Balancer V3 adapters
+        if (_startsWith(adapterName, "BalancerV3_")) {
+            return _deployBalancerV3(adapterName, navCalculator);
+        }
+
+        // Aura adapters
+        if (_startsWith(adapterName, "Aura_")) {
+            return _deployAura(adapterName, navCalculator);
+        }
+
+        // StakeWise V3 Vault adapters
+        if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
+            return _deployStakeWiseV3Vault(adapterName, navCalculator);
+        }
+
+        // StakeWise V3 OsToken adapters
+        if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
+            return _deployStakeWiseV3OsToken(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -326,6 +372,95 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         ConvexBalanceOracle adapter =
             new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
+        address stakeToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakeToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        AaveV3SafetyModuleBalanceOracle adapter =
+            new AaveV3SafetyModuleBalanceOracle(stakeToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployBalancerV3(string memory adapterName, address navCalculator) internal returns (address) {
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        address balancerMinter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV3PoolBalanceOracle adapter =
+            new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployAura(string memory adapterName, address navCalculator) internal returns (address) {
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        address booster = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
+        );
+        uint256 pid =
+            vm.parseUint(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pid"));
+        address auraToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "auraToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        Aura adapter = new Aura(pool, gauge, booster, pid, auraToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStakeWiseV3Vault(string memory adapterName, address navCalculator) internal returns (address) {
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        StakeWiseV3VaultBalanceOracle adapter =
+            new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStakeWiseV3OsToken(string memory adapterName, address navCalculator) internal returns (address) {
+        address osToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osToken")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
+            osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navCalculator
+        );
         return address(adapter);
     }
 

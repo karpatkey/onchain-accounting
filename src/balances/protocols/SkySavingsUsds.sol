@@ -273,7 +273,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: "Savings USDS"
+                positionDetail: _positionDetail
             });
             positionCount++;
         }

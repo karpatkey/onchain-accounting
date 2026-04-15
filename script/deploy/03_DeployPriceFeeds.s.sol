@@ -17,6 +17,7 @@ import {cbETH_PriceOracle} from "../../src/prices/protocols/cbETH_Price.sol";
 import {weETH_PriceOracle} from "../../src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "../../src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "../../src/prices/protocols/eETH_Price.sol";
+import {sDAI_PriceOracle as sXDAI_PriceOracle} from "../../src/prices/protocols/sXDAI_Price.sol";
 
 // import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
 
@@ -413,15 +414,31 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         vm.startBroadcast();
 
-        // sXDAI Price Oracle (Gnosis savings xDAI)
-        // Note: sXDAI_Price.sol exists but has contract name sDAI_PriceOracle (likely a typo in original)
-        // Uncomment when ready to deploy:
-        // import {sDAI_PriceOracle as sXDAI_PriceOracle} from "../../src/prices/protocols/sXDAI_Price.sol";
-        // sXDAI_PriceOracle sxdaiAdapter = new sXDAI_PriceOracle();
-        // saveDeployedAddress("sXDAI_PriceOracle", address(sxdaiAdapter));
+        // Deploy sXDAI Price Oracle (Gnosis savings xDAI)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sXDAI")) {
+            _deploySxdai();
+        }
 
         vm.stopBroadcast();
 
         console2.log("Gnosis price feeds deployed successfully!");
+    }
+
+    function _deploySxdai() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "sXDAI");
+        if (deployed != address(0)) {
+            console2.log("sXDAI_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address sXdai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "sXdai"));
+        address xDaiUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
+        uint256 xDaiUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
+
+        sXDAI_PriceOracle sxdaiAdapter = new sXDAI_PriceOracle(sXdai, xDaiUsdOracle, xDaiUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sXDAI", address(sxdaiAdapter));
+        console2.log("sXDAI_PriceOracle deployed at:", address(sxdaiAdapter));
     }
 }

@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -19,7 +18,7 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
 
     // Pool tokens
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-    address public constant crvUSD = 0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E;
+    address public constant CRVUSD = 0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E;
 
     // Reward tokens
     address public constant CRV = 0xD533a949740bb3306d119CC777fa900bA034cd52;
@@ -33,7 +32,7 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
 
     // Expected values from source oracle test at the same block
     uint256 public constant EXPECTED_USDT = 3_389_288;
-    uint256 public constant EXPECTED_crvUSD = 7_660_319_668_213_973_665;
+    uint256 public constant EXPECTED_CRVUSD = 7_660_319_668_213_973_665;
     uint256 public constant EXPECTED_CRV = 63_768_314_561_276_595;
     uint256 public constant EXPECTED_CVX = 63_768_314_561_276;
     uint256 public constant REWARD_TOLERANCE = 1e13;
@@ -58,7 +57,7 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         // Register pool tokens + rewards for getOraclePositions tests
         address[] memory assets = new address[](4);
         assets[0] = USDT;
-        assets[1] = crvUSD;
+        assets[1] = CRVUSD;
         assets[2] = CRV;
         assets[3] = CVX;
         balances = _deployBalancesForOracle(assets);
@@ -88,7 +87,7 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         // USDT, crvUSD (pool) + CRV, CVX (rewards) = 4
         assertEq(assets.length, 4);
         assertEq(assets[0], USDT);
-        assertEq(assets[1], crvUSD);
+        assertEq(assets[1], CRVUSD);
         assertEq(assets[2], CRV);
         assertEq(assets[3], CVX);
     }
@@ -103,8 +102,8 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalanceForAsset_crvUsd() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(SAFE, crvUSD);
-        assertEq(amount, EXPECTED_crvUSD, "crvUSD balance should match source oracle test");
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(SAFE, CRVUSD);
+        assertEq(amount, EXPECTED_CRVUSD, "crvUSD balance should match source oracle test");
     }
 
     // ============================================
@@ -143,8 +142,8 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         assertEq(assets[0], USDT);
         assertEq(amounts[0], EXPECTED_USDT);
 
-        assertEq(assets[1], crvUSD);
-        assertEq(amounts[1], EXPECTED_crvUSD);
+        assertEq(assets[1], CRVUSD);
+        assertEq(amounts[1], EXPECTED_CRVUSD);
 
         assertEq(assets[2], CRV);
         assertApproxEqAbs(amounts[2], EXPECTED_CRV, REWARD_TOLERANCE);

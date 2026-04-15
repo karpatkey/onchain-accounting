@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -17,7 +16,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
 
     // Pool tokens
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address public constant weETH = 0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee;
+    address public constant WEETH = 0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee;
 
     // Canonical CRV token
     address public constant CRV = 0xD533a949740bb3306d119CC777fa900bA034cd52;
@@ -28,12 +27,12 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
     // Account with fully staked LP tokens in the gauge
     address public constant USER_FULLY_STAKED = 0x8b3f91Dc0042DCe3828b6b97aF153ED92843f356;
     uint256 public constant USER_STAKED_WETH = 11_009_378_597_265_390;
-    uint256 public constant USER_STAKED_weETH = 28_630_344_888_716_619;
+    uint256 public constant USER_STAKED_WEETH = 28_630_344_888_716_619;
 
     // Account with only unstaked LP tokens (not in gauge)
     address public constant USER_UNSTAKED = 0x19ab096040F13cFa6a18ab2E0cA786bdFE8EAcD0;
     uint256 public constant USER_UNSTAKED_WETH = 110_258_088_747_932_900;
-    uint256 public constant USER_UNSTAKED_weETH = 286_730_725_057_283_488;
+    uint256 public constant USER_UNSTAKED_WEETH = 286_730_725_057_283_488;
 
     CurveBalanceOracle public oracle;
     address internal unknownAccount;
@@ -55,7 +54,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         // Register both pool tokens (WETH + weETH) for getOraclePositions tests
         address[] memory assets = new address[](2);
         assets[0] = WETH;
-        assets[1] = weETH;
+        assets[1] = WEETH;
         balances = _deployBalancesForOracle(assets);
         oracle = new CurveBalanceOracle(GAUGE, "Curve", "weETH/WETH Pool", address(balances));
     }
@@ -82,17 +81,17 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         // weETH/WETH pool has 2 tokens + CRV (minimum) = at least 3
         assertTrue(assets.length >= 3);
 
-        bool hasWETH = false;
-        bool hasWeETH = false;
-        bool hasCRV = false;
+        bool hasWeth = false;
+        bool hasWeEth = false;
+        bool hasCrv = false;
         for (uint256 i = 0; i < assets.length; i++) {
-            if (assets[i] == WETH) hasWETH = true;
-            if (assets[i] == weETH) hasWeETH = true;
-            if (assets[i] == CRV) hasCRV = true;
+            if (assets[i] == WETH) hasWeth = true;
+            if (assets[i] == WEETH) hasWeEth = true;
+            if (assets[i] == CRV) hasCrv = true;
         }
-        assertTrue(hasWETH, "Should include WETH");
-        assertTrue(hasWeETH, "Should include weETH");
-        assertTrue(hasCRV, "Should include CRV");
+        assertTrue(hasWeth, "Should include WETH");
+        assertTrue(hasWeEth, "Should include weETH");
+        assertTrue(hasCrv, "Should include CRV");
     }
 
     // ============================================
@@ -106,8 +105,8 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalanceForAsset_unstaked_weEth() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(USER_UNSTAKED, weETH);
-        assertApproxEqAbs(amount, USER_UNSTAKED_weETH, 1e12, "Unstaked weETH balance within tolerance");
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(USER_UNSTAKED, WEETH);
+        assertApproxEqAbs(amount, USER_UNSTAKED_WEETH, 1e12, "Unstaked weETH balance within tolerance");
         assertGt(amount, 0);
     }
 
@@ -122,8 +121,8 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
     }
 
     function test_getOracleBalanceForAsset_staked_weEth() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(USER_FULLY_STAKED, weETH);
-        assertApproxEqAbs(amount, USER_STAKED_weETH, 1e12, "Staked weETH balance within tolerance");
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(USER_FULLY_STAKED, WEETH);
+        assertApproxEqAbs(amount, USER_STAKED_WEETH, 1e12, "Staked weETH balance within tolerance");
         assertGt(amount, 0);
     }
 
@@ -166,20 +165,20 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         // Should include WETH and weETH (non-zero); CRV may be included if lower bound > 0
         assertTrue(assets.length >= 2, "Should have at least pool tokens");
 
-        bool hasWETH = false;
-        bool hasWeETH = false;
+        bool hasWeth = false;
+        bool hasWeEth = false;
         for (uint256 i = 0; i < assets.length; i++) {
             if (assets[i] == WETH) {
-                hasWETH = true;
+                hasWeth = true;
                 assertGt(amounts[i], 0);
             }
-            if (assets[i] == weETH) {
-                hasWeETH = true;
+            if (assets[i] == WEETH) {
+                hasWeEth = true;
                 assertGt(amounts[i], 0);
             }
         }
-        assertTrue(hasWETH, "Should include WETH");
-        assertTrue(hasWeETH, "Should include weETH");
+        assertTrue(hasWeth, "Should include WETH");
+        assertTrue(hasWeEth, "Should include weETH");
     }
 
     function test_getOracleBalances_unknownAccount() public view {
@@ -192,18 +191,18 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         // WETH and weETH registered — should get 2 positions (pool tokens only; CRV not registered)
         assertEq(positions.length, 2, "Should have WETH and weETH positions");
 
-        bool hasWETH = false;
-        bool hasWeETH = false;
+        bool hasWeth = false;
+        bool hasWeEth = false;
         for (uint256 i = 0; i < positions.length; i++) {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocol, "Curve");
             assertEq(positions[i].positionDetail, "weETH/WETH Pool");
-            if (positions[i].underlyingAsset.asset == WETH) hasWETH = true;
-            if (positions[i].underlyingAsset.asset == weETH) hasWeETH = true;
+            if (positions[i].underlyingAsset.asset == WETH) hasWeth = true;
+            if (positions[i].underlyingAsset.asset == WEETH) hasWeEth = true;
         }
-        assertTrue(hasWETH, "Should have WETH position");
-        assertTrue(hasWeETH, "Should have weETH position");
+        assertTrue(hasWeth, "Should have WETH position");
+        assertTrue(hasWeEth, "Should have weETH position");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {

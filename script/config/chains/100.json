@@ -39,5 +39,13 @@
       "deployed": "",
       "callbackSelector": "0x0bad0c90"
     }
+  },
+  "priceFeeds": {
+    "sXDAI": {
+      "deployed": ""
+    },
+    "wstETH_L2": {
+      "deployed": ""
+    }
   }
 }

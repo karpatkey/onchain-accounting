@@ -75,5 +75,34 @@
       },
       "deployed": ""
     }
+  },
+  "priceFeeds": {
+    "wstETH": {
+      "deployed": ""
+    },
+    "rETH": {
+      "deployed": ""
+    },
+    "weETH": {
+      "deployed": ""
+    },
+    "eETH": {
+      "deployed": ""
+    },
+    "ezETH": {
+      "deployed": ""
+    },
+    "rsETH": {
+      "deployed": ""
+    },
+    "sUSDe": {
+      "deployed": ""
+    },
+    "sUSDS": {
+      "deployed": ""
+    },
+    "syrupUSDC": {
+      "deployed": ""
+    }
   }
 }

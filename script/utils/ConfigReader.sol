@@ -233,8 +233,10 @@ library ConfigReader {
         // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
 
-        // Note: priceFeeds has been removed from chain config schema
-        // For priceFeeds, constructor params live in assets.json; deployed addresses are no longer stored in chain config
+        // priceFeeds constructor params live in assets.json (see readPriceFeedParam). Deployed addresses
+        // are still written to this chain config under .priceFeeds.{adapter}.deployed by writeAdapterAddress;
+        // chain configs should pre-seed a top-level "priceFeeds": {} (or per-adapter sub-objects) so that
+        // vm.writeJson has a parent to write into.
         string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
         if (vm.keyExists(json, jsonPath)) {
             return json.readString(jsonPath);

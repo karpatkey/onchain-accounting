@@ -61,15 +61,15 @@
       "deployed": ""
     },
     "Aura_GHO_USDC_USDT": {
-      "enabled": false,
+      "enabled": true,
       "constructor": {
         "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
         "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
         "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-        "pid": "0",
+        "pid": "99",
         "auraToken": "0x1509706a6c66CA549ff0cB464de88231DDBe213B",
         "protocol": "Aura",
-        "positionDetail": "Aave GHO/USDC/USDT (PID TODO: read from rewarder 0x627305fF273640e0468D3c5DFE4FC2Adb1D013e8 .pid() before enabling)"
+        "positionDetail": "Aave GHO/USDC/USDT"
       },
       "deployed": ""
     }

@@ -70,15 +70,15 @@
       "deployed": ""
     },
     "Aura_GHO_USDC": {
-      "enabled": false,
+      "enabled": true,
       "constructor": {
         "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
         "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
         "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-        "pid": "0",
+        "pid": "19",
         "auraToken": "0x1509706a6c66CA549ff0cB464de88231DDBe213B",
         "protocol": "Aura",
-        "positionDetail": "Aave GHO/USDC (PID TODO: read from rewarder 0x28a002a98F4DA7A7B541b5e4d7a42E0F64E4aeF1 .pid() before enabling)"
+        "positionDetail": "Aave GHO/USDC"
       },
       "deployed": ""
     }

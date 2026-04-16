@@ -255,15 +255,15 @@
       "deployed": ""
     },
     "Aura_rETH_WETH": {
-      "enabled": false,
+      "enabled": true,
       "constructor": {
         "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
         "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
         "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
-        "pid": "0",
+        "pid": "271",
         "auraToken": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
         "protocol": "Aura",
-        "positionDetail": "rETH/Aave WETH (PID TODO: read from rewarder 0x20283cce209b29D19329E8aDa47215a52188aFDc .pid())"
+        "positionDetail": "rETH/Aave WETH"
       },
       "deployed": ""
     },

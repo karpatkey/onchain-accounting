@@ -439,15 +439,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         uint256 pid =
             vm.parseUint(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pid"));
-        address auraToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "auraToken")
-        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
 
-        Aura adapter = new Aura(pool, gauge, booster, pid, auraToken, protocol, positionDetail, navCalculator);
+        // AURA token address is resolved dynamically inside the adapter constructor via Booster.minter()
+        // (Mainnet: returns AURA; L2: returns L2Coordinator whose auraOFT() is the bridged AURA).
+        Aura adapter = new Aura(pool, gauge, booster, pid, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

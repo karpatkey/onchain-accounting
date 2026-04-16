@@ -248,7 +248,6 @@
         "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
         "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
         "pid": "246",
-        "auraToken": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
         "protocol": "Aura",
         "positionDetail": "Aave GHO/USDT/USDC"
       },
@@ -261,7 +260,6 @@
         "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
         "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
         "pid": "271",
-        "auraToken": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
         "protocol": "Aura",
         "positionDetail": "rETH/Aave WETH"
       },

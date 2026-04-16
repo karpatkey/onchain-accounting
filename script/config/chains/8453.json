@@ -24,6 +24,63 @@
         "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
       "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    },
+    "AaveV3_Base": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad",
+        "protocol": "Aave V3 Base"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_cbETH_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
+        "protocol": "Morpho Blue - cbETH/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_cbBTC_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+        "protocol": "Morpho Blue - cbBTC/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_wstETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
+        "protocol": "Morpho Blue - wstETH/WETH"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_weETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea",
+        "protocol": "Morpho Blue - weETH/WETH"
+      },
+      "deployed": ""
+    },
+    "Aura_GHO_USDC": {
+      "enabled": false,
+      "constructor": {
+        "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
+        "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
+        "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
+        "pid": "0",
+        "auraToken": "0x1509706a6c66CA549ff0cB464de88231DDBe213B",
+        "protocol": "Aura",
+        "positionDetail": "Aave GHO/USDC (PID TODO: read from rewarder 0x28a002a98F4DA7A7B541b5e4d7a42E0F64E4aeF1 .pid() before enabling)"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

@@ -24,6 +24,324 @@
         "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
       "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    },
+    "AaveV3_Core": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
+        "protocol": "Aave V3 Core"
+      },
+      "deployed": ""
+    },
+    "AaveV3_Prime": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
+        "protocol": "Aave V3 Prime"
+      },
+      "deployed": ""
+    },
+    "SparkLend": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
+        "protocol": "Spark"
+      },
+      "deployed": ""
+    },
+    "AaveV3SafetyModule_stkGHO": {
+      "enabled": true,
+      "constructor": {
+        "stakeToken": "0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d",
+        "protocol": "Aave V3 Safety Module",
+        "positionDetail": "stkGHO"
+      },
+      "deployed": ""
+    },
+    "Cap": {
+      "enabled": true,
+      "constructor": {
+        "cUsd": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC",
+        "stcUsd": "0x88887bE419578051FF9F4eb6C858A951921D8888",
+        "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "protocol": "Cap",
+        "positionDetail": "cUSD + stcUSD"
+      },
+      "deployed": ""
+    },
+    "MorphoVault_kpkETHPrime_V1": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk ETH Prime V1"
+      },
+      "deployed": ""
+    },
+    "MorphoVault_kpkETHPrime_V2": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk ETH Prime V2"
+      },
+      "deployed": ""
+    },
+    "MorphoVault_kpkUSDCPrime_V1": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk USDC Prime V1"
+      },
+      "deployed": ""
+    },
+    "MorphoVault_kpkUSDCPrime_V2": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk USDC Prime V2"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_wstETH_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+        "protocol": "Morpho Blue - wstETH/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_cbBTC_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+        "protocol": "Morpho Blue - cbBTC/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_wstUSR_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
+        "protocol": "Morpho Blue - wstUSR/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_ETHPlus_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
+        "protocol": "Morpho Blue - ETH+/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_WBTC_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+        "protocol": "Morpho Blue - WBTC/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_RLP_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
+        "protocol": "Morpho Blue - RLP/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_syrupUSDC_USDC": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+        "protocol": "Morpho Blue - syrupUSDC/USDC"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_sUSDS_USDT": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
+        "protocol": "Morpho Blue - sUSDS/USDT"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_ETHPlus_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
+        "protocol": "Morpho Blue - ETH+/WETH"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_wstETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
+        "protocol": "Morpho Blue - wstETH/WETH"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_weETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
+        "protocol": "Morpho Blue - weETH/WETH"
+      },
+      "deployed": ""
+    },
+    "MorphoMarket_rsETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
+        "protocol": "Morpho Blue - rsETH/WETH"
+      },
+      "deployed": ""
+    },
+    "GearboxMarket_kpkWETH": {
+      "enabled": true,
+      "constructor": {
+        "market": "0x9396DCbf78fc526bb003665337C5E73b699571EF",
+        "protocol": "Gearbox",
+        "positionDetail": "kpk WETH market"
+      },
+      "deployed": ""
+    },
+    "GearboxMarket_kpkwstETH": {
+      "enabled": true,
+      "constructor": {
+        "market": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64",
+        "protocol": "Gearbox",
+        "positionDetail": "kpk wstETH market"
+      },
+      "deployed": ""
+    },
+    "BalancerV3_rETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
+        "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
+        "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+        "protocol": "Balancer V3 - rETH/Aave WETH"
+      },
+      "deployed": ""
+    },
+    "Aura_GHO_USDT_USDC": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
+        "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
+        "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
+        "pid": "246",
+        "auraToken": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
+        "protocol": "Aura",
+        "positionDetail": "Aave GHO/USDT/USDC"
+      },
+      "deployed": ""
+    },
+    "Aura_rETH_WETH": {
+      "enabled": false,
+      "constructor": {
+        "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
+        "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
+        "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
+        "pid": "0",
+        "auraToken": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
+        "protocol": "Aura",
+        "positionDetail": "rETH/Aave WETH (PID TODO: read from rewarder 0x20283cce209b29D19329E8aDa47215a52188aFDc .pid())"
+      },
+      "deployed": ""
+    },
+    "Curve_weETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
+        "protocol": "Curve",
+        "positionDetail": "weETH/WETH"
+      },
+      "deployed": ""
+    },
+    "Curve_crvUSD_USDC": {
+      "enabled": true,
+      "constructor": {
+        "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
+        "protocol": "Curve",
+        "positionDetail": "crvUSD/USDC"
+      },
+      "deployed": ""
+    },
+    "Curve_crvUSD_USDT": {
+      "enabled": true,
+      "constructor": {
+        "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
+        "protocol": "Curve",
+        "positionDetail": "crvUSD/USDT"
+      },
+      "deployed": ""
+    },
+    "Curve_RLUSD_USDC": {
+      "enabled": true,
+      "constructor": {
+        "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
+        "protocol": "Curve",
+        "positionDetail": "RLUSD/USDC"
+      },
+      "deployed": ""
+    },
+    "Convex_weETH_WETH": {
+      "enabled": true,
+      "constructor": {
+        "rewarder": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
+        "lpToken": "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
+        "protocol": "Convex",
+        "positionDetail": "weETH/WETH"
+      },
+      "deployed": ""
+    },
+    "Convex_crvUSD_USDC": {
+      "enabled": true,
+      "constructor": {
+        "rewarder": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
+        "lpToken": "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
+        "protocol": "Convex",
+        "positionDetail": "crvUSD/USDC"
+      },
+      "deployed": ""
+    },
+    "Convex_crvUSD_USDT": {
+      "enabled": true,
+      "constructor": {
+        "rewarder": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
+        "lpToken": "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
+        "protocol": "Convex",
+        "positionDetail": "crvUSD/USDT"
+      },
+      "deployed": ""
+    },
+    "Convex_RLUSD_USDC": {
+      "enabled": true,
+      "constructor": {
+        "rewarder": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3",
+        "lpToken": "0xD001aE433f254283FeCE51d4ACcE8c53263aa186",
+        "protocol": "Convex",
+        "positionDetail": "RLUSD/USDC"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

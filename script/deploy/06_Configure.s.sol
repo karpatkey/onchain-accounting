@@ -119,18 +119,7 @@ contract Configure is BaseDeployScript {
     }
 
     function _countDeployedBalanceAdapters() internal view returns (uint256 count) {
-        // Count enabled adapters that have been deployed
-        string[] memory adapterNames = new string[](8);
-        adapterNames[0] = "AaveV3_USDC";
-        adapterNames[1] = "AaveV3_WETH";
-        adapterNames[2] = "CompoundV3_USDC";
-        adapterNames[3] = "CompoundV3_WETH";
-        adapterNames[4] = "SparkLend_USDC";
-        adapterNames[5] = "MorphoBlue_USDC";
-        adapterNames[6] = "DaiDsr";
-        adapterNames[7] = "SkySavingsUsds";
-        // ERC20Default is created in NAVCalculator.initialize() and already registered; address written by 02_DeployProxies
-
+        string[] memory adapterNames = _balanceAdapterNames();
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "balanceAdapters", adapterNames[i])) {
                 address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
@@ -139,6 +128,67 @@ contract Configure is BaseDeployScript {
                 }
             }
         }
+    }
+
+    /// @notice Shared adapter name list — kept in sync with `04_DeployBalanceAdapters.s.sol.run()`.
+    /// Each chain's config enables the subset that applies; entries not in a chain's config just
+    /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
+    /// NAVCalculator.initialize() so it's already registered; it is not added here.
+    function _balanceAdapterNames() internal pure returns (string[] memory names) {
+        names = new string[](43);
+        uint256 i = 0;
+        // Aave V3 (one per market)
+        names[i++] = "AaveV3_Core";
+        names[i++] = "AaveV3_Prime";
+        names[i++] = "AaveV3_Arbitrum";
+        names[i++] = "AaveV3_Base";
+        names[i++] = "AaveV3_Optimism";
+        names[i++] = "AaveV3_Gnosis";
+        // Spark, stkGHO, Cap (Mainnet)
+        names[i++] = "SparkLend";
+        names[i++] = "AaveV3SafetyModule_stkGHO";
+        names[i++] = "Cap";
+        // Morpho Vaults
+        names[i++] = "MorphoVault_kpkETHPrime_V1";
+        names[i++] = "MorphoVault_kpkETHPrime_V2";
+        names[i++] = "MorphoVault_kpkUSDCPrime_V1";
+        names[i++] = "MorphoVault_kpkUSDCPrime_V2";
+        names[i++] = "MorphoVault_kpkUSDCYieldV1";
+        // Morpho Markets
+        names[i++] = "MorphoMarket_wstETH_USDC";
+        names[i++] = "MorphoMarket_cbBTC_USDC";
+        names[i++] = "MorphoMarket_wstUSR_USDC";
+        names[i++] = "MorphoMarket_ETHPlus_USDC";
+        names[i++] = "MorphoMarket_WBTC_USDC";
+        names[i++] = "MorphoMarket_RLP_USDC";
+        names[i++] = "MorphoMarket_syrupUSDC_USDC";
+        names[i++] = "MorphoMarket_sUSDS_USDT";
+        names[i++] = "MorphoMarket_sUSDS_USDC";
+        names[i++] = "MorphoMarket_ETHPlus_WETH";
+        names[i++] = "MorphoMarket_wstETH_WETH";
+        names[i++] = "MorphoMarket_weETH_WETH";
+        names[i++] = "MorphoMarket_rsETH_WETH";
+        names[i++] = "MorphoMarket_cbETH_USDC";
+        // Gearbox
+        names[i++] = "GearboxMarket_kpkWETH";
+        names[i++] = "GearboxMarket_kpkwstETH";
+        // Balancer V3
+        names[i++] = "BalancerV3_rETH_WETH";
+        // Aura
+        names[i++] = "Aura_rETH_WETH";
+        names[i++] = "Aura_GHO_USDT_USDC";
+        names[i++] = "Aura_GHO_USDC_USDT";
+        names[i++] = "Aura_GHO_USDC";
+        // Curve
+        names[i++] = "Curve_weETH_WETH";
+        names[i++] = "Curve_crvUSD_USDC";
+        names[i++] = "Curve_crvUSD_USDT";
+        names[i++] = "Curve_RLUSD_USDC";
+        // Convex
+        names[i++] = "Convex_weETH_WETH";
+        names[i++] = "Convex_crvUSD_USDC";
+        names[i++] = "Convex_crvUSD_USDT";
+        names[i++] = "Convex_RLUSD_USDC";
     }
 
     function _countDeployedBridgeAdapters() internal view returns (uint256 count) {
@@ -171,16 +221,7 @@ contract Configure is BaseDeployScript {
         }
 
         uint256 txIndex = startIndex;
-        string[] memory adapterNames = new string[](8);
-        adapterNames[0] = "AaveV3_USDC";
-        adapterNames[1] = "AaveV3_WETH";
-        adapterNames[2] = "CompoundV3_USDC";
-        adapterNames[3] = "CompoundV3_WETH";
-        adapterNames[4] = "SparkLend_USDC";
-        adapterNames[5] = "MorphoBlue_USDC";
-        adapterNames[6] = "DaiDsr";
-        adapterNames[7] = "SkySavingsUsds";
-        // ERC20Default is already registered in NAVCalculator.initialize(), not added via Configure
+        string[] memory adapterNames = _balanceAdapterNames();
 
         for (uint256 i = 0; i < adapterNames.length; i++) {
             if (ConfigReader.isAdapterEnabled(vm, currentChainId, "balanceAdapters", adapterNames[i])) {

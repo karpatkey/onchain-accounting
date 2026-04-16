@@ -36,57 +36,81 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         vm.startBroadcast();
 
-        // Deploy Aave V3 adapters
-        _deployIfEnabled("AaveV3_USDC");
-        _deployIfEnabled("AaveV3_WETH");
+        // Names below are the union of balance-adapter instances used by the ETH Alpha Fund
+        // and USD Alpha Fund across all 5 chains. Each _deployIfEnabled call only fires when the
+        // current chain's config has `balanceAdapters.{name}.enabled = true`, so the list can
+        // include cross-chain entries safely.
 
-        // Deploy Compound V3 adapters
-        _deployIfEnabled("CompoundV3_USDC");
-        _deployIfEnabled("CompoundV3_WETH");
+        // --- Aave V3 (one instance per Aave market) ---
+        _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
+        _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
+        _deployIfEnabled("AaveV3_Arbitrum");
+        _deployIfEnabled("AaveV3_Base");
+        _deployIfEnabled("AaveV3_Optimism");
+        _deployIfEnabled("AaveV3_Gnosis");
 
-        // Deploy Spark Lend adapters
-        _deployIfEnabled("SparkLend_USDC");
+        // --- Spark Lend (Mainnet only) ---
+        _deployIfEnabled("SparkLend");
 
-        // Deploy DAI DSR
-        _deployIfEnabled("DaiDsr");
+        // --- Aave V3 Safety Module (Mainnet only) ---
+        _deployIfEnabled("AaveV3SafetyModule_stkGHO");
 
-        // Deploy Sky Savings USDS
-        _deployIfEnabled("SkySavingsUsds");
+        // --- Cap Finance (Mainnet only) ---
+        _deployIfEnabled("Cap");
 
-        // Deploy Morpho Vault adapters (one per vault, prefix MorphoVault_)
-        _deployIfEnabled("MorphoVault_kpkUSDC_V1");
-        _deployIfEnabled("MorphoVault_kpkUSDC_V2");
+        // --- Morpho Vaults (one per vault) ---
+        _deployIfEnabled("MorphoVault_kpkETHPrime_V1"); // Mainnet — ETH Alpha
+        _deployIfEnabled("MorphoVault_kpkETHPrime_V2"); // Mainnet — ETH Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V1"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
 
-        // Deploy Gearbox Market adapters (one per market, prefix GearboxMarket_)
+        // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
+        _deployIfEnabled("MorphoMarket_wstETH_USDC");
+        _deployIfEnabled("MorphoMarket_cbBTC_USDC"); // Mainnet + Base (different marketIds)
+        _deployIfEnabled("MorphoMarket_wstUSR_USDC");
+        _deployIfEnabled("MorphoMarket_ETHPlus_USDC");
+        _deployIfEnabled("MorphoMarket_WBTC_USDC");
+        _deployIfEnabled("MorphoMarket_RLP_USDC");
+        _deployIfEnabled("MorphoMarket_syrupUSDC_USDC"); // Mainnet + Arbitrum
+        _deployIfEnabled("MorphoMarket_sUSDS_USDT"); // Mainnet
+        _deployIfEnabled("MorphoMarket_sUSDS_USDC"); // Arbitrum
+
+        // --- Morpho Markets (ETH Alpha — Mainnet + Base) ---
+        _deployIfEnabled("MorphoMarket_ETHPlus_WETH"); // Mainnet
+        _deployIfEnabled("MorphoMarket_wstETH_WETH"); // Mainnet + Base
+        _deployIfEnabled("MorphoMarket_weETH_WETH"); // Mainnet + Base
+        _deployIfEnabled("MorphoMarket_rsETH_WETH"); // Mainnet
+        _deployIfEnabled("MorphoMarket_cbETH_USDC"); // Base — USD Alpha
+
+        // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxMarket_kpkWETH");
         _deployIfEnabled("GearboxMarket_kpkwstETH");
 
-        // Deploy Cap Finance adapter
-        _deployIfEnabled("Cap");
+        // --- Balancer V3 (one per pool) ---
+        _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
 
-        // Deploy Curve adapters (one per gauge, prefix Curve_)
-        _deployIfEnabled("Curve_weETH_WETH");
+        // --- Aura (one per pool) ---
+        _deployIfEnabled("Aura_rETH_WETH"); // Mainnet — ETH Alpha
+        _deployIfEnabled("Aura_GHO_USDT_USDC"); // Mainnet — USD Alpha
+        _deployIfEnabled("Aura_GHO_USDC_USDT"); // Arbitrum — USD Alpha
+        _deployIfEnabled("Aura_GHO_USDC"); // Base — USD Alpha
 
-        // Deploy Convex adapters (one per rewarder, prefix Convex_)
-        _deployIfEnabled("Convex_crvUSD_USDT");
+        // --- Curve (one per gauge — Mainnet) ---
+        _deployIfEnabled("Curve_weETH_WETH"); // ETH Alpha
+        _deployIfEnabled("Curve_crvUSD_USDC"); // USD Alpha (Convex-underlying)
+        _deployIfEnabled("Curve_crvUSD_USDT"); // USD Alpha (Convex-underlying)
+        _deployIfEnabled("Curve_RLUSD_USDC"); // USD Alpha (Convex-underlying)
 
-        // Deploy Aave V3 Safety Module adapters (one per stake token, prefix AaveV3SafetyModule_)
-        _deployIfEnabled("AaveV3SafetyModule_stkAAVE");
-        _deployIfEnabled("AaveV3SafetyModule_stkGHO");
-
-        // Deploy Balancer V3 adapters (one per pool, prefix BalancerV3_)
-        _deployIfEnabled("BalancerV3_weETH_WETH");
-
-        // Deploy Aura adapters (one per pool, prefix Aura_)
-        _deployIfEnabled("Aura_weETH_WETH");
-
-        // Deploy StakeWise V3 Vault adapters (one per vault, prefix StakeWiseV3Vault_)
-        _deployIfEnabled("StakeWiseV3Vault_WETH");
-
-        // Deploy StakeWise V3 OsToken adapters (one per vault controller, prefix StakeWiseV3OsToken_)
-        _deployIfEnabled("StakeWiseV3OsToken_WETH");
+        // --- Convex (one per rewarder — Mainnet) ---
+        _deployIfEnabled("Convex_weETH_WETH"); // ETH Alpha
+        _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
+        _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
+        _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
+        // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
+        // exist in this repo but are NOT used by either Alpha fund, so they are not wired here.
 
         vm.stopBroadcast();
 
@@ -155,8 +179,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // MorphoBlue adapters
-        if (_startsWith(adapterName, "MorphoBlue_")) {
-            return _deployMorphoBlue(adapterName, navCalculator);
+        if (_startsWith(adapterName, "MorphoMarket_")) {
+            return _deployMorphoMarket(adapterName, navCalculator);
         }
 
         // DAI DSR
@@ -262,7 +286,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployMorphoBlue(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployMorphoMarket(string memory adapterName, address navCalculator) internal returns (address) {
         address morpho = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
         );

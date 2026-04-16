@@ -24,6 +24,14 @@
         "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
       },
       "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+    },
+    "AaveV3_Gnosis": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
+        "protocol": "Aave V3 Gnosis"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

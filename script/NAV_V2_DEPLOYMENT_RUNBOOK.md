@@ -42,21 +42,36 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 | `DEFAULT_ADMIN_ROLE` | `0x0000…0000` | UUPS upgrades (`_authorizeUpgrade`), grant/revoke any role |
 | `MANAGER` | `keccak256("MANAGER")` | `registerAsset`, `setPriceFeed`, `unsetPriceFeed`, `addBalanceOracle`, `removeBalanceOracle`, `unregisterAsset`, `excludeAssetFromDefaultOracle`, `includeAssetInDefaultOracle`, `setChainlinkL2SequencerUptimeFeed`, `setChainlinkL2SequencerGracePeriod` |
 
-**How the roles get assigned (atomic deploy path — default).**
+**How the roles actually get assigned (read `02_DeployProxies.s.sol` + `AtomicProxyDeployer.sol` for the source of truth):**
 
-`02_DeployProxies.s.sol` deploys via `AtomicProxyDeployer` in a single transaction:
+**Atomic deploy path (default).**
 
-1. `AtomicProxyDeployer` (the constructor) deploys the proxies via canonical CREATE2 and calls `NAVCalculator.initialize(address(this), sequencerFeed, nativeSymbol)` — so the `AtomicProxyDeployer` contract itself is the initial DEFAULT_ADMIN.
-2. The constructor then `grantRole(DEFAULT_ADMIN_ROLE, adminToGrant)` where `adminToGrant = chainConfig.admin`.
-3. Control returns to `02_DeployProxies.s.sol` which `grantRole(MANAGER, chainConfig.manager)` from the broadcast sender (the deployer EOA — who has admin rights transitively because the `AtomicProxyDeployer` contract was constructed by the deployer and called `grantRole` as part of the same outer transaction).
+1. `02_DeployProxies.s.sol` constructs `new AtomicProxyDeployer(navImpl, bridgeImpl, sequencerFeed, nativeSymbol, chainConfig.admin)`.
+2. Inside that constructor, the proxies are CREATE2-deployed and then `NAVCalculator.initialize(address(this), ...)` / `BridgeEscrow.initialize(address(this), ...)` are called — so `AtomicProxyDeployer` itself gets `DEFAULT_ADMIN_ROLE`.
+3. Still inside the constructor: `grantRole(DEFAULT_ADMIN_ROLE, chainConfig.admin)` on both proxies.
+4. Control returns to `02_DeployProxies.s.sol` line 179–183: `grantRole(MANAGER, chainConfig.manager)` called by the broadcast sender (the deployer EOA).
 
-Important nuance: after the atomic deploy, **the `AtomicProxyDeployer` contract address retains `DEFAULT_ADMIN_ROLE` in the role mapping**. This is functionally dead — the contract has no runtime code that can invoke any privileged function — but it shows up in `hasRole()` queries and in any role-holder enumeration. If that bothers you, manually `revokeRole` it via Safe after deploy. Nothing in our flow relies on doing so.
+**Legacy path (`USE_LEGACY_DEPLOY=1`).** Same shape except initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE` and the broadcast sender remains the deployer EOA.
 
-**Legacy deploy path.** `USE_LEGACY_DEPLOY=1` skips the `AtomicProxyDeployer` and initializes the NAVCalculator with `chainConfig.admin` directly. The broadcast sender (deployer EOA) then needs admin rights to call `grantRole(MANAGER, ...)`, so `chainConfig.admin` must equal the deployer EOA at the moment of legacy deploy (it can be transferred to a Safe afterward via a Safe-batched `grantRole` + `renounceRole`). The atomic path avoids this footgun — prefer it.
+**The catch that matters at runtime.** In both paths, step 4's `grantRole(MANAGER, ...)` is executed from `msg.sender = deployer EOA`. `OpenZeppelin AccessControl.grantRole` requires the caller to already hold the admin role for the role being granted (which, for `MANAGER`, means `DEFAULT_ADMIN_ROLE`). The deployer EOA is **never** explicitly granted `DEFAULT_ADMIN_ROLE` by either script. So:
 
-**Recommended convention.** Both `chainConfig.admin` and `chainConfig.manager` point to the **same per-chain Safe multisig** (usually called the OIV Safe). The deployer EOA pays gas but retains no ongoing NAV powers. This is the pattern already configured on all 5 chains (Mainnet row shown earlier: admin = manager = `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`).
+- If `chainConfig.admin` equals the deployer EOA at the time of deploy → step 4 succeeds (deployer has admin).
+- If `chainConfig.admin` is a Safe and the deployer is a different EOA → **step 4 reverts** and the deploy transaction fails after the proxies are already deployed and initialized.
 
-**Why this matters (context, not v2 gotcha).** On `karpatkey-tokenized-fund` ETH Alpha STAGE, the old NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no DEFAULT_ADMIN holder at all — leaving the contract upgrade-locked and requiring a redeploy. NAV v2's access-control wiring was designed so that outcome is not reachable via `02_DeployProxies.s.sol` (atomic or legacy), but you should still verify post-deploy with the commands below before moving on.
+As of 2026-04-17, every chain config has `addresses.admin` set to a Safe address (e.g. Mainnet `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`) that is different from any plausible deployer EOA. So **running `02_DeployProxies.s.sol` against an as-merged chain config will revert at the MANAGER grant step.** This is a latent bug in the deploy scripts — tracked in `ORACLE_MIGRATION_PLAN.md` under "Aspects to improve".
+
+**Two workable workflows until the scripts are fixed:**
+
+1. **Temporarily set `chainConfig.admin` = deployer EOA** → run `02_DeployProxies.s.sol` → update `chainConfig.admin` back to the Safe → run a Safe TX that `grantRole(DEFAULT_ADMIN_ROLE, Safe)` + `revokeRole(DEFAULT_ADMIN_ROLE, deployer)` + `grantRole(MANAGER, manager)`.
+2. **Skip the MANAGER grant in `02`** (comment out lines 179–183, or guard on `chainConfig.admin == msg.sender`) → run `02` → have the Safe grant MANAGER afterwards (either via `06_Configure.s.sol`'s Safe TX batch or a direct Safe TX).
+
+Recommend (2) because it leaves the persistent `addresses.admin = Safe` pattern intact and doesn't require a config round-trip. The fix for `02_DeployProxies.s.sol` is to guard the grant or move it to `06_Configure.s.sol`.
+
+**Important nuance.** After the atomic deploy, the `AtomicProxyDeployer` contract's address still shows `hasRole(DEFAULT_ADMIN_ROLE, ...) == true` in the proxies. The contract has no runtime code that can call anything (constructor-only, no external functions), so it's functionally dead. Still cosmetically undesirable — if you want it cleaned up, add a post-deploy Safe TX that revokes the orphaned role.
+
+**Recommended steady-state convention.** Both `chainConfig.admin` and `chainConfig.manager` point to the **same per-chain Safe multisig** (the "OIV Safe"). Deployer EOA pays gas at deploy time and retains no ongoing NAV powers. This is what the current chain configs describe; the deploy-script bug above is what stops us from actually reaching that state in one run today.
+
+**Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV v2's access-control design is safer, but until the `02` MANAGER-grant bug is fixed, double-verify roles post-deploy with the commands below.
 
 **Post-deploy role validation** (run for every chain, every time you deploy):
 
@@ -88,7 +103,12 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 | BridgeEscrow Proxy (CREATE2) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
 | ERC20Default Balance Adapter | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
 
-Bridge adapter deployed addresses live in `chains/<id>.json.bridgeAdapters.<name>.deployed`. Price feed and balance adapter deployed addresses live in `assets.json.priceFeeds.<name>.<chainId>.deployed` and `chains/<id>.json.balanceAdapters.<name>.deployed` respectively.
+All deployed adapter addresses are persisted in the per-chain config:
+- Bridge adapters → `chains/<id>.json.bridgeAdapters.<name>.deployed`
+- Price feed adapters → `chains/<id>.json.priceFeeds.<name>.deployed`
+- Balance adapters → `chains/<id>.json.balanceAdapters.<name>.deployed`
+
+`assets.json.priceFeeds` holds constructor/config inputs only — it does **not** store deployed addresses. `ConfigReader.writeAdapterAddress` always writes to `chains/<chainId>.json`, regardless of adapter type.
 
 > **Querying current deploy state.** To see what's actually deployed on each chain at any point: look at the `deployed` field of every adapter entry in `chains/<id>.json`. Empty string = not yet deployed. This runbook is the process; the configs are the source of truth for state.
 
@@ -261,17 +281,17 @@ Balance adapter configuration lives in each chain's config file under `balanceAd
 
 ### 2.1 Add adapter entries to chain configs
 
-> **Starting state:** every chain config currently contains **only `ERC20Default`** under `balanceAdapters`. Every other adapter you want deployed must be added by hand before running `04_DeployBalanceAdapters.s.sol`, otherwise the script has nothing to iterate.
+> **Starting state:** chain configs already include many `balanceAdapters` entries beyond `ERC20Default` (pre-seeded during PR #12 — e.g. `AaveV3_Core`, `AaveV3_Prime`, `MorphoMarket_*`, `Aura_*`, etc.). Before editing `script/config/chains/{chainId}.json`, review what's already there and add only the adapters still missing for your deployment. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` in the chain config.
 
-For each adapter you want to deploy on a given chain, add an entry to `script/config/chains/{chainId}.json` under `balanceAdapters`:
+For each new adapter you want to deploy on a given chain, add an entry to `script/config/chains/{chainId}.json` under `balanceAdapters`:
 
 ```json
 "balanceAdapters": {
-  "AaveV3_USDC": {
+  "AaveV3_Core": {
     "enabled": true,
     "constructor": {
       "dataProvider": "0x...",
-      "protocol": "Aave V3"
+      "protocol": "Aave V3 Core"
     },
     "deployed": ""
   }
@@ -295,7 +315,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `Convex_*` | `rewarder`, `lpToken`, `protocol`, `positionDetail` | Mainnet |
 | `AaveV3SafetyModule_*` | `stakeToken`, `protocol`, `positionDetail` | Mainnet |
 | `BalancerV3_*` | `pool`, `gauge`, `balancerMinter`, `protocol` | Mainnet |
-| `Aura_*` | `pool`, `gauge`, `booster`, `pid`, `auraToken`, `protocol`, `positionDetail` | Mainnet |
+| `Aura_*` | `pool`, `gauge`, `booster`, `pid`, `protocol`, `positionDetail` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
 | `StakeWiseV3Vault_*` | `underlyingToken`, `vault`, `protocol`, `positionDetail` | Mainnet |
 | `StakeWiseV3OsToken_*` | `osToken`, `underlyingToken`, `osTokenVaultController`, `protocol`, `positionDetail` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager`, `protocol`, `positionDetail` | Mainnet |
@@ -670,9 +690,14 @@ cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
 ### 9.3 Verify each balance oracle returns data
 
 ```bash
-# For each balance adapter, call balanceOf with the Safe address
+# For each balance adapter, call the v2 interface (IBalanceOracleAdapter)
 cast call <adapter_address> \
-  "balanceOf(address,address)(int256)" <underlying_asset> <safe_address> \
+  "getOracleBalanceForAsset(address,address)(uint256,bool)" <safe_address> <underlying_asset> \
+  --rpc-url <RPC_URL>
+
+# Or enumerate every position the oracle reports for the Safe:
+cast call <adapter_address> \
+  "getOraclePositions(address,address)" <safe_address> 0x0000000000000000000000000000000000000000 \
   --rpc-url <RPC_URL>
 ```
 

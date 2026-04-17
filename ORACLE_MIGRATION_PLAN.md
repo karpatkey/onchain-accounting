@@ -758,7 +758,7 @@ Run each group and confirm green:
 
 ### Code quality
 - [x] `forge fmt --check` — exits 0, no diff — 2026-04-15
-- [x] All new oracle files have: correct SPDX header, `pragma solidity 0.8.27`, NatSpec on constructor params
+- [x] All new oracle files have: correct SPDX header, pragma matching the current codebase (`pragma solidity ^0.8;` for oracle contracts, `^0.8.28` for deploy scripts), NatSpec on constructor params
 - [x] CRV lower-bound caveat is documented in `Curve.sol` NatSpec (it was in v1 — must carry over)
 
 ### PRs
@@ -925,6 +925,8 @@ The migration is closed, but several items are known limitations or follow-ups w
   Same pattern applies to any future single-instance adapter.
 
 - [ ] **`AtomicProxyDeployer` retains orphaned `DEFAULT_ADMIN_ROLE`.** After the atomic deploy, the deployer contract's address still shows `hasRole(DEFAULT_ADMIN_ROLE, ...) == true` in the NAV and Bridge proxies. The contract has no runtime code that can act on it (constructor-only, no external functions), so it's functionally dead. Still cosmetically undesirable — consider adding a self-revoke to the constructor, or a post-deploy Safe TX that revokes the orphaned role.
+
+- [ ] **`02_DeployProxies.s.sol` MANAGER-grant reverts when `chainConfig.admin` is a Safe.** Lines 179-183 call `grantRole(MANAGER, chainConfig.manager)` from the broadcast sender (deployer EOA). In both the atomic and legacy paths, only `chainConfig.admin` ends up with `DEFAULT_ADMIN_ROLE` — the deployer EOA is never granted it. Since every current chain config sets `addresses.admin` to a Safe (Mainnet: `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`), running `02_DeployProxies.s.sol` as-is against these configs reverts at the MANAGER grant. Workaround until fixed: temporarily set `chainConfig.admin` = deployer EOA for deploy, then transfer via Safe afterwards; or skip/guard the grant in `02` and let `06_Configure.s.sol` do it. Proper fix: guard the block on `msg.sender == chainConfig.admin` (or on `hasRole(DEFAULT_ADMIN_ROLE, msg.sender)`), and either move the MANAGER grant into the `AtomicProxyDeployer` constructor or hand it off to `06_Configure.s.sol`. Must fix before the next NAV v2 deployment or the existing chains will need manual intervention. Surfaced by PR #13 review (Copilot).
 
 ### Non-blocking follow-ups
 

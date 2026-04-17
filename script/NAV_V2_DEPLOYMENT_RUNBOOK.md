@@ -421,9 +421,9 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
 
 ### 3.4 Verify
 
-Deployed addresses are auto-saved to `assets.json` (or chain config) by the script. Check the console output for each deployed adapter address.
+Deployed adapter addresses are auto-saved to `script/config/chains/<chainId>.json` under `.priceFeeds.<name>.deployed` via `ConfigReader.writeAdapterAddress(...)`. `assets.json` is only used for constructor inputs; it is not the authoritative record of deployed addresses. Check the console output for each deployed adapter address too — the `[OK] <Name> deployed at: 0x...` line is the fastest sanity check.
 
-**Re-run safety:** If the script is interrupted, re-running will skip already-deployed adapters (checks `deployed` field in config).
+**Re-run safety:** If the script is interrupted, re-running will skip already-deployed adapters (checks the `deployed` field in the chain config).
 
 ---
 
@@ -674,7 +674,23 @@ cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
   --rpc-url <RPC_URL>
 ```
 
-> **Note:** NAVCalculator does not expose a `getBalanceOracles()` getter. To verify a specific balance oracle is registered, call `balanceOf` on the adapter directly (Phase 9.3) — a non-registered oracle would be uncallable via NAV anyway.
+> **Note:** NAVCalculator inherits from `Balances`, which exposes balance-oracle registry getters. Use these for registration checks (all public, `view`):
+>
+> ```bash
+> # All registered balance oracles
+> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getAllOracles()(address[])" --rpc-url <RPC>
+>
+> # Is a specific adapter registered?
+> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "isOracleRegistered(address)(bool)" <adapter> --rpc-url <RPC>
+>
+> # Count of registered oracles
+> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getOracleCount()(uint256)" --rpc-url <RPC>
+>
+> # Which oracles report an asset
+> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getOraclesForAsset(address)(address[])" <asset> --rpc-url <RPC>
+> ```
+>
+> Phase 9.3 below is for confirming a *registered* adapter returns plausible data, not for checking registration.
 
 ### 9.2 Test NAV calculation
 

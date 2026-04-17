@@ -58,6 +58,7 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
 
         VAULT = IERC4626(vault_);
         ASSET = VAULT.asset();
+        require(ASSET != address(0), "Vault asset must be non-zero");
         _protocol = protocol_;
         _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);

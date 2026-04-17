@@ -57,6 +57,7 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
 
         MARKET = IERC4626(market_);
         ASSET = MARKET.asset();
+        require(ASSET != address(0), "Market asset must be non-zero");
         _protocol = protocol_;
         _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);

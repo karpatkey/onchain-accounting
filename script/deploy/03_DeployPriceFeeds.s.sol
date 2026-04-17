@@ -469,11 +469,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deploySxdai();
         }
 
-<<<<<<< HEAD
-        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider instead of Chainlink)
-=======
-        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed)
->>>>>>> origin/feat/pr2-price-oracles
+        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed, not Chainlink)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wstETH_L2")) {
             _deployWstEthL2();
         }
@@ -644,23 +640,5 @@ contract DeployPriceFeeds is BaseDeployScript {
         );
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC_L2", address(adapter));
         console2.log("syrupUSDC_L2_PriceOracle deployed at:", address(adapter));
-    }
-
-    function _deploySxdai() internal {
-        address deployed = _readAdapterDeployed("priceFeeds", "sXDAI");
-        if (deployed != address(0)) {
-            console2.log("sXDAI_PriceOracle already deployed at:", deployed);
-            return;
-        }
-
-        address sXdai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "sXdai"));
-        address xDaiUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
-        uint256 xDaiUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
-
-        sXDAI_PriceOracle sxdaiAdapter = new sXDAI_PriceOracle(sXdai, xDaiUsdOracle, xDaiUsdHeartbeat);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sXDAI", address(sxdaiAdapter));
-        console2.log("sXDAI_PriceOracle deployed at:", address(sxdaiAdapter));
     }
 }

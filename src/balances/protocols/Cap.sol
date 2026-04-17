@@ -81,6 +81,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
         }
         require(cUsd_.code.length > 0, "cUSD must be a contract");
         require(stcUsd_.code.length > 0, "stcUSD must be a contract");
+        require(usdc_.code.length > 0, "USDC must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         CUSD = ICUsd(cUsd_);

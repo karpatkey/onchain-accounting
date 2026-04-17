@@ -133,5 +133,16 @@
       },
       "deployed": "0x05905e5FECE2169ff7F118E07124e62Acc52aFB4"
     }
+  },
+  "priceFeeds": {
+    "wstETH_L2": {
+      "deployed": ""
+    },
+    "weETH_L2": {
+      "deployed": ""
+    },
+    "cbETH_L2": {
+      "deployed": ""
+    }
   }
 }

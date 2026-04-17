@@ -122,5 +122,22 @@
       },
       "deployed": "0xEFa5a2E15b0247Aab160511dc862C6c098DEe16b"
     }
+  },
+  "priceFeeds": {
+    "wstETH_L2": {
+      "deployed": ""
+    },
+    "weETH_L2": {
+      "deployed": ""
+    },
+    "rsETH_L2": {
+      "deployed": ""
+    },
+    "ezETH_L2": {
+      "deployed": ""
+    },
+    "syrupUSDC_L2": {
+      "deployed": ""
+    }
   }
 }

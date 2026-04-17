@@ -34,7 +34,6 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
 
     // Aave V3 (Optimism)
     address public aaveV3DataProvider = address(0x7F23D86Ee20D869112572136221e173428DD740B);
-    address public aaveV3RewardsDistributor = address(0x929EC64c34a17401F460460D4B9390518E5B473e);
 
     // Compound V3 (Optimism)
     address public cUsdCv3 = address(0x2e44e174f7D53F0212823acC11C01A11d58c5bCB);
@@ -92,8 +91,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3Comet =

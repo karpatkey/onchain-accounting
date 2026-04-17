@@ -25,7 +25,6 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
     // Aave V3 (Arbitrum)
     address public aaveV3DataProvider = address(0x7F23D86Ee20D869112572136221e173428DD740B);
-    address public aaveV3RewardsDistributor = address(0x929EC64c34a17401F460460D4B9390518E5B473e);
 
     // Compound V3 (Arbitrum)
     address public cUsdCv3 = address(0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf);
@@ -72,8 +71,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3UsdcComet =

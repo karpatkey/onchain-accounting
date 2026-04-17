@@ -89,11 +89,10 @@ contract VerifyEtherscan is BaseDeployScript {
         if (_startsWith(name, "AaveV3_")) {
             path = "src/balances/protocols/AaveV3Instance.sol:AaveV3InstanceBalanceOracle";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
-            address rewardsDistributor = _parseAddr("balanceAdapters", name, "rewardsDistributor", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
             if (dataProvider == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dataProvider, rewardsDistributor, protocol, nav);
+            args = abi.encode(dataProvider, protocol, nav);
             return (path, args);
         }
         if (_startsWith(name, "CompoundV3_")) {
@@ -110,11 +109,10 @@ contract VerifyEtherscan is BaseDeployScript {
         if (_startsWith(name, "SparkLend_")) {
             path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceOracle";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
-            address rewardsDistributor = _parseAddr("balanceAdapters", name, "rewardsDistributor", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
             if (dataProvider == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dataProvider, rewardsDistributor, protocol, nav);
+            args = abi.encode(dataProvider, protocol, nav);
             return (path, args);
         }
         if (_startsWith(name, "MorphoBlue_")) {

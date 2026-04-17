@@ -34,7 +34,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     // Aave V3 (Ethereum Mainnet)
     address public aave = address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9);
     address public aaveV3DataProvider = address(0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3);
-    address public aaveV3RewardsDistributor = address(0x8164Cc65827dcFe994AB23944CBC90e0aa80bFcb);
     address public stkGho = address(0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d); // Aave Safety Module staked GHO
     address public stkAave = address(0x4da27a545c0c5B758a6BA100e3a049001de870f5); // Aave Safety Module staked AAVE
 
@@ -136,8 +135,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle =
-            new AaveV3InstanceBalanceOracle(aaveV3DataProvider, aaveV3RewardsDistributor, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
 
         AaveV3SafetyModuleBalanceOracle stkGhoOracle =
             new AaveV3SafetyModuleBalanceOracle(stkGho, "Aave v3", "Safety Module", address(nav));

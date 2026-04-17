@@ -10,11 +10,11 @@ import "src/errors.sol";
 contract AuraTest is Test {
     function test_constructorRevertsOnZeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new Aura(address(0), address(1), address(1), 0, address(1), "Aura", "Pool", address(1));
+        new Aura(address(0), address(1), address(1), 0, "Aura", "Pool", address(1));
     }
 
     function test_constructorRevertsOnZeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new Aura(address(1), address(0), address(1), 0, address(1), "Aura", "Pool", address(1));
+        new Aura(address(1), address(0), address(1), 0, "Aura", "Pool", address(1));
     }
 }

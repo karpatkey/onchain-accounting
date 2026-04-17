@@ -151,35 +151,59 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
             // transform wrapped token to underlying again
             //https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-
-            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares - 1) - 1;
+            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares);
+        } else {
+            // Convert from live scaled balance back to raw token units
+            // tokenBalance.toRawUndoRateRoundDown(scalingFactor , tokenRate)
+            // FixedPoint.divDown(amount, scalingFactor * tokenRate)
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/helpers/ScalingHelpers.sol#L74
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/math/FixedPoint.sol#L38
+            tokenBalance = (tokenBalance * 1e18)
+                / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
         }
 
         return tokenBalance.toInt256();
     }
 
     /// @notice Gets the claimable reward balance for a user from the gauge
-    /// @param safe Address of the user
+    /// @param account Address of the user
     /// @param token Address of the reward token
     /// @return Amount of claimable reward tokens
-    function gaugeRewards(address safe, address token) public view returns (int256) {
-        uint256 claimableReward = GAUGE.claimable_reward(safe, token);
-        return claimableReward.toInt256();
+    /// @dev Returns 0 if the token is not a reward token or if the call fails
+    function gaugeRewards(address account, address token) public view returns (int256) {
+        try GAUGE.claimable_reward(account, token) returns (uint256 claimableReward) {
+            return claimableReward.toInt256();
+        } catch {
+            return 0;
+        }
     }
 
     /// @notice Gets the claimable BAL token for a user in the gauge
-    /// This function emulates the `claimable_tokens` function from the gauge contract
-    /// but with no state changes , by emulating the checkpoint call that updates the integrateFraction state variable.
-    /// https://etherscan.io/token/0x9fdd52efeb601e4bc78b89c6490505b8ac637e9f#code
+    /// @dev This function emulates the `claimable_tokens` function from the gauge contract
+    /// but with no state changes, by emulating the checkpoint call that updates the integrateFraction state variable.
+    /// Mainnet gauges use inflation_rate() function, while L2 gauges use inflation_rate(week) mapping.
+    /// We try mainnet calculation first, then fall back to L2 calculation if that fails.
     /// @param token Address of the reward token
-    /// @param safe Address of the user
+    /// @param account Address of the user
     /// @return Amount of claimable BAL tokens
-    function claimableTokens(address token, address safe) public view returns (int256) {
+    function claimableTokens(address token, address account) public view returns (int256) {
         if (token == BALANCER_MINTER.getBalancerToken()) {
-            uint256 integrateFraction = calculateIntegrateFraction(safe, (GAUGE));
-            uint256 minted = BALANCER_MINTER.minted(safe, address(GAUGE));
-
-            return (integrateFraction - minted).toInt256();
+            // Try mainnet calculation first
+            try this.calculateIntegrateFraction(account, GAUGE) returns (uint256 integrateFraction) {
+                uint256 minted = BALANCER_MINTER.minted(account, address(GAUGE));
+                if (minted >= integrateFraction) return 0;
+                return (integrateFraction - minted).toInt256();
+            } catch {
+                // If mainnet calculation fails (e.g., on L2s like Arbitrum), try L2 calculation
+                try this.calculateIntegrateFractionL2(account, GAUGE) returns (uint256 integrateFraction) {
+                    uint256 minted = BALANCER_MINTER.minted(account, address(GAUGE));
+                    if (minted >= integrateFraction) return 0;
+                    return (integrateFraction - minted).toInt256();
+                } catch {
+                    // If both fail, return 0
+                    return 0;
+                }
+            }
         }
 
         return 0;
@@ -244,6 +268,57 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             }
         }
         // compute final user fraction
+        uint256 balFrac = gauge.integrate_fraction(user);
+        uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
+        uint256 wb = gauge.working_balances(user);
+
+        return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
+    }
+
+    /// @notice Calculates the BAL checkpoint for L2 gauges (Arbitrum, Optimism, etc.)
+    /// @dev L2 gauges use a simpler inflation model:
+    /// - inflation_rate is a mapping indexed by week number, not a function
+    /// - No gauge weights (no getCappedRelativeWeight calls)
+    /// - No epoch crossing logic
+    /// - Inflation rate is set per week based on BAL token transfers to the gauge
+    /// @param user Address of the user
+    /// @param gauge The gauge address
+    /// @return The new checkpoint
+    function calculateIntegrateFractionL2(address user, IGaugeV3 gauge) public view returns (uint256) {
+        uint256 period = gauge.period().toUint256();
+        uint128 period128 = period.toUint128();
+        uint256 periodTime = gauge.period_timestamp(uint256(period128));
+        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
+
+        // L2 gauges skip accumulation if killed
+        if (block.timestamp > periodTime && !gauge.is_killed()) {
+            uint256 ws = gauge.working_supply();
+            uint256 prevWeek = periodTime;
+            // Intentional: round down to nearest week boundary (divide before multiply is correct here)
+            // forge-lint: disable-next-line(divide-before-multiply)
+            uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
+            if (weekTime > block.timestamp) weekTime = block.timestamp;
+
+            for (uint256 i = 0; i < 256; i++) {
+                uint256 dt = weekTime - prevWeek;
+
+                if (ws != 0) {
+                    // L2 uses inflation_rate mapping indexed by week number
+                    // Intentional: round down to nearest week boundary (divide before multiply is correct here)
+                    // forge-lint: disable-next-line(divide-before-multiply)
+                    uint256 weekNumber = prevWeek / WEEK;
+                    uint256 rate = gauge.inflation_rate(weekNumber);
+                    integrateInvSup += rate * 1e18 * dt / ws;
+                }
+
+                if (weekTime == block.timestamp) break;
+                prevWeek = weekTime;
+                weekTime = prevWeek + WEEK;
+                if (weekTime > block.timestamp) weekTime = block.timestamp;
+            }
+        }
+
+        // Compute final user fraction
         uint256 balFrac = gauge.integrate_fraction(user);
         uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
         uint256 wb = gauge.working_balances(user);
@@ -632,6 +707,11 @@ interface IGaugeV3 is IERC20 {
     /// @return self.inflation_params % 2 ** 216
     // forge-lint: disable-next-line(mixed-case-function)
     function inflation_rate() external view returns (uint256);
+    /// @notice Returns the inflation rate for a specific week (L2 gauges only)
+    /// @param week Week number to get inflation rate for
+    /// @return The inflation rate for that week
+    // forge-lint: disable-next-line(mixed-case-function)
+    function inflation_rate(uint256 week) external view returns (uint256);
     /// @notice Get if the gauge is killed
     /// @return True if the gauge is killed
     // forge-lint: disable-next-line(mixed-case-function)

@@ -12,6 +12,11 @@ import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
+/// @dev Supports Aura positions on both mainnet and sidechains (L2s). AURA token address
+///      is resolved dynamically from the Booster's `minter()`: on mainnet it returns the
+///      AURA token directly, on L2s it returns the L2Coordinator whose `auraOFT()` method
+///      reveals the bridged AURA address. L2 AURA rewards are computed via the
+///      L2Coordinator's `mintRate()` rather than mainnet's cliff-based schedule.
 contract Aura is IBalanceOracleAdapter {
     //
     // Libraries
@@ -46,8 +51,19 @@ contract Aura is IBalanceOracleAdapter {
     /// @notice Pool ID in the Aura Booster contract
     uint256 public immutable PID;
 
-    /// @notice Aura token contract address
-    IAuraToken public immutable AURA_TOKEN;
+    /// @notice Aura token contract address (dynamically resolved: Booster.minter() on mainnet,
+    ///         L2Coordinator.auraOFT() on sidechains).
+    address public immutable AURA_TOKEN;
+
+    /// @notice Interface for the Aura token contract (mainnet only; address(0) on L2).
+    IAuraToken internal immutable _IAURA;
+
+    /// @notice L2Coordinator for sidechain AURA minting (L2 only; address(0) on mainnet).
+    IL2Coordinator internal immutable _L2_COORDINATOR;
+
+    /// @notice True if this adapter is deployed on the AURA-minting chain (Ethereum mainnet),
+    ///         false if on an L2 where AURA is bridged and the L2Coordinator governs minting.
+    bool public immutable IS_MAINNET;
 
     /// @notice Aura rewards pool contract that distributes rewards to stakers
     IBaseRewardPool4626 public immutable AURA_REWARDS;
@@ -68,17 +84,18 @@ contract Aura is IBalanceOracleAdapter {
     /// @param gauge_ Address of the corresponding gauge contract
     /// @param booster_ Address of the Aura Booster contract
     /// @param pid_ Pool ID in the Aura Booster contract
-    /// @param auraToken_ Address of the Aura token contract
     /// @param protocol_ Protocol identifier (e.g., "Aura").
     /// @param positionDetail_ Position detail identifier (e.g., "Some Aura Pool").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
-    /// @dev Validates that the gauge's LP token matches the pool address
+    /// @dev Validates that the gauge's LP token matches the pool address. AURA token address and
+    ///      the chain kind (Mainnet vs L2) are both derived from `BOOSTER.minter()`:
+    ///      on Mainnet `minter()` returns AURA directly; on L2s it returns the L2Coordinator,
+    ///      whose `auraOFT()` method reveals the bridged AURA address.
     constructor(
         address pool_,
         address gauge_,
         address booster_,
         uint256 pid_,
-        address auraToken_,
         string memory protocol_,
         string memory positionDetail_,
         address navCalculator_
@@ -95,7 +112,24 @@ contract Aura is IBalanceOracleAdapter {
         BOOSTER = IBooster(booster_);
         GAUGE = IGaugeV3(gauge_);
         PID = pid_;
-        AURA_TOKEN = IAuraToken(auraToken_);
+
+        // Resolve AURA token address from the Booster's minter.
+        // On Mainnet, minter() returns the AURA token directly.
+        // On L2s, minter() returns the L2Coordinator whose auraOFT() is the bridged AURA.
+        address minter = BOOSTER.minter();
+        (bool l2Success, bytes memory l2Data) =
+            minter.staticcall(abi.encodeWithSelector(IL2Coordinator.auraOFT.selector));
+        if (l2Success && l2Data.length >= 32) {
+            IS_MAINNET = false;
+            _L2_COORDINATOR = IL2Coordinator(minter);
+            AURA_TOKEN = abi.decode(l2Data, (address));
+            _IAURA = IAuraToken(address(0));
+        } else {
+            IS_MAINNET = true;
+            AURA_TOKEN = minter;
+            _IAURA = IAuraToken(minter);
+            _L2_COORDINATOR = IL2Coordinator(address(0));
+        }
 
         try GAUGE.lp_token() returns (address lpToken) {
             if (lpToken != pool_) {
@@ -136,32 +170,57 @@ contract Aura is IBalanceOracleAdapter {
     /// @param safe The safe address to calculate rewards for
     /// @return total The total rewards for the given token and safe
     function rewards(address token, address safe) public view returns (int256 total) {
-        // 0x8e89d41c563e6c3d9901ad75b75e2d8e140def04
-        // call updateRewards()
+        // Base reward (typically BAL)
         if (AURA_REWARDS.rewardToken() == token) {
             total += baseRewards(AURA_REWARDS, safe);
         }
 
-        if (address(AURA_TOKEN) == token) {
+        // AURA mint derived from earned base rewards on the base pool.
+        // Mainnet: apply BOOSTER reward multiplier, then cliff-schedule conversion.
+        // L2: bypass the multiplier (getRewardMultipliers is mainnet-only) and use L2Coordinator mint rate.
+        if (AURA_TOKEN == token) {
             uint256 earned = previewEarned(AURA_REWARDS, safe);
-            uint256 claimed = auraMintAmountConversion(rewardClaimed(address(AURA_REWARDS), earned));
-
-            total += claimed.toInt256();
+            uint256 auraMint = IS_MAINNET
+                ? auraMintAmountConversion(rewardClaimed(address(AURA_REWARDS), earned))
+                : calculateL2AuraMint(earned);
+            total += auraMint.toInt256();
         }
-        // getRewards()
 
+        // Extra rewards (may be direct reward tokens, stash wrappers, or additional AURA)
         for (uint256 i = 0; i < AURA_REWARDS.extraRewardsLength(); i++) {
             IBaseRewardPool4626 pool = IBaseRewardPool4626(AURA_REWARDS.extraRewards(i));
-            if (IStashToken(pool.rewardToken()).baseToken() == token) {
-                total += baseRewards(pool, safe);
+            address extraRewardToken = pool.rewardToken();
+
+            try IStashToken(extraRewardToken).baseToken() returns (address baseToken) {
+                if (baseToken == token) {
+                    total += baseRewards(pool, safe);
+                }
+            } catch {
+                // Not a stash token — check direct match
+                if (extraRewardToken == token) {
+                    total += baseRewards(pool, safe);
+                }
             }
 
-            if (address(AURA_TOKEN) == token) {
+            if (AURA_TOKEN == token) {
                 uint256 earned = previewEarned(pool, safe);
-                uint256 claimed = auraMintAmountConversion(rewardClaimed(address(pool), earned));
-
-                total += claimed.toInt256();
+                uint256 auraMint = IS_MAINNET
+                    ? auraMintAmountConversion(rewardClaimed(address(pool), earned))
+                    : calculateL2AuraMint(earned);
+                total += auraMint.toInt256();
             }
+        }
+    }
+
+    /// @notice Calculates AURA mint amount for L2 chains using the L2Coordinator mint rate
+    /// @param balAmount The amount of base rewards (BAL, adjusted by reward multiplier)
+    /// @return auraAmount The amount of AURA tokens that would be minted on this L2
+    /// @dev Mirrors v1 Aura.calculateL2AuraMint. Returns 0 on Mainnet.
+    function calculateL2AuraMint(uint256 balAmount) public view returns (uint256 auraAmount) {
+        if (IS_MAINNET) return 0;
+        uint256 mintRate = _L2_COORDINATOR.mintRate();
+        if (mintRate > 0) {
+            auraAmount = (balAmount * mintRate) / 1e18;
         }
     }
 
@@ -211,25 +270,27 @@ contract Aura is IBalanceOracleAdapter {
         return mintAmount;
     }
 
-    /// @notice Converts a reward amount to Aura token amount based on emission schedule
+    /// @notice Converts a reward amount to Aura token amount based on emission schedule (Mainnet only)
     /// @param amount The reward amount to convert
-    /// @return The converted Aura token amount
+    /// @return The converted Aura token amount. Returns 0 on L2s.
+    /// @dev L2 AURA minting is governed by the L2Coordinator's `mintRate()`; see `calculateL2AuraMint`.
     function auraMintAmountConversion(uint256 amount) public view returns (uint256) {
-        uint256 supply = AURA_TOKEN.totalSupply();
+        if (!IS_MAINNET) return 0;
+        uint256 supply = _IAURA.totalSupply();
         if (supply == 0) return 0;
 
-        uint256 emissionsMinted = supply - AURA_TOKEN.INIT_MINT_AMOUNT() - getMinterMinted(address(AURA_TOKEN));
+        uint256 emissionsMinted = supply - _IAURA.INIT_MINT_AMOUNT() - getMinterMinted(AURA_TOKEN);
 
-        uint256 cliff = emissionsMinted / AURA_TOKEN.reductionPerCliff();
+        uint256 cliff = emissionsMinted / _IAURA.reductionPerCliff();
 
-        if (cliff >= AURA_TOKEN.totalCliffs()) {
+        if (cliff >= _IAURA.totalCliffs()) {
             return 0;
         }
 
-        uint256 reduction = ((AURA_TOKEN.totalCliffs() - cliff) * 5) / 2 + 700;
-        uint256 mintAmount = (amount * reduction) / AURA_TOKEN.totalCliffs();
+        uint256 reduction = ((_IAURA.totalCliffs() - cliff) * 5) / 2 + 700;
+        uint256 mintAmount = (amount * reduction) / _IAURA.totalCliffs();
 
-        uint256 amtTillMax = AURA_TOKEN.EMISSIONS_MAX_SUPPLY() - emissionsMinted;
+        uint256 amtTillMax = _IAURA.EMISSIONS_MAX_SUPPLY() - emissionsMinted;
         if (mintAmount > amtTillMax) {
             mintAmount = amtTillMax;
         }
@@ -324,8 +385,15 @@ contract Aura is IBalanceOracleAdapter {
 
             // transform wrapped token to underlying again
             //https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/vault/contracts/Vault.sol#L1327
-
-            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares - 1) - 1;
+            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares);
+        } else {
+            // Convert from live scaled balance back to raw token units
+            // tokenBalance.toRawUndoRateRoundDown(scalingFactor , tokenRate)
+            // FixedPoint.divDown(amount, scalingFactor * tokenRate)
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/helpers/ScalingHelpers.sol#L74
+            // https://github.com/balancer/balancer-v3-monorepo/blob/e44adf7ad77fba773af1dbdb4be30b2ce14c29e9/pkg/solidity-utils/contracts/math/FixedPoint.sol#L38
+            tokenBalance = (tokenBalance * 1e18)
+                / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
         }
 
         return tokenBalance.toInt256();
@@ -406,7 +474,7 @@ contract Aura is IBalanceOracleAdapter {
             }
         }
 
-        temp[count++] = address(AURA_TOKEN);
+        temp[count++] = AURA_TOKEN;
 
         (bool lengthSuccess, bytes memory lengthData) =
             address(AURA_REWARDS).staticcall(abi.encodeWithSelector(IBaseRewardPool4626.extraRewardsLength.selector));
@@ -767,6 +835,11 @@ interface IBooster {
     /// @return The reward multiplier denominator
     //solhint-disable-next-line func-name-mixedcase
     function REWARD_MULTIPLIER_DENOMINATOR() external view returns (uint256);
+
+    /// @notice Returns the minter address. On Mainnet this is the AURA token; on L2s
+    ///         it is the L2Coordinator whose `auraOFT()` is the bridged AURA address.
+    /// @return The minter address.
+    function minter() external view returns (address);
 }
 
 /// @title Base Reward Pool Interface
@@ -815,8 +888,21 @@ interface IStashToken {
     function baseToken() external view returns (address);
 }
 
+/// @title L2 Coordinator Interface
+/// @notice Interface for the Aura L2Coordinator contract deployed on sidechains. Responsible
+///         for bridging AURA rewards from mainnet and governing the per-chain mint rate.
+interface IL2Coordinator {
+    /// @notice Returns the bridged AURA OFT token address on this L2.
+    /// @return The AURA OFT token address.
+    function auraOFT() external view returns (address);
+
+    /// @notice Returns the current mint rate (AURA minted per BAL earned, in 1e18 fixed-point).
+    /// @return The current mint rate.
+    function mintRate() external view returns (uint256);
+}
+
 /// @title Aura Token Interface
-/// @notice Interface for the Aura token contract
+/// @notice Interface for the Aura token contract (Mainnet only)
 interface IAuraToken {
     /// @notice Gets the total supply of Aura tokens
     /// @return The total supply

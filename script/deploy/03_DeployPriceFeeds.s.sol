@@ -469,7 +469,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deploySxdai();
         }
 
-        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed)
+        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed, not Chainlink)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wstETH_L2")) {
             _deployWstEthL2();
         }

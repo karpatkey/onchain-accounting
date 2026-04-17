@@ -12,6 +12,16 @@ import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMark
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
+import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
+import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
+import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
+import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
+import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
+import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
+import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
+import {Aura} from "../../src/balances/protocols/Aura.sol";
+import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -26,24 +36,81 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         vm.startBroadcast();
 
-        // Deploy Aave V3 adapters
-        _deployIfEnabled("AaveV3_USDC");
-        _deployIfEnabled("AaveV3_WETH");
+        // Names below are the union of balance-adapter instances used by the ETH Alpha Fund
+        // and USD Alpha Fund across all 5 chains. Each _deployIfEnabled call only fires when the
+        // current chain's config has `balanceAdapters.{name}.enabled = true`, so the list can
+        // include cross-chain entries safely.
 
-        // Deploy Compound V3 adapters
-        _deployIfEnabled("CompoundV3_USDC");
-        _deployIfEnabled("CompoundV3_WETH");
+        // --- Aave V3 (one instance per Aave market) ---
+        _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
+        _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
+        _deployIfEnabled("AaveV3_Arbitrum");
+        _deployIfEnabled("AaveV3_Base");
+        _deployIfEnabled("AaveV3_Optimism");
+        _deployIfEnabled("AaveV3_Gnosis");
 
-        // Deploy Spark Lend adapters
-        _deployIfEnabled("SparkLend_USDC");
+        // --- Spark Lend (Mainnet only) ---
+        _deployIfEnabled("SparkLend");
 
-        // Deploy DAI DSR
-        _deployIfEnabled("DaiDsr");
+        // --- Aave V3 Safety Module (Mainnet only) ---
+        _deployIfEnabled("AaveV3SafetyModule_stkGHO");
 
-        // Deploy Sky Savings USDS
-        _deployIfEnabled("SkySavingsUsds");
+        // --- Cap Finance (Mainnet only) ---
+        _deployIfEnabled("Cap");
+
+        // --- Morpho Vaults (one per vault) ---
+        _deployIfEnabled("MorphoVault_kpkETHPrime_V1"); // Mainnet — ETH Alpha
+        _deployIfEnabled("MorphoVault_kpkETHPrime_V2"); // Mainnet — ETH Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V1"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
+
+        // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
+        _deployIfEnabled("MorphoMarket_wstETH_USDC");
+        _deployIfEnabled("MorphoMarket_cbBTC_USDC"); // Mainnet + Base (different marketIds)
+        _deployIfEnabled("MorphoMarket_wstUSR_USDC");
+        _deployIfEnabled("MorphoMarket_ETHPlus_USDC");
+        _deployIfEnabled("MorphoMarket_WBTC_USDC");
+        _deployIfEnabled("MorphoMarket_RLP_USDC");
+        _deployIfEnabled("MorphoMarket_syrupUSDC_USDC"); // Mainnet + Arbitrum
+        _deployIfEnabled("MorphoMarket_sUSDS_USDT"); // Mainnet
+        _deployIfEnabled("MorphoMarket_sUSDS_USDC"); // Arbitrum
+
+        // --- Morpho Markets (ETH Alpha — Mainnet + Base) ---
+        _deployIfEnabled("MorphoMarket_ETHPlus_WETH"); // Mainnet
+        _deployIfEnabled("MorphoMarket_wstETH_WETH"); // Mainnet + Base
+        _deployIfEnabled("MorphoMarket_weETH_WETH"); // Mainnet + Base
+        _deployIfEnabled("MorphoMarket_rsETH_WETH"); // Mainnet
+        _deployIfEnabled("MorphoMarket_cbETH_USDC"); // Base — USD Alpha
+
+        // --- Gearbox Markets (Mainnet — ETH Alpha) ---
+        _deployIfEnabled("GearboxMarket_kpkWETH");
+        _deployIfEnabled("GearboxMarket_kpkwstETH");
+
+        // --- Balancer V3 (one per pool) ---
+        _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
+
+        // --- Aura (one per pool) ---
+        _deployIfEnabled("Aura_rETH_WETH"); // Mainnet — ETH Alpha
+        _deployIfEnabled("Aura_GHO_USDT_USDC"); // Mainnet — USD Alpha
+        _deployIfEnabled("Aura_GHO_USDC_USDT"); // Arbitrum — USD Alpha
+        _deployIfEnabled("Aura_GHO_USDC"); // Base — USD Alpha
+
+        // --- Curve (one per gauge — Mainnet) ---
+        _deployIfEnabled("Curve_weETH_WETH"); // ETH Alpha
+        _deployIfEnabled("Curve_crvUSD_USDC"); // USD Alpha (Convex-underlying)
+        _deployIfEnabled("Curve_crvUSD_USDT"); // USD Alpha (Convex-underlying)
+        _deployIfEnabled("Curve_RLUSD_USDC"); // USD Alpha (Convex-underlying)
+
+        // --- Convex (one per rewarder — Mainnet) ---
+        _deployIfEnabled("Convex_weETH_WETH"); // ETH Alpha
+        _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
+        _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
+        _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
+        // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
+        // exist in this repo but are NOT used by either Alpha fund, so they are not wired here.
 
         vm.stopBroadcast();
 
@@ -112,8 +179,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // MorphoBlue adapters
-        if (_startsWith(adapterName, "MorphoBlue_")) {
-            return _deployMorphoBlue(adapterName, navCalculator);
+        if (_startsWith(adapterName, "MorphoMarket_")) {
+            return _deployMorphoMarket(adapterName, navCalculator);
         }
 
         // DAI DSR
@@ -124,6 +191,56 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Sky Savings USDS
         if (_equals(adapterName, "SkySavingsUsds")) {
             return _deploySkySavingsUsds(navCalculator);
+        }
+
+        // Morpho Vault adapters
+        if (_startsWith(adapterName, "MorphoVault_")) {
+            return _deployMorphoVault(adapterName, navCalculator);
+        }
+
+        // Gearbox Market adapters
+        if (_startsWith(adapterName, "GearboxMarket_")) {
+            return _deployGearboxMarket(adapterName, navCalculator);
+        }
+
+        // Cap Finance adapter
+        if (_equals(adapterName, "Cap")) {
+            return _deployCap(navCalculator);
+        }
+
+        // Curve adapters
+        if (_startsWith(adapterName, "Curve_")) {
+            return _deployCurve(adapterName, navCalculator);
+        }
+
+        // Convex adapters
+        if (_startsWith(adapterName, "Convex_")) {
+            return _deployConvex(adapterName, navCalculator);
+        }
+
+        // AaveV3 Safety Module adapters
+        if (_startsWith(adapterName, "AaveV3SafetyModule_")) {
+            return _deployAaveV3SafetyModule(adapterName, navCalculator);
+        }
+
+        // Balancer V3 adapters
+        if (_startsWith(adapterName, "BalancerV3_")) {
+            return _deployBalancerV3(adapterName, navCalculator);
+        }
+
+        // Aura adapters
+        if (_startsWith(adapterName, "Aura_")) {
+            return _deployAura(adapterName, navCalculator);
+        }
+
+        // StakeWise V3 Vault adapters
+        if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
+            return _deployStakeWiseV3Vault(adapterName, navCalculator);
+        }
+
+        // StakeWise V3 OsToken adapters
+        if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
+            return _deployStakeWiseV3OsToken(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -169,7 +286,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployMorphoBlue(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployMorphoMarket(string memory adapterName, address navCalculator) internal returns (address) {
         address morpho = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
         );
@@ -209,6 +326,164 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         SkySavingsUsdsBalanceOracle adapter =
             new SkySavingsUsdsBalanceOracle(savingsUsds, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployMorphoVault(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        MorphoVaultBalanceOracle adapter = new MorphoVaultBalanceOracle(vault, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployGearboxMarket(string memory adapterName, address navCalculator) internal returns (address) {
+        address market = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        GearboxMarketBalanceOracle adapter =
+            new GearboxMarketBalanceOracle(market, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployCap(address navCalculator) internal returns (address) {
+        address cUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "cUsd"));
+        address stcUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
+        address usdc =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
+
+        CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployCurve(string memory adapterName, address navCalculator) internal returns (address) {
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployConvex(string memory adapterName, address navCalculator) internal returns (address) {
+        address rewarder = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewarder")
+        );
+        address lpToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        ConvexBalanceOracle adapter =
+            new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
+        address stakeToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakeToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        AaveV3SafetyModuleBalanceOracle adapter =
+            new AaveV3SafetyModuleBalanceOracle(stakeToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployBalancerV3(string memory adapterName, address navCalculator) internal returns (address) {
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        address balancerMinter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV3PoolBalanceOracle adapter =
+            new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployAura(string memory adapterName, address navCalculator) internal returns (address) {
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address gauge =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+        address booster = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
+        );
+        uint256 pid =
+            vm.parseUint(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pid"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        // AURA token address is resolved dynamically inside the adapter constructor via Booster.minter()
+        // (Mainnet: returns AURA; L2: returns L2Coordinator whose auraOFT() is the bridged AURA).
+        Aura adapter = new Aura(pool, gauge, booster, pid, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStakeWiseV3Vault(string memory adapterName, address navCalculator) internal returns (address) {
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        StakeWiseV3VaultBalanceOracle adapter =
+            new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStakeWiseV3OsToken(string memory adapterName, address navCalculator) internal returns (address) {
+        address osToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osToken")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
+            osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navCalculator
+        );
         return address(adapter);
     }
 

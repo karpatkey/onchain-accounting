@@ -1,5 +1,215 @@
 {
   "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom pricefeed per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
+  "priceFeeds": {
+    "wstETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "rETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "rEth": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "weETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+          "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "weEthToEthChainlinkHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "eETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "eEth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+          "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+          "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "weEthToEthChainlinkHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "ezETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "ezEth": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+          "restakeManager": "0x74a09653A083691711cF8215a6ab074BB4e99ef5",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "rsETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "rsEth": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
+          "rateProvider": "0x0788906B19bA8f8d0e8a7015f0714DF3179D9aB6",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "sUSDe": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "sUsde": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+          "usdeToUsdChainlinkAddress": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
+          "usdeToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "sUSDS": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+          "usdsToUsdChainlinkAddress": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
+          "usdsToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "syrupUSDC": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "syrupUsdc": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+          "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+          "usdcToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "sXDAI": {
+      "100": {
+        "enabled": true,
+        "constructor": {
+          "sXdai": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+          "xDaiToUsdChainlinkOracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+          "xDaiToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "wstETH_L2": {
+      "42161": {
+        "enabled": true,
+        "constructor": {
+          "wstEth": "0x5979D7b546E38E414F7E9822514be443A4800529",
+          "wstEthToEthChainlink": "0xb523AE262D20A936BC152e6023996e46FDC2A95D",
+          "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+          "wstEthToEthHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      },
+      "8453": {
+        "enabled": true,
+        "constructor": {
+          "wstEth": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+          "wstEthToEthChainlink": "0x43a5C292A453A3bF3606fa856197f09D7B74251a",
+          "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+          "wstEthToEthHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      },
+      "100": {
+        "enabled": true,
+        "constructor": {
+          "wstEth": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
+          "wstEthToEthChainlink": "0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA",
+          "ethToUsdChainlinkOracle": "0xa767f745331D267c7751297D982b050c93985627",
+          "wstEthToEthHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "weETH_L2": {
+      "42161": {
+        "enabled": true,
+        "constructor": {
+          "weEth": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+          "weEthToEethChainlink": "0x20bAe7e1De9c596f5F7615aeaa1342Ba99294e12",
+          "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+          "weEthToEethHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      },
+      "8453": {
+        "enabled": true,
+        "constructor": {
+          "weEth": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+          "weEthToEethChainlink": "0x35e9D7001819Ea3B39Da906aE6b06A62cfe2c181",
+          "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+          "weEthToEethHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "cbETH_L2": {
+      "8453": {
+        "enabled": true,
+        "constructor": {
+          "cbEth": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+          "cbEthToEthChainlink": "0x806b4Ac04501c29769051e42783cF04dCE41440b",
+          "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+          "cbEthToEthHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "rsETH_L2": {
+      "42161": {
+        "enabled": true,
+        "constructor": {
+          "rsEth": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+          "rsEthToEthChainlink": "0x3A917e6B5732dFCc4A45257e3930979fAE6a3737",
+          "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+          "rsEthToEthHeartbeat": "86400",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "ezETH_L2": {
+      "42161": {
+        "enabled": true,
+        "constructor": {
+          "ezEth": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+          "xRenzoDeposit": "0x2EfA125B4fcD5B082a4233BA55b53FeB2Fb4Ff33",
+          "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+          "ethToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
+    "syrupUSDC_L2": {
+      "42161": {
+        "enabled": true,
+        "constructor": {
+          "syrupUsdc": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
+          "syrupUsdcToUsdcChainlink": "0xF8722c901675C4F2F7824E256B8A6477b2c105FB",
+          "usdcToUsdChainlinkOracle": "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3",
+          "syrupUsdcToUsdcHeartbeat": "86400",
+          "usdcToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    }
+  },
   "tokens": {
     "1": {
       "ETH": {

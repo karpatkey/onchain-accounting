@@ -173,8 +173,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployCompoundV3(adapterName, navCalculator);
         }
 
-        // SparkLend adapters
-        if (_startsWith(adapterName, "SparkLend_")) {
+        // SparkLend adapters (bare name for single-instance, prefix for future multi-market)
+        if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
             return _deploySparkLend(adapterName, navCalculator);
         }
 

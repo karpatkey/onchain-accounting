@@ -916,13 +916,13 @@ The migration is closed, but several items are known limitations or follow-ups w
 
 ### Blocking or near-blocking
 
-- [ ] **`SparkLend` dispatch bug in `04_DeployBalanceAdapters.s.sol`.** `run()` calls `_deployIfEnabled("SparkLend")` (bare name, post-rename), but `_deployAdapter` only matches the `SparkLend_` prefix. Result: `_deployAdapter` falls through to the "Unknown adapter type" branch and silently no-ops; `06_Configure.s.sol` will then queue a Safe TX that references `address(0)`. Fix: add an exact-match case in `_deployAdapter`, e.g.
+- [x] **`SparkLend` dispatch bug in `04_DeployBalanceAdapters.s.sol`** — **fixed 2026-04-17 (docs PR).** `run()` calls `_deployIfEnabled("SparkLend")` (bare name, post-rename), but `_deployAdapter` used to only match the `SparkLend_` prefix. The dispatcher now accepts both bare and prefixed names:
   ```solidity
   if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
       return _deploySparkLend(adapterName, navCalculator);
   }
   ```
-  Same pattern applies to any future single-instance adapter. **Must fix before the first Mainnet balance-adapter deploy** or SparkLend won't be in the NAV.
+  Same pattern applies to any future single-instance adapter.
 
 - [ ] **`AtomicProxyDeployer` retains orphaned `DEFAULT_ADMIN_ROLE`.** After the atomic deploy, the deployer contract's address still shows `hasRole(DEFAULT_ADMIN_ROLE, ...) == true` in the NAV and Bridge proxies. The contract has no runtime code that can act on it (constructor-only, no external functions), so it's functionally dead. Still cosmetically undesirable — consider adding a self-revoke to the constructor, or a post-deploy Safe TX that revokes the orphaned role.
 

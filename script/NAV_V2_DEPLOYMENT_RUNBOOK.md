@@ -755,7 +755,15 @@ Phase 9: Post-deployment validation -- per chain
 
 ### "Unknown adapter type" in the `04_DeployBalanceAdapters.s.sol` output
 
-The dispatcher routes by prefix (e.g. `AaveV3_`, `MorphoVault_`). If you see `Unknown adapter type: <Name>`, either your config entry name doesn't match a prefix, or the dispatcher lacks an exact-match case for a bare (suffix-less) name. **Known gotcha:** `SparkLend` is a bare name in the config and `run()` list, but the dispatcher only matches the `SparkLend_` prefix — bare `SparkLend` silently falls through. Fix: add an exact-match case (`_equals(adapterName, "SparkLend")`) in `_deployAdapter`. Tracked as a follow-up code fix; see the note in §2.4.
+The dispatcher routes by prefix (e.g. `AaveV3_`, `MorphoVault_`) with exact-match fallbacks for the single-instance adapters `Cap`, `DaiDsr`, `SkySavingsUsds`, and `SparkLend`. If you see `Unknown adapter type: <Name>`, either your config entry name doesn't match a prefix or exact-match case — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch alongside the existing prefix branch, following the `SparkLend` pattern:
+
+```solidity
+if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
+    return _deploySparkLend(adapterName, navCalculator);
+}
+```
+
+`_deployIfEnabled` silently treats a fall-through as a no-op (returns `address(0)` and skips the config write) — watch the console output for the `Unknown adapter type:` line.
 
 ### `PriceFeedNotSet(<asset>)` revert during `getAccountNav`
 

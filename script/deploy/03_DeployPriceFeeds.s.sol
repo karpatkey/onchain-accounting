@@ -18,6 +18,8 @@ import {weETH_PriceOracle} from "../../src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "../../src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "../../src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "../../src/prices/protocols/ezETH_Price.sol";
+// sXDAI shares the sDAI contract name — aliased import to avoid a naming collision
+import {sDAI_PriceOracle as sXDAI_PriceOracle} from "../../src/prices/protocols/sXDAI_Price.sol";
 
 // L2 price adapters
 import {wstETH_L2_PriceOracle} from "../../src/prices/protocols/wstETH_L2_Price.sol";
@@ -462,11 +464,35 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         vm.startBroadcast();
 
+        // Deploy sXDAI Price Oracle (Gnosis savings xDAI)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sXDAI")) {
+            _deploySxdai();
+        }
+
+        // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wstETH_L2")) {
             _deployWstEthL2();
         }
 
         vm.stopBroadcast();
+    }
+
+    function _deploySxdai() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "sXDAI");
+        if (deployed != address(0)) {
+            console2.log("sXDAI_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address sXdai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "sXdai"));
+        address xDaiUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
+        uint256 xDaiUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
+
+        sXDAI_PriceOracle sxdaiAdapter = new sXDAI_PriceOracle(sXdai, xDaiUsdOracle, xDaiUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sXDAI", address(sxdaiAdapter));
+        console2.log("sXDAI_PriceOracle deployed at:", address(sxdaiAdapter));
     }
 
     // Shared L2 deploy helpers — read constructor args from assets.json priceFeeds section.

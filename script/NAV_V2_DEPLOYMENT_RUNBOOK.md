@@ -233,21 +233,24 @@ Structure:
 }
 ```
 
-### 1.2 Mainnet price feed adapters to configure
+### 1.2 Mainnet custom price feed adapters
 
-| Adapter | Config key | Constructor params needed |
-|---------|-----------|-------------------------|
-| sDAI | `sDAI` | `sDai`, `dsrManager`, `daiToUsdChainlinkOracle`, `daiToUsdChainlinkHeartbeat` |
-| LDO | `LDO` | `ldo`, `ldoToEthChainlinkAddress`, `ethToUsdChainlinkAddress`, `ldoToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
-| sUSDS | `sUSDS` | `sUsds`, `usdsToUsdChainlinkAddress`, `usdsToUsdChainlinkHeartbeat` |
-| sUSDe | `sUSDe` | `sUsde`, `usdeToUsdChainlinkAddress`, `usdeToUsdChainlinkHeartbeat` |
-| syrupUSDC | `syrupUSDC` | `syrupUsdc`, `usdcToUsdChainlinkAddress`, `usdcToUsdChainlinkHeartbeat` |
-| wstETH | `wstETH` | `wstEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
-| rETH | `rETH` | `rEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
-| cbETH | `cbETH` | `cbEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
-| weETH | `weETH` | `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
-| rsETH | `rsETH` | `rsEth`, `rateProvider`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
-| eETH | `eETH` | `eEth`, `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
+`03_DeployPriceFeeds.s.sol._deployMainnetPriceAdapters()` dispatches each adapter below, guarded by `ConfigReader.isAdapterEnabled(...)`. An adapter is deployed only if its entry exists and is `enabled: true` under `assets.json.priceFeeds.<name>.1`. The **Configured today** column reflects the current state of `assets.json` on this branch — adapters marked `—` are supported by the deploy script but have no `assets.json` entry, so they are skipped at deploy time. Add them to `assets.json` when a fund needs them.
+
+| Adapter | Config key | Configured today | Constructor params needed |
+|---------|-----------|------------------|--------------------------|
+| wstETH | `wstETH` | ✓ | `wstEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| rETH | `rETH` | ✓ | `rEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| weETH | `weETH` | ✓ | `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
+| eETH | `eETH` | ✓ | `eEth`, `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
+| ezETH | `ezETH` | ✓ | `ezEth`, `restakeManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| rsETH | `rsETH` | ✓ | `rsEth`, `rateProvider`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| sUSDe | `sUSDe` | ✓ | `sUsde`, `usdeToUsdChainlinkAddress`, `usdeToUsdChainlinkHeartbeat` |
+| sUSDS | `sUSDS` | ✓ | `sUsds`, `usdsToUsdChainlinkAddress`, `usdsToUsdChainlinkHeartbeat` |
+| syrupUSDC | `syrupUSDC` | ✓ | `syrupUsdc`, `usdcToUsdChainlinkAddress`, `usdcToUsdChainlinkHeartbeat` |
+| sDAI | `sDAI` | — | `sDai`, `dsrManager`, `daiToUsdChainlinkOracle`, `daiToUsdChainlinkHeartbeat` |
+| LDO | `LDO` | — | `ldo`, `ldoToEthChainlinkAddress`, `ethToUsdChainlinkAddress`, `ldoToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
+| cbETH | `cbETH` | — | `cbEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 
 ### 1.3 Gnosis price feed adapters
 

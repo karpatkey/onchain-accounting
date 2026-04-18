@@ -103,7 +103,7 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 | BridgeEscrow Proxy (CREATE2) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
 | ERC20Default Balance Adapter | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
 
-> **Source of truth for per-chain deployed addresses:** `script/config/chains/<chainId>.json.deployed`. Never rely on abbreviated addresses — always copy the full value from the per-chain config for any chain-specific implementation exception (currently only Optimism).
+> **Source of truth for per-chain deployed addresses:** the `deployed` object inside `script/config/chains/<chainId>.json` (i.e. the `.deployed` top-level JSON key, not a separate `*.deployed` file). Never rely on abbreviated addresses — always copy the full value from the per-chain config for any chain-specific implementation exception (currently only Optimism).
 
 All deployed adapter addresses are persisted in the per-chain config:
 - Bridge adapters → `chains/<id>.json.bridgeAdapters.<name>.deployed`
@@ -191,7 +191,7 @@ Open `script/config/chains/{chainId}.json` and confirm every field is correct fo
 Tick every box below before you broadcast on any chain. Each one has burned a past deployment:
 
 - [ ] Branch you're deploying from is `main` (or a documented release tag). `git rev-parse HEAD` matches the commit you expect.
-- [ ] `forge build --profile local` passes clean.
+- [ ] `forge build` passes clean (default profile — `foundry.toml` defines only `default`, `coverage`, and `slow`; there is no `local` profile here).
 - [ ] Non-fork tests pass: `forge test --no-match-path 'test/**/fork/*.sol'` → 716+ passing.
 - [ ] Fork tests pass against your target chain: `FOUNDRY_PROFILE=slow forge test --match-path 'test/**/fork/*.sol'` → 271+ passing.
 - [ ] `.env` has: `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA), `<CHAIN>_ETHERSCAN_API_KEY`.

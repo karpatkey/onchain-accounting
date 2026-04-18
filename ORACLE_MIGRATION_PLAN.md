@@ -934,7 +934,7 @@ The migration is closed, but several items are known limitations or follow-ups w
 
 - [ ] **Curve and Convex hardcoded mainnet addresses.** `_CRV_TOKEN` and `_CURVE_MINTER` in `Curve.sol`, `_CVX_TOKEN` in `Convex.sol`. Mirrors v1. Fine today because these adapters are Mainnet-only in our inventory, but if we ever deploy Curve/Convex on an L2 we'd either (a) pass the addresses via constructor or (b) add a `block.chainid` guard. Prefer (a) for testability.
 
-- [ ] **Convex CVX via stash wrapper only.** Intentional design documented in the Round 3 review thread and in `Convex.sol` NatSpec. Every Convex pool we include must be verified to expose a CVX stash wrapper in `extraRewards` (see `convex_cvx_stash_check.md` memory). If Convex ever migrates away from stash wrappers, revisit the `_checkExtraReward` flow. For now, keep the pre-deploy check as part of the pool-onboarding runbook.
+- [ ] **Convex CVX via stash wrapper only.** Intentional design documented in the Round 3 review thread and in `Convex.sol` NatSpec. Every Convex pool we include must be verified to expose a CVX stash wrapper in `extraRewards` before onboarding (call `rewarder.extraRewardsLength()` and walk each slot; confirm one of them resolves to a token that forwards to the canonical CVX). If Convex ever migrates away from stash wrappers, revisit the `_checkExtraReward` flow. For now, keep the pre-deploy check as part of the pool-onboarding runbook.
 
 - [ ] **L2 fork-test coverage for oracles other than Aura + BalancerV3.** `calculateIntegrateFractionL2` in Aura and BalancerV3 is exercised by L2 fork tests now. Other oracles with implicit L2 behavior (any that branch on `IS_MAINNET`, or any that derive an address via `Booster.minter()` / similar chain-dependent paths) should grow matching L2 fork tests. None identified in the PR #12 audit, but worth re-checking as protocols add L2 deployments.
 
@@ -976,7 +976,7 @@ Notes worth carrying into future migrations or large refactors.
 
 ### Process notes
 
-- **Keep `memory/convex_cvx_stash_check.md`-style notes.** Small, specific, actionable (a cast command + a verified pool table). Those were the memory entries that saved the most time during review.
+- **Keep small, focused pre-deploy check notes.** Small, specific, actionable (a cast command + a verified pool/market table). The Convex-CVX stash check is the canonical example — those concrete, reproducible checks saved the most time during review.
 
 - **Every PR description should reference this plan document + which sections it covers.** PR #10/#11/#12 all did; makes the retrospective trivial to write.
 
@@ -991,4 +991,4 @@ Forward-looking guidance. The migration is closed — these are the workflows fo
 - **New Custom price oracle:** follow the ["How to add a new Custom price oracle"](script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-custom-price-oracle) section of the runbook.
 - **New balance adapter (protocol or instance):** follow the ["How to add a new balance adapter"](script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-balance-adapter) section of the runbook.
 - **New fund on existing chains:** no code changes needed — just register assets on NAVCalculator (Phase 5 of the runbook) and ensure the relevant balance oracles are already registered. If the fund needs a protocol we don't yet support, add the adapter first.
-- **New chain:** see `DEPLOYMENT_SUMMARY.md` for the CREATE2 + atomic-proxy flow. Add the chain config, run `01_DeployImplementations.s.sol`, `02_DeployProxies.s.sol`, then follow the runbook Phases 1–9.
+- **New chain:** see [`script/DEPLOYMENT_SUMMARY.md`](script/DEPLOYMENT_SUMMARY.md) for the CREATE2 + atomic-proxy flow. Add the chain config, run `01_DeployImplementations.s.sol`, `02_DeployProxies.s.sol`, then follow the runbook Phases 1–9.

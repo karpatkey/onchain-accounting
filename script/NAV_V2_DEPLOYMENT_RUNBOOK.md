@@ -97,11 +97,13 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 
 | Component | Address | Chains |
 |-----------|---------|--------|
-| NAVCalculator Implementation | `0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541` | Mainnet, Arbitrum, Base, Gnosis (Optimism uses `0xf141...`) |
+| NAVCalculator Implementation | `0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xf141150092f88f3c3516D825E2FD3CeF57283442`. |
 | NAVCalculator Proxy (CREATE2) | `0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6` | All 5 |
-| BridgeEscrow Implementation | `0x50FE322E01eB7e537418D6C90ea586063260454D` | Mainnet, Arbitrum, Base, Gnosis (Optimism uses `0xB933...`) |
+| BridgeEscrow Implementation | `0x50FE322E01eB7e537418D6C90ea586063260454D` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xB9330561EA35a7643A95b68D8A70fA6D6c004773`. |
 | BridgeEscrow Proxy (CREATE2) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
 | ERC20Default Balance Adapter | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
+
+> **Source of truth for per-chain deployed addresses:** `script/config/chains/<chainId>.json.deployed`. Never rely on abbreviated addresses — always copy the full value from the per-chain config for any chain-specific implementation exception (currently only Optimism).
 
 All deployed adapter addresses are persisted in the per-chain config:
 - Bridge adapters → `chains/<id>.json.bridgeAdapters.<name>.deployed`
@@ -211,7 +213,7 @@ The `priceFeeds` section must be added to `assets.json` with constructor paramet
 
 > **Looking up Chainlink heartbeats.** Every `*chainlinkHeartbeat` constructor parameter must match (or slightly exceed) the published heartbeat of the underlying Chainlink feed — otherwise every query returns `stale: true` between heartbeat writes. Chainlink's authoritative source is the JSON directory at `https://reference-data-directory.vercel.app/feeds-<network>.json` (e.g. `feeds-mainnet.json`, `feeds-ethereum-mainnet-arbitrum-1.json`). Each feed entry exposes `heartbeat` (seconds) and `threshold` (deviation %). Alternatively, [data.chain.link](https://data.chain.link) shows the same values per feed page. ETH/USD mainnet is 3600s; USD stablecoins are typically 86400s. If in doubt, round up (e.g. 3900s) to tolerate block-time jitter.
 
-> **Also pre-seed chain configs.** `ConfigReader.writeAdapterAddress(...)` writes deployed price-feed addresses to `script/config/chains/{chainId}.json` at `.priceFeeds.{adapter}.deployed`. Foundry `vm.writeJson` will not create a missing parent object, so each chain config must have a `"priceFeeds": {}` key (with per-adapter sub-objects for anything you want to deploy) before `03_DeployPriceFeeds.s.sol` runs. A stale comment in `ConfigReader.readAdapterParam` says "priceFeeds has been removed from chain config schema" — that comment is wrong; the script still writes there.
+> **Also pre-seed chain configs.** `ConfigReader.writeAdapterAddress(...)` writes deployed price-feed addresses to `script/config/chains/{chainId}.json` at `.priceFeeds.{adapter}.deployed`. Foundry `vm.writeJson` will not create a missing parent object, so each chain config must have a `"priceFeeds": {}` key (with per-adapter sub-objects for anything you want to deploy) before `03_DeployPriceFeeds.s.sol` runs. `ConfigReader.readAdapterParam` documents this behaviour inline; use that as the authoritative reference if in doubt.
 
 Structure:
 
@@ -306,8 +308,8 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 |---------------|-------------------|-------------------|
 | `AaveV3_*` | `dataProvider`, `protocol` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
 | `CompoundV3_*` | `compoundRewards`, `comet`, `rewardToken`, `protocol` | Mainnet |
-| `SparkLend_*` | `dataProvider`, `protocol` | Mainnet |
-| `MorphoBlue_*` | `morpho`, `marketId`, `protocol` | Mainnet |
+| `SparkLend`, `SparkLend_*` | `dataProvider`, `protocol` | Mainnet (current wiring uses the bare `SparkLend`; the `SparkLend_*` prefix is supported for future multi-market use) |
+| `MorphoMarket_*` | `morpho`, `marketId`, `protocol` | Mainnet, Arbitrum, Base (per-chain via config `enabled` flag) |
 | `MorphoVault_*` | `vault`, `protocol`, `positionDetail` | Mainnet |
 | `GearboxMarket_*` | `market`, `protocol`, `positionDetail` | Mainnet |
 | `Cap` | `cUsd`, `stcUsd`, `usdc`, `protocol`, `positionDetail` | Mainnet |
@@ -323,13 +325,13 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-The `run()` function in `04_DeployBalanceAdapters.s.sol` calls `_deployIfEnabled` per chain. The current inventory (43 instances across 5 chains) was scoped to what ETH Alpha Fund and USD Alpha Fund require. Source of truth: the `_deployChainBalanceAdapters` dispatch in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain. There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. The current inventory (43 instances across 5 chains) was scoped to what ETH Alpha Fund and USD Alpha Fund require. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
-1. Add a new `_deployIfEnabled("<AdapterName>")` call inside the correct `_deploy<Chain>BalanceAdapters()` function.
-2. Add a corresponding `balanceAdapters.<AdapterName>` entry to `script/config/chains/<chainId>.json` with constructor params.
-3. Run `04_DeployBalanceAdapters.s.sol` for that chain — existing adapters are skipped (idempotent).
+1. Add a new `_deployIfEnabled("<AdapterName>")` call inside the `run()` function of `04_DeployBalanceAdapters.s.sol`.
+2. Add a corresponding `balanceAdapters.<AdapterName>` entry to `script/config/chains/<chainId>.json` with `enabled: true` and constructor params for the target chain.
+3. Run `04_DeployBalanceAdapters.s.sol` for that chain — adapters not enabled in that chain's config are skipped, and already-deployed adapters are skipped (idempotent).
 4. Add the adapter address to NAVCalculator via Phase 6.
 
 ### 2.4 Adapter inventory (authoritative — `run()` list in `04_DeployBalanceAdapters.s.sol`)

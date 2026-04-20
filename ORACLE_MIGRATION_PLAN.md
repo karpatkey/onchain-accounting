@@ -942,6 +942,8 @@ The migration is closed, but several items are known limitations or follow-ups w
 
 - [ ] **`_latestPrice` natspec has a `COMPLETE ME` placeholder** (`src/prices/Prices.sol:56`). Fill in the stale semantics in prose.
 
+- [ ] **`VerifyEtherscan.s.sol` uses a hardcoded adapter list.** `_emitVerifyBalanceAdapters` iterates a fixed `string[]` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`) instead of walking `04_DeployBalanceAdapters.run()`. Instances outside the list (`AaveV3_Core`, `AaveV3_Prime`, `Aura_*`, `Curve_*`, `Convex_*`, `MorphoMarket_*`) are silently skipped — Phase 8 emits no `forge verify-contract` command for them, and the operator either extends the list or runs `verify-contract` by hand. Rewrite the script to iterate the real config/run list (same per-adapter arg mapping already lives in `_balanceAdapterPathAndArgs`). Flagged by Copilot on PR #13; runbook §8.1 documents the limitation until fixed.
+
 - [ ] **Bridge adapters on Mainnet + Optimism + Gnosis.** Config-enabled where applicable, not yet broadcast. Non-blocking for current funds; deploy when the first fund needs to bridge *from* those chains (see runbook gap 4).
 
 - [ ] **Shares v2 consumes NAV on-chain?** Currently no — `kpkShares` uses off-chain price submission via `settleRequests`. If a future fund wires NAV on-chain, it must check `nav.stalePriceAssets` and `nav.sequencerDown` — NAVCalculator does not revert on stale, it returns best-effort value plus flags. Document this explicitly in any new on-chain consumer.

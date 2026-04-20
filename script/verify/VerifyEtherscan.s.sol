@@ -60,11 +60,12 @@ contract VerifyEtherscan is BaseDeployScript {
 
     function _emitVerifyBalanceAdapters() internal view {
         address nav = readDeployedAddress("NAVCalculatorProxy");
-        string[9] memory names = [
+        string[10] memory names = [
             "AaveV3_USDC",
             "AaveV3_WETH",
             "CompoundV3_USDC",
             "CompoundV3_WETH",
+            "SparkLend",
             "SparkLend_USDC",
             "MorphoBlue_USDC",
             "DaiDsr",
@@ -106,7 +107,7 @@ contract VerifyEtherscan is BaseDeployScript {
             args = abi.encode(compoundRewards, comet, rewardToken, protocol, nav);
             return (path, args);
         }
-        if (_startsWith(name, "SparkLend_")) {
+        if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceOracle";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");

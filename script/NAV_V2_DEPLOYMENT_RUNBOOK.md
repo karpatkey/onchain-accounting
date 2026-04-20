@@ -628,6 +628,8 @@ forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 ```
 
+> **Known limitation — hardcoded adapter list.** `VerifyEtherscan.s.sol` does **not** iterate the full `04_DeployBalanceAdapters.run()` inventory. It emits `forge verify-contract` commands only for the names in the hardcoded arrays inside `_emitVerifyBalanceAdapters` and `_balanceAdapterPathAndArgs` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`). Adapters outside that list (`AaveV3_Core`, `AaveV3_Prime`, `Aura_*`, `Curve_*`, `Convex_*`, `MorphoMarket_*`, etc.) are silently skipped. When you add a new adapter type or instance, either extend the hardcoded arrays in `VerifyEtherscan.s.sol` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `ORACLE_MIGRATION_PLAN.md` ("Aspects to improve").
+
 ### 8.2 Run the printed commands
 
 The script outputs ready-to-run `forge verify-contract` commands. Copy and run each one. Make sure the corresponding explorer API key is set in your environment.
@@ -829,7 +831,7 @@ NAV v2 returns `(0, decimals, true)` for any Chainlink answer ≤ 0 (`src/prices
 
 ### `forge script` fails with `vm.writeJson: no such key`
 
-Foundry's `vm.writeJson` requires the parent object to exist. Make sure `chains/<id>.json` has `"priceFeeds": {}` and `"balanceAdapters": {}` keys even if empty, and every specific adapter name you reference has its sub-object (with `"deployed": ""` at minimum). Missing parents are silent — the script succeeds but doesn't persist the address.
+Foundry's `vm.writeJson` requires the parent object to exist. Make sure `chains/<id>.json` has `"priceFeeds": {}` and `"balanceAdapters": {}` keys even if empty, and every specific adapter name you reference has its sub-object (with `"deployed": ""` at minimum). `ConfigReader.writeAdapterAddress` calls `vm.writeJson` directly — if any parent in the path is missing, the script run **reverts** with `vm.writeJson: no such key`. Pre-seed the parent objects (see Phase 0.2) before re-running.
 
 ### Role misconfiguration
 

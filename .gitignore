@@ -18,6 +18,5 @@ commit.msg
 
 # Safe transactions
 safe-transactions/
-ORACLE_MIGRATION_PLAN.md
 .claude/
 pr1_body.md

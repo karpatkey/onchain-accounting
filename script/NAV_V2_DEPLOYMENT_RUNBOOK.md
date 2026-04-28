@@ -19,11 +19,13 @@ Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator
 
 ## System overview
 
+> **Note on addresses in this runbook.** Concrete addresses cited below (`0x5a0b28e1...4f54C6` for NAVCalculator proxy, `0x1ECAEa1C...8A19` for BridgeEscrow proxy, `0xc07C9996...EBA21C` for ERC20Default) are the **salt-v2 test deployment** done in 2026-02. They are kept here for documentation continuity and as concrete examples in `cast` snippets. After the production **salt-v3 redeploy** (see "Redeploying proxies" below), substitute the new addresses from `script/config/chains/<chainId>.json.deployed.NAVCalculatorProxy` / `.BridgeEscrowProxy` / per-chain ERC20Default. The redeploy happens once; from that point the chain configs are the source of truth.
+
 NAV v2 is a single, chain-local system. Each supported chain has:
 
-- **One NAVCalculator proxy** (UUPS) at the same canonical address on every chain (`0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
-- **One BridgeEscrow proxy** (UUPS) at `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19`. Tracks outbound/inbound bridge liquidity that would otherwise be invisible to the NAV.
-- **One default ERC20 balance adapter** at `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` — reports plain wallet balances for every registered ERC20 + the native coin.
+- **One NAVCalculator proxy** (UUPS) at the same canonical address on every chain (test deploy: `0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
+- **One BridgeEscrow proxy** (UUPS) at `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` (test deploy). Tracks outbound/inbound bridge liquidity that would otherwise be invisible to the NAV.
+- **One default ERC20 balance adapter** at `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` (test deploy) — reports plain wallet balances for every registered ERC20 + the native coin.
 - **N custom price feed adapters** — one per Custom-priced asset. Implements `IPriceFeedCustom.getLatestPrice()`.
 - **N custom balance adapters** — one per protocol position (Aave V3 Core, Morpho vault, Curve gauge, etc.). Implements `IBalanceOracleAdapter.getOraclePositions()` / `getOracleBalances()` / `getOracleBalanceForAsset()`.
 
@@ -53,23 +55,18 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 
 **Legacy path (`USE_LEGACY_DEPLOY=1`).** Same shape except initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE` and the broadcast sender remains the deployer EOA.
 
-**The catch that matters at runtime.** In both paths, step 4's `grantRole(MANAGER, ...)` is executed from `msg.sender = deployer EOA`. `OpenZeppelin AccessControl.grantRole` requires the caller to already hold the admin role for the role being granted (which, for `MANAGER`, means `DEFAULT_ADMIN_ROLE`). The deployer EOA is **never** explicitly granted `DEFAULT_ADMIN_ROLE` by either script. So:
+**Current on-chain state (audited 2026-04-28).** Every chain config sets `addresses.admin = addresses.manager = 0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`. The runbook originally treated this as a Safe; `cast code` on all 5 chains returns `0x` — it's actually an **EOA**. The address holds both `DEFAULT_ADMIN_ROLE` and `MANAGER` on the salt-v2 proxies on every chain, so a single private key controls the entire NAV v2 control plane on the test deploy. This is **not production-acceptable**; before launch the proxies must be redeployed with admin/manager set to a real per-chain Safe (see "Redeploying proxies (production fresh-start)" below).
 
-- If `chainConfig.admin` equals the deployer EOA at the time of deploy → step 4 succeeds (deployer has admin).
+**The `02_DeployProxies` MANAGER-grant latent bug** (will bite during the production redeploy, when `chainConfig.admin` finally points at a Safe). In both atomic and legacy paths, step 4's `grantRole(MANAGER, ...)` is executed from `msg.sender = deployer EOA`. `OpenZeppelin AccessControl.grantRole` requires the caller to already hold the admin role for the role being granted (which, for `MANAGER`, means `DEFAULT_ADMIN_ROLE`). The deployer EOA is **never** explicitly granted `DEFAULT_ADMIN_ROLE` by either script. So:
+
+- If `chainConfig.admin` equals the deployer EOA at the time of deploy → step 4 succeeds (deployer has admin, then transfers to Safe afterwards).
 - If `chainConfig.admin` is a Safe and the deployer is a different EOA → **step 4 reverts** and the deploy transaction fails after the proxies are already deployed and initialized.
 
-As of 2026-04-17, every chain config has `addresses.admin` set to a Safe address (e.g. Mainnet `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`) that is different from any plausible deployer EOA. So **running `02_DeployProxies.s.sol` against an as-merged chain config will revert at the MANAGER grant step.** This is a latent bug in the deploy scripts — tracked in `ORACLE_MIGRATION_PLAN.md` under "Aspects to improve".
-
-**Two workable workflows until the scripts are fixed:**
-
-1. **Temporarily set `chainConfig.admin` = deployer EOA** → run `02_DeployProxies.s.sol` → update `chainConfig.admin` back to the Safe → run a Safe TX that `grantRole(DEFAULT_ADMIN_ROLE, Safe)` + `revokeRole(DEFAULT_ADMIN_ROLE, deployer)` + `grantRole(MANAGER, manager)`.
-2. **Skip the MANAGER grant in `02`** (comment out lines 179–183, or guard on `chainConfig.admin == msg.sender`) → run `02` → have the Safe grant MANAGER afterwards (either via `06_Configure.s.sol`'s Safe TX batch or a direct Safe TX).
-
-Recommend (2) because it leaves the persistent `addresses.admin = Safe` pattern intact and doesn't require a config round-trip. The fix for `02_DeployProxies.s.sol` is to guard the grant or move it to `06_Configure.s.sol`.
+This is tracked in `ORACLE_MIGRATION_PLAN.md` under "Aspects to improve". The redeploy section below details two workarounds and a proper fix.
 
 **Important nuance.** After the atomic deploy, the `AtomicProxyDeployer` contract's address still shows `hasRole(DEFAULT_ADMIN_ROLE, ...) == true` in the proxies. The contract has no runtime code that can call anything (constructor-only, no external functions), so it's functionally dead. Still cosmetically undesirable — if you want it cleaned up, add a post-deploy Safe TX that revokes the orphaned role.
 
-**Recommended steady-state convention.** Both `chainConfig.admin` and `chainConfig.manager` point to the **same per-chain Safe multisig** (the "OIV Safe"). Deployer EOA pays gas at deploy time and retains no ongoing NAV powers. This is what the current chain configs describe; the deploy-script bug above is what stops us from actually reaching that state in one run today.
+**Steady-state convention (target, not current).** `chainConfig.admin` and `chainConfig.manager` should point to the **same per-chain Safe multisig** (the "OIV Safe"). Deployer EOA pays gas at deploy time and retains no ongoing NAV powers. The current chain configs name this address `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`, which **is the EOA from the test deploy** — convention not yet reached. The redeploy is what gets us there.
 
 **Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV v2's access-control design is safer, but until the `02` MANAGER-grant bug is fixed, double-verify roles post-deploy with the commands below.
 
@@ -95,13 +92,15 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 
 ## Canonical addresses (post-merge, verified 2026-04-17)
 
+> **STATUS — these are the test-deploy addresses (2026-02), not the production deploy.** On 2026-04-28 a role audit confirmed that `chainConfig.admin` and `chainConfig.manager` for both proxies on every chain hold the EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` (verified via `cast code` returning `0x` — single-private-key account, not a Safe multisig). Production launch must redeploy the proxies with admin/manager set to the per-chain Safe; see "Redeploying proxies (production fresh-start)" below for the exact procedure. The implementations are current and can be reused.
+
 | Component | Address | Chains |
 |-----------|---------|--------|
 | NAVCalculator Implementation | `0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xf141150092f88f3c3516D825E2FD3CeF57283442`. |
-| NAVCalculator Proxy (CREATE2) | `0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6` | All 5 |
+| NAVCalculator Proxy (CREATE2, **salt v2 — test deploy**) | `0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6` | All 5 |
 | BridgeEscrow Implementation | `0x50FE322E01eB7e537418D6C90ea586063260454D` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xB9330561EA35a7643A95b68D8A70fA6D6c004773`. |
-| BridgeEscrow Proxy (CREATE2) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
-| ERC20Default Balance Adapter | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
+| BridgeEscrow Proxy (CREATE2, **salt v2 — test deploy**) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
+| ERC20Default Balance Adapter (test deploy) | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
 
 > **Source of truth for per-chain deployed addresses:** the `deployed` object inside `script/config/chains/<chainId>.json` (i.e. the `.deployed` top-level JSON key, not a separate `*.deployed` file). Never rely on abbreviated addresses — always copy the full value from the per-chain config for any chain-specific implementation exception (currently only Optimism).
 
@@ -126,6 +125,115 @@ All deployed adapter addresses are persisted in the per-chain config:
 
 ---
 
+## Redeploying proxies (production fresh-start)
+
+Use this section when the existing proxies were a **test deployment** (admin/manager held by an EOA, unverified roles, or any other reason to start clean) and you need fresh proxies with proper Safe-controlled roles.
+
+**Implementations stay; only proxies redeploy.** The NAVCalculator and BridgeEscrow implementation contracts (already deployed at the canonical addresses in the previous section) can be reused — they're current source code (NAV unchanged since deploy; Bridge has cosmetic source drift but no breaking interface changes for Phase 4-9 use). New proxies pointing at existing implementations is the cheapest, lowest-risk redeploy.
+
+> **CREATE2 collision avoidance.** The existing proxies were deployed with `generateSalt("NAVCalculatorProxy", 2)` / `("BridgeEscrowProxy", 2)` / `("ProxyPlaceholderImpl", 2)` (the trailing `2` is a version number). Calling `02_DeployProxies.s.sol` again with the same salts would collide (CREATE2 cannot redeploy at an occupied address). **Bump the version to `3`** in `script/deploy/02_DeployProxies.s.sol` lines 33, 40, 44 to derive fresh addresses on every chain.
+
+### R.1 Prerequisites
+
+- [ ] **Confirm target Safe address.** This Safe will hold `DEFAULT_ADMIN_ROLE` + `MANAGER` on both proxies after the redeploy. Ideally the same Safe address on all 5 chains (Safe Protocol's `SafeProxyFactory.createProxyWithNonce(...)` with a deterministic nonce + initializer can give matching addresses; coordinate with the Safe deploy team if not yet provisioned). Verify per chain with `cast call <SafeAddr> "getThreshold()(uint256)" --rpc-url <RPC>` — should return a positive integer (and code present).
+- [ ] **Decide which Safe address goes in `chainConfig.admin` vs `chainConfig.manager`.** Recommended: same Safe in both, per the runbook's steady-state convention.
+- [ ] **Patch the `02_DeployProxies` MANAGER-grant bug** (or use a workaround). The script's final step calls `grantRole(MANAGER, chainConfig.manager)` from the broadcast sender (deployer EOA). When `chainConfig.admin` is a Safe (not the deployer EOA), the deployer doesn't hold `DEFAULT_ADMIN_ROLE`, so `grantRole` reverts. Three options:
+  1. **Proper fix (preferred):** guard the grant on `msg.sender == chainConfig.admin`, OR move the MANAGER grant into `AtomicProxyDeployer`'s constructor (which already holds admin transiently). Tracked as a follow-up in `ORACLE_MIGRATION_PLAN.md`.
+  2. **Temporary EOA admin:** set `chainConfig.admin = chainConfig.manager = deployer EOA` for the broadcast → run `02` → then issue a Safe-handoff via `cast send` from the deployer:
+     ```
+     NAVCalculator.grantRole(DEFAULT_ADMIN_ROLE, <Safe>)
+     NAVCalculator.grantRole(MANAGER, <Safe>)
+     NAVCalculator.revokeRole(MANAGER, <deployer>)
+     NAVCalculator.revokeRole(DEFAULT_ADMIN_ROLE, <deployer>)
+     # same 4 for BridgeEscrow
+     ```
+     8 txs per chain × 5 chains = 40 txs from the deployer EOA. Cheapest workaround.
+  3. **Skip the grant in `02`, do it in `06_Configure`:** comment out `02_DeployProxies.s.sol` lines that grant MANAGER, then have `06_Configure.s.sol` emit the Safe TX batch that grants both roles to the Safe. Cleaner than option 2 but requires editing two scripts.
+- [ ] **Deployer EOA gas funded on all 5 chains.** Rule of thumb: 0.05 ETH on Mainnet, 0.01 ETH-equivalent on each L2/Gnosis. `02` uses CREATE2 + UUPS upgrade-and-init, ~600k gas per chain.
+- [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA).
+- [ ] **All tests green** on the branch you're deploying from. `forge test` non-fork = 716+ passing.
+
+### R.2 Step-by-step
+
+1. **Patch the salt version.** Edit `script/deploy/02_DeployProxies.s.sol`:
+   ```solidity
+   bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 3);  // was 2
+   ...
+   bytes32 saltNavProxy    = generateSalt("NAVCalculatorProxy",    3);  // was 2
+   ...
+   bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy",     3);  // was 2
+   ```
+   Compute the new addresses locally (`forge script` will print them in dry-run before broadcasting) — these are the **new canonical proxy addresses** going forward.
+
+2. **Patch the MANAGER-grant bug** (option 1 from R.1) OR proceed with workaround 2/3.
+
+3. **Update each `script/config/chains/<id>.json`:**
+   - Set `addresses.admin` and `addresses.manager` to the target Safe address (or to the deployer EOA if using workaround 2 — to be flipped after deploy).
+   - Clear `deployed.NAVCalculatorProxy` and `deployed.BridgeEscrowProxy` (set to `""`). The script writes new ones after broadcast.
+   - Leave `deployed.NAVCalculatorImplementation` and `deployed.BridgeEscrowImplementation` populated — these are reused. Confirm they match the canonical addresses table above for your chain.
+
+4. **Run `02_DeployProxies.s.sol --broadcast` per chain:**
+   ```bash
+   for chain in 1 42161 8453 10 100; do
+     case $chain in
+       1)     RPC=https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       42161) RPC=https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       8453)  RPC=https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       10)    RPC=https://opt-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       100)   RPC=https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+     esac
+     forge script script/deploy/02_DeployProxies.s.sol \
+       --rpc-url "$RPC" --chain-id $chain \
+       --broadcast --private-key $PRIVATE_KEY
+   done
+   ```
+   Expected per chain: 3 CREATE2 transactions (placeholder, NAV proxy, Bridge proxy) + 2 UUPS upgrade-and-init transactions. The script writes the new proxy addresses into `chains/<chainId>.json.deployed.*`.
+
+5. **If using workaround 2 (temp EOA admin):** issue the role-handoff `cast send` calls per chain (see R.1 option 2). Verify roles after.
+
+6. **Verify roles** post-deploy with the cast block from §"Roles and governance":
+   ```bash
+   NAV_PROXY=<new address>
+   SAFE=<target Safe>
+   DEPLOYER=<deployer EOA>
+   MANAGER_ROLE=$(cast keccak "MANAGER")
+   for chain in 1 42161 8453 10 100; do
+     # Expected: true, true, false, false (Safe holds both, deployer holds neither)
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $SAFE     --rpc-url $RPC
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $SAFE     --rpc-url $RPC
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $DEPLOYER --rpc-url $RPC
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $DEPLOYER --rpc-url $RPC
+   done
+   ```
+   Repeat for `BRIDGE_PROXY`. **Stop and fix** if any returns the wrong result.
+
+7. **Update `chains/<chainId>.json.deployed`** for the per-chain ERC20Default Balance Adapter address — this gets re-deployed during `NAVCalculator.initialize()`, so the new proxies will have a different ERC20Default address than the old `0xc07C999644...EBA21C`. Read the new address from the broadcast logs (the script logs `[OK] ERC20DefaultOracle deployed at: 0x...`) or query the proxy after deploy: `cast call <NAV_PROXY> "getRegisteredOracleByIndex(uint256)(address)" 0 --rpc-url <RPC>`.
+
+8. **Update the "Canonical addresses" table** at the top of this runbook with the new proxy + ERC20Default addresses. Bump the verification date.
+
+9. **Update `ORACLE_MIGRATION_PLAN.md`** "Aspects to improve" — strike the `02_DeployProxies` MANAGER-grant bug entry if you used option 1; or note the workaround used.
+
+10. **Optionally clean up the orphaned `AtomicProxyDeployer` admin role.** From the new constructor logs, find the `AtomicProxyDeployer` address(es) deployed on each chain. Issue a Safe TX:
+    ```
+    NAVCalculator.revokeRole(DEFAULT_ADMIN_ROLE, <AtomicProxyDeployer>)
+    BridgeEscrow.revokeRole(DEFAULT_ADMIN_ROLE, <AtomicProxyDeployer>)
+    ```
+    Cosmetic — that contract has no callable functions to abuse the role with.
+
+11. **Continue with Phase 4** (deploy balance adapters), then Phase 5+6 (Safe TX batch from the new admin Safe), Phase 8 (verification), Phase 9 (validation).
+
+### R.3 What about the OLD proxies?
+
+The salt-v2 proxies stay on-chain at `0x5a0b28e1...4f54C6` and `0x1ECAEa1C...8A19`. They retain the EOA-as-admin/manager state. **Nothing functional uses them after this redeploy** — chain configs point at the new salt-v3 addresses, and any downstream consumer (Shares contract, monitoring) reads from the chain configs. The old proxies remain as orphan deployments. If you want belt-and-braces hygiene, the EOA can call `revokeRole(DEFAULT_ADMIN_ROLE, EOA)` on each old proxy to render them ungovernable — but they have no balance and no consumers, so leaving them is acceptable.
+
+### R.4 Don't forget downstream
+
+- `karpatkey-tokenized-fund` — any deploy script that hardcodes the NAV v2 proxy addresses (search `0x5a0b28e1` / `0x1ECAEa1C`) needs updating.
+- `onchain-investment-vehicles` — same; check before re-deploying any Shares contract.
+- Internal monitoring / dashboards / docs — anywhere the old addresses are referenced.
+
+---
+
 ## Phase 0: Prerequisites
 
 ### 0.1 Merge oracle migration PRs
@@ -134,9 +242,11 @@ The oracle migration PRs have all merged to `main`:
 
 | PR | Branch | Content | Status |
 |----|--------|---------|--------|
-| [#10](https://github.com/karpatkey/onchain-accounting/pull/10) | `feat/pr1-surgical-changes` | Base infrastructure changes | Merged 2026-04-17 (`f97f264`) |
-| [#11](https://github.com/karpatkey/onchain-accounting/pull/11) | `feat/pr2-price-oracles` | 16 custom price oracles + L2 deploy wiring | Merged 2026-04-17 (`369efd0`) |
-| [#12](https://github.com/karpatkey/onchain-accounting/pull/12) | `feat/pr3-balance-oracles` | 5 new balance oracle adapters (MorphoVault, GearboxMarket, Cap, Curve, Convex) + per-instance deploy wiring | Merged 2026-04-17 (`f32d560`) |
+| [#10](https://github.com/karpatkey/onchain-accounting/pull/10) | `feat/pr1-surgical-changes` | Base infrastructure changes | Merged 2026-04-17 (`f97f264`) ✓ |
+| [#11](https://github.com/karpatkey/onchain-accounting/pull/11) | `feat/pr2-price-oracles` | 16 custom price oracles + L2 deploy wiring | Merged 2026-04-17 (`369efd0`) ✓ |
+| [#12](https://github.com/karpatkey/onchain-accounting/pull/12) | `feat/pr3-balance-oracles` | 5 new balance oracle adapters (MorphoVault, GearboxMarket, Cap, Curve, Convex) + per-instance deploy wiring | Merged 2026-04-17 (`f32d560`) ✓ |
+| [#13](https://github.com/karpatkey/onchain-accounting/pull/13) | `docs/nav-v2-runbook-update` | NAV v2 runbook + tracked migration plan + SparkLend dispatch fix | Merged 2026-04-24 (`849e3ff`) ✓ |
+| [#14](https://github.com/karpatkey/onchain-accounting/pull/14) | `feat/usd-alpha-token-registry` | USD Alpha token registry alignment + heartbeat fixes + redeploy guidance docs | Open — must merge before Phase 4 |
 
 ### 0.2 Environment setup
 
@@ -179,10 +289,10 @@ Open `script/config/chains/{chainId}.json` and confirm every field is correct fo
 | `explorer` + `explorerApiKey` | For Etherscan-family verification in Phase 8 | Must match chainId |
 | `chainlinkSequencerFeed` | Chainlink L2 sequencer uptime feed; `address(0)` on L1s | Required on L2s — otherwise `getAccountNav` can't detect sequencer downtime |
 | `nativeTokenSymbol` | `"ETH"`, `"xDAI"`, etc. | Shows up in NAV responses for the native sentinel |
-| `addresses.safeMultisig` | The per-chain OIV Safe | Must be a Safe (verify via `cast call <addr> "getThreshold()(uint256)"`) |
-| `addresses.admin` | Holds `DEFAULT_ADMIN_ROLE` post-deploy | Strongly recommended: same as `safeMultisig` |
-| `addresses.manager` | Holds `MANAGER` post-deploy | Strongly recommended: same as `safeMultisig` |
-| `deployed.*` | Canonical NAV/Bridge addresses already populated on all 5 chains | Do not modify unless you're deploying a new chain |
+| `addresses.safeMultisig` | The per-chain OIV Safe | **Must be a Safe** — verify via `cast code <addr> --rpc-url <RPC>` (returns bytecode, not `0x`) AND `cast call <addr> "getThreshold()(uint256)"` (returns ≥1) |
+| `addresses.admin` | Holds `DEFAULT_ADMIN_ROLE` post-deploy | Must equal `safeMultisig`. **Audit 2026-04-28: currently set to EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` on all 5 chains — must be updated to the OIV Safe before the production redeploy.** |
+| `addresses.manager` | Holds `MANAGER` post-deploy | Must equal `safeMultisig`. Same EOA caveat as `admin`. |
+| `deployed.*` | Canonical NAV/Bridge addresses already populated on all 5 chains | These point at the salt-v2 **test deploy**. Will be replaced by the salt-v3 redeploy; do not treat as production until then. |
 
 **Rule:** if you change any `addresses.*` value after `02_DeployProxies.s.sol` has run for a chain, you must re-grant roles explicitly via a Safe TX batch. You cannot re-run `02` idempotently for role changes.
 
@@ -190,13 +300,14 @@ Open `script/config/chains/{chainId}.json` and confirm every field is correct fo
 
 Tick every box below before you broadcast on any chain. Each one has burned a past deployment:
 
+- [ ] **NAV v2 proxies have been redeployed with Safe admin/manager** (or you've explicitly accepted the test-deploy state). Verify with `cast code <safeAddr> --rpc-url <RPC>` returning bytecode, not `0x`, AND `hasRole(DEFAULT_ADMIN_ROLE, <safe>) = true` on both proxies. If still pointing at EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`, **stop and complete "Redeploying proxies" first** — Phase 4-9 against EOA-controlled proxies is single-key custody.
 - [ ] Branch you're deploying from is `main` (or a documented release tag). `git rev-parse HEAD` matches the commit you expect.
 - [ ] `forge build` passes clean (default profile — `foundry.toml` defines only `default`, `coverage`, and `slow`; there is no `local` profile here).
 - [ ] Non-fork tests pass: `forge test --no-match-path 'test/**/fork/*.sol'` → 716+ passing.
 - [ ] Fork tests pass against your target chain: `FOUNDRY_PROFILE=slow forge test --match-path 'test/**/fork/*.sol'` → 271+ passing.
 - [ ] `.env` has: `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA), `<CHAIN>_ETHERSCAN_API_KEY`.
-- [ ] Deployer EOA has native gas on the target chain (check with `cast balance <EOA> --rpc-url ...`). Rule of thumb: 0.05 ETH on L1, 0.01 ETH-equivalent on L2s/Gnosis for a full Phase 3+4+5 run.
-- [ ] Chain config `addresses.admin` and `addresses.manager` point to the correct per-chain Safe.
+- [ ] Deployer EOA has native gas on the target chain (check with `cast balance <EOA> --rpc-url ...`). Rule of thumb: 0.05 ETH on L1, 0.01 ETH-equivalent on L2s/Gnosis for a full Phase 4+5 run (Phase 3 typically skipped — see Phase 3 intro).
+- [ ] Chain config `addresses.admin` and `addresses.manager` point to the correct per-chain Safe (post-redeploy).
 - [ ] For redeploys of a specific adapter: `deployed: ""` is cleared in the config (otherwise the script skips).
 - [ ] You know which Safe's signers will execute the generated Safe TX JSONs in Phases 5/6, and those signers are available.
 - [ ] You have a rollback plan: any pre-existing price feed or balance oracle you intend to replace is documented, and you know the `cast send` commands to revert.
@@ -277,6 +388,31 @@ Authoritative source: the `_deploy<Chain>PriceAdapters` functions in `03_DeployP
 **Optimism has no Custom price adapters.** Alpha funds on OP use Chainlink feeds exclusively (`wstethToUsdChainlink`, `usdcToUsdChainlink`, `usdtToUsdChainlink`). `_deployOptimismPriceAdapters()` is an intentional no-op; if a future fund needs a Custom adapter on OP, add it there.
 
 > **Double-check before you add a new Custom adapter:** some assets on L2s already have `type: "Custom"` in `assets.json` with a third-party-deployed `pricefeed` address (e.g. an Aave-provided ratio feed). Confirm whether the existing address is ours or third-party before deploying a duplicate.
+
+### 1.5 Heartbeat conventions
+
+`assets.json` and the chain configs both surface heartbeat values, and they mean different things in different places. Get this wrong and `NAVCalculator.getAccountNav` either over-reports staleness (every price flagged stale) or under-reports it (a multi-hour-stale price is treated as fresh).
+
+**Where heartbeats appear and what they control:**
+
+| Location | Used by | What it does |
+|---|---|---|
+| `tokens.<chainId>.<symbol>.heartbeat` (number) | `RegisterAssets.s.sol` → `NAVCalculator.registerAsset(_, _, _, heartbeat)` → stored in `priceOracles[asset].chainlinkHeartbeat` | For `Chainlink`-typed entries: NAV checks `block.timestamp - latestRoundData().updatedAt > heartbeat` and flags `stale` if exceeded (`Prices.sol:75`). For `Custom`-typed entries: stored but **not used** for staleness — the Custom oracle returns its own `stale` bit. |
+| `priceFeeds.<adapter>.<chainId>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom oracle's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_Price.sol:85-90`), so any single feed exceeding its heartbeat marks the whole price stale. |
+
+**Conventions to follow (PR #14 baseline, all aligned to the fund-side):**
+
+- **Chainlink-typed token entries.** Use the **fund-side `<chain>PriceOracles.<feed>ToUsdChainlink().chainlinkHeartbeat`** value. Notable non-86400 cases:
+  - DAI/USD Mainnet: **3600**
+  - USDC/USD Mainnet: **82800** (not 86400 — the standard `0x8fFfFfd4...818f6` aggregator publishes every 23h)
+  - USDe/USD Mainnet: **82800**
+  - ETH/USD Base, Optimism: **1200** (20-minute cadence)
+  - All other ETH/USD feeds (Mainnet, Arbitrum, Gnosis): 3600 / 86400 depending on chain — check `PriceOracles.sol`
+  - Stablecoins generally: **86400**
+- **Custom-typed token entries.** Use **`type(uint256).max`** (the literal `115792089237316195423570985008687907853269984665640564039457584007913129639935`). This matches the fund-side `maxHeartbeat` constant. The Custom oracle reports its own staleness; this field is advisory.
+- **Custom adapter constructor heartbeats** (in `priceFeeds.<adapter>.<chainId>.constructor`). Each per-feed heartbeat parameter must equal the **actual Chainlink feed's published heartbeat** for the feed it points at. Example: `priceFeeds.syrupUSDC.1.constructor.usdcToUsdChainlinkHeartbeat = "82800"` because that adapter consumes the standard USDC/USD Mainnet feed (heartbeat 82800). A 86400 here would silently tolerate a 1-hour-stale USDC price.
+
+**Source of truth.** Every heartbeat — token-entry or adapter-constructor — should match the corresponding fund-side `karpatkey-tokenized-fund/contracts/script/deploy/oracles/priceOracles/PriceOracles.sol` `<chain>PriceOracles.<getter>().chainlinkHeartbeat`. PR #14 audited and aligned all 55 token entries and all 19 adapter-constructor heartbeats; CI doesn't currently enforce this drift, so re-audit on every change.
 
 ---
 
@@ -376,6 +512,14 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 ## Phase 3: Deploy Price Feed Adapters
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
+
+> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom oracle we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom oracles (see `ORACLE_MIGRATION_PLAN.md` → "Empirical confirmation"). For any adapter whose `assets.json.tokens.<chainId>.<symbol>.pricefeed` already points at a working fund-side address, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
+>
+> Running this phase only adds value when:
+> - You're onboarding a new oracle that the fund-side never deployed.
+> - You explicitly want NAV v2 to own its oracle stack independently of the fund repo (e.g. for an audit boundary).
+>
+> If neither applies, set `priceFeeds.<name>.<chainId>.enabled = false` (skips the deploy) and proceed to Phase 4. As of 2026-04-28 every `enabled: true` adapter falls in the redundant category — the matching token entries point at fund-side addresses — so Phase 3 can be skipped entirely for the current Alpha-fund deployment.
 
 > **RPC shortcut:** `--rpc-url` is optional when `ALCHEMY_API_KEY` is set — each chain config has `"rpc": "$ALCHEMY"` which `ConfigReader` resolves using `ALCHEMY_API_KEY` and the chain's Alchemy network. See `script/deploy/README.md`. The commands below include `--rpc-url` explicitly for clarity.
 
@@ -484,6 +628,8 @@ Deployed addresses are auto-saved to `script/config/chains/{chainId}.json` under
 
 Assets (tokens) must be registered on NAVCalculator with their price feed (Chainlink or Custom oracle address). This is done via `RegisterAssets.s.sol`.
 
+> **This is the on-chain wiring step for price oracles.** `assets.json` is just the source data. NAV v2 reads from its own `priceOracles[asset]` mapping at runtime (`Prices.sol:32`); that mapping stays empty until `RegisterAssets.s.sol` writes to it via `NAVCalculator.registerAsset(asset, oracle, priceType, heartbeat)`. After this phase completes per chain, NAV's price stack is fully wired — every registered asset returns a price (or a `stale` flag) when queried. Phases 3 and 5 are independent: Phase 3 deploys *new* oracle contracts, Phase 5 *registers* whatever address is in `assets.json.tokens.<chain>.<symbol>.pricefeed` (whether that's a fund-side v1 deployment or a NAV v2 redeploy from Phase 3).
+
 ### 5.1 Review token list
 
 Token definitions live in `script/config/assets.json` under `tokens.{chainId}`. Each token has:
@@ -526,10 +672,10 @@ If broadcasting directly (sender has MANAGER), assets are registered immediately
 
 If you're executing the queued Safe TX JSON (not broadcasting directly), this is the exact flow:
 
-1. Open the per-chain Safe in Safe UI: `https://app.safe.global/home?safe=<chain_shortname>:<safe_address>` (e.g. `eth:0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` for Mainnet).
+1. Open the per-chain Safe in Safe UI: `https://app.safe.global/home?safe=<chain_shortname>:<safe_address>` (chain shortnames per Safe: `eth` for Mainnet, `arb1` for Arbitrum, `base` for Base, `oeth` for Optimism, `gno` for Gnosis). Use the **production Safe address from the post-redeploy `chains/<id>.json.addresses.safeMultisig`** — not the test-deploy EOA.
 2. Apps → "Transaction Builder".
 3. Click the JSON icon top-right → "Load batch" → select `safe-transactions/{chainId}-register-assets.json`.
-4. The Builder parses each call. Review every row: contract address should be `0x5a0b…54C6` (NAVCalculator proxy), function should be `registerAsset(address,address,uint8,uint256)`, and the arguments should match `assets.json` for the chain. **Don't skip this step** — the JSON is generated but not cryptographically tied to the config.
+4. The Builder parses each call. Review every row: contract address should be the **post-redeploy NAVCalculator proxy** from `chains/<id>.json.deployed.NAVCalculatorProxy` (NOT the salt-v2 test-deploy `0x5a0b…54C6`), function should be `registerAsset(address,address,uint8,uint256)`, and the arguments should match `assets.json` for the chain. **Don't skip this step** — the JSON is generated but not cryptographically tied to the config.
 5. "Create Batch" → "Send Batch" → collect threshold signatures → execute.
 6. After execution, run the verification commands in Phase 9.1 to confirm every intended asset is registered.
 
@@ -769,6 +915,15 @@ Use `05_DeployBridgeAdapters.s.sol` to deploy. Re-run safety is the same as `03`
 ## Quick Reference: Deployment Order
 
 ```
+Phase R: Redeploying proxies (production fresh-start) -- one-time
+         (REQUIRED for production launch from the salt-v2 test deploy.
+         Bumps salt v2 → v3 in 02_DeployProxies.s.sol; admin/manager
+         set to per-chain Safe; reuses existing implementations. See
+         "Redeploying proxies" section above. Skip ONLY if salt-v2
+         proxies already have Safe-controlled admin/manager — verify
+         via cast code + hasRole.)
+    |
+    v
 Phase 0: Prerequisites (merge PRs, env setup, run tests)
     |
 Phase 1: Configure price feed params in assets.json
@@ -776,12 +931,21 @@ Phase 2: Configure balance adapter params in chain configs
     |   (these two can be done in parallel)
     v
 Phase 3: Deploy price feed adapters (03_DeployPriceFeeds.s.sol) -- per chain
+         (OFTEN SKIPPED — see "When this phase is needed" above. If every
+         enabled adapter has a working fund-side v1 deployment already
+         referenced in assets.json.tokens.*.pricefeed, this phase is
+         redundant; flip enabled: false instead.)
 Phase 4: Deploy balance adapters (04_DeployBalanceAdapters.s.sol) -- per chain
-    |   (these two can be done in parallel per chain)
+    |   (Phase 4 is independent of Phase 3 / Phase 5 — pure contract deploys,
+    |   no NAVCalculator interaction)
     v
 Phase 5: Register assets on NAVCalculator (RegisterAssets.s.sol) -- per chain
+         (THE on-chain wiring step for prices — fills priceOracles[asset]
+         mapping. assets.json is the source data; runtime reads from this
+         on-chain mapping.)
 Phase 6: Add balance oracles to NAVCalculator (06_Configure / ManageAdapters) -- per chain
-    |   (5 and 6 can be batched into one Safe TX if using Safe)
+    |   (5 and 6 can be batched into one Safe TX if using Safe; both must
+    |   complete before getAccountNav works at runtime)
     v
 Phase 7: Set custom price feeds (if not done in Phase 5) -- per chain
     |
@@ -794,7 +958,7 @@ Phase 9: Post-deployment validation -- per chain
 ## Rollback
 
 - **Price feeds and balance adapters are NOT upgradeable** — they're standalone contracts. To "rollback", deploy a corrected version and update the NAVCalculator to point to the new one via `setPriceFeed()` / `removeBalanceOracle()` + `addBalanceOracle()`. Both are MANAGER-only.
-- **NAVCalculator and BridgeEscrow ARE upgradeable** (UUPS). Use `script/upgrade/UpgradeNAVCalculator.s.sol` or `UpgradeBridgeEscrow.s.sol`. Requires DEFAULT_ADMIN_ROLE on the target proxy — i.e. the OIV Safe for each chain.
+- **NAVCalculator and BridgeEscrow ARE upgradeable** (UUPS). Use `script/upgrade/UpgradeNAVCalculator.s.sol` or `UpgradeBridgeEscrow.s.sol`. Requires DEFAULT_ADMIN_ROLE on the target proxy — i.e. the OIV Safe for each chain after the production redeploy (currently still the EOA on salt-v2 proxies; see §"Roles and governance").
 - **Partial deploys are re-runnable.** `03_DeployPriceFeeds.s.sol` and `04_DeployBalanceAdapters.s.sol` both read `.deployed` and skip any entry already populated. If a broadcast runs out of gas halfway, top up the EOA and re-run — the script will continue from where it stopped.
 
 ---

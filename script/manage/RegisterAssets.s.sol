@@ -282,7 +282,7 @@ contract RegisterAssets is BaseDeployScript {
     ///         Add new tokens to assets.json and append the symbol here for the right chain.
     function _symbolsForChain(uint256 chainId) private pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](18);
+            string[] memory s = new string[](28);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -301,10 +301,20 @@ contract RegisterAssets is BaseDeployScript {
             s[15] = "stETH";
             s[16] = "CRV";
             s[17] = "CVX";
+            s[18] = "USDS";
+            s[19] = "USDT";
+            s[20] = "DAI";
+            s[21] = "GHO";
+            s[22] = "USDe";
+            s[23] = "sUSDe";
+            s[24] = "RLUSD";
+            s[25] = "crvUSD";
+            s[26] = "sUSDS";
+            s[27] = "syrupUSDC";
             return s;
         }
         if (chainId == 42161) {
-            string[] memory s = new string[](7);
+            string[] memory s = new string[](11);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -312,33 +322,44 @@ contract RegisterAssets is BaseDeployScript {
             s[4] = "ezETH";
             s[5] = "rsETH";
             s[6] = "MORPHO";
+            s[7] = "USDC";
+            s[8] = "USDT";
+            s[9] = "GHO";
+            s[10] = "syrupUSDC";
             return s;
         }
         if (chainId == 100) {
             // Include all tokens defined for chain 100 in assets.json
-            string[] memory s = new string[](4);
+            string[] memory s = new string[](7);
             s[0] = "xDAI";
             s[1] = "WXDAI";
             s[2] = "WETH";
             s[3] = "wstETH";
+            s[4] = "USDCe";
+            s[5] = "sDAI";
+            s[6] = "GHO";
             return s;
         }
         if (chainId == 8453) {
-            string[] memory s = new string[](6);
+            string[] memory s = new string[](8);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
             s[3] = "weETH";
             s[4] = "cbETH";
             s[5] = "MORPHO";
+            s[6] = "USDC";
+            s[7] = "GHO";
             return s;
         }
         if (chainId == 10) {
             // Include all tokens defined for chain 10 in assets.json
-            string[] memory s = new string[](3);
+            string[] memory s = new string[](5);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
+            s[3] = "USDC";
+            s[4] = "USDT";
             return s;
         }
         return new string[](0);

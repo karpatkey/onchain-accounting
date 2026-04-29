@@ -87,17 +87,28 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 
 ---
 
-## Canonical addresses (post-merge, verified 2026-04-17)
+## Canonical addresses
 
-> **STATUS — these are the test-deploy addresses (2026-02), not the production deploy.** On 2026-04-28 a role audit confirmed that `chainConfig.admin` and `chainConfig.manager` for both proxies on every chain hold the EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` (verified via `cast code` returning `0x` — single-private-key account, not a Safe multisig). Production launch must redeploy the proxies with admin/manager set to the per-chain Safe; see "Redeploying proxies (production fresh-start)" below for the exact procedure. The implementations are current and can be reused.
+> **STATUS — production NAV v2 is live on all 5 chains since 2026-04-30** (PR #15). Admin + manager on every NAV proxy held by the OIV Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (5/N threshold, same address on every chain, verified). Deployer EOA holds no privileged role anywhere. **Full per-chain inventory of every deployed address (price-feed adapters, balance adapters, etc.) lives in [`DEPLOYED_ADDRESSES.md`](./DEPLOYED_ADDRESSES.md).** The salt-v2 test-deploy NAV/Bridge proxies (referenced in earlier `cast` snippets in this runbook below) remain on-chain but are orphan deployments — chain configs and downstream consumers point at the salt-v3 production proxy.
+
+### NAV v2 — production (salt v2 impl, salt v3 proxy)
 
 | Component | Address | Chains |
 |-----------|---------|--------|
-| NAVCalculator Implementation | `0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xf141150092f88f3c3516D825E2FD3CeF57283442`. |
-| NAVCalculator Proxy (CREATE2, **salt v2 — test deploy**) | `0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6` | All 5 |
+| NAVCalculator Implementation | `0xc572dd1F36E50E9b9551838df8916Ac81200af62` | Same on all 5 chains (CREATE2). |
+| NAVCalculator Proxy (CREATE2, salt v3) | `0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19` | Same on all 5 chains. The address every consumer should use. |
+| ERC20Default Balance Adapter | `0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39` | Same on all 5 chains (auto-deployed in `NAVCalculator.initialize`). |
+| `UUPSPlaceholder` impl (salt v3) | `0xE8CfE5bCD2dC7e8cBF5eF2B5cf8bD8EE259A4953` | Same on all 5 chains. Used transiently during atomic deploy. |
+| OIV Safe (admin + manager on every NAV proxy) | `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` | Same on all 5 chains. |
+
+### Bridge — salt-v2 test deploy (still in `chains/<id>.json.deployed.BridgeEscrow*`)
+
+| Component | Address | Chains |
+|-----------|---------|--------|
 | BridgeEscrow Implementation | `0x50FE322E01eB7e537418D6C90ea586063260454D` | Mainnet, Arbitrum, Base, Gnosis. Optimism uses `0xB9330561EA35a7643A95b68D8A70fA6D6c004773`. |
 | BridgeEscrow Proxy (CREATE2, **salt v2 — test deploy**) | `0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19` | All 5 |
-| ERC20Default Balance Adapter (test deploy) | `0xc07C999644D8A3A5e57B835Aa460016b89eBA21C` | All 5 (auto-deployed in `NAVCalculator.initialize`) |
+
+> Bridge was not part of the NAV v2 production redeploy (PR #15) since the OIVs in scope don't yet need it. When BridgeEscrow is required for production, repeat the same Phase R pattern: bump bridge salt, deploy new proxy via atomic deployer, hand off roles to the OIV Safe.
 
 > **Source of truth for per-chain deployed addresses:** the `deployed` object inside `script/config/chains/<chainId>.json` (i.e. the `.deployed` top-level JSON key, not a separate `*.deployed` file). Never rely on abbreviated addresses — always copy the full value from the per-chain config for any chain-specific implementation exception (currently only Optimism).
 

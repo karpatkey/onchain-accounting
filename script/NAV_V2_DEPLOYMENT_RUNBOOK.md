@@ -46,29 +46,25 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 
 **How the roles actually get assigned (read `02_DeployProxies.s.sol` + `AtomicProxyDeployer.sol` for the source of truth):**
 
-**Atomic deploy path (default).**
+**Atomic deploy path (default, post commit `d513f27`).**
 
-1. `02_DeployProxies.s.sol` constructs `new AtomicProxyDeployer(navImpl, bridgeImpl, sequencerFeed, nativeSymbol, chainConfig.admin)`.
-2. Inside that constructor, the proxies are CREATE2-deployed and then `NAVCalculator.initialize(address(this), ...)` / `BridgeEscrow.initialize(address(this), ...)` are called — so `AtomicProxyDeployer` itself gets `DEFAULT_ADMIN_ROLE`.
-3. Still inside the constructor: `grantRole(DEFAULT_ADMIN_ROLE, chainConfig.admin)` on both proxies.
-4. Control returns to `02_DeployProxies.s.sol` line 179–183: `grantRole(MANAGER, chainConfig.manager)` called by the broadcast sender (the deployer EOA).
+1. `02_DeployProxies.s.sol` constructs `new AtomicProxyDeployer(navImpl, bridgeImpl, sequencerFeed, nativeSymbol, chainConfig.admin, chainConfig.manager)`.
+2. Inside that constructor, the proxies are CREATE2-deployed and `NAVCalculator.initialize(address(this), ...)` / `BridgeEscrow.initialize(address(this), ...)` are called — so `AtomicProxyDeployer` itself gets `DEFAULT_ADMIN_ROLE` transiently.
+3. Still inside the constructor:
+   - `grantRole(DEFAULT_ADMIN_ROLE, chainConfig.admin)` on both proxies.
+   - **`grantRole(MANAGER, chainConfig.manager)` on both proxies** (this is the fix from `d513f27` — previously this was a separate post-constructor call from the deployer EOA, which reverted whenever admin was a Safe).
+   - **`renounceRole(DEFAULT_ADMIN_ROLE, address(this))` on both proxies** — the AtomicProxyDeployer drops its own admin role, eliminating the orphaned-admin-role cosmetic issue at the same time.
+4. Control returns to `02_DeployProxies.s.sol`. There's no longer a post-constructor `grantRole` call — the atomic flow is complete. Lines that used to do that (formerly 179–183) were removed; only a no-op log line remains.
 
-**Legacy path (`USE_LEGACY_DEPLOY=1`).** Same shape except initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE` and the broadcast sender remains the deployer EOA.
+**Legacy path (`USE_LEGACY_DEPLOY=1`).** Initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE`. The broadcast sender (deployer EOA) does NOT hold any role afterwards. **The script logs a warning** that `MANAGER` must be granted via Safe TX from the admin (because `02_DeployProxies.s.sol` no longer attempts the grant). For tonight's deploy, prefer the atomic path; only use legacy if you have a specific reason.
 
 **Current on-chain state (audited 2026-04-28).** Every chain config sets `addresses.admin = addresses.manager = 0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`. The runbook originally treated this as a Safe; `cast code` on all 5 chains returns `0x` — it's actually an **EOA**. The address holds both `DEFAULT_ADMIN_ROLE` and `MANAGER` on the salt-v2 proxies on every chain, so a single private key controls the entire NAV v2 control plane on the test deploy. This is **not production-acceptable**; before launch the proxies must be redeployed with admin/manager set to a real per-chain Safe (see "Redeploying proxies (production fresh-start)" below).
 
-**The `02_DeployProxies` MANAGER-grant latent bug** (will bite during the production redeploy, when `chainConfig.admin` finally points at a Safe). In both atomic and legacy paths, step 4's `grantRole(MANAGER, ...)` is executed from `msg.sender = deployer EOA`. `OpenZeppelin AccessControl.grantRole` requires the caller to already hold the admin role for the role being granted (which, for `MANAGER`, means `DEFAULT_ADMIN_ROLE`). The deployer EOA is **never** explicitly granted `DEFAULT_ADMIN_ROLE` by either script. So:
-
-- If `chainConfig.admin` equals the deployer EOA at the time of deploy → step 4 succeeds (deployer has admin, then transfers to Safe afterwards).
-- If `chainConfig.admin` is a Safe and the deployer is a different EOA → **step 4 reverts** and the deploy transaction fails after the proxies are already deployed and initialized.
-
-This is tracked in `ORACLE_MIGRATION_PLAN.md` under "Aspects to improve". The redeploy section below details two workarounds and a proper fix.
-
-**Important nuance.** After the atomic deploy, the `AtomicProxyDeployer` contract's address still shows `hasRole(DEFAULT_ADMIN_ROLE, ...) == true` in the proxies. The contract has no runtime code that can call anything (constructor-only, no external functions), so it's functionally dead. Still cosmetically undesirable — if you want it cleaned up, add a post-deploy Safe TX that revokes the orphaned role.
+**MANAGER-grant bug — FIXED in commit `d513f27` (2026-04-29).** The atomic path now grants MANAGER inside `AtomicProxyDeployer`'s constructor (where the deployer transiently holds `DEFAULT_ADMIN_ROLE`), so it works regardless of whether `chainConfig.admin` is an EOA or a Safe. The same commit also makes the deployer self-renounce its admin role at constructor end, closing the orphaned-admin cosmetic issue. The legacy path no longer attempts the grant from the deployer EOA — it logs a warning that MANAGER must be granted via Safe TX from the admin. **No workaround is required for tonight's redeploy.** Historical context: between 2026-04-20 and 2026-04-29 this was a blocking deploy bug with three documented workarounds in this runbook; PR #14's caveat callouts described those workarounds. They are now obsolete; flag remaining mentions for cleanup but do not act on them.
 
 **Steady-state convention (target, not current).** `chainConfig.admin` and `chainConfig.manager` should point to the **same per-chain Safe multisig** (the "OIV Safe"). Deployer EOA pays gas at deploy time and retains no ongoing NAV powers. The current chain configs name this address `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F`, which **is the EOA from the test deploy** — convention not yet reached. The redeploy is what gets us there.
 
-**Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV v2's access-control design is safer, but until the `02` MANAGER-grant bug is fixed, double-verify roles post-deploy with the commands below.
+**Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV v2's access-control design is safer, and since `d513f27` the role grants are atomic with proxy initialization. Always run the post-deploy role validation below regardless — defence in depth.
 
 **Post-deploy role validation** (run for every chain, every time you deploy):
 
@@ -138,59 +134,19 @@ Use this section when the existing proxies were a **test deployment** (admin/man
 
 - [ ] **Confirm target Safe address.** This Safe will hold `DEFAULT_ADMIN_ROLE` + `MANAGER` on both proxies after the redeploy. Ideally the same Safe address on all 5 chains (Safe Protocol's `SafeProxyFactory.createProxyWithNonce(...)` with a deterministic nonce + initializer can give matching addresses; coordinate with the Safe deploy team if not yet provisioned). Verify per chain with `cast call <SafeAddr> "getThreshold()(uint256)" --rpc-url <RPC>` — should return a positive integer (and code present).
 - [ ] **Decide which Safe address goes in `chainConfig.admin` vs `chainConfig.manager`.** Recommended: same Safe in both, per the runbook's steady-state convention.
-- [ ] **Patch or work around the `02_DeployProxies` MANAGER-grant bug.** Mandatory before broadcast — see callout below for failure mode, Foundry-mode caveat, decision matrix, and recovery if a half-deployed state slips through.
+- [ ] **Salt v2 → v3 bump applied in code.** ⚠ As of 2026-04-29 this is **NOT YET DONE**. `script/deploy/02_DeployProxies.s.sol:32,39,43`, `script/deploy/AtomicProxyDeployer.sol:29,33,37`, `script/deploy/02_2_DeployNAVProxy.s.sol:32,37`, and `script/deploy/AtomicNAVProxyDeployer.sol:27,31` all still use `uint256(2)`. Broadcasting against the salt-v2 test deploy without bumping will hit a CREATE2 collision (placeholder + proxies are already at the v2 addresses) — the atomic deployer's `code.length == 0` guards will skip the deploys, and the subsequent `upgradeToAndCall` will revert because the v2 proxy is admin'd by the EOA, not by the new `AtomicProxyDeployer`. **Bump all 4 files to `3` before R.2 step 4.** Exact line numbers in R.2 step 1 below.
+- [ ] **MANAGER-grant bug** — already fixed in commit `d513f27` (atomic path grants MANAGER + self-renounces admin inside `AtomicProxyDeployer`'s constructor). No workaround needed for tonight's redeploy. Legacy path (`USE_LEGACY_DEPLOY=1`) still requires a Safe TX from the admin to grant MANAGER; if you need legacy, plan that handoff separately.
 - [ ] **Deployer EOA gas funded on all 5 chains.** Rule of thumb: 0.05 ETH on Mainnet, 0.01 ETH-equivalent on each L2/Gnosis. `02` uses CREATE2 + UUPS upgrade-and-init, ~600k gas per chain.
-- [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `DEPLOYER_NAME` (Foundry keystore account name; import once with `cast wallet import $DEPLOYER_NAME --interactive`).
-- [ ] **All tests green** on the branch you're deploying from. `forge test` non-fork = 716+ passing.
+- [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `DEPLOYER_NAME` (Foundry keystore account name; import once with `cast wallet import $DEPLOYER_NAME --interactive`). For Path B (EOA-then-handoff) also `DEPLOYER_EOA` (= `cast wallet address --account $DEPLOYER_NAME`).
+- [ ] **All tests green** on the branch you're deploying from. `forge test` non-fork = 716+ passing (latest run confirmed this 2026-04-29 post-`d513f27`).
 
-#### About the MANAGER-grant bug — failure mode, Foundry caveat, options, recovery
+#### About the MANAGER-grant bug — historical (FIXED in `d513f27`)
 
-**What goes wrong.** After `02_DeployProxies.s.sol:169-175` runs `new AtomicProxyDeployer(...)` (which deploys proxies + initializes them, granting `DEFAULT_ADMIN_ROLE` to `chainConfig.admin`), lines 179-181 try to grant `MANAGER` from the broadcast sender (deployer EOA). OpenZeppelin's `grantRole` requires the caller to hold `DEFAULT_ADMIN_ROLE`. When `chainConfig.admin` is a Safe (the production case), the EOA does NOT hold it — `grantRole` reverts with `AccessControlUnauthorizedAccount(<deployer>, 0x000...000)`.
+This subsection used to describe the deploy bug + three workaround options and was load-bearing between 2026-04-20 and 2026-04-29. Since commit `d513f27` (2026-04-29) the bug is fixed in code: `AtomicProxyDeployer`'s constructor now grants `MANAGER` to `chainConfig.manager` while it still holds `DEFAULT_ADMIN_ROLE`, then self-renounces admin (eliminating the orphaned-admin cosmetic issue at the same time). The post-constructor `grantRole(MANAGER, ...)` block at the old `02_DeployProxies.s.sol:179-183` was removed.
 
-**State you're left in depends on the Foundry invocation mode:**
+**No workaround is needed.** The atomic path now works cleanly regardless of whether `chainConfig.admin` is an EOA or a Safe. If you're using `USE_LEGACY_DEPLOY=1`, the legacy path logs a warning at deploy time that MANAGER must be granted via Safe TX from the admin afterwards — handle that separately.
 
-| Mode | What hits chain | Chain config |
-|---|---|---|
-| `forge script ... --broadcast` (default — simulates first) | Simulation catches the revert and aborts. **Nothing on chain.** | Untouched (script aborted before `saveDeployedAddress`). |
-| `forge script ... --broadcast --slow` | AtomicProxyDeployer tx **mines first** (proxies live, admin = Safe, MANAGER not granted). Then `grantRole` tx submits and reverts on chain. | NOT updated with new addresses (script aborted before `saveDeployedAddress`). New ERC20Default address only discoverable from broadcast logs or `cast call`. |
-| `forge script ... --broadcast --skip-simulation` | Same as `--slow`: half-deployed. | Same: stale. |
-
-**Three workaround options:**
-
-| Option | What you do | When to pick | Tradeoff |
-|---|---|---|---|
-| **1 (preferred)** | Patch `02_DeployProxies.s.sol`: move the `grantRole(MANAGER, ...)` calls into `AtomicProxyDeployer`'s constructor, where the deployer still holds `DEFAULT_ADMIN_ROLE` before transferring it. Have the constructor self-renounce admin afterwards. ~10-line diff; also closes latent bug #2 (orphaned `AtomicProxyDeployer` admin role). | Code change can land before broadcast (Santi available to review/merge). | Best end state. Single atomic tx, no Safe TX needed afterwards. Requires PR review + tests. |
-| **2** | Set `chainConfig.admin = chainConfig.manager = deployer EOA` in all 5 chain configs. Broadcast `02` (succeeds because EOA == admin == sender). Then issue **8 cast sends per chain (40 total)** to hand off both roles to the Safe (commands below). | You cannot land a code change tonight and need to deploy regardless. | Opens a single-key custody window on production proxies between broadcast and the final `renounceRole`. Multi-tx scripted handoff is error-prone (skipped chain, fat-fingered role hash). |
-| **3** | Comment out / guard `02_DeployProxies.s.sol:179-183` to skip the MANAGER grant. Add `grantRole(MANAGER, chainConfig.manager)` calls to the Safe TX batch generated by `06_Configure.s.sol`. Broadcast `02`, then have the admin Safe execute `06`'s batch in Phase 6 — Safe holds DEFAULT_ADMIN from `initialize`, so the grant succeeds through proper governance. | You can edit two scripts but cannot land a full PR. | No EOA admin window. MANAGER role inactive between Phase R and Phase 6. |
-
-**Cast-send commands for option 2** (run from the deployer EOA, per chain, after `02` broadcasts):
-
-```
-NAVCalculator.grantRole(DEFAULT_ADMIN_ROLE, <Safe>)
-NAVCalculator.grantRole(MANAGER, <Safe>)
-NAVCalculator.revokeRole(MANAGER, <deployer>)
-NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
-# same 4 for BridgeEscrow
-```
-
-**Recovery if you ended up half-deployed (option 2 with `--slow`, or any mid-script revert):**
-
-1. Extract new proxy + AtomicProxyDeployer addresses from broadcast logs:
-   ```bash
-   jq '.transactions[] | {contractName, contractAddress}' \
-     broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json
-   ```
-2. Hand-update `script/config/chains/<id>.json`:
-   - `deployed.NAVCalculatorProxy` ← new salt-v3 NAV proxy
-   - `deployed.BridgeEscrowProxy` ← new salt-v3 Bridge proxy
-3. Query the new ERC20Default address and write to config:
-   ```bash
-   cast call <new_NAV_PROXY> "erc20DefaultOracle()(address)" --rpc-url <RPC>
-   ```
-   Update `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator`.
-4. Have the admin Safe execute `grantRole(MANAGER, <ManagerSafe>)` on both proxies via a Safe TX batch.
-5. Verify roles using the cast block in R.2 step 6.
-6. Continue with Phase 4.
+If you're reading historical PR comments or older PR #14 versions that describe the three-option decision matrix, those are obsolete. Current decision: just use the default atomic path.
 
 ### R.2 Step-by-step
 
@@ -204,11 +160,12 @@ NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
    ```
    Compute the new addresses locally (`forge script` will print them in dry-run before broadcasting) — these are the **new canonical proxy addresses** going forward.
 
-2. **Patch the MANAGER-grant bug** (option 1 from R.1) OR proceed with workaround 2/3.
+2. ~~Patch the MANAGER-grant bug~~ — already fixed in `d513f27`. Skip this step on a salt-v3+ deploy. Verify the atomic path is current by checking `AtomicProxyDeployer.sol` constructor signature includes `address managerToGrant`; if so, no patch needed.
 
 3. **Update each `script/config/chains/<id>.json`:**
-   - Set `addresses.admin` and `addresses.manager` to the target Safe address (or to the deployer EOA if using workaround 2 — to be flipped after deploy).
+   - Set `addresses.admin` and `addresses.manager` to: **Path A** the target Safe address; **Path B** `$DEPLOYER_EOA` (to be transferred to the Safe by `07_HandoffRolesToSafe.s.sol` after Phase 6).
    - Clear `deployed.NAVCalculatorProxy` and `deployed.BridgeEscrowProxy` (set to `""`). The script writes new ones after broadcast.
+   - Clear `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator` — both reference the salt-v2 stale addresses. New values will come from the salt-v3 deploy.
    - Leave `deployed.NAVCalculatorImplementation` and `deployed.BridgeEscrowImplementation` populated — these are reused. Confirm they match the canonical addresses table above for your chain.
 
 4. **Run `02_DeployProxies.s.sol --broadcast` per chain:**
@@ -228,7 +185,7 @@ NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
    ```
    Expected per chain: 3 CREATE2 transactions (placeholder, NAV proxy, Bridge proxy) + 2 UUPS upgrade-and-init transactions. The script writes the new proxy addresses into `chains/<chainId>.json.deployed.*`.
 
-5. **If using workaround 2 (temp EOA admin):** issue the role-handoff `cast send` calls per chain (see R.1 option 2). Verify roles after.
+5. **Path B (EOA-then-handoff):** after Phase 6 completes (oracles registered via `06_2_AddBalanceOracles.s.sol`), run `07_HandoffRolesToSafe.s.sol` to grant DEFAULT_ADMIN_ROLE + MANAGER to the target Safe and renounce the EOA's roles. Note: `07` currently handles NAVCalculator only — for BridgeEscrow handoff, hand-roll a Safe TX batch (or extend the script).
 
 6. **Verify roles** post-deploy with the cast block from §"Roles and governance":
    ```bash
@@ -257,7 +214,7 @@ NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
 
 8. **Update the "Canonical addresses" table** at the top of this runbook with the new proxy + ERC20Default addresses. Bump the verification date.
 
-9. **Update `ORACLE_MIGRATION_PLAN.md`** "Aspects to improve" — strike the `02_DeployProxies` MANAGER-grant bug entry if you used option 1; or note the workaround used.
+9. **Update `ORACLE_MIGRATION_PLAN.md`** "Aspects to improve" — the `02_DeployProxies` MANAGER-grant bug entry should be marked as fixed in `d513f27` (already past tense in this runbook; align the migration plan to match).
 
 10. **Optionally clean up the orphaned `AtomicProxyDeployer` admin role.** From the new constructor logs, find the `AtomicProxyDeployer` address(es) deployed on each chain. Issue a Safe TX:
     ```
@@ -277,6 +234,51 @@ The salt-v2 proxies stay on-chain at `0x5a0b28e1...4f54C6` and `0x1ECAEa1C...8A1
 - `karpatkey-tokenized-fund` — any deploy script that hardcodes the NAV v2 proxy addresses (search `0x5a0b28e1` / `0x1ECAEa1C`) needs updating.
 - `onchain-investment-vehicles` — same; check before re-deploying any Shares contract.
 - Internal monitoring / dashboards / docs — anywhere the old addresses are referenced.
+
+---
+
+## Two deployment paths (post-`d513f27` and `088467a`)
+
+There are now two end-to-end deploy paths. Pick one before broadcast; do not mix mid-deploy.
+
+### Path A — Safe-from-the-start (default, recommended)
+
+Use this if `chainConfig.admin` and `chainConfig.manager` are set to the production Safe(s) before broadcast.
+
+Phases / scripts:
+1. `01_DeployImplementations.s.sol` (or `01_2_DeployNAVImplementation.s.sol` for NAV-only) — same canonical implementation addresses across chains.
+2. `02_DeployProxies.s.sol` (or `02_2_DeployNAVProxy.s.sol` for NAV-only) — atomic deploy: `AtomicProxyDeployer` deploys placeholder + proxies, calls `initialize`, grants `DEFAULT_ADMIN_ROLE` to the Safe, grants `MANAGER` to `chainConfig.manager`, self-renounces admin. Single tx per proxy.
+3. `03_DeployPriceFeeds.s.sol` — broadcast (currently SKIPPED for Alpha funds, see Phase 3).
+4. `04_DeployBalanceAdapters.s.sol` — broadcast.
+5. `05_DeployBridgeAdapters.s.sol` — broadcast.
+6. `06_Configure.s.sol` — generates Safe TX batch (`addBalanceOracle` per adapter + `authorizeAdapter` per bridge adapter). Safe executes via Safe UI Transaction Builder.
+7. Phase 5 (`RegisterAssets.s.sol`) — generates Safe TX batch for asset registration.
+8. Phase 8 (`VerifyEtherscan`), Phase 9 (validation).
+
+Roles end state: Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on both proxies. Deployer EOA holds nothing. AtomicProxyDeployer holds nothing (self-renounced).
+
+### Path B — EOA-then-handoff (alternative)
+
+Use this if you want all post-deploy configuration done by the deployer EOA via direct broadcast (no Safe-batch flow), then hand off to the Safe at the end. Useful if the Safe signers aren't available at deploy time, or if you want to minimize the Safe-side workflow.
+
+Phases / scripts (additions in **bold**):
+1. `01_DeployImplementations.s.sol` (same as Path A).
+2. `02_DeployProxies.s.sol` with `chainConfig.admin = chainConfig.manager = $DEPLOYER_EOA` — atomic deployer grants both roles to the EOA.
+3. `03_DeployPriceFeeds.s.sol` (currently SKIPPED).
+4. `04_DeployBalanceAdapters.s.sol`.
+5. `05_DeployBridgeAdapters.s.sol`.
+6. **`06_2_AddBalanceOracles.s.sol`** — direct broadcast of `addBalanceOracle()` per deployed adapter from the EOA. Idempotent (skips already-registered ones). Replaces `06_Configure.s.sol` for Path B.
+7. Phase 5 (`RegisterAssets.s.sol` with the broadcast path) — EOA registers assets directly using its `MANAGER` role.
+8. **`07_HandoffRolesToSafe.s.sol`** — grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to the target Safe, revokes `MANAGER` from the EOA, renounces `DEFAULT_ADMIN_ROLE`. **Currently NAV-only** (does not touch BridgeEscrow); if Bridge is in scope you must hand-roll a Safe TX batch for Bridge admin handoff.
+9. Phase 8 (`VerifyEtherscan`), Phase 9 (validation).
+
+Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on NAVCalculator. Deployer EOA holds nothing on NAV. **BridgeEscrow handoff is manual** — see step 8 caveat.
+
+### Which path tonight?
+
+If the production Safe(s) are deployed and signers are available, prefer **Path A** — it's the cleanest end state (Safe holds roles from moment 1, no EOA-admin window) and uses the standard Safe UI flow that auditors and signers are already familiar with. **Path B** is appropriate if signers aren't available or if you specifically need the EOA-broadcast simplicity for some part of the operation.
+
+`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 46 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
 
 ---
 
@@ -1002,9 +1004,12 @@ Phase 5: Register assets on NAVCalculator (RegisterAssets.s.sol) -- per chain
          (THE on-chain wiring step for prices — fills priceOracles[asset]
          mapping. assets.json is the source data; runtime reads from this
          on-chain mapping.)
-Phase 6: Add balance oracles to NAVCalculator (06_Configure / ManageAdapters) -- per chain
-    |   (5 and 6 can be batched into one Safe TX if using Safe; both must
-    |   complete before getAccountNav works at runtime)
+Phase 6: Add balance oracles to NAVCalculator (Path A: 06_Configure Safe TX batch
+         | Path B: 06_2_AddBalanceOracles direct broadcast) -- per chain
+    |   (5 and 6 can be batched into one Safe TX on Path A; both must
+    |   complete before getAccountNav works at runtime. Path B uses
+    |   06_2_AddBalanceOracles.s.sol — broadcast from EOA, idempotent;
+    |   then 07_HandoffRolesToSafe.s.sol transfers admin+manager to Safe.)
     v
 Phase 7: Set custom price feeds (if not done in Phase 5) -- per chain
     |
@@ -1060,32 +1065,9 @@ Foundry's `vm.writeJson` requires the parent object to exist. Make sure `chains/
 
 If `hasRole(DEFAULT_ADMIN_ROLE, <deployer EOA>) == true` after `02_DeployProxies.s.sol`, that's a red flag — the deployer should retain no ongoing roles. Investigate before running Phases 3-7. If `hasRole(MANAGER, <safe>) == false`, the `grantRole(MANAGER, ...)` step in `02_DeployProxies.s.sol` (or `06_Configure.s.sol`) didn't execute or hasn't been executed yet — re-run or generate a Safe TX.
 
-### `02_DeployProxies.s.sol` reverts at `grantRole(MANAGER, ...)`
+### `02_DeployProxies.s.sol` reverts at `grantRole(MANAGER, ...)` — historical (FIXED in `d513f27`)
 
-**Symptom:** Forge script aborts with `AccessControlUnauthorizedAccount(<deployer>, 0x000…000)` after the AtomicProxyDeployer step succeeds.
-
-**Cause:** Lines 179-181 try to grant MANAGER from the deployer EOA, but `DEFAULT_ADMIN_ROLE` is held only by `chainConfig.admin` (the Safe) once `initialize` has run. See Phase R.1 callout for the full failure-mode walkthrough and decision matrix.
-
-**State you're in depends on Foundry mode:**
-- `--broadcast` (default, simulated): Simulation caught the revert; **nothing on chain**, chain config untouched. Apply one of the three R.1 workarounds and re-run.
-- `--broadcast --slow` or `--skip-simulation`: AtomicProxyDeployer tx mined; new salt-v3 proxies live on chain with admin = Safe; MANAGER not granted; chain config NOT updated. Half-deployed.
-
-**Recovery (half-deployed case):**
-1. Extract addresses from `broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json`:
-   ```bash
-   jq '.transactions[] | {contractName, contractAddress}' \
-     broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json
-   ```
-2. Hand-update `chains/<id>.json.deployed.NAVCalculatorProxy` and `BridgeEscrowProxy` with the new addresses.
-3. Query and write the new ERC20Default address:
-   ```bash
-   cast call <new_NAV_PROXY> "erc20DefaultOracle()(address)" --rpc-url <RPC>
-   ```
-   Update `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator`.
-4. Have the admin Safe execute `grantRole(MANAGER, <ManagerSafe>)` on both NAV and Bridge proxies via Safe TX batch.
-5. Verify via R.2 step 6 cast block. Continue with Phase 4.
-
-**Permanent fix:** apply R.1 option 1 (move grant into AtomicProxyDeployer constructor) before the next deploy — see Phase R callout.
+This used to happen when `chainConfig.admin` was a Safe and the deployer EOA lacked `DEFAULT_ADMIN_ROLE`. As of `d513f27` the grant happens inside `AtomicProxyDeployer`'s constructor (where the deployer transiently holds admin) and the post-constructor block was removed, so this revert path no longer exists in the atomic flow. If you see it: you're running pre-`d513f27` code or `USE_LEGACY_DEPLOY=1`. For the legacy path: have the admin Safe execute `grantRole(MANAGER, <ManagerSafe>)` on both proxies via a Safe TX batch.
 
 ### `forge verify-contract` fails with "Already verified"
 

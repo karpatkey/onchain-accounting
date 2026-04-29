@@ -8,12 +8,12 @@
   "nativeTokenSymbol": "xDAI",
   "addresses": {
     "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
-    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
+    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
@@ -21,9 +21,9 @@
     "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
       },
-      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
     "AaveV3_Gnosis": {
       "enabled": true,
@@ -31,7 +31,7 @@
         "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
         "protocol": "Aave V3 Gnosis"
       },
-      "deployed": ""
+      "deployed": "0xcFdAC8a9EA51f8dd598FbeaBFe3D4fCBAf61DBAa"
     }
   },
   "bridgeAdapters": {
@@ -50,10 +50,10 @@
   },
   "priceFeeds": {
     "sXDAI": {
-      "deployed": ""
+      "deployed": "0xeFD0F9a25CE259979C68206BeC8d9Ec20FB5c6F5"
     },
     "wstETH_L2": {
-      "deployed": ""
+      "deployed": "0x17A50CCeCCD6E168Fcea22A3B5830a2cB389E557"
     }
   }
 }

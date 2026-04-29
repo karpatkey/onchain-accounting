@@ -9,7 +9,6 @@ import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -171,15 +170,17 @@ contract DeployProxies is BaseDeployScript {
                 bridgeImpl,
                 chainConfig.chainlinkSequencerFeed,
                 chainConfig.nativeTokenSymbol,
-                chainConfig.admin
+                chainConfig.admin,
+                chainConfig.manager
             );
         }
 
-        // Grant MANAGER to configured manager (broadcast sender must be admin)
-        if (chainConfig.manager != address(0)) {
-            IAccessControl(navProxy).grantRole(MANAGER, chainConfig.manager);
-            IAccessControl(bridgeProxy).grantRole(MANAGER, chainConfig.manager);
-            console2.log("[OK] Granted MANAGER role to", chainConfig.manager);
+        // MANAGER is granted inside AtomicProxyDeployer (atomic path) or must be done via Safe TX (legacy path).
+        if (useLegacy && chainConfig.manager != address(0)) {
+            console2.log(
+                "[WARN] Legacy path: MANAGER role NOT granted by this script.",
+                "chainConfig.admin holds DEFAULT_ADMIN_ROLE; have the admin Safe call grantRole(MANAGER, manager) on both proxies."
+            );
         }
 
         // Log actual role assignments (best-effort, never reverts).

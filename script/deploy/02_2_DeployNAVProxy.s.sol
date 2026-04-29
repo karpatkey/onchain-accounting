@@ -29,12 +29,12 @@ contract DeployNAVProxy is BaseDeployScript {
         validateAddresses();
 
         // Placeholder impl: same address on all chains (CREATE2).
-        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 2);
+        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 3);
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
         // NAV proxy bytecode: (placeholder, "") — identical on every chain.
-        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 3);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 

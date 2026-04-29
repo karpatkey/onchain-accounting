@@ -48,7 +48,7 @@ contract DeployNAVImplementation is BaseDeployScript {
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {
-        plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", 1);
+        plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", 2);
         plan.navImplBytecode = type(NAVCalculator).creationCode;
         plan.navImpl = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavImpl, plan.navImplBytecode);
     }

@@ -24,11 +24,11 @@ contract AtomicNAVProxyDeployer {
         address adminToGrant,
         address managerToGrant
     ) {
-        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2)));
+        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(3)));
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
-        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(2)));
+        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(3)));
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 

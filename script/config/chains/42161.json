@@ -7,13 +7,13 @@
   "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "NAVCalculatorImplementation": "",
+    "NAVCalculatorProxy": "",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },

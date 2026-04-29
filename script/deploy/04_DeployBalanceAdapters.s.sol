@@ -89,6 +89,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Balancer V3 (one per pool) ---
         _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
+        _deployIfEnabled("BalancerV3_GHO_USDT_USDC"); // Mainnet — USD Alpha (Boosted GHO/USDT/USDC underlying; Aura adapter wraps it)
+        _deployIfEnabled("BalancerV3_GHO_USDC_USDT"); // Arbitrum — USD Alpha (Boosted GHO/USDC/USDT underlying)
+        _deployIfEnabled("BalancerV3_GHO_USDC"); // Base — USD Alpha (Boosted GHO/USDC underlying)
 
         // --- Aura (one per pool) ---
         _deployIfEnabled("Aura_rETH_WETH"); // Mainnet — ETH Alpha

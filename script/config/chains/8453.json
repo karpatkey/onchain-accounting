@@ -80,6 +80,16 @@
         "positionDetail": "Aave GHO/USDC"
       },
       "deployed": ""
+    },
+    "BalancerV3_GHO_USDC": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
+        "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
+        "balancerMinter": "0x0c5538098EBe88175078972F514C9e101D325D4F",
+        "protocol": "Balancer V3 - Aave GHO/USDC"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

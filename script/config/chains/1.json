@@ -241,6 +241,16 @@
       },
       "deployed": ""
     },
+    "BalancerV3_GHO_USDT_USDC": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
+        "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
+        "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+        "protocol": "Balancer V3 - Aave GHO/USDT/USDC"
+      },
+      "deployed": ""
+    },
     "Aura_GHO_USDT_USDC": {
       "enabled": true,
       "constructor": {

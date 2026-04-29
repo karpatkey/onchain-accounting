@@ -20,6 +20,9 @@ import {console2} from "forge-std/console2.sol";
 ///   - Safe tx batch is only generated when run with --rpc-url so the script can verify on-chain
 ///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
 ///     reports status but refuses to write the Safe tx file.
+///   - Pre-registered assets (notably the NATIVE_ADDRESS sentinel inserted by NAVCalculator.initialize)
+///     are wired up with setPriceFeed instead of registerAsset, so the configured oracle is applied
+///     without reverting on duplicate registration.
 ///   - Output: safe-transactions/{chainId}-register-assets.json
 ///   - With --broadcast, tx(s) are sent from the keystore signer (--account $DEPLOYER_NAME). registerAsset checks MANAGER on-chain (msg.sender).
 contract RegisterAssets is BaseDeployScript {
@@ -46,13 +49,13 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        uint256 alreadyRegistered;
+        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs setPriceFeed
         uint256 skipNoOracle;
         uint256 skipMissingAddress;
         uint256 skipNoContract;
         uint256 toRegisterCount;
 
-        // First pass: report each token and count how many need registration
+        // First pass: report each token and count how many need registration / price-feed set
         for (uint256 i = 0; i < symbols.length; i++) {
             string memory symbol = symbols[i];
             string memory addrStr = ConfigReader.readTokenAddress(vm, currentChainId, symbol);
@@ -99,8 +102,11 @@ contract RegisterAssets is BaseDeployScript {
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
-                console2.log("  ALREADY REGISTERED:", symbol);
-                alreadyRegistered++;
+                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need setPriceFeed
+                // to wire the configured oracle. Emitting setPriceFeed unconditionally is idempotent;
+                // if the configured oracle already matches on-chain, the tx is a no-op overwrite.
+                console2.log("  TO SET PRICE FEED (pre-registered):", symbol);
+                toSetPriceFeed++;
             } else {
                 if (_hasNoCode(asset)) {
                     console2.log("  SKIP (no contract at address):", symbol);
@@ -113,17 +119,19 @@ contract RegisterAssets is BaseDeployScript {
         }
 
         // Summary
+        uint256 totalActions = toRegisterCount + toSetPriceFeed;
         console2.log("");
         console2.log("--- Summary ---");
-        console2.log("  Already registered:", alreadyRegistered);
+        console2.log("  To set price feed (pre-registered):", toSetPriceFeed);
         console2.log("  Skipped (no oracle):", skipNoOracle);
         console2.log("  Skipped (missing/invalid address):", skipMissingAddress);
         console2.log("  Skipped (no contract at address):", skipNoContract);
         console2.log("  To register:", toRegisterCount);
+        console2.log("  Total actions:", totalActions);
 
-        if (toRegisterCount == 0) {
+        if (totalActions == 0) {
             console2.log("");
-            console2.log("Nothing to register. Exiting.");
+            console2.log("Nothing to register or update. Exiting.");
             return;
         }
 
@@ -142,8 +150,8 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        // Second pass: build Safe tx batch for each token that needs registration
-        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](toRegisterCount);
+        // Second pass: build Safe tx batch — registerAsset for new ones, setPriceFeed for pre-registered ones
+        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](totalActions);
         uint256 j = 0;
         for (uint256 i = 0; i < symbols.length; i++) {
             string memory symbol = symbols[i];
@@ -154,8 +162,8 @@ contract RegisterAssets is BaseDeployScript {
             if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) continue;
             (bool ok, bytes memory data) =
                 navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
-            if (ok && data.length > 0 && abi.decode(data, (bool))) continue;
-            if (_hasNoCode(asset)) continue;
+            bool preRegistered = ok && data.length > 0 && abi.decode(data, (bool));
+            if (!preRegistered && _hasNoCode(asset)) continue;
 
             string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
             if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) continue;
@@ -168,9 +176,12 @@ contract RegisterAssets is BaseDeployScript {
             IPrices.PriceType priceType =
                 _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
 
-            transactions[j] = SafeTxBuilder.call(
-                navProxy, 0, abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat))
-            );
+            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need setPriceFeed,
+            // not registerAsset (which would revert with InvalidArguments — already registered).
+            bytes memory callData = preRegistered
+                ? abi.encodeCall(NAVCalculator.setPriceFeed, (asset, oracle, priceType, heartbeat))
+                : abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat));
+            transactions[j] = SafeTxBuilder.call(navProxy, 0, callData);
             j++;
         }
 

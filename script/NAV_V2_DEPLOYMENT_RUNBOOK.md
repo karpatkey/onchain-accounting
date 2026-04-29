@@ -73,17 +73,18 @@ This is tracked in `ORACLE_MIGRATION_PLAN.md` under "Aspects to improve". The re
 **Post-deploy role validation** (run for every chain, every time you deploy):
 
 ```bash
-NAV_PROXY=0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6
+CHAIN_ID=1   # 1 / 42161 / 8453 / 10 / 100
+NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/$CHAIN_ID.json)
 SAFE=<chainConfig.admin / chainConfig.manager — expected holder>
 DEPLOYER=<deployer EOA — expected non-holder>
 MANAGER_ROLE=$(cast keccak "MANAGER")
 RPC=<rpc url>
 
 # Expected: true, true, false, false
-cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $SAFE --rpc-url $RPC
-cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $SAFE --rpc-url $RPC
-cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $DEPLOYER --rpc-url $RPC
-cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $DEPLOYER --rpc-url $RPC
+cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $SAFE --rpc-url "$RPC"
+cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $SAFE --rpc-url "$RPC"
+cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $DEPLOYER --rpc-url "$RPC"
+cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $DEPLOYER --rpc-url "$RPC"
 ```
 
 If any of these return the wrong result, **stop and fix** before proceeding. See "Troubleshooting — Role misconfiguration" at the bottom.
@@ -137,21 +138,59 @@ Use this section when the existing proxies were a **test deployment** (admin/man
 
 - [ ] **Confirm target Safe address.** This Safe will hold `DEFAULT_ADMIN_ROLE` + `MANAGER` on both proxies after the redeploy. Ideally the same Safe address on all 5 chains (Safe Protocol's `SafeProxyFactory.createProxyWithNonce(...)` with a deterministic nonce + initializer can give matching addresses; coordinate with the Safe deploy team if not yet provisioned). Verify per chain with `cast call <SafeAddr> "getThreshold()(uint256)" --rpc-url <RPC>` — should return a positive integer (and code present).
 - [ ] **Decide which Safe address goes in `chainConfig.admin` vs `chainConfig.manager`.** Recommended: same Safe in both, per the runbook's steady-state convention.
-- [ ] **Patch the `02_DeployProxies` MANAGER-grant bug** (or use a workaround). The script's final step calls `grantRole(MANAGER, chainConfig.manager)` from the broadcast sender (deployer EOA). When `chainConfig.admin` is a Safe (not the deployer EOA), the deployer doesn't hold `DEFAULT_ADMIN_ROLE`, so `grantRole` reverts. Three options:
-  1. **Proper fix (preferred):** guard the grant on `msg.sender == chainConfig.admin`, OR move the MANAGER grant into `AtomicProxyDeployer`'s constructor (which already holds admin transiently). Tracked as a follow-up in `ORACLE_MIGRATION_PLAN.md`.
-  2. **Temporary EOA admin:** set `chainConfig.admin = chainConfig.manager = deployer EOA` for the broadcast → run `02` → then issue a Safe-handoff via `cast send` from the deployer:
-     ```
-     NAVCalculator.grantRole(DEFAULT_ADMIN_ROLE, <Safe>)
-     NAVCalculator.grantRole(MANAGER, <Safe>)
-     NAVCalculator.revokeRole(MANAGER, <deployer>)
-     NAVCalculator.revokeRole(DEFAULT_ADMIN_ROLE, <deployer>)
-     # same 4 for BridgeEscrow
-     ```
-     8 txs per chain × 5 chains = 40 txs from the deployer EOA. Cheapest workaround.
-  3. **Skip the grant in `02`, do it in `06_Configure`:** comment out `02_DeployProxies.s.sol` lines that grant MANAGER, then have `06_Configure.s.sol` emit the Safe TX batch that grants both roles to the Safe. Cleaner than option 2 but requires editing two scripts.
+- [ ] **Patch or work around the `02_DeployProxies` MANAGER-grant bug.** Mandatory before broadcast — see callout below for failure mode, Foundry-mode caveat, decision matrix, and recovery if a half-deployed state slips through.
 - [ ] **Deployer EOA gas funded on all 5 chains.** Rule of thumb: 0.05 ETH on Mainnet, 0.01 ETH-equivalent on each L2/Gnosis. `02` uses CREATE2 + UUPS upgrade-and-init, ~600k gas per chain.
 - [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA).
 - [ ] **All tests green** on the branch you're deploying from. `forge test` non-fork = 716+ passing.
+
+#### About the MANAGER-grant bug — failure mode, Foundry caveat, options, recovery
+
+**What goes wrong.** After `02_DeployProxies.s.sol:169-175` runs `new AtomicProxyDeployer(...)` (which deploys proxies + initializes them, granting `DEFAULT_ADMIN_ROLE` to `chainConfig.admin`), lines 179-181 try to grant `MANAGER` from the broadcast sender (deployer EOA). OpenZeppelin's `grantRole` requires the caller to hold `DEFAULT_ADMIN_ROLE`. When `chainConfig.admin` is a Safe (the production case), the EOA does NOT hold it — `grantRole` reverts with `AccessControlUnauthorizedAccount(<deployer>, 0x000...000)`.
+
+**State you're left in depends on the Foundry invocation mode:**
+
+| Mode | What hits chain | Chain config |
+|---|---|---|
+| `forge script ... --broadcast` (default — simulates first) | Simulation catches the revert and aborts. **Nothing on chain.** | Untouched (script aborted before `saveDeployedAddress`). |
+| `forge script ... --broadcast --slow` | AtomicProxyDeployer tx **mines first** (proxies live, admin = Safe, MANAGER not granted). Then `grantRole` tx submits and reverts on chain. | NOT updated with new addresses (script aborted before `saveDeployedAddress`). New ERC20Default address only discoverable from broadcast logs or `cast call`. |
+| `forge script ... --broadcast --skip-simulation` | Same as `--slow`: half-deployed. | Same: stale. |
+
+**Three workaround options:**
+
+| Option | What you do | When to pick | Tradeoff |
+|---|---|---|---|
+| **1 (preferred)** | Patch `02_DeployProxies.s.sol`: move the `grantRole(MANAGER, ...)` calls into `AtomicProxyDeployer`'s constructor, where the deployer still holds `DEFAULT_ADMIN_ROLE` before transferring it. Have the constructor self-renounce admin afterwards. ~10-line diff; also closes latent bug #2 (orphaned `AtomicProxyDeployer` admin role). | Code change can land before broadcast (Santi available to review/merge). | Best end state. Single atomic tx, no Safe TX needed afterwards. Requires PR review + tests. |
+| **2** | Set `chainConfig.admin = chainConfig.manager = deployer EOA` in all 5 chain configs. Broadcast `02` (succeeds because EOA == admin == sender). Then issue **8 cast sends per chain (40 total)** to hand off both roles to the Safe (commands below). | You cannot land a code change tonight and need to deploy regardless. | Opens a single-key custody window on production proxies between broadcast and the final `renounceRole`. Multi-tx scripted handoff is error-prone (skipped chain, fat-fingered role hash). |
+| **3** | Comment out / guard `02_DeployProxies.s.sol:179-183` to skip the MANAGER grant. Add `grantRole(MANAGER, chainConfig.manager)` calls to the Safe TX batch generated by `06_Configure.s.sol`. Broadcast `02`, then have the admin Safe execute `06`'s batch in Phase 6 — Safe holds DEFAULT_ADMIN from `initialize`, so the grant succeeds through proper governance. | You can edit two scripts but cannot land a full PR. | No EOA admin window. MANAGER role inactive between Phase R and Phase 6. |
+
+**Cast-send commands for option 2** (run from the deployer EOA, per chain, after `02` broadcasts):
+
+```
+NAVCalculator.grantRole(DEFAULT_ADMIN_ROLE, <Safe>)
+NAVCalculator.grantRole(MANAGER, <Safe>)
+NAVCalculator.revokeRole(MANAGER, <deployer>)
+NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
+# same 4 for BridgeEscrow
+```
+
+**Recovery if you ended up half-deployed (option 2 with `--slow`, or any mid-script revert):**
+
+1. Extract new proxy + AtomicProxyDeployer addresses from broadcast logs:
+   ```bash
+   jq '.transactions[] | {contractName, contractAddress}' \
+     broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json
+   ```
+2. Hand-update `script/config/chains/<id>.json`:
+   - `deployed.NAVCalculatorProxy` ← new salt-v3 NAV proxy
+   - `deployed.BridgeEscrowProxy` ← new salt-v3 Bridge proxy
+3. Query the new ERC20Default address and write to config:
+   ```bash
+   cast call <new_NAV_PROXY> "erc20DefaultOracle()(address)" --rpc-url <RPC>
+   ```
+   Update `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator`.
+4. Have the admin Safe execute `grantRole(MANAGER, <ManagerSafe>)` on both proxies via a Safe TX batch.
+5. Verify roles using the cast block in R.2 step 6.
+6. Continue with Phase 4.
 
 ### R.2 Step-by-step
 
@@ -587,6 +626,8 @@ Deployed adapter addresses are auto-saved to `script/config/chains/<chainId>.jso
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
+> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:144` (and 21 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/chains/<id>.json.balanceAdapters.<name>.deployed`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/chains/` before the real broadcast.** Tracked as a blocking follow-up in `ORACLE_MIGRATION_PLAN.md` "Aspects to improve" #4.
+
 ### 4.1 Mainnet
 
 ```bash
@@ -730,10 +771,11 @@ forge script script/manage/ManageAdapters.s.sol \
 
 ### Option C: Direct broadcast (if sender has MANAGER)
 
-Call `addBalanceOracle()` directly on the NAVCalculator proxy using `cast`:
+Call `addBalanceOracle()` directly on the NAVCalculator proxy using `cast`. **Read the proxy address from chain config** rather than hardcoding — the salt-v2 address `0x5a0b…54C6` in this runbook's Canonical addresses table is the test deploy and will not match post-Phase-R production:
 
 ```bash
-cast send 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/1.json)
+cast send $NAV_PROXY \
   "addBalanceOracle(address)" <adapter_address> \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --private-key $PRIVATE_KEY
@@ -761,7 +803,8 @@ _setPriceFeed(
 ### Using cast
 
 ```bash
-cast send 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/1.json)
+cast send $NAV_PROXY \
   "setPriceFeed(address,address,uint8,uint256)" \
   <asset> <priceFeed> 1 3600 \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
@@ -811,43 +854,52 @@ forge script script/verify/VerifyEtherscan.s.sol \
 
 ## Phase 9: Post-Deployment Validation
 
+> **Setup once per chain.** All cast examples below use `$NAV_PROXY` and `$RPC` so they work for any chain post-Phase-R (don't paste the salt-v2 stale `0x5a0b…54C6` from the Canonical addresses table — that's the test deploy). Set both at the top:
+>
+> ```bash
+> CHAIN_ID=1                 # 1 / 42161 / 8453 / 10 / 100
+> RPC="https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"   # match the chain
+> NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/$CHAIN_ID.json)
+> echo "NAV_PROXY=$NAV_PROXY"   # sanity check — should be the salt-v3 address from R.2 step 4
+> ```
+
 ### 9.1 Verify on-chain state
 
 For each chain, check:
 
 ```bash
 # Check whether a specific asset is registered
-cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+cast call $NAV_PROXY \
   "isAssetRegistered(address)(bool)" <asset_address> \
-  --rpc-url <RPC_URL>
+  --rpc-url "$RPC"
 
 # List all registered assets (returns Asset[] — address, symbol, price type, etc.)
-cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+cast call $NAV_PROXY \
   "getRegisteredAssets()" \
-  --rpc-url <RPC_URL>
+  --rpc-url "$RPC"
 
 # Get detailed price feed data for an asset
 # Returns PriceFeedData: (address priceFeed, uint8 priceType, int256 price, uint8 decimals,
 #                        uint256 chainlinkHeartbeat, uint256 updatedAt, bool stale, bool sequencerDown)
-cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+cast call $NAV_PROXY \
   "getPriceData(address)" <asset_address> \
-  --rpc-url <RPC_URL>
+  --rpc-url "$RPC"
 ```
 
 > **Note:** NAVCalculator inherits from `Balances`, which exposes balance-oracle registry getters. Use these for registration checks (all public, `view`):
 >
 > ```bash
 > # All registered balance oracles
-> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getAllOracles()(address[])" --rpc-url <RPC>
+> cast call $NAV_PROXY "getAllOracles()(address[])" --rpc-url "$RPC"
 >
 > # Is a specific adapter registered?
-> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "isOracleRegistered(address)(bool)" <adapter> --rpc-url <RPC>
+> cast call $NAV_PROXY "isOracleRegistered(address)(bool)" <adapter> --rpc-url "$RPC"
 >
 > # Count of registered oracles
-> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getOracleCount()(uint256)" --rpc-url <RPC>
+> cast call $NAV_PROXY "getOracleCount()(uint256)" --rpc-url "$RPC"
 >
 > # Which oracles report an asset
-> cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 "getOraclesForAsset(address)(address[])" <asset> --rpc-url <RPC>
+> cast call $NAV_PROXY "getOraclesForAsset(address)(address[])" <asset> --rpc-url "$RPC"
 > ```
 >
 > Phase 9.3 below is for confirming a *registered* adapter returns plausible data, not for checking registration.
@@ -858,9 +910,9 @@ cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
 # Get total NAV for a Safe in a given quote asset.
 # Returns NAV struct: (int256 value, Asset quoteAsset, uint64 timestamp,
 #                     Asset[] stalePriceAssets, bool sequencerDown)
-cast call 0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6 \
+cast call $NAV_PROXY \
   "getAccountNav(address,address)" <safe_address> <quote_asset_address> \
-  --rpc-url <RPC_URL>
+  --rpc-url "$RPC"
 ```
 
 ### 9.3 Verify each balance oracle returns data
@@ -1007,6 +1059,33 @@ Foundry's `vm.writeJson` requires the parent object to exist. Make sure `chains/
 ### Role misconfiguration
 
 If `hasRole(DEFAULT_ADMIN_ROLE, <deployer EOA>) == true` after `02_DeployProxies.s.sol`, that's a red flag — the deployer should retain no ongoing roles. Investigate before running Phases 3-7. If `hasRole(MANAGER, <safe>) == false`, the `grantRole(MANAGER, ...)` step in `02_DeployProxies.s.sol` (or `06_Configure.s.sol`) didn't execute or hasn't been executed yet — re-run or generate a Safe TX.
+
+### `02_DeployProxies.s.sol` reverts at `grantRole(MANAGER, ...)`
+
+**Symptom:** Forge script aborts with `AccessControlUnauthorizedAccount(<deployer>, 0x000…000)` after the AtomicProxyDeployer step succeeds.
+
+**Cause:** Lines 179-181 try to grant MANAGER from the deployer EOA, but `DEFAULT_ADMIN_ROLE` is held only by `chainConfig.admin` (the Safe) once `initialize` has run. See Phase R.1 callout for the full failure-mode walkthrough and decision matrix.
+
+**State you're in depends on Foundry mode:**
+- `--broadcast` (default, simulated): Simulation caught the revert; **nothing on chain**, chain config untouched. Apply one of the three R.1 workarounds and re-run.
+- `--broadcast --slow` or `--skip-simulation`: AtomicProxyDeployer tx mined; new salt-v3 proxies live on chain with admin = Safe; MANAGER not granted; chain config NOT updated. Half-deployed.
+
+**Recovery (half-deployed case):**
+1. Extract addresses from `broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json`:
+   ```bash
+   jq '.transactions[] | {contractName, contractAddress}' \
+     broadcast/02_DeployProxies.s.sol/<chainId>/run-latest.json
+   ```
+2. Hand-update `chains/<id>.json.deployed.NAVCalculatorProxy` and `BridgeEscrowProxy` with the new addresses.
+3. Query and write the new ERC20Default address:
+   ```bash
+   cast call <new_NAV_PROXY> "erc20DefaultOracle()(address)" --rpc-url <RPC>
+   ```
+   Update `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator`.
+4. Have the admin Safe execute `grantRole(MANAGER, <ManagerSafe>)` on both NAV and Bridge proxies via Safe TX batch.
+5. Verify via R.2 step 6 cast block. Continue with Phase 4.
+
+**Permanent fix:** apply R.1 option 1 (move grant into AtomicProxyDeployer constructor) before the next deploy — see Phase R callout.
 
 ### `forge verify-contract` fails with "Already verified"
 

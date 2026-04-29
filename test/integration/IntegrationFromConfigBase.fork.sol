@@ -180,8 +180,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkAddress"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkAddress"));
-        uint256 ldoEthHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkHeartbeat"));
-        uint256 ethUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkHeartbeat"));
+        uint256 ldoEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkHeartbeat"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkHeartbeat"));
         return address(new LDO_PriceOracle(ldo, ldoEth, ethUsd, ldoEthHb, ethUsdHb));
     }
 
@@ -315,7 +317,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethChainlink"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "ethToUsdChainlinkOracle"));
-        uint256 weEthEthHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethHeartbeat"));
+        uint256 weEthEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "ethToUsdChainlinkHeartbeat"));
         return address(new weETH_L2_PriceOracle(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
@@ -327,7 +330,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthChainlink"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "ethToUsdChainlinkOracle"));
-        uint256 cbEthEthHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthHeartbeat"));
+        uint256 cbEthEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "ethToUsdChainlinkHeartbeat"));
         return address(new cbETH_L2_PriceOracle(cbEth, cbEthEth, ethUsd, cbEthEthHb, ethUsdHb));
@@ -339,7 +343,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthChainlink"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "ethToUsdChainlinkOracle"));
-        uint256 rsEthEthHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthHeartbeat"));
+        uint256 rsEthEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "ethToUsdChainlinkHeartbeat"));
         return address(new rsETH_L2_PriceOracle(rsEth, rsEthEth, ethUsd, rsEthEthHb, ethUsdHb));
@@ -440,8 +445,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {
-        address morpho =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
+        address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
         bytes32 marketId =
             vm.parseBytes32(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "marketId"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
@@ -466,7 +470,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployCap(address navAddr) internal returns (address) {
         address cUsd = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "cUsd"));
-        address stcUsd = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
+        address stcUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "usdc"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "protocol");
         string memory positionDetail =
@@ -626,8 +631,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
             try nav.addBalanceOracle(a) {
-                // ok
-            } catch (bytes memory err) {
+            // ok
+            }
+            catch (bytes memory err) {
                 console2.log("[oracle] addBalanceOracle FAILED for", a);
                 console2.logBytes(err);
             }

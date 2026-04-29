@@ -198,16 +198,23 @@ Use this section when the existing proxies were a **test deployment** (admin/man
    DEPLOYER=<deployer EOA>
    MANAGER_ROLE=$(cast keccak "MANAGER")
    for chain in 1 42161 8453 10 100; do
+     case $chain in
+       1)     RPC=https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       42161) RPC=https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       8453)  RPC=https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       10)    RPC=https://opt-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+       100)   RPC=https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY ;;
+     esac
      # Expected: true, true, false, false (Safe holds both, deployer holds neither)
-     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $SAFE     --rpc-url $RPC
-     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $SAFE     --rpc-url $RPC
-     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $DEPLOYER --rpc-url $RPC
-     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $DEPLOYER --rpc-url $RPC
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $SAFE     --rpc-url "$RPC"
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $SAFE     --rpc-url "$RPC"
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" 0x0 $DEPLOYER --rpc-url "$RPC"
+     cast call $NAV_PROXY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $DEPLOYER --rpc-url "$RPC"
    done
    ```
    Repeat for `BRIDGE_PROXY`. **Stop and fix** if any returns the wrong result.
 
-7. **Update `chains/<chainId>.json.deployed`** for the per-chain ERC20Default Balance Adapter address — this gets re-deployed during `NAVCalculator.initialize()`, so the new proxies will have a different ERC20Default address than the old `0xc07C999644...EBA21C`. Read the new address from the broadcast logs (the script logs `[OK] ERC20DefaultOracle deployed at: 0x...`) or query the proxy after deploy: `cast call <NAV_PROXY> "getRegisteredOracleByIndex(uint256)(address)" 0 --rpc-url <RPC>`.
+7. **Update `chains/<chainId>.json.deployed`** for the per-chain ERC20Default Balance Adapter address — this gets re-deployed during `NAVCalculator.initialize()`, so the new proxies will have a different ERC20Default address than the old `0xc07C999644...EBA21C`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default oracle (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultOracle()(address)" --rpc-url <RPC>`. Note: if you broadcast `02_DeployProxies` with `PERSIST_DEPLOYMENTS=1` set, the script writes `balanceAdapters.ERC20Default.deployed` for you — verify in the diff before committing.
 
 8. **Update the "Canonical addresses" table** at the top of this runbook with the new proxy + ERC20Default addresses. Bump the verification date.
 

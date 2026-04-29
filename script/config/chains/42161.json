@@ -12,8 +12,8 @@
     "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "",
-    "NAVCalculatorProxy": "",
+    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
+    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },

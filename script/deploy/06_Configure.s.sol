@@ -135,7 +135,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](43);
+        names = new string[](46);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -174,6 +174,9 @@ contract Configure is BaseDeployScript {
         names[i++] = "GearboxMarket_kpkwstETH";
         // Balancer V3
         names[i++] = "BalancerV3_rETH_WETH";
+        names[i++] = "BalancerV3_GHO_USDT_USDC"; // Mainnet — USD Alpha
+        names[i++] = "BalancerV3_GHO_USDC_USDT"; // Arbitrum — USD Alpha
+        names[i++] = "BalancerV3_GHO_USDC"; // Base — USD Alpha
         // Aura
         names[i++] = "Aura_rETH_WETH";
         names[i++] = "Aura_GHO_USDT_USDC";

@@ -586,8 +586,8 @@ OPTIMISM_ETHERSCAN_API_KEY=your_optimism_api_key
 BASE_ETHERSCAN_API_KEY=your_base_api_key
 GNOSIS_ETHERSCAN_API_KEY=your_gnosis_api_key
 
-# Deployment Keys (for implementations and libraries, NOT core proxies)
-DEPLOYER_PRIVATE_KEY=0x...  # Use with caution, or use --ledger
+# Foundry keystore account name (import once: cast wallet import $DEPLOYER_NAME --interactive)
+DEPLOYER_NAME=my-deployer
 
 # Safe Transaction Service (optional, for API submission)
 SAFE_TX_SERVICE_URL=https://safe-transaction-mainnet.safe.global

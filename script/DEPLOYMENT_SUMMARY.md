@@ -67,7 +67,7 @@ The project uses the **canonical CREATE2 deployer** at `0x4e59b44847b37957858892
 
 **Step 1 — Deploy implementations (once)**
 
-Run `01_DeployImplementations.s.sol` **once**. Without `--broadcast`: generates `safe-transactions/{chainId}-deploy-implementations.json` (2 txs) for Safe UI. With `--broadcast --private-key`: deploys via EOA. Same implementation addresses on all chains.
+Run `01_DeployImplementations.s.sol` **once**. Without `--broadcast`: generates `safe-transactions/{chainId}-deploy-implementations.json` (2 txs) for Safe UI. With `--broadcast --account`: deploys via EOA. Same implementation addresses on all chains.
 
 ```bash
 # Generate Safe TX (no broadcast)
@@ -79,7 +79,7 @@ forge script script/deploy/01_DeployImplementations.s.sol \
 # Or deploy via EOA (broadcast)
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
 **Step 2 — Deploy and initialize proxies (per chain, via EOA)**
@@ -90,12 +90,12 @@ For **each** chain, run `02_DeployProxies.s.sol` with `--broadcast`. It deploys 
 # Mainnet
 forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
 
 # Arbitrum
 forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 42161 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 42161 --broadcast --account $DEPLOYER_NAME
 ```
 
 Proxy addresses are **identical on every chain** (CREATE2 with placeholder bytecode).
@@ -113,7 +113,7 @@ Follow these steps **one by one**. Do not skip steps; later steps depend on earl
 In the **project root**, create or edit `.env` (copy from `.env.sample` if needed). Set:
 
 - **`ALCHEMY_API_KEY`** — Used for RPC on all chains (chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`).
-- **`PRIVATE_KEY`** — Used for implementation deployment (01, optional) and for 02_DeployProxies (proxies + init via EOA).
+- **`DEPLOYER_NAME`** — Foundry keystore account name for the deployer EOA. Import once with `cast wallet import $DEPLOYER_NAME --interactive`; key stored at `~/.foundry/keystores/$DEPLOYER_NAME`. Pass as `--account $DEPLOYER_NAME` to `forge script`.
 - **Explorer API key** for verification (set the one(s) for your chain(s)):
   - Mainnet: `ETHERSCAN_API_KEY`
   - Arbitrum: `ARBISCAN_API_KEY`
@@ -125,7 +125,7 @@ Example `.env`:
 
 ```bash
 ALCHEMY_API_KEY=your_alchemy_key
-PRIVATE_KEY=0x...
+DEPLOYER_NAME=my-deployer
 ETHERSCAN_API_KEY=...   # and/or ARBISCAN_API_KEY, GNOSISSCAN_API_KEY, etc.
 ```
 
@@ -168,7 +168,7 @@ Save the file.
 
 ### Step 4 — Deploy implementations (once)
 
-Run **once**. Without `--broadcast`: generates **`safe-transactions/{chainId}-deploy-implementations.json`** (2 txs); execute in Safe UI once. With `--broadcast --private-key`: deploys via EOA. Same impl addresses on all chains.
+Run **once**. Without `--broadcast`: generates **`safe-transactions/{chainId}-deploy-implementations.json`** (2 txs); execute in Safe UI once. With `--broadcast --account`: deploys via EOA. Same impl addresses on all chains.
 
 ```bash
 # Generate Safe TX
@@ -179,14 +179,14 @@ forge script script/deploy/01_DeployImplementations.s.sol \
 # Or deploy via EOA
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
 **Check:** Script prints and saves NAVCalculatorImplementation and BridgeEscrowImplementation addresses.
 
 ### Step 5 — Deploy and initialize proxies (per chain, via EOA)
 
-Run **once per chain** with that chain's RPC and `--chain-id` and **`--broadcast --private-key`**. The script deploys placeholder + both proxies (CREATE2) and upgrades them to the real implementations with chain-specific init in one go (atomic by default; set `USE_LEGACY_DEPLOY=1` for legacy multi-tx).
+Run **once per chain** with that chain's RPC and `--chain-id` and **`--broadcast --account`**. The script deploys placeholder + both proxies (CREATE2) and upgrades them to the real implementations with chain-specific init in one go (atomic by default; set `USE_LEGACY_DEPLOY=1` for legacy multi-tx).
 
 **Mainnet (chain 1):**
 
@@ -195,7 +195,7 @@ forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 **Arbitrum (42161):**
@@ -205,7 +205,7 @@ forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 42161 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 (Use the same pattern for Gnosis `100`, Base `8453`, Optimism `10`, etc.)
@@ -248,7 +248,7 @@ To deploy on another chain (e.g. Arbitrum after Mainnet):
 
 1. Use that chain’s config: `script/config/chains/42161.json` (etc.).
 2. Set **addresses** in that file (Safe and roles can be the same or different).
-3. **Step 4** (implementations) is once for all chains; run **Step 5** (02_DeployProxies) per chain with that chain's RPC and `--broadcast --private-key`.
+3. **Step 4** (implementations) is once for all chains; run **Step 5** (02_DeployProxies) per chain with that chain's RPC and `--broadcast --account`.
 4. Run **Step 5** once (implementations Safe TX), then **Step 6** for that chain (proxies + init Safe TX; execute in Safe UI for that chain).
 
 Adapter deployment (price feeds, balance adapters, bridge adapters) and configuration come **after** NAVCalculator and BridgeEscrow are deployed; see “Phase 3” and “Phase 4” in the deployment workflow above.
@@ -261,19 +261,19 @@ Adapter deployment (price feeds, balance adapters, bridge adapters) and configur
 # Deploy price adapters. Use --rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY" for your chain.
 forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 
 # Deploy balance adapters
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 
 # Deploy bridge adapters
 forge script script/deploy/05_DeployBridgeAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 ```
 
@@ -379,7 +379,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 2. ✅ `ALCHEMY_API_KEY` in `.env` for RPC (chain config uses `"rpc": "$ALCHEMY"`); explorer API keys for verification
 3. ✅ Etherscan (or chain explorer) API keys for verification
 4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (all non-zero)
-5. ✅ Deployer private key (for 01 implementations and 02_DeployProxies)
+5. ✅ Foundry keystore account imported (`cast wallet import $DEPLOYER_NAME --interactive`) and `DEPLOYER_NAME` set in `.env`
 
 ### Recommended
 1. ✅ Same Safe address across all chains (via Safe CREATE2 deployment)
@@ -402,8 +402,8 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 ## Next Steps to Deploy
 
 1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager (and RPC/explorer vars in `.env` if using `$VAR`).
-2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --private-key` to deploy via EOA).
-3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --private-key` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
+2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --account` to deploy via EOA).
+3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
 5. **Configure adapters** - Run `06_Configure.s.sol` to generate Safe TX JSON; execute in Safe UI to grant MANAGER, add balance oracles, authorize bridge adapters. Alternatively use ManageAdapters/AuthorizeBridgeAdapters as needed.
 6. **Verify** - Run verification script and run the printed `forge verify-contract` commands.
@@ -416,15 +416,15 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
    - Optional for NAVCalculator: set `chainlinkSequencerFeed` (L2 sequencer feed; can be zero on L1) and `nativeTokenSymbol` (e.g. `"ETH"`, `"xDAI"`).
 
 2. **Env**  
-   - `.env` with `ALCHEMY_API_KEY` (used for RPC on all chains), `PRIVATE_KEY`, and explorer API key(s) for verification.  
-   - `PRIVATE_KEY` is used for implementations (01, optional) and for **02_DeployProxies** (proxies + init via EOA).
+   - `.env` with `ALCHEMY_API_KEY` (used for RPC on all chains), `DEPLOYER_NAME`, and explorer API key(s) for verification.  
+   - `DEPLOYER_NAME` is the Foundry keystore account name (import once with `cast wallet import $DEPLOYER_NAME --interactive`); used for implementations (01, optional) and **02_DeployProxies** (proxies + init via EOA).
 
 3. **Order of operations**  
    - **Implementations** (once):  
      Run `forge script script/deploy/01_DeployImplementations.s.sol --rpc-url <url> --chain-id <id>`.  
-     Without `--broadcast`: writes `safe-transactions/{chainId}-deploy-implementations.json` (2 txs). Execute in Safe UI once. With `--broadcast --private-key`: deploys via EOA.  
+     Without `--broadcast`: writes `safe-transactions/{chainId}-deploy-implementations.json` (2 txs). Execute in Safe UI once. With `--broadcast --account $DEPLOYER_NAME`: deploys via EOA.  
    - **Proxies + init** (per chain, via EOA):  
-     Run `forge script script/deploy/02_DeployProxies.s.sol --rpc-url <url> --chain-id <id> --broadcast --private-key <KEY>` for each chain.  
+     Run `forge script script/deploy/02_DeployProxies.s.sol --rpc-url <url> --chain-id <id> --broadcast --account $DEPLOYER_NAME` for each chain.  
      Deploys placeholder + both proxies (CREATE2) and upgrades/initializes them in one atomic tx (or set `USE_LEGACY_DEPLOY=1` for legacy multi-tx). Saves addresses to config.
 
 4. **After deployment**  

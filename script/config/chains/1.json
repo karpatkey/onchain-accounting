@@ -7,9 +7,9 @@
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
   },
   "deployed": {
     "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
@@ -238,6 +238,16 @@
         "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
         "protocol": "Balancer V3 - rETH/Aave WETH"
+      },
+      "deployed": ""
+    },
+    "BalancerV3_GHO_USDT_USDC": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
+        "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
+        "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+        "protocol": "Balancer V3 - Aave GHO/USDT/USDC"
       },
       "deployed": ""
     },

@@ -7,11 +7,13 @@ import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {MANAGER} from "../../src/constants.sol";
 
 /// @title AtomicProxyDeployer
 /// @notice Deploys placeholder + NAV + Bridge proxies and upgrades them in a single transaction.
 /// @dev Use this to avoid front-running: all steps happen atomically so no one can insert a tx between deploy and upgrade.
-///      Admin is set to this contract (msg.sender during init); we then grant DEFAULT_ADMIN_ROLE to adminToGrant so the intended admin can manage roles.
+///      Admin is set to this contract (msg.sender during init); roles are handed off to adminToGrant and managerToGrant
+///      before this contract renounces its own DEFAULT_ADMIN_ROLE, leaving no orphaned admin.
 contract AtomicProxyDeployer {
     address private constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
     bytes32 private constant DEFAULT_ADMIN_ROLE = bytes32(0);
@@ -21,7 +23,8 @@ contract AtomicProxyDeployer {
         address bridgeImpl,
         address chainlinkSequencerFeed,
         string memory nativeTokenSymbol,
-        address adminToGrant
+        address adminToGrant,
+        address managerToGrant
     ) {
         bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2)));
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
@@ -66,11 +69,21 @@ contract AtomicProxyDeployer {
         );
         UUPSUpgradeable(bridgeProxy).upgradeToAndCall(bridgeImpl, bridgeInitData);
 
-        // 6. Grant DEFAULT_ADMIN_ROLE to intended admin so they can manage roles (e.g. grant MANAGER)
+        // 6. Grant DEFAULT_ADMIN_ROLE to intended admin
         if (adminToGrant != address(0)) {
             IAccessControl(navProxy).grantRole(DEFAULT_ADMIN_ROLE, adminToGrant);
             IAccessControl(bridgeProxy).grantRole(DEFAULT_ADMIN_ROLE, adminToGrant);
         }
+
+        // 7. Grant MANAGER while this contract still holds DEFAULT_ADMIN_ROLE
+        if (managerToGrant != address(0)) {
+            IAccessControl(navProxy).grantRole(MANAGER, managerToGrant);
+            IAccessControl(bridgeProxy).grantRole(MANAGER, managerToGrant);
+        }
+
+        // 8. Renounce this contract's own DEFAULT_ADMIN_ROLE — no orphaned admin after construction
+        IAccessControl(navProxy).renounceRole(DEFAULT_ADMIN_ROLE, address(this));
+        IAccessControl(bridgeProxy).renounceRole(DEFAULT_ADMIN_ROLE, address(this));
     }
 
     function _computeCreate2(address deployer, bytes32 salt, bytes memory creationCode) private pure returns (address) {

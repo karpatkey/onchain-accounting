@@ -338,6 +338,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             address(bridgeImpl),
             chainConfig.chainlinkSequencerFeed,
             chainConfig.nativeTokenSymbol,
+            adminToGrant,
             adminToGrant
         );
 

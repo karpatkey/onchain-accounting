@@ -85,18 +85,15 @@ contract NAVCalculatorHandler is Test {
         // Bound price to prevent overflow in amount * price calculations
         // Use conservative bounds: max price * max amount should not overflow uint256
         uint256 price = bound(priceSeed, 1e6, 1e12); // Reasonable price range
-        // Bound priceDecimals to prevent denominator overflow (10**denominator must fit in uint256)
-        // Max safe denominator is ~77 (10**77 fits in uint256)
-        // For denominator = assetDecimals + priceDecimals - 8, we need assetDecimals + priceDecimals <= 85
-        // Since assetDecimals is bound to 0-18, priceDecimals should be bound to 0-67
-        // BUT: We must ensure assetDecimals + priceDecimals >= 8 (NAV_DECIMALS constraint)
+        // Bound priceDecimals so denom1 = assetDecimals + priceDecimals - NAV_DECIMALS <= MAX_DECIMAL_EXPONENT_INT256 (76)
+        // i.e. priceDecimals <= 76 + 8 - assetDecimals = 84 - assetDecimals
+        // Also require assetDecimals + priceDecimals >= 8 (NAV_DECIMALS constraint)
+        uint8 maxPriceDecimals = decimals <= 84 ? uint8(84 - decimals) : 0;
         uint8 priceDecimals;
         if (decimals < 8) {
-            // If assetDecimals < 8, ensure priceDecimals makes up the difference
-            priceDecimals = uint8(bound(priceSeed % 100, 8 - decimals, 67));
+            priceDecimals = uint8(bound(priceSeed % 100, 8 - decimals, maxPriceDecimals));
         } else {
-            // If assetDecimals >= 8, priceDecimals can be 0-67
-            priceDecimals = uint8(bound(priceSeed % 100, 0, 67));
+            priceDecimals = uint8(bound(priceSeed % 100, 0, maxPriceDecimals));
         }
         Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TOKEN", address(token), price, priceDecimals);
         priceOracles.push(priceOracle);

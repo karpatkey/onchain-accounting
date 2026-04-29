@@ -7,9 +7,9 @@
   "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-    "manager": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F"
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
   },
   "deployed": {
     "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
@@ -69,6 +69,16 @@
         "pid": "99",
         "protocol": "Aura",
         "positionDetail": "Aave GHO/USDC/USDT"
+      },
+      "deployed": ""
+    },
+    "BalancerV3_GHO_USDC_USDT": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
+        "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
+        "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
+        "protocol": "Balancer V3 - Aave GHO/USDC/USDT"
       },
       "deployed": ""
     }

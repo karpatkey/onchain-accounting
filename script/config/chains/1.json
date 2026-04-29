@@ -8,12 +8,12 @@
   "nativeTokenSymbol": "ETH",
   "addresses": {
     "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
-    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
+    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
@@ -21,9 +21,9 @@
     "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
       },
-      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
     "AaveV3_Core": {
       "enabled": true,
@@ -31,7 +31,7 @@
         "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
         "protocol": "Aave V3 Core"
       },
-      "deployed": ""
+      "deployed": "0x1aee401c41bAE2a02aE39d9c969De44dbD8ca449"
     },
     "AaveV3_Prime": {
       "enabled": true,
@@ -39,7 +39,7 @@
         "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
         "protocol": "Aave V3 Prime"
       },
-      "deployed": ""
+      "deployed": "0x14b1E2E6577f49C6242533119452c3CA092fC9B1"
     },
     "SparkLend": {
       "enabled": true,
@@ -47,7 +47,7 @@
         "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
         "protocol": "Spark"
       },
-      "deployed": ""
+      "deployed": "0x9b9e74cfd807Dfae4F9333Afbd44EFE719354c39"
     },
     "AaveV3SafetyModule_stkGHO": {
       "enabled": true,
@@ -56,7 +56,7 @@
         "protocol": "Aave V3 Safety Module",
         "positionDetail": "stkGHO"
       },
-      "deployed": ""
+      "deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD"
     },
     "Cap": {
       "enabled": true,
@@ -67,7 +67,7 @@
         "protocol": "Cap",
         "positionDetail": "cUSD + stcUSD"
       },
-      "deployed": ""
+      "deployed": "0xb812cc304Cb417B635470681160e75CfFb0006b0"
     },
     "MorphoVault_kpkETHPrime_V1": {
       "enabled": true,
@@ -76,7 +76,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk ETH Prime V1"
       },
-      "deployed": ""
+      "deployed": "0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7"
     },
     "MorphoVault_kpkETHPrime_V2": {
       "enabled": true,
@@ -85,7 +85,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk ETH Prime V2"
       },
-      "deployed": ""
+      "deployed": "0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512"
     },
     "MorphoVault_kpkUSDCPrime_V1": {
       "enabled": true,
@@ -94,7 +94,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Prime V1"
       },
-      "deployed": ""
+      "deployed": "0x07978693C01f70373e89d196DfcfcA18a6C02d6C"
     },
     "MorphoVault_kpkUSDCPrime_V2": {
       "enabled": true,
@@ -103,7 +103,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Prime V2"
       },
-      "deployed": ""
+      "deployed": "0xBF19e8568cbA837d3922a987f9E001787385575f"
     },
     "MorphoMarket_wstETH_USDC": {
       "enabled": true,
@@ -112,7 +112,7 @@
         "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
         "protocol": "Morpho Blue - wstETH/USDC"
       },
-      "deployed": ""
+      "deployed": "0x4A68C3dA533fF7527CD67390f80d87ca6a95551d"
     },
     "MorphoMarket_cbBTC_USDC": {
       "enabled": true,
@@ -121,7 +121,7 @@
         "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
         "protocol": "Morpho Blue - cbBTC/USDC"
       },
-      "deployed": ""
+      "deployed": "0x8b0F047127D58692C869033a551872c4Fe55e758"
     },
     "MorphoMarket_wstUSR_USDC": {
       "enabled": true,
@@ -130,7 +130,7 @@
         "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
         "protocol": "Morpho Blue - wstUSR/USDC"
       },
-      "deployed": ""
+      "deployed": "0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42"
     },
     "MorphoMarket_ETHPlus_USDC": {
       "enabled": true,
@@ -139,7 +139,7 @@
         "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
         "protocol": "Morpho Blue - ETH+/USDC"
       },
-      "deployed": ""
+      "deployed": "0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2"
     },
     "MorphoMarket_WBTC_USDC": {
       "enabled": true,
@@ -148,7 +148,7 @@
         "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
         "protocol": "Morpho Blue - WBTC/USDC"
       },
-      "deployed": ""
+      "deployed": "0xe1CE19c8C668cD3659f2AE64E2C9D078c71Ef8F6"
     },
     "MorphoMarket_RLP_USDC": {
       "enabled": true,
@@ -157,7 +157,7 @@
         "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
         "protocol": "Morpho Blue - RLP/USDC"
       },
-      "deployed": ""
+      "deployed": "0x9970D0D8932051d21883C854fC42eb67a54348FF"
     },
     "MorphoMarket_syrupUSDC_USDC": {
       "enabled": true,
@@ -166,7 +166,7 @@
         "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
         "protocol": "Morpho Blue - syrupUSDC/USDC"
       },
-      "deployed": ""
+      "deployed": "0x7A7e9F5562C0126fb2bCC2f29D1098b60A452431"
     },
     "MorphoMarket_sUSDS_USDT": {
       "enabled": true,
@@ -175,7 +175,7 @@
         "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
         "protocol": "Morpho Blue - sUSDS/USDT"
       },
-      "deployed": ""
+      "deployed": "0x6837d6a2F1335fffBb6B21b51d24D34F12a02DaA"
     },
     "MorphoMarket_ETHPlus_WETH": {
       "enabled": true,
@@ -184,7 +184,7 @@
         "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
         "protocol": "Morpho Blue - ETH+/WETH"
       },
-      "deployed": ""
+      "deployed": "0x618207B0650cE45C241760CE0b6E560167EcC1AA"
     },
     "MorphoMarket_wstETH_WETH": {
       "enabled": true,
@@ -193,7 +193,7 @@
         "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
         "protocol": "Morpho Blue - wstETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0xAF28F8E8E24B6B23f6BB667f868b9bAFFBEfd8B6"
     },
     "MorphoMarket_weETH_WETH": {
       "enabled": true,
@@ -202,7 +202,7 @@
         "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
         "protocol": "Morpho Blue - weETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0x537E83dc59b2Ee2C7bD46B2f4801c5DF3B3f8aD1"
     },
     "MorphoMarket_rsETH_WETH": {
       "enabled": true,
@@ -211,7 +211,7 @@
         "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
         "protocol": "Morpho Blue - rsETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b"
     },
     "GearboxMarket_kpkWETH": {
       "enabled": true,
@@ -220,7 +220,7 @@
         "protocol": "Gearbox",
         "positionDetail": "kpk WETH market"
       },
-      "deployed": ""
+      "deployed": "0x04E39d917E0D515384B3C027658a8b2f401ECEb0"
     },
     "GearboxMarket_kpkwstETH": {
       "enabled": true,
@@ -229,7 +229,7 @@
         "protocol": "Gearbox",
         "positionDetail": "kpk wstETH market"
       },
-      "deployed": ""
+      "deployed": "0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941"
     },
     "BalancerV3_rETH_WETH": {
       "enabled": true,
@@ -239,7 +239,7 @@
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
         "protocol": "Balancer V3 - rETH/Aave WETH"
       },
-      "deployed": ""
+      "deployed": "0x854BC9A5445495396De4cc228A5f945C680c2d4A"
     },
     "BalancerV3_GHO_USDT_USDC": {
       "enabled": true,
@@ -249,7 +249,7 @@
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
         "protocol": "Balancer V3 - Aave GHO/USDT/USDC"
       },
-      "deployed": ""
+      "deployed": "0x380f9912a659D7AFd1C9b5f88f62c06b4309FA80"
     },
     "Aura_GHO_USDT_USDC": {
       "enabled": true,
@@ -261,7 +261,7 @@
         "protocol": "Aura",
         "positionDetail": "Aave GHO/USDT/USDC"
       },
-      "deployed": ""
+      "deployed": "0x76bB2C593A4b1081DA59899A579Adf815f52Bbac"
     },
     "Aura_rETH_WETH": {
       "enabled": true,
@@ -273,7 +273,7 @@
         "protocol": "Aura",
         "positionDetail": "rETH/Aave WETH"
       },
-      "deployed": ""
+      "deployed": "0x45006c280bF3dC44D7D370C9a801c95eC501aA3E"
     },
     "Curve_weETH_WETH": {
       "enabled": true,
@@ -282,7 +282,7 @@
         "protocol": "Curve",
         "positionDetail": "weETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0xAF8A9F7b37925973615Eaa787AefA3f388D32101"
     },
     "Curve_crvUSD_USDC": {
       "enabled": true,
@@ -291,7 +291,7 @@
         "protocol": "Curve",
         "positionDetail": "crvUSD/USDC"
       },
-      "deployed": ""
+      "deployed": "0x9eFcd3aE461a4F5769365B25673053FB08cc76B9"
     },
     "Curve_crvUSD_USDT": {
       "enabled": true,
@@ -300,7 +300,7 @@
         "protocol": "Curve",
         "positionDetail": "crvUSD/USDT"
       },
-      "deployed": ""
+      "deployed": "0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc"
     },
     "Curve_RLUSD_USDC": {
       "enabled": true,
@@ -309,7 +309,7 @@
         "protocol": "Curve",
         "positionDetail": "RLUSD/USDC"
       },
-      "deployed": ""
+      "deployed": "0x18dddd49116deB8ed90fdD7a2236a06F83127dd5"
     },
     "Convex_weETH_WETH": {
       "enabled": true,
@@ -319,7 +319,7 @@
         "protocol": "Convex",
         "positionDetail": "weETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0x0c2582167fB2c636eBa3b63fff1c4b186E643956"
     },
     "Convex_crvUSD_USDC": {
       "enabled": true,
@@ -329,7 +329,7 @@
         "protocol": "Convex",
         "positionDetail": "crvUSD/USDC"
       },
-      "deployed": ""
+      "deployed": "0x5F598A4B588766c41b0dE5A93B91E03f00C60A77"
     },
     "Convex_crvUSD_USDT": {
       "enabled": true,
@@ -339,7 +339,7 @@
         "protocol": "Convex",
         "positionDetail": "crvUSD/USDT"
       },
-      "deployed": ""
+      "deployed": "0x69BCa825DDCd25394BBF3DA313ece4e63642898d"
     },
     "Convex_RLUSD_USDC": {
       "enabled": true,
@@ -349,7 +349,7 @@
         "protocol": "Convex",
         "positionDetail": "RLUSD/USDC"
       },
-      "deployed": ""
+      "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
     }
   },
   "bridgeAdapters": {
@@ -404,31 +404,31 @@
   },
   "priceFeeds": {
     "wstETH": {
-      "deployed": ""
+      "deployed": "0xc3E04720338BC8AddC335764914b7602DD11e79f"
     },
     "rETH": {
-      "deployed": ""
+      "deployed": "0x99690D21EB64cA7941e974691455Be41D558441B"
     },
     "weETH": {
-      "deployed": ""
+      "deployed": "0xAb5A2dB56e6608De7FE12a447B26d349a10fb037"
     },
     "eETH": {
-      "deployed": ""
+      "deployed": "0x9C2eA278A490284D775BDd7899972a35e86f9713"
     },
     "ezETH": {
-      "deployed": ""
+      "deployed": "0x305bdB829066C9cE15d5A2aF0c4267B326C8a1cF"
     },
     "rsETH": {
-      "deployed": ""
+      "deployed": "0x52d718a68b4f385da5C67BE94d42851777F22e85"
     },
     "sUSDe": {
-      "deployed": ""
+      "deployed": "0xDE04bb0a8fd927C137547401F30213FCc7607D63"
     },
     "sUSDS": {
-      "deployed": ""
+      "deployed": "0x76752e33050f2011cAcd3edBbB8125eE1e49C140"
     },
     "syrupUSDC": {
-      "deployed": ""
+      "deployed": "0xc73Ed3f07e2d1d6C59294936C12048daE2b8CbE7"
     }
   }
 }

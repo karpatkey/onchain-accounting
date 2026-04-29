@@ -8,12 +8,12 @@
   "nativeTokenSymbol": "ETH",
   "addresses": {
     "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
-    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
+    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
@@ -21,9 +21,9 @@
     "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
       },
-      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
     "AaveV3_Base": {
       "enabled": true,
@@ -31,7 +31,7 @@
         "dataProvider": "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad",
         "protocol": "Aave V3 Base"
       },
-      "deployed": ""
+      "deployed": "0xbf7d1dd7aedE0841f563584E39cA8b69F4Ca29B1"
     },
     "MorphoMarket_cbETH_USDC": {
       "enabled": true,
@@ -40,7 +40,7 @@
         "marketId": "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
         "protocol": "Morpho Blue - cbETH/USDC"
       },
-      "deployed": ""
+      "deployed": "0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f"
     },
     "MorphoMarket_cbBTC_USDC": {
       "enabled": true,
@@ -49,7 +49,7 @@
         "marketId": "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
         "protocol": "Morpho Blue - cbBTC/USDC"
       },
-      "deployed": ""
+      "deployed": "0x2F77a41C17C7cAb30cc320112b649ab8B070617E"
     },
     "MorphoMarket_wstETH_WETH": {
       "enabled": true,
@@ -58,7 +58,7 @@
         "marketId": "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
         "protocol": "Morpho Blue - wstETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0xd96Af38c9685B724b9C7e0646D7Ea19e13402867"
     },
     "MorphoMarket_weETH_WETH": {
       "enabled": true,
@@ -67,7 +67,7 @@
         "marketId": "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea",
         "protocol": "Morpho Blue - weETH/WETH"
       },
-      "deployed": ""
+      "deployed": "0xDdBb3444421a4c4F142fE9544bf7Cd404663745e"
     },
     "Aura_GHO_USDC": {
       "enabled": true,
@@ -79,7 +79,7 @@
         "protocol": "Aura",
         "positionDetail": "Aave GHO/USDC"
       },
-      "deployed": ""
+      "deployed": "0x286Ae1f0Ee0BE577acE2F087ad98c2F3C71ddDb0"
     },
     "BalancerV3_GHO_USDC": {
       "enabled": true,
@@ -89,7 +89,7 @@
         "balancerMinter": "0x0c5538098EBe88175078972F514C9e101D325D4F",
         "protocol": "Balancer V3 - Aave GHO/USDC"
       },
-      "deployed": ""
+      "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
     }
   },
   "bridgeAdapters": {
@@ -146,13 +146,13 @@
   },
   "priceFeeds": {
     "wstETH_L2": {
-      "deployed": ""
+      "deployed": "0x009E7D763b4F7Ded74C7f6B6aB329c25aE481477"
     },
     "weETH_L2": {
-      "deployed": ""
+      "deployed": "0xfCdaC9e666D65b63D38f1E20c05FA199Ab6ad55E"
     },
     "cbETH_L2": {
-      "deployed": ""
+      "deployed": "0xf48B71F3a234EEd583a4B1b883e02FeEa505841F"
     }
   }
 }

@@ -8,7 +8,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title AuthorizeBridgeAdapters
 /// @notice Authorizes all enabled bridge adapters on BridgeEscrow by broadcasting from the EOA admin.
-/// @dev Run with the admin EOA as broadcaster (e.g. --private-key or ledger).
+/// @dev Run with the admin EOA as broadcaster (e.g. --account $DEPLOYER_NAME or --ledger).
 ///      For each enabled adapter in config: if bridgeAdapters.<Name>.callbackSelector is set,
 ///      calls authorizeAdapterWithCallback(adapter, selector); otherwise authorizeAdapter(adapter).
 ///      See script/config/README.md "Bridge adapters: callbacks". If an adapter is already authorized,

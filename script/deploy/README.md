@@ -12,7 +12,7 @@ Example (RPC from config):
 
 ```bash
 # RPC taken from config ($ALCHEMY → ALCHEMY_API_KEY)
-forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
 Example (explicit RPC):
@@ -20,7 +20,7 @@ Example (explicit RPC):
 ```bash
 forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
 ---
@@ -50,16 +50,16 @@ Proxy **bytecode** uses a **placeholder** implementation (UUPSPlaceholder at a C
 
 ```bash
 # Mainnet (RPC from config if ALCHEMY_API_KEY is set)
-forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --private-key $PRIVATE_KEY
+forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 
 # Arbitrum
-forge script script/deploy/02_DeployProxies.s.sol --chain-id 42161 --broadcast --private-key $PRIVATE_KEY
+forge script script/deploy/02_DeployProxies.s.sol --chain-id 42161 --broadcast --account $DEPLOYER_NAME
 
 # Base
-forge script script/deploy/02_DeployProxies.s.sol --chain-id 8453 --broadcast --private-key $PRIVATE_KEY
+forge script script/deploy/02_DeployProxies.s.sol --chain-id 8453 --broadcast --account $DEPLOYER_NAME
 
 # Gnosis
-forge script script/deploy/02_DeployProxies.s.sol --chain-id 100 --broadcast --private-key $PRIVATE_KEY
+forge script script/deploy/02_DeployProxies.s.sol --chain-id 100 --broadcast --account $DEPLOYER_NAME
 ```
 
 ### After 02

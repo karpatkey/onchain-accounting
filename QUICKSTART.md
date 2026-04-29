@@ -16,14 +16,30 @@ ALCHEMY_API_KEY=your_alchemy_key
 ETHERSCAN_API_KEY=YOUR_KEY
 ARBISCAN_API_KEY=YOUR_KEY
 
-# Deployer key (for implementations and 02_DeployProxies)
-PRIVATE_KEY=0x...
+# Foundry keystore account name for the deployer EOA (see Step 1b)
+DEPLOYER_NAME=my-deployer
 ```
 
 Load it:
 ```bash
 source .env
 ```
+
+## Step 1b: Import Deployer Key into Foundry Keystore
+
+Before deploying, import the deployer's private key into Foundry's encrypted keystore (one-time setup):
+
+```bash
+cast wallet import $DEPLOYER_NAME --interactive
+```
+
+You will be prompted for the private key and a password to encrypt it. The key is stored at:
+
+```
+~/.foundry/keystores/$DEPLOYER_NAME
+```
+
+The keystore persists until manually deleted (`rm ~/.foundry/keystores/$DEPLOYER_NAME`). The private key is never stored in `.env` or the repo.
 
 ## Step 2: Edit Configuration
 
@@ -44,7 +60,7 @@ Set `addresses.safeMultisig`, `addresses.admin`, and `addresses.manager` (all no
 
 **Note:** We use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
 
-Generate Safe transactions to deploy implementations (or deploy via EOA with `--broadcast --private-key`):
+Generate Safe transactions to deploy implementations (or deploy via EOA with `--broadcast --account`):
 
 ```bash
 forge script script/deploy/01_DeployImplementations.s.sol \
@@ -67,7 +83,7 @@ forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
-  --private-key "$PRIVATE_KEY"
+  --account $DEPLOYER_NAME
 
 # Other chains: same script with that chain's RPC and --chain-id (e.g. 42161, 10, 8453, 100)
 ```
@@ -86,13 +102,13 @@ Edit chain config and scripts to enable needed adapters, then:
 # Price feeds
 forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 
 # Balance adapters
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 ```
 

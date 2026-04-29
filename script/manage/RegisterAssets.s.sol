@@ -21,7 +21,7 @@ import {console2} from "forge-std/console2.sol";
 ///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
 ///     reports status but refuses to write the Safe tx file.
 ///   - Output: safe-transactions/{chainId}-register-assets.json
-///   - With --broadcast, tx(s) are sent from the default signer (--private-key). registerAsset checks MANAGER on-chain (msg.sender).
+///   - With --broadcast, tx(s) are sent from the keystore signer (--account $DEPLOYER_NAME). registerAsset checks MANAGER on-chain (msg.sender).
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;
 
@@ -202,7 +202,7 @@ contract RegisterAssets is BaseDeployScript {
         console2.log("MultiSend calldata to register all assets (for a MANAGER caller):");
         console2.log(vm.toString(multiSendData));
 
-        // If the broadcast sender (PRIVATE_KEY) is the configured manager, broadcast registerAsset tx(s) directly.
+        // If the broadcast sender (--account $DEPLOYER_NAME) is the configured manager, broadcast registerAsset tx(s) directly.
         _broadcastManagerMultiSend(batch);
 
         console2.log("");

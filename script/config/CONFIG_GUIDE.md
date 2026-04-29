@@ -174,7 +174,7 @@ Edit `script/config/chains/{chainId}.json`:
 ```bash
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 ```
 
@@ -270,7 +270,7 @@ If deployment is interrupted, re-running the script will:
 ```bash
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url $GNOSIS_RPC_URL \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 ```
 
@@ -325,7 +325,7 @@ cp script/config/chains/1.json script/config/chains/137.json
 # Edit 137.json with Polygon-specific values
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url $POLYGON_RPC_URL \
-  --private-key $PRIVATE_KEY \
+  --account $DEPLOYER_NAME \
   --broadcast
 ```
 

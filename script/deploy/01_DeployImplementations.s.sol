@@ -11,7 +11,7 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Deploys NAVCalculator and BridgeEscrow implementations (CREATE2). Safe JSON and/or EOA broadcast.
 /// @dev Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt || init_code (Arachnid format).
 ///      Run without --broadcast: generates safe-transactions/{chainId}-deploy-implementations.json and saves addresses.
-///      Run with --broadcast --private-key: deploys via EOA (skips if already deployed), then saves addresses.
+///      Run with --broadcast --account $DEPLOYER_NAME: deploys via EOA (skips if already deployed), then saves addresses.
 contract DeployImplementations is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 

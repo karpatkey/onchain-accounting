@@ -140,7 +140,7 @@ Use this section when the existing proxies were a **test deployment** (admin/man
 - [ ] **Decide which Safe address goes in `chainConfig.admin` vs `chainConfig.manager`.** Recommended: same Safe in both, per the runbook's steady-state convention.
 - [ ] **Patch or work around the `02_DeployProxies` MANAGER-grant bug.** Mandatory before broadcast — see callout below for failure mode, Foundry-mode caveat, decision matrix, and recovery if a half-deployed state slips through.
 - [ ] **Deployer EOA gas funded on all 5 chains.** Rule of thumb: 0.05 ETH on Mainnet, 0.01 ETH-equivalent on each L2/Gnosis. `02` uses CREATE2 + UUPS upgrade-and-init, ~600k gas per chain.
-- [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA).
+- [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `DEPLOYER_NAME` (Foundry keystore account name; import once with `cast wallet import $DEPLOYER_NAME --interactive`).
 - [ ] **All tests green** on the branch you're deploying from. `forge test` non-fork = 716+ passing.
 
 #### About the MANAGER-grant bug — failure mode, Foundry caveat, options, recovery
@@ -223,7 +223,7 @@ NAVCalculator.renounceRole(DEFAULT_ADMIN_ROLE, <deployer>)
      esac
      forge script script/deploy/02_DeployProxies.s.sol \
        --rpc-url "$RPC" --chain-id $chain \
-       --broadcast --private-key $PRIVATE_KEY
+       --broadcast --account $DEPLOYER_NAME
    done
    ```
    Expected per chain: 3 CREATE2 transactions (placeholder, NAV proxy, Bridge proxy) + 2 UUPS upgrade-and-init transactions. The script writes the new proxy addresses into `chains/<chainId>.json.deployed.*`.
@@ -302,8 +302,8 @@ Create or update `.env` in the project root:
 # RPC (used by all chain configs via "$ALCHEMY" placeholder)
 ALCHEMY_API_KEY=your_alchemy_key
 
-# Deployer private key (used for scripts 03 and 04)
-PRIVATE_KEY=0x...
+# Foundry keystore account name (import once: cast wallet import $DEPLOYER_NAME --interactive)
+DEPLOYER_NAME=my-deployer
 
 # Explorer API keys (for contract verification)
 ETHERSCAN_API_KEY=...
@@ -351,7 +351,7 @@ Tick every box below before you broadcast on any chain. Each one has burned a pa
 - [ ] `forge build` passes clean (default profile — `foundry.toml` defines only `default`, `coverage`, and `slow`; there is no `local` profile here).
 - [ ] Non-fork tests pass: `forge test --no-match-path 'test/**/fork/*.sol'` → 716+ passing.
 - [ ] Fork tests pass against your target chain: `FOUNDRY_PROFILE=slow forge test --match-path 'test/**/fork/*.sol'` → 271+ passing.
-- [ ] `.env` has: `ALCHEMY_API_KEY`, `PRIVATE_KEY` (deployer EOA), `<CHAIN>_ETHERSCAN_API_KEY`.
+- [ ] `.env` has: `ALCHEMY_API_KEY`, `DEPLOYER_NAME` (Foundry keystore account name), `<CHAIN>_ETHERSCAN_API_KEY`.
 - [ ] Deployer EOA has native gas on the target chain (check with `cast balance <EOA> --rpc-url ...`). Rule of thumb: 0.05 ETH on L1, 0.01 ETH-equivalent on L2s/Gnosis for a full Phase 4+5 run (Phase 3 typically skipped — see Phase 3 intro).
 - [ ] Chain config `addresses.admin` and `addresses.manager` point to the correct per-chain Safe (post-redeploy).
 - [ ] For redeploys of a specific adapter: `deployed: ""` is cleared in the config (otherwise the script skips).
@@ -576,7 +576,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 ### 3.2 Gnosis
@@ -586,7 +586,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 100 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 ### 3.3 L2 chains (Arbitrum, Base, Optimism)
@@ -597,21 +597,21 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 42161 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 
 # Base
 forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 8453 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 
 # Optimism
 forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://opt-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 10 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 ### 3.4 Verify
@@ -635,7 +635,7 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 ### 4.2 Other chains
@@ -646,22 +646,22 @@ Same pattern — replace RPC URL and chain ID:
 # Arbitrum
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://arb-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 42161 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 42161 --broadcast --account $DEPLOYER_NAME
 
 # Base
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://base-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 8453 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 8453 --broadcast --account $DEPLOYER_NAME
 
 # Optimism
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://opt-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 10 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 10 --broadcast --account $DEPLOYER_NAME
 
 # Gnosis
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://gnosis-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 100 --broadcast --private-key $PRIVATE_KEY
+  --chain-id 100 --broadcast --account $DEPLOYER_NAME
 ```
 
 ### 4.3 Verify
@@ -701,7 +701,7 @@ forge script script/manage/RegisterAssets.s.sol --chain-id 1
 
 ### 5.3 Generate Safe TX batch + broadcast
 
-Run with `--rpc-url` to verify on-chain state and generate Safe TX JSON. With `--broadcast --private-key`, the script also calls `registerAsset()` directly (sender must have MANAGER role):
+Run with `--rpc-url` to verify on-chain state and generate Safe TX JSON. With `--broadcast --account`, the script also calls `registerAsset()` directly (sender must have MANAGER role):
 
 ```bash
 # Mainnet
@@ -709,7 +709,7 @@ forge script script/manage/RegisterAssets.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
   --broadcast \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 Output: `safe-transactions/{chainId}-register-assets.json`
@@ -778,7 +778,7 @@ NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/1.json)
 cast send $NAV_PROXY \
   "addBalanceOracle(address)" <adapter_address> \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 ---
@@ -808,7 +808,7 @@ cast send $NAV_PROXY \
   "setPriceFeed(address,address,uint8,uint256)" \
   <asset> <priceFeed> 1 3600 \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --private-key $PRIVATE_KEY
+  --account $DEPLOYER_NAME
 ```
 
 (PriceType: 0 = Chainlink, 1 = Custom)

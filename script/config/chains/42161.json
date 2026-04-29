@@ -8,12 +8,12 @@
   "nativeTokenSymbol": "ETH",
   "addresses": {
     "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
-    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
   "deployed": {
-    "NAVCalculatorImplementation": "0x149aE89A9C1EdE914df158C18Ee4DCEeb0283541",
-    "NAVCalculatorProxy": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6",
+    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
+    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
     "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
     "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
   },
@@ -21,9 +21,9 @@
     "ERC20Default": {
       "enabled": true,
       "constructor": {
-        "navCalculator": "0x5a0b28e1470Ef313f546466C37fD2cb83b4f54C6"
+        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
       },
-      "deployed": "0xc07C999644D8A3A5e57B835Aa460016b89eBA21C"
+      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
     "AaveV3_Arbitrum": {
       "enabled": true,
@@ -31,7 +31,7 @@
         "dataProvider": "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5",
         "protocol": "Aave V3 Arbitrum"
       },
-      "deployed": ""
+      "deployed": "0x503514123e25696304E82beb393DEEb72729a550"
     },
     "MorphoVault_kpkUSDCYieldV1": {
       "enabled": true,
@@ -40,7 +40,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Yield V1"
       },
-      "deployed": ""
+      "deployed": "0x77f1E73A81189C8e67C997aBF908E8f7aB20447F"
     },
     "MorphoMarket_sUSDS_USDC": {
       "enabled": true,
@@ -49,7 +49,7 @@
         "marketId": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
         "protocol": "Morpho Blue - sUSDS/USDC"
       },
-      "deployed": ""
+      "deployed": "0xd6dFb63356C38d14ee4e48dCF31D2eA98b15990d"
     },
     "MorphoMarket_syrupUSDC_USDC": {
       "enabled": true,
@@ -58,7 +58,7 @@
         "marketId": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40",
         "protocol": "Morpho Blue - syrupUSDC/USDC"
       },
-      "deployed": ""
+      "deployed": "0xE4785f2A6590C589Ea36ba59A1Eb57A1FdC0e74e"
     },
     "Aura_GHO_USDC_USDT": {
       "enabled": true,
@@ -70,7 +70,7 @@
         "protocol": "Aura",
         "positionDetail": "Aave GHO/USDC/USDT"
       },
-      "deployed": ""
+      "deployed": "0xF0163C3CabFA53c613B94fb2b95313Ecc1964892"
     },
     "BalancerV3_GHO_USDC_USDT": {
       "enabled": true,
@@ -80,7 +80,7 @@
         "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
         "protocol": "Balancer V3 - Aave GHO/USDC/USDT"
       },
-      "deployed": ""
+      "deployed": "0x70AC1F4ddbD431Dd022f70f759F06a470663DeeB"
     }
   },
   "bridgeAdapters": {
@@ -135,19 +135,19 @@
   },
   "priceFeeds": {
     "wstETH_L2": {
-      "deployed": ""
+      "deployed": "0xDdBb3444421a4c4F142fE9544bf7Cd404663745e"
     },
     "weETH_L2": {
-      "deployed": ""
+      "deployed": "0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f"
     },
     "rsETH_L2": {
-      "deployed": ""
+      "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
     },
     "ezETH_L2": {
-      "deployed": ""
+      "deployed": "0x286Ae1f0Ee0BE577acE2F087ad98c2F3C71ddDb0"
     },
     "syrupUSDC_L2": {
-      "deployed": ""
+      "deployed": "0xE35e9caF8d91d45372f3FA40bda073bD81FeDA09"
     }
   }
 }

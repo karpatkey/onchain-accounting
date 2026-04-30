@@ -3,11 +3,11 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
-import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
+import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/aave/AaveV3Instance.sol";
+import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/aave/AaveV3SafetyModule.sol";
+import {CompoundV3Comet} from "src/balances/protocols/compound/CompoundV3Comet.sol";
+import {MorphoMarketBalanceOracle} from "src/balances/protocols/morpho/MorphoMarket.sol";
+import {DaiDsrBalanceOracle} from "src/balances/protocols/maker/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

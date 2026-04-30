@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
+import {ConvexBalanceOracle} from "src/balances/protocols/convex/Convex.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

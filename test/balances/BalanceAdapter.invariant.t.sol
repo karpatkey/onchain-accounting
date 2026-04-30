@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/default/ERC20DefaultOracle.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Invariant Tests

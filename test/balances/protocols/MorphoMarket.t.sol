@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {MorphoMarketBalanceOracle} from "src/balances/protocols/morpho/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Id, MarketParams, Market, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";

@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {Aura} from "src/balances/protocols/Aura.sol";
+import {Aura} from "src/balances/protocols/aura/Aura.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";

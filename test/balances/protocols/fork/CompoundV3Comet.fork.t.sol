@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
+import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/compound/CompoundV3Comet.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title CompoundV3CometBalanceOracleForkTest

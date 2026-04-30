@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceOracleAdapter} from "../../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+
 import {InvalidArguments} from "src/errors.sol";
 
-/// @title StakeWise osToken Balance Oracle
-/// @author kpk
-/// @notice Returns the underlying token equivalent balance for a given amount of StakeWise osTokens held by an account.
-/// @dev Queries the osToken contract for the user's share balance, then uses the vault controller's `convertToAssets`
-///      to compute the equivalent amount of the underlying asset.
-contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
+/// @title ISavingsUSDS Interface
+/// @notice Interface for interacting with the Savings USDS (sUSDS) vault
+interface ISavingsUSDS is IERC4626 {
+    /// @notice Returns the address of the underlying USDS token
+    /// @return Address of the USDS stablecoin
+    function usds() external view returns (address);
+}
+
+/// @title SavingsUSDS Balance Oracle
+/// @notice Balance oracle for Savings USDS (sUSDS), an ERC4626 yield-bearing vault for USDS stablecoin
+/// This contract provides balance information by converting sUSDS vault shares to their underlying USDS value
+contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -35,19 +42,16 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     // State
     //
 
-    /// @notice The osToken whose balance this oracle wraps.
-    address public immutable OS_TOKEN;
+    /// @notice The underlying USDS stablecoin address
+    address public immutable USDS;
 
-    /// @notice The underlying token of the osToken for which we compute equivalent balances.
-    address public immutable UNDERLYING_TOKEN;
+    /// @notice The Savings USDS (sUSDS) vault contract
+    ISavingsUSDS public immutable SAVINGS_USDS;
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
     /// @notice Position detail identifier for this oracle
     string private _positionDetail;
-    /// @notice The StakeWise vault controller contract interface
-    IOsTokenVaultController public immutable OS_TOKEN_VAULT_CONTROLLER;
-
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -55,50 +59,45 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     // Constructor
     //
 
-    /// @param osToken_ The address of the osToken.
-    /// @param underlyingToken_ The address of the underlying asset.
-    /// @param osTokenvaultController_ The address of the OsTokenVaultController.
-    /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "osToken").
+    /// @notice Initializes the balance oracle for Savings USDS. Reverts if savingsUsds_ is zero address
+    /// @param savingsUsds_ Address of the Savings USDS (sUSDS) vault contract
+    /// @param protocol_ Protocol identifier (e.g., "Sky").
+    /// @param positionDetail_ Position detail identifier (e.g., "Savings USDS").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address osToken_,
-        address underlyingToken_,
-        address osTokenvaultController_,
-        string memory protocol_,
-        string memory positionDetail_,
-        address navCalculator_
-    ) {
-        if (osToken_ == address(0) || underlyingToken_ == address(0) || osTokenvaultController_ == address(0)) {
-            revert InvalidArguments();
-        }
-        require(osTokenvaultController_.code.length > 0, "OsTokenVaultController must be a contract");
+    constructor(address savingsUsds_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+        if (savingsUsds_ == address(0)) revert InvalidArguments();
+        require(savingsUsds_.code.length > 0, "SavingsUSDS must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
-        OS_TOKEN = osToken_;
-        UNDERLYING_TOKEN = underlyingToken_;
-        OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenvaultController_);
+        SAVINGS_USDS = ISavingsUSDS(savingsUsds_);
+        USDS = SAVINGS_USDS.usds();
         _protocol = protocol_;
         _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
+    //
+    //
+
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return balance The calculated balance as uint256 (always non-negative for osToken)
+    /// @return balance The calculated balance as uint256 (always non-negative for savings)
     function _calculateBalance(address underlyingAsset, address account) internal view returns (uint256 balance) {
-        if (underlyingAsset != UNDERLYING_TOKEN) {
+        // Ensure token matches the underlying USDS token
+        if (underlyingAsset != USDS) {
             revert InvalidArguments();
         }
-        uint256 sharesAmount = IERC20(OS_TOKEN).balanceOf(account);
-        return OS_TOKEN_VAULT_CONTROLLER.convertToAssets(sharesAmount); // osToken is always credit (positive)
+        // Get user's sUSDS balance and convert to underlying USDS amount:
+        // 1. balanceOf() - Get user's sUSDS vault shares
+        // 2. convertToAssets() - Convert shares to USDS based on current exchange rate
+        return SAVINGS_USDS.convertToAssets(SAVINGS_USDS.balanceOf(account)); // Savings are always credit (positive)
     }
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
+        assets[0] = USDS; // Only USDS is supported
         return assets;
     }
 
@@ -118,10 +117,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         returns (uint256 amount, bool isDebt)
     {
         // Return zero for unsupported or invalid tokens (adapter convention)
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
+        if (asset == address(0) || asset != USDS) {
             return (0, false);
         }
-        return (_calculateBalance(asset, account), false); // osToken balance is always credit
+        return (_calculateBalance(asset, account), false); // savings are always credit
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -130,9 +129,6 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
-        if (account == address(0)) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -147,7 +143,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             if (balance != 0) {
                 tempAssets[count] = asset;
                 tempAmounts[count] = balance;
-                tempIsDebt[count] = false; // osToken balance is always credit
+                tempIsDebt[count] = false; // savings are always credit
                 count++;
             }
         }
@@ -163,10 +159,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns balance-only positions for the account's StakeWise V3 OsToken positions
+    /// @notice Returns balance-only positions for the account's Sky Savings positions
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    /// @dev Only returns positions for assets that are both supported by StakeWise and registered in NAVCalculator.
+    /// @dev Only returns positions for assets that are both supported by Sky Savings and registered in NAVCalculator.
     function getOraclePositions(address account, address assetFilter)
         external
         view
@@ -279,7 +275,6 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
                 protocol: _protocol,
                 positionDetail: _positionDetail
             });
-
             positionCount++;
         }
 
@@ -289,12 +284,4 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
             positions[i] = tempPositions[i];
         }
     }
-}
-
-/// @notice Interface for interacting with StakeWise v3 osToken Vault Controllers
-interface IOsTokenVaultController {
-    /// @notice Converts a given amount of vault shares to the underlying asset amount
-    /// @param shares The amount of shares to convert
-    /// @return assets The equivalent amount of underlying assets
-    function convertToAssets(uint256 shares) external view returns (uint256 assets);
 }

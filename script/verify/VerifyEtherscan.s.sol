@@ -88,7 +88,7 @@ contract VerifyEtherscan is BaseDeployScript {
         returns (string memory path, bytes memory args)
     {
         if (_startsWith(name, "AaveV3_")) {
-            path = "src/balances/protocols/AaveV3Instance.sol:AaveV3InstanceBalanceOracle";
+            path = "src/balances/protocols/aave/AaveV3Instance.sol:AaveV3InstanceBalanceOracle";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
@@ -97,7 +97,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_startsWith(name, "CompoundV3_")) {
-            path = "src/balances/protocols/CompoundV3Comet.sol:CompoundV3Comet";
+            path = "src/balances/protocols/compound/CompoundV3Comet.sol:CompoundV3Comet";
             address compoundRewards = _parseAddr("balanceAdapters", name, "compoundRewards", address(0));
             address comet = _parseAddr("balanceAdapters", name, "comet", address(0));
             address rewardToken = _parseAddr("balanceAdapters", name, "rewardToken", address(0));
@@ -108,7 +108,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
-            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceOracle";
+            path = "src/balances/protocols/spark/SparkLend.sol:SparkLendBalanceOracle";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
@@ -117,7 +117,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_startsWith(name, "MorphoBlue_")) {
-            path = "src/balances/protocols/MorphoMarket.sol:MorphoMarketBalanceOracle";
+            path = "src/balances/protocols/morpho/MorphoMarket.sol:MorphoMarketBalanceOracle";
             address morpho = _parseAddr("balanceAdapters", name, "morpho", address(0));
             string memory marketIdStr = _readParam("balanceAdapters", name, "marketId");
             bytes32 marketId = bytes(marketIdStr).length == 0 ? bytes32(0) : vm.parseBytes32(marketIdStr);
@@ -128,7 +128,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "DaiDsr")) {
-            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceOracle";
+            path = "src/balances/protocols/maker/DaiDsr.sol:DaiDsrBalanceOracle";
             address dai = _parseAddr("balanceAdapters", name, "dai", address(0));
             address dsrManager = _parseAddr("balanceAdapters", name, "dsrManager", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
@@ -139,7 +139,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SkySavingsUsds")) {
-            path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceOracle";
+            path = "src/balances/protocols/sky/SkySavingsUsds.sol:SkySavingsUsdsBalanceOracle";
             address savingsUsds = _parseAddr("balanceAdapters", name, "savingsUsds", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             string memory positionDetail = _readParam("balanceAdapters", name, "positionDetail");
@@ -149,7 +149,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "ERC20Default") || _startsWith(name, "ERC20Default_")) {
-            path = "src/balances/protocols/ERC20DefaultOracle.sol:ERC20DefaultOracle";
+            path = "src/balances/protocols/default/ERC20DefaultOracle.sol:ERC20DefaultOracle";
             address nav = _navOrDefault(navCalculator, name);
             if (nav == address(0)) return ("", "");
             address[] memory initialAssets = new address[](0);

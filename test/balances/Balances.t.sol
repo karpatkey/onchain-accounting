@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Balances} from "src/balances/Balances.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/default/ERC20DefaultOracle.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";

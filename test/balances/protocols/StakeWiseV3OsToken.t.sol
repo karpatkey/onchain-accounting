@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/stakewise/StakeWiseV3OsToken.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 

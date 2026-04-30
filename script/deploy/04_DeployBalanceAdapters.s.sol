@@ -6,22 +6,22 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
-import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
-import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
-import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
-import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
-import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
-import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
-import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
-import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
-import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
-import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
-import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
-import {Aura} from "../../src/balances/protocols/Aura.sol";
-import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
+import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/aave/AaveV3Instance.sol";
+import {CompoundV3Comet} from "../../src/balances/protocols/compound/CompoundV3Comet.sol";
+import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/morpho/MorphoMarket.sol";
+import {SparkLendBalanceOracle} from "../../src/balances/protocols/spark/SparkLend.sol";
+import {DaiDsrBalanceOracle} from "../../src/balances/protocols/maker/DaiDsr.sol";
+import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/sky/SkySavingsUsds.sol";
+import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/morpho/MorphoVault.sol";
+import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/gearbox/GearboxMarket.sol";
+import {CapBalanceOracle} from "../../src/balances/protocols/cap/Cap.sol";
+import {CurveBalanceOracle} from "../../src/balances/protocols/curve/Curve.sol";
+import {ConvexBalanceOracle} from "../../src/balances/protocols/convex/Convex.sol";
+import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/aave/AaveV3SafetyModule.sol";
+import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/balancer/BalancerV3.sol";
+import {Aura} from "../../src/balances/protocols/aura/Aura.sol";
+import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/stakewise/StakeWiseV3Vault.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/stakewise/StakeWiseV3OsToken.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration

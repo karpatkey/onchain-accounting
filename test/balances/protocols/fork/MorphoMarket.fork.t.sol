@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {MorphoMarketBalanceOracle} from "src/balances/protocols/morpho/MorphoMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Id} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";

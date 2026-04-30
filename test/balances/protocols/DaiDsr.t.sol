@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/maker/DaiDsr.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @notice Minimal mock for Pot contract (used by DaiDsrBalanceOracle)

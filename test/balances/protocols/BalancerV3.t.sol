@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
+import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/balancer/BalancerV3.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {MockContract} from "test/mocks/MockContract.sol";

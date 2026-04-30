@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
+import {GearboxMarketBalanceOracle} from "src/balances/protocols/gearbox/GearboxMarket.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

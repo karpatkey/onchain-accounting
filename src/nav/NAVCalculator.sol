@@ -10,7 +10,7 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/default/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";

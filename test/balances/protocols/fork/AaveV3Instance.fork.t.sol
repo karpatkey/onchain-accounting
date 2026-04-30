@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/aave/AaveV3Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title AaveV3InstanceBalanceOracleForkTest

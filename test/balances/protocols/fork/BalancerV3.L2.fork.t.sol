@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {TestSetupHelpers, BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {BalancerV3PoolBalanceOracle, IGaugeV3} from "src/balances/protocols/BalancerV3.sol";
+import {BalancerV3PoolBalanceOracle, IGaugeV3} from "src/balances/protocols/balancer/BalancerV3.sol";
 
 /// @title BalancerV3 L2 fork tests — Arbitrum
 /// @notice Verifies the Arbitrum L2 fallback path in `claimableTokens()` — specifically that

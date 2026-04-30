@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceOracle, PotLike} from "src/balances/protocols/maker/DaiDsr.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DaiDsrBalanceOracleForkTest

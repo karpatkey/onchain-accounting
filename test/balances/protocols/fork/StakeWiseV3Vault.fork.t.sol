@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/stakewise/StakeWiseV3Vault.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";

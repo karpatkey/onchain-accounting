@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceOracleAdapter} from "../../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

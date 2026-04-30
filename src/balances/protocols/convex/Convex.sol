@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceOracleAdapter} from "../../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";

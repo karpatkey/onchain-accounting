@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/aave/AaveV3Instance.sol";
 
 /// @title Spark
 /// @author kpk

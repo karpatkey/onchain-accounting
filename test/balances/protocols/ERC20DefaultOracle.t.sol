@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/default/ERC20DefaultOracle.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

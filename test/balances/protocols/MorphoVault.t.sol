@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
+import {MorphoVaultBalanceOracle} from "src/balances/protocols/morpho/MorphoVault.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

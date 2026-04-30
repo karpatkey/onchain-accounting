@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
+import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/compound/CompoundV3Comet.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
 
 /// @notice Mock Compound rewards that returns no reward config so _getRewardOwed returns 0

@@ -1,23 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceOracleAdapter} from "../../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
+import {InvalidArguments} from "src/errors.sol";
 
-/// @title StakeWise Vault Balance Oracle
+/// @title StakeWise osToken Balance Oracle
 /// @author kpk
-/// @notice This contract tracks user positions in StakeWise vaults, calculating their net balance
-/// by considering both their direct vault shares and any osToken debt positions.
-/// The balance calculation works as follows:
-/// 1. Gets the user's direct vault shares and converts them to underlying asset value
-/// 2. Gets the user's osToken minted debt position (if any) and converts it to underlying asset value
-/// 3. Returns the net balance as: vaultAssets - osTokenDebt
-contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
+/// @notice Returns the underlying token equivalent balance for a given amount of StakeWise osTokens held by an account.
+/// @dev Queries the osToken contract for the user's share balance, then uses the vault controller's `convertToAssets`
+///      to compute the equivalent amount of the underlying asset.
+contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
@@ -38,18 +35,19 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     // State
     //
 
-    /// @notice The underlying token address
-    address public immutable UNDERLYING_TOKEN;
+    /// @notice The osToken whose balance this oracle wraps.
+    address public immutable OS_TOKEN;
 
-    /// @notice The vault
-    IStakeWiseVault public immutable VAULT;
+    /// @notice The underlying token of the osToken for which we compute equivalent balances.
+    address public immutable UNDERLYING_TOKEN;
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
     /// @notice Position detail identifier for this oracle
     string private _positionDetail;
-    /// @notice List of underlying assets supported by this oracle.
-    address[] internal _underlyingAssetsSupported;
+    /// @notice The StakeWise vault controller contract interface
+    IOsTokenVaultController public immutable OS_TOKEN_VAULT_CONTROLLER;
+
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -57,26 +55,29 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     // Constructor
     //
 
-    /// @param underlyingToken_ The address of the underlying token for this oracle.
-    /// @param vault_ The address of the vault.
+    /// @param osToken_ The address of the osToken.
+    /// @param underlyingToken_ The address of the underlying asset.
+    /// @param osTokenvaultController_ The address of the OsTokenVaultController.
     /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "Some vault").
+    /// @param positionDetail_ Position detail identifier (e.g., "osToken").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
+        address osToken_,
         address underlyingToken_,
-        address vault_,
+        address osTokenvaultController_,
         string memory protocol_,
         string memory positionDetail_,
         address navCalculator_
     ) {
-        if (underlyingToken_ == address(0) || vault_ == address(0)) {
+        if (osToken_ == address(0) || underlyingToken_ == address(0) || osTokenvaultController_ == address(0)) {
             revert InvalidArguments();
         }
-        require(vault_.code.length > 0, "Vault must be a contract");
+        require(osTokenvaultController_.code.length > 0, "OsTokenVaultController must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
+        OS_TOKEN = osToken_;
         UNDERLYING_TOKEN = underlyingToken_;
-        VAULT = IStakeWiseVault(vault_);
+        OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenvaultController_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
@@ -85,28 +86,13 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice Internal helper to calculate balance for a specific asset
     /// @param underlyingAsset The asset address
     /// @param account The account address
-    /// @return amount Balance magnitude (non-negative)
-    /// @return isDebt True if debt, false if credit
-    function _calculateBalance(address underlyingAsset, address account)
-        internal
-        view
-        returns (uint256 amount, bool isDebt)
-    {
-        if (underlyingAsset != address(UNDERLYING_TOKEN)) {
+    /// @return balance The calculated balance as uint256 (always non-negative for osToken)
+    function _calculateBalance(address underlyingAsset, address account) internal view returns (uint256 balance) {
+        if (underlyingAsset != UNDERLYING_TOKEN) {
             revert InvalidArguments();
         }
-
-        uint256 directBalance = VAULT.getShares(account);
-        uint256 osTokenPosition = VAULT.osTokenPositions(account);
-
-        uint256 vaultAssets = VAULT.convertToAssets(directBalance);
-        uint256 mintedOs = VAULT.convertToAssets(osTokenPosition);
-
-        // Net: vaultAssets - mintedOs (can be negative)
-        if (vaultAssets >= mintedOs) {
-            return (vaultAssets - mintedOs, false);
-        }
-        return (mintedOs - vaultAssets, true);
+        uint256 sharesAmount = IERC20(OS_TOKEN).balanceOf(account);
+        return OS_TOKEN_VAULT_CONTROLLER.convertToAssets(sharesAmount); // osToken is always credit (positive)
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -131,10 +117,11 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         view
         returns (uint256 amount, bool isDebt)
     {
-        if (asset == address(0) || asset != address(UNDERLYING_TOKEN)) {
+        // Return zero for unsupported or invalid tokens (adapter convention)
+        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
             return (0, false);
         }
-        return _calculateBalance(asset, account);
+        return (_calculateBalance(asset, account), false); // osToken balance is always credit
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -156,11 +143,11 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            (uint256 amount, bool isDebt_) = _calculateBalance(asset, account);
-            if (amount != 0) {
+            uint256 balance = _calculateBalance(asset, account);
+            if (balance != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = amount;
-                tempIsDebt[count] = isDebt_;
+                tempAmounts[count] = balance;
+                tempIsDebt[count] = false; // osToken balance is always credit
                 count++;
             }
         }
@@ -176,7 +163,7 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns balance-only positions for the account's StakeWise V3 Vault positions
+    /// @notice Returns balance-only positions for the account's StakeWise V3 OsToken positions
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     /// @dev Only returns positions for assets that are both supported by StakeWise and registered in NAVCalculator.
@@ -203,10 +190,10 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
-                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
-                    if (amount != 0) {
+                    uint256 balance = _calculateBalance(assetFilter, account);
+                    if (balance != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
+                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: balance, isDebt: false});
                     } else {
                         assetBalanceData = new AssetBalanceData[](0);
                     }
@@ -219,10 +206,10 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             uint256 count = 0;
 
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
-                if (amount != 0) {
+                uint256 balance = _calculateBalance(registeredSupportedAssets[i], account);
+                if (balance != 0) {
                     tempData[count] =
-                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
+                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: balance, isDebt: false});
                     count++;
                 }
             }
@@ -304,20 +291,10 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     }
 }
 
-/// @notice Interface for interacting with StakeWise v3 vaults
-interface IStakeWiseVault {
+/// @notice Interface for interacting with StakeWise v3 osToken Vault Controllers
+interface IOsTokenVaultController {
     /// @notice Converts a given amount of vault shares to the underlying asset amount
     /// @param shares The amount of shares to convert
-    /// @return The equivalent amount of underlying assets
-    function convertToAssets(uint256 shares) external view returns (uint256);
-
-    /// @notice Gets the amount of vault shares owned by an account
-    /// @param account The address to check shares for
-    /// @return The amount of vault shares owned by the account
-    function getShares(address account) external view returns (uint256);
-
-    /// @notice Gets the amount of osTokens minted against an account's position
-    /// @param account The address to check osToken positions for
-    /// @return The amount of osTokens minted by the account (debt position)
-    function osTokenPositions(address account) external view returns (uint256);
+    /// @return assets The equivalent amount of underlying assets
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
 }

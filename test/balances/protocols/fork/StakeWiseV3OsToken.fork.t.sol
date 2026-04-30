@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/stakewise/StakeWiseV3OsToken.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title StakeWiseV3OsTokenBalanceOracleForkTest

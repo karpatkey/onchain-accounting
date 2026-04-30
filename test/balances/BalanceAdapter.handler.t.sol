@@ -8,7 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultOracle} from "src/balances/protocols/default/ERC20DefaultOracle.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Balance Adapter Handler for Stateful Invariant Testing

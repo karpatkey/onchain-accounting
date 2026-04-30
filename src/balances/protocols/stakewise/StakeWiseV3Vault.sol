@@ -1,40 +1,27 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceOracleAdapter} from "../../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
-import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
-
-/// @title Morpho Market Balance Oracle
+/// @title StakeWise Vault Balance Oracle
 /// @author kpk
-/// @notice Returns the underlying token equivalent balance for either the supplied/loan asset or the collateral asset
-/// for a given account. There are two cases for the calculation of the balance:
-///    1. Supplied/Loan Token: The balance for the supplied/loan token is calculated as the difference between the
-///       supplied assets and borrowed assets. The supplied assets are determined based on the user's supply
-///       shares relative to the total supply shares of the market. Similarly, the borrowed assets are determined based
-///       on the user's borrow shares relative to the total borrow shares. Both values are scaled by the total supply
-///       and borrow assets to obtain the corresponding amounts in terms of the underlying asset.
-///    2. Collateral Token: The balance for the collateral token is simply the amount of collateral held by the user in
-///       the market position, without any need for scaling or adjustments.
-/// @dev The rounding for the borrow and supply amounts is done conservatively:
-///    - Borrowed Assets: Rounded up (`Math.Rounding.Ceil`) to ensure that the debt is not underestimated.
-///    - Supplied Assets: Rounded down (`Math.Rounding.Floor`) to ensure that the supplied assets are not
-/// overestimated.
-contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
+/// @notice This contract tracks user positions in StakeWise vaults, calculating their net balance
+/// by considering both their direct vault shares and any osToken debt positions.
+/// The balance calculation works as follows:
+/// 1. Gets the user's direct vault shares and converts them to underlying asset value
+/// 2. Gets the user's osToken minted debt position (if any) and converts it to underlying asset value
+/// 3. Returns the net balance as: vaultAssets - osTokenDebt
+contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
     //
-    using Math for uint256;
     using SafeCast for uint256;
-    using MorphoBalancesLib for IMorpho;
 
     //
     // Type Definitions
@@ -51,20 +38,18 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     // State
     //
 
-    /// @notice The Morpho contract
-    IMorpho public immutable MORPHO;
+    /// @notice The underlying token address
+    address public immutable UNDERLYING_TOKEN;
 
-    /// @notice The market id to query
-    Id public immutable MARKET_ID;
-
-    /// @notice The collateral token address
-    address public immutable COLLATERAL_TOKEN;
-
-    /// @notice The loan token address
-    address public immutable LOAN_TOKEN;
+    /// @notice The vault
+    IStakeWiseVault public immutable VAULT;
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
+    /// @notice Position detail identifier for this oracle
+    string private _positionDetail;
+    /// @notice List of underlying assets supported by this oracle.
+    address[] internal _underlyingAssetsSupported;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -72,28 +57,29 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     // Constructor
     //
 
-    /// @param morpho_ The Morpho contract address.
-    /// @param marketId_ The market id to query.
-    /// @param protocol_ Protocol identifier including market (e.g., "Morpho - cbBTC/USDC").
+    /// @param underlyingToken_ The address of the underlying token for this oracle.
+    /// @param vault_ The address of the vault.
+    /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
+    /// @param positionDetail_ Position detail identifier (e.g., "Some vault").
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(address morpho_, bytes32 marketId_, string memory protocol_, address navCalculator_) {
-        require(morpho_.code.length > 0, "Morpho must be a contract");
+    constructor(
+        address underlyingToken_,
+        address vault_,
+        string memory protocol_,
+        string memory positionDetail_,
+        address navCalculator_
+    ) {
+        if (underlyingToken_ == address(0) || vault_ == address(0)) {
+            revert InvalidArguments();
+        }
+        require(vault_.code.length > 0, "Vault must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
-        MORPHO = IMorpho(morpho_);
-        MARKET_ID = Id.wrap(marketId_);
-        MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
-        COLLATERAL_TOKEN = marketParams.collateralToken;
-        LOAN_TOKEN = marketParams.loanToken;
+        UNDERLYING_TOKEN = underlyingToken_;
+        VAULT = IStakeWiseVault(vault_);
         _protocol = protocol_;
+        _positionDetail = positionDetail_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-    }
-
-    /// @notice Returns the position detail for a given asset and debt flag (Supply, Borrow, or Collateral).
-    function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
-        if (asset == COLLATERAL_TOKEN) return "Collateral";
-        if (asset == LOAN_TOKEN) return isDebt ? "Borrow" : "Supply";
-        return "";
     }
 
     /// @notice Internal helper to calculate balance for a specific asset
@@ -106,45 +92,27 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         view
         returns (uint256 amount, bool isDebt)
     {
-        MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
-
-        Position memory position = MORPHO.position(MARKET_ID, account);
-
-        if (underlyingAsset == LOAN_TOKEN) {
-            (
-                uint256 totalSupplyAssets,
-                uint256 totalSupplyShares,
-                uint256 totalBorrowAssets,
-                uint256 totalBorrowShares
-            ) = MORPHO.expectedMarketBalances(marketParams);
-
-            uint256 suppliedAssets = 0;
-            if (totalSupplyShares != 0 && position.supplyShares != 0) {
-                suppliedAssets = totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to avoid overestimating the supply
-            }
-
-            uint256 borrowedAssets = 0;
-            if (totalBorrowShares != 0 && position.borrowShares != 0) {
-                borrowedAssets = totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating the debt
-            }
-
-            // Net: supplied - borrowed (can be negative)
-            if (suppliedAssets >= borrowedAssets) {
-                return (suppliedAssets - borrowedAssets, false);
-            }
-            return (borrowedAssets - suppliedAssets, true);
+        if (underlyingAsset != address(UNDERLYING_TOKEN)) {
+            revert InvalidArguments();
         }
-        if (underlyingAsset == COLLATERAL_TOKEN) {
-            return (uint256(position.collateral), false); // Collateral is always credit
+
+        uint256 directBalance = VAULT.getShares(account);
+        uint256 osTokenPosition = VAULT.osTokenPositions(account);
+
+        uint256 vaultAssets = VAULT.convertToAssets(directBalance);
+        uint256 mintedOs = VAULT.convertToAssets(osTokenPosition);
+
+        // Net: vaultAssets - mintedOs (can be negative)
+        if (vaultAssets >= mintedOs) {
+            return (vaultAssets - mintedOs, false);
         }
-        revert InvalidArguments();
+        return (mintedOs - vaultAssets, true);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](2);
-        assets[0] = COLLATERAL_TOKEN;
-        assets[1] = LOAN_TOKEN;
+        address[] memory assets = new address[](1);
+        assets[0] = UNDERLYING_TOKEN;
         return assets;
     }
 
@@ -163,6 +131,9 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         view
         returns (uint256 amount, bool isDebt)
     {
+        if (asset == address(0) || asset != address(UNDERLYING_TOKEN)) {
+            return (0, false);
+        }
         return _calculateBalance(asset, account);
     }
 
@@ -172,6 +143,9 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
+        if (account == address(0)) {
+            return (new address[](0), new uint256[](0), new bool[](0));
+        }
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         uint256 assetCount = supportedAssets.length;
 
@@ -182,11 +156,11 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
         for (uint256 i = 0; i < assetCount; i++) {
             address asset = supportedAssets[i];
-            (uint256 amt, bool debt) = _calculateBalance(asset, account);
-            if (amt != 0) {
+            (uint256 amount, bool isDebt_) = _calculateBalance(asset, account);
+            if (amount != 0) {
                 tempAssets[count] = asset;
-                tempAmounts[count] = amt;
-                tempIsDebt[count] = debt;
+                tempAmounts[count] = amount;
+                tempIsDebt[count] = isDebt_;
                 count++;
             }
         }
@@ -202,10 +176,10 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns balance-only positions for the account's Morpho positions
+    /// @notice Returns balance-only positions for the account's StakeWise V3 Vault positions
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    /// @dev Only returns positions for assets that are both supported by Morpho and registered in NAVCalculator.
+    /// @dev Only returns positions for assets that are both supported by StakeWise and registered in NAVCalculator.
     function getOraclePositions(address account, address assetFilter)
         external
         view
@@ -226,13 +200,15 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         if (registeredSupportedAssets.length == 0) {
             assetBalanceData = new AssetBalanceData[](0);
         } else if (assetFilter != address(0)) {
-            assetBalanceData = new AssetBalanceData[](0);
+            // Check if assetFilter is in the registered supported assets
             for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
                 if (registeredSupportedAssets[i] == assetFilter) {
                     (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
                     if (amount != 0) {
                         assetBalanceData = new AssetBalanceData[](1);
                         assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
+                    } else {
+                        assetBalanceData = new AssetBalanceData[](0);
                     }
                     break;
                 }
@@ -314,7 +290,7 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
+                positionDetail: _positionDetail
             });
 
             positionCount++;
@@ -326,4 +302,22 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             positions[i] = tempPositions[i];
         }
     }
+}
+
+/// @notice Interface for interacting with StakeWise v3 vaults
+interface IStakeWiseVault {
+    /// @notice Converts a given amount of vault shares to the underlying asset amount
+    /// @param shares The amount of shares to convert
+    /// @return The equivalent amount of underlying assets
+    function convertToAssets(uint256 shares) external view returns (uint256);
+
+    /// @notice Gets the amount of vault shares owned by an account
+    /// @param account The address to check shares for
+    /// @return The amount of vault shares owned by the account
+    function getShares(address account) external view returns (uint256);
+
+    /// @notice Gets the amount of osTokens minted against an account's position
+    /// @param account The address to check osToken positions for
+    /// @return The amount of osTokens minted by the account (debt position)
+    function osTokenPositions(address account) external view returns (uint256);
 }

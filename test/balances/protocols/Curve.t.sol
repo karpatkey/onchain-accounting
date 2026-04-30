@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
+import {CurveBalanceOracle} from "src/balances/protocols/curve/Curve.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

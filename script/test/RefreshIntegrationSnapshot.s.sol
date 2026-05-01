@@ -13,8 +13,11 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         already recorded in test/integration/accounts.json, replay the integration test
 ///         deploy pipeline (NAV + every enabled price feed + every enabled balance adapter),
 ///         read the NAV for every account whose `enabledChains` includes this chain, and
-///         write each result back to accounts.json under
-///         `.accounts[i].expected.<chainId>.navUsd8dp`.
+///         emit one structured `SNAPSHOT|...` log line per (account, chain) pair to stdout.
+///         The shell wrapper (`script/test/refresh-integration-snapshot.sh`) parses those
+///         lines and applies them to accounts.json via `jq`. This script does NOT mutate
+///         the JSON itself — see ADR 0003 for why we route through stdout + jq instead of
+///         using `vm.writeJson` directly.
 /// @dev Invoked by `script/test/refresh-integration-snapshot.sh`. The shell script bumps
 ///      forkBlock with `cast block-number` *before* running this, so the script always sees
 ///      the latest block.

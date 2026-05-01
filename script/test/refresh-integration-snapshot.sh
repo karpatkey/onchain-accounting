@@ -69,24 +69,34 @@ jq_inplace() {
   mv "$tmp" "$ACCOUNTS_JSON"
 }
 
+# Wrapper for Debank curl calls: bounded timeout + light retry so a slow Debank can't hang CI.
+# `--max-time` caps total wall time; `--retry --retry-delay --retry-connrefused` covers transient failures.
+# Echoes the response body on success; empty string on failure.
+debank_curl() {
+  local url="$1"
+  curl -fsSL --max-time 30 --retry 2 --retry-delay 5 --retry-connrefused \
+    -H "AccessKey: $DEBANK_API_KEY" "$url" 2>/dev/null || echo ""
+}
+
+# Probe units balance once. Echoes the balance, or empty string on failure / no balance field.
+debank_units_balance() {
+  local response
+  response=$(debank_curl "https://pro-openapi.debank.com/v1/account/units")
+  [[ -z "$response" ]] && { echo ""; return; }
+  echo "$response" | jq -r '.balance // empty' 2>/dev/null || echo ""
+}
+
 # ─── 0. Debank tier introspection (informational) ─────────────────────────────
 debank_active="false"
-debank_units_remaining=""
+debank_units_at_start=""
 if [[ -n "${DEBANK_API_KEY:-}" ]]; then
   echo "Probing Debank /v1/account/units …"
-  units_response=$(curl -fsSL -H "AccessKey: $DEBANK_API_KEY" \
-    "https://pro-openapi.debank.com/v1/account/units" 2>&1) || units_response=""
-  if [[ -n "$units_response" ]]; then
-    debank_units_remaining=$(echo "$units_response" | jq -r '.balance // empty' 2>/dev/null || echo "")
-    if [[ -n "$debank_units_remaining" ]]; then
-      echo "Debank API key OK. Units remaining: $debank_units_remaining"
-      debank_active="true"
-    else
-      echo "Debank /v1/account/units returned no balance field — proceeding without Debank cross-check."
-      echo "Response: $units_response"
-    fi
+  debank_units_at_start=$(debank_units_balance)
+  if [[ -n "$debank_units_at_start" ]]; then
+    echo "Debank API key OK. Units at start: $debank_units_at_start"
+    debank_active="true"
   else
-    echo "Debank /v1/account/units request failed — proceeding without Debank cross-check."
+    echo "Debank /v1/account/units returned no balance — proceeding without Debank cross-check."
   fi
 else
   echo "DEBANK_API_KEY not set — Debank cross-check skipped."
@@ -152,8 +162,7 @@ if [[ "$debank_active" == "true" ]]; then
       addr=$(jq -r ".accounts[$i].address" "$ACCOUNTS_JSON")
       label=$(jq -r ".accounts[$i].label" "$ACCOUNTS_JSON")
 
-      response=$(curl -fsSL -H "AccessKey: $DEBANK_API_KEY" \
-        "https://pro-openapi.debank.com/v1/user/chain_balance?id=${addr}&chain_id=${debank_chain}" 2>&1) || response=""
+      response=$(debank_curl "https://pro-openapi.debank.com/v1/user/chain_balance?id=${addr}&chain_id=${debank_chain}")
       if [[ -z "$response" ]]; then
         echo "  [warn] $label chain $chain_id: Debank request failed; skipping"
         continue
@@ -177,13 +186,26 @@ echo "=== 4. Tolerance check & diff report -> $REPORT_MD ==="
 
 tolerance=$(jq -r '.tolerance // 0.01' "$ACCOUNTS_JSON")
 
+# Re-probe units after the run so the report reflects actual consumption rather than a stale snapshot.
+debank_units_at_end=""
+if [[ "$debank_active" == "true" ]]; then
+  debank_units_at_end=$(debank_units_balance)
+fi
+
 {
   echo "# Refresh integration snapshot — report"
   echo
   echo "Tolerance: ${tolerance}"
-  if [[ -n "$debank_units_remaining" ]]; then
+  if [[ -n "$debank_units_at_start" || -n "$debank_units_at_end" ]]; then
     echo
-    echo "Debank units remaining after run: ${debank_units_remaining}"
+    echo "| Debank units | Value |"
+    echo "|---|---|"
+    [[ -n "$debank_units_at_start" ]] && echo "| at start | ${debank_units_at_start} |"
+    [[ -n "$debank_units_at_end" ]]   && echo "| at end   | ${debank_units_at_end} |"
+    if [[ -n "$debank_units_at_start" && -n "$debank_units_at_end" ]]; then
+      consumed=$(awk "BEGIN { printf \"%d\", $debank_units_at_start - $debank_units_at_end }")
+      echo "| consumed | ${consumed} |"
+    fi
   fi
   echo
   echo "## Per-chain fork blocks"

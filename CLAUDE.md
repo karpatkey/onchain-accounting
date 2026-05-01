@@ -30,6 +30,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | Add a new balance adapter | `docs/howto/add-balance-adapter.md`, then `src/balances/BALANCE_ADAPTERS.md` for interface + framework details |
 | Add a new price feed | `docs/howto/add-price-feed.md`, then `docs/PRICE_ADAPTERS.md` for interface + existing feeds |
 | Add a new chain | `docs/howto/add-chain.md`, then `script/config/CONFIG_GUIDE.md` and `script/deploy/README.md` |
+| Refresh integration-test fork blocks or add a test account | `docs/howto/refresh-integration-test-blocks.md` (single source of truth: `test/integration/accounts.json`) |
 | Add a new bridge adapter | `src/bridge/BRIDGE_ADAPTERS.md` (full design + how-to in one file) |
 | Change deployment scripts | `script/DEPLOYMENT_SUMMARY.md` and `script/deploy/README.md` |
 | Understand why a design is the way it is | `docs/decisions/` (numbered ADRs) |
@@ -53,6 +54,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 - New adapters require **both** unit tests (mock-only) under `test/balances/protocols/<Adapter>.t.sol` *and* a fork test under `test/balances/protocols/fork/<Adapter>.fork.t.sol` against a real holder at a pinned block.
 - Fork tests use `FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"` to throttle RPC.
 - Don't mock the balance oracle in NAVCalculator integration tests — assert against deployed adapter instances on a fork.
+- Integration tests in `test/integration/` are JSON-driven (`test/integration/accounts.json`). Don't edit fork blocks or expected NAVs directly in the per-chain `*.t.sol` files — run `script/test/refresh-integration-snapshot.sh` (see `docs/howto/refresh-integration-test-blocks.md`).
 
 ## Project rules (from MEMORY.md)
 

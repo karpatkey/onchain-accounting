@@ -116,6 +116,14 @@ Per-chain configuration is in `script/config/chains/<chainId>.json`. Five chains
 
 Adding a new chain or new adapter is a config edit + a single deploy script run; see the `./howto/` guides.
 
+## 7.5. Integration test freshness
+
+The integration tests under `test/integration/` deploy a NAV stack on a forked chain at a pinned block, register every adapter from chain config, and assert exact NAV values for a set of accounts. Fork blocks and expected NAVs are stored in `test/integration/accounts.json` — **the per-chain `NAV.<Chain>.integration.fork.t.sol` files are stubs that just point at the JSON**.
+
+When you add an adapter that should appear in an existing test account's NAV, or when you want to add a new test account: edit `accounts.json` and run `script/test/refresh-integration-snapshot.sh`. The script bumps fork blocks, regenerates the expected NAVs, and (if `DEBANK_API_KEY` is set) cross-checks each NAV against Debank's USD total within a configurable tolerance. Tests stay deterministic; the Debank check happens at bump time only.
+
+Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). Design rationale: [`./decisions/0003-integration-test-snapshot-workflow.md`](./decisions/0003-integration-test-snapshot-workflow.md).
+
 ## 8. Where to look when something is unclear
 
 | Question | Best file |
@@ -126,6 +134,7 @@ Adding a new chain or new adapter is a config edit + a single deploy script run;
 | How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + `NAVCalculator._readPositionsRangeWithQuote`. |
 | Why is the Aave Safety Module adapter mutable while everything else is immutable? | [`./decisions/0002-aave-safety-module-multi-token.md`](./decisions/0002-aave-safety-module-multi-token.md). |
 | Bridge invoice lifecycle? | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). |
+| How are integration-test fork blocks and expected NAVs kept current? | [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). |
 
 ## 9. Conventions and rules
 

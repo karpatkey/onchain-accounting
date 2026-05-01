@@ -144,9 +144,13 @@ for chain_id in $chain_ids; do
   echo "  chain $chain_id: $old_block -> $new_block"
 done
 
-# ─── 2. Refresh NAV snapshot per chain (parallel) ─────────────────────────────
+# ─── 2. Refresh NAV snapshot per chain (parallel, throttled) ──────────────────
+# Each forge fork+deploy peaks at ~900MB RSS. Five concurrent forges saturate an
+# 8GB host. MAX_PARALLEL caps the number running at once; default 2 is safe on a
+# WSL2/8GB box, override via env (e.g. MAX_PARALLEL=4 on a beefier CI runner).
+MAX_PARALLEL="${MAX_PARALLEL:-2}"
 echo
-echo "=== 2. Refreshing NAV snapshots (parallel) ==="
+echo "=== 2. Refreshing NAV snapshots (parallel, MAX_PARALLEL=$MAX_PARALLEL) ==="
 
 # Pre-build once so the parallel forge invocations share a warm cache and don't
 # race on `out/` writes during compile.
@@ -157,39 +161,40 @@ forge_dir=$(mktemp -d)
 # Replace EXIT trap so both temp dirs are cleaned up at any exit path.
 trap 'rm -rf "$block_dir" "$forge_dir"' EXIT
 
-declare -A forge_pid
-for chain_id in $chain_ids; do
-  rpc=$(rpc_for_chain "$chain_id")
-  if [[ -z "$rpc" ]]; then
-    echo "  [skip] no RPC for chain $chain_id"
-    continue
-  fi
+# Track outcomes per chain so step 4 can include succeeded chains and report on failures.
+failed_chains=()
+ok_chains=()
+
+# Reap any already-finished children to keep the active count accurate.
+running=0
+
+# Spawn one forge process for chain_id, redirecting stdout/stderr to per-chain logs.
+spawn_forge() {
+  local chain_id="$1"
   (
     CHAIN_ID="$chain_id" \
     FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-slow}" \
       forge script script/test/RefreshIntegrationSnapshot.s.sol \
       > "$forge_dir/$chain_id.out" 2> "$forge_dir/$chain_id.err"
     echo $? > "$forge_dir/$chain_id.rc"
+    # Drop a marker so the parent can detect "this chain finished" via filesystem.
+    touch "$forge_dir/$chain_id.done"
   ) &
-  forge_pid[$chain_id]=$!
-  echo "  chain $chain_id: forge script started (pid=${forge_pid[$chain_id]})"
-done
+  echo "  chain $chain_id: forge script started (pid=$!, slot $((running+1))/$MAX_PARALLEL)"
+}
 
-# Wait + harvest. Iterate in chain-id order so output is deterministic.
-fatal=0
-for chain_id in $chain_ids; do
-  pid="${forge_pid[$chain_id]:-}"
-  [[ -z "$pid" ]] && continue
-  wait "$pid" || true
+# Apply SNAPSHOTs for one finished chain and bucket it by outcome.
+harvest_chain() {
+  local chain_id="$1"
+  local rc
   rc=$(<"$forge_dir/$chain_id.rc")
   if [[ "$rc" -ne 0 ]]; then
     echo "  [FAIL] chain $chain_id (forge rc=$rc) — last 30 lines of stderr:" >&2
     tail -n 30 "$forge_dir/$chain_id.err" >&2
-    fatal=1
-    continue
+    failed_chains+=("$chain_id")
+    return
   fi
-  # Parse SNAPSHOT|<chainId>|<accountIndex>|<address>|<navUsd8dp>|<sequencerDown>|<staleCount>.
-  matched=0
+  local matched=0
   while IFS='|' read -r _marker snap_chain idx _addr nav_value _seq _stale; do
     [[ -z "${snap_chain:-}" ]] && continue
     jq_inplace ".accounts[$idx].expected.\"$snap_chain\".navUsd8dp = \"$nav_value\""
@@ -197,11 +202,55 @@ for chain_id in $chain_ids; do
     matched=$((matched+1))
   done < <(grep -oE 'SNAPSHOT\|[^[:space:]]+' "$forge_dir/$chain_id.out" || true)
   echo "  chain $chain_id: ${matched} snapshot(s) applied"
+  ok_chains+=("$chain_id")
+}
+
+# Spawn chains, holding the active count at MAX_PARALLEL by harvesting finished
+# slots before launching the next. Iterating in chain_ids order keeps logs deterministic.
+declare -a queue
+for chain_id in $chain_ids; do
+  rpc=$(rpc_for_chain "$chain_id")
+  if [[ -z "$rpc" ]]; then
+    echo "  [skip] no RPC for chain $chain_id"
+    continue
+  fi
+  queue+=("$chain_id")
 done
 
-if (( fatal != 0 )); then
-  echo "  one or more chains failed during step 2 — aborting" >&2
-  exit 1
+declare -A in_flight
+for chain_id in "${queue[@]}"; do
+  while (( running >= MAX_PARALLEL )); do
+    # Block briefly until at least one child completes (detected via .done marker file).
+    for in_flight_chain in "${!in_flight[@]}"; do
+      if [[ -f "$forge_dir/$in_flight_chain.done" ]]; then
+        wait "${in_flight[$in_flight_chain]}" || true
+        harvest_chain "$in_flight_chain"
+        unset 'in_flight[$in_flight_chain]'
+        running=$((running-1))
+      fi
+    done
+    (( running >= MAX_PARALLEL )) && sleep 1
+  done
+  spawn_forge "$chain_id"
+  in_flight[$chain_id]=$!
+  running=$((running+1))
+done
+
+# Drain remaining in-flight chains.
+for in_flight_chain in "${!in_flight[@]}"; do
+  wait "${in_flight[$in_flight_chain]}" || true
+done
+# Harvest in chain_ids order so the printed log is deterministic.
+for chain_id in "${queue[@]}"; do
+  if [[ -f "$forge_dir/$chain_id.done" && ! " ${ok_chains[*]:-} ${failed_chains[*]:-} " =~ " $chain_id " ]]; then
+    harvest_chain "$chain_id"
+  fi
+done
+
+if (( ${#failed_chains[@]} > 0 )); then
+  echo
+  echo "  step 2 finished with ${#failed_chains[@]} failed chain(s): ${failed_chains[*]}"
+  echo "  proceeding to step 3/4 with the ${#ok_chains[@]} chains that succeeded."
 fi
 
 # ─── 3. Refresh Debank reference per (chain × account) ─────────────────────────
@@ -306,6 +355,18 @@ done
 
 echo
 echo "Report written: $REPORT_MD"
+
+# Exit code conventions:
+#   0 — clean (every chain succeeded, no tolerance violations).
+#   1 — at least one chain in step 2 failed (RPC down, OOM, forge revert).
+#   2 — every chain succeeded but at least one (chain × account) drifted past tolerance.
+# Step-2 failures take precedence over tolerance failures because they mean the snapshot
+# is partial (not all chains regenerated) — the tolerance comparison is over a known-good
+# subset, but the run itself didn't complete.
+if (( ${#failed_chains[@]} > 0 )); then
+  echo "${#failed_chains[@]} chain(s) failed in step 2: ${failed_chains[*]}"
+  exit 1
+fi
 if (( violations > 0 )); then
   echo "$violations tolerance violation(s) detected — see $REPORT_MD."
   exit 2

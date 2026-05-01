@@ -95,7 +95,9 @@ contract RefreshIntegrationSnapshot is Script, IntegrationFromConfigBase {
                 );
                 ++written;
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         console2.log("Wrote", written, "snapshot line(s) to stdout (parsed by refresh-integration-snapshot.sh).");

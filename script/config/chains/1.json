@@ -49,14 +49,21 @@
       },
       "deployed": "0x9b9e74cfd807Dfae4F9333Afbd44EFE719354c39"
     },
-    "AaveV3SafetyModule_stkGHO": {
+    "AaveV3SafetyModule": {
       "enabled": true,
       "constructor": {
-        "stakeToken": "0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d",
         "protocol": "Aave V3 Safety Module",
-        "positionDetail": "stkGHO"
+        "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+        "stakeTokenAddresses": [
+          "0x1a88Df1cFe15Af22B3c4c783D4e6F7F9e0C1885d"
+        ],
+        "stakeTokenDetails": [
+          "stkGHO"
+        ]
       },
-      "deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD"
+      "deployed": "",
+      "legacy_deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD",
+      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. Unregistered from NAV during the multi-token migration; see script/deploy/07_MigrateSafetyModule.s.sol and docs/decisions/0002-aave-safety-module-multi-token.md."
     },
     "Cap": {
       "enabled": true,

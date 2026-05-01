@@ -81,10 +81,10 @@ contract MigrateExistingAdapters is BaseDeployScript {
     function _allMigrations() internal pure returns (Migration[] memory m) {
         // Mirror the order of `04_DeployBalanceAdapters.s.sol`. Adapter names that are not enabled
         // on a given chain just resolve to address(0) and are silently skipped.
-        m = new Migration[](48);
+        m = new Migration[](47);
 
         bytes32 K_AAVEV3 = keccak256("AaveV3Instance");
-        bytes32 K_AAVEV3_SM = keccak256("AaveV3SafetyModule");
+        // AaveV3SafetyModule is migrated by 07_MigrateSafetyModule.s.sol (multi-token consolidation).
         bytes32 K_AURA = keccak256("Aura");
         bytes32 K_BAL = keccak256("BalancerV3");
         bytes32 K_CAP = keccak256("Cap");
@@ -109,7 +109,9 @@ contract MigrateExistingAdapters is BaseDeployScript {
         m[i++] = Migration("AaveV3_Optimism", K_AAVEV3);
         m[i++] = Migration("AaveV3_Gnosis", K_AAVEV3);
         m[i++] = Migration("SparkLend", K_SPARK);
-        m[i++] = Migration("AaveV3SafetyModule_stkGHO", K_AAVEV3_SM);
+        // AaveV3 Safety Module is migrated separately via 07_MigrateSafetyModule.s.sol
+        // (the legacy single-token stkGHO adapter at 0x191d… is being replaced by a single
+        // multi-token adapter; see docs/decisions/0002-aave-safety-module-multi-token.md).
         m[i++] = Migration("Cap", K_CAP);
         m[i++] = Migration("DaiDsr", K_DSR);
         m[i++] = Migration("SkySavingsUsds", K_SKY);

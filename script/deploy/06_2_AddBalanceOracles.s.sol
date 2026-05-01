@@ -98,7 +98,7 @@ contract AddBalanceOracles is BaseDeployScript {
         names[i++] = "AaveV3_Optimism";
         names[i++] = "AaveV3_Gnosis";
         names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule_stkGHO";
+        names[i++] = "AaveV3SafetyModule";
         names[i++] = "Cap";
         names[i++] = "MorphoVault_kpkETHPrime_V1";
         names[i++] = "MorphoVault_kpkETHPrime_V2";

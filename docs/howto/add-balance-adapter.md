@@ -290,7 +290,17 @@ cast call $NAVCalculator "isOracleRegistered(address)(bool)" $adapter --rpc-url 
 
 ---
 
-## 7. Open the PR
+## 7. Refresh integration test snapshots
+
+If your adapter affects NAV for an existing test account in `test/integration/accounts.json` (or you're adding a new test account that exercises it), run the bump script before opening the PR:
+
+```bash
+script/test/refresh-integration-snapshot.sh
+```
+
+This regenerates the expected `navUsd8dp` values, optionally cross-checks against Debank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
+
+## 8. Open the PR
 
 PR checklist:
 
@@ -300,5 +310,6 @@ PR checklist:
 - [ ] Chain config updated for every chain where the adapter applies
 - [ ] No unrelated files committed (run `git status` before staging)
 - [ ] PR description includes: protocol name, what the adapter reports, the chain(s) it's enabled on, any reward semantics, and the fork-test holder address used as ground truth
+- [ ] If the adapter changes NAV for an integration-test account, ran `script/test/refresh-integration-snapshot.sh` and committed the resulting `test/integration/accounts.json` diff
 
 If you're touching the deployment lifecycle (new factory, new role, new migration), also update or add the relevant ADR under [`../decisions/`](../decisions/).

@@ -9,4 +9,5 @@ Onboarding and reference material that supplements the in-tree per-domain docs (
 | [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | End-to-end walkthrough: write the adapter + factory + tests + chain config + deploy + register. |
 | [`howto/add-price-feed.md`](howto/add-price-feed.md) | End-to-end walkthrough for adding a new custom price feed. |
 | [`howto/add-chain.md`](howto/add-chain.md) | End-to-end walkthrough for adding a new chain (config, asset registry, deploy steps). |
+| [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | How to bump the integration-test fork blocks, refresh expected NAVs, and cross-check against Debank. |
 | [`decisions/`](decisions/) | Numbered ADRs (Architecture Decision Records). Read when you want the *why* behind a design. |

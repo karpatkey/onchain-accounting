@@ -50,14 +50,10 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
         AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
             new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](2);
-        init[0] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({
-            stakeToken: address(STK_GHO),
-            positionDetail: "stkGHO"
-        });
-        init[1] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({
-            stakeToken: address(STK_AAVE),
-            positionDetail: "stkAAVE"
-        });
+        init[0] =
+            AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(STK_GHO), positionDetail: "stkGHO"});
+        init[1] =
+            AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(STK_AAVE), positionDetail: "stkAAVE"});
 
         oracle = new AaveV3SafetyModuleBalanceOracle(init, adminAddr, address(balances), "Aave V3 Safety Module");
     }
@@ -133,7 +129,9 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         // stkAAVE staked for TEST_USER is 0 (they're not a stkAAVE holder), so it should equal stkGHO rewards.
         // But still assert >= stkGhoRewards in case the oracle adds anything from stkAAVE.
         assertGe(amount, stkGhoRewards, "AAVE leg should include at least stkGHO rewards");
-        assertEq(amount, stkAaveStaked + stkGhoRewards, "AAVE leg = stkGHO rewards + stkAAVE staked+rewards (latter 0 here)");
+        assertEq(
+            amount, stkAaveStaked + stkGhoRewards, "AAVE leg = stkGHO rewards + stkAAVE staked+rewards (latter 0 here)"
+        );
         assertFalse(isDebt);
     }
 

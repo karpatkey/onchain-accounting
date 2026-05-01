@@ -53,20 +53,22 @@ contract MockStakeToken {
 contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     AaveV3SafetyModuleBalanceOracle public oracle;
     MockStakeToken public stkUsdc; // staked = usdc, reward = dai
-    MockStakeToken public stkDai;  // staked = dai,  reward = dai (same-token case)
+    MockStakeToken public stkDai; // staked = dai,  reward = dai (same-token case)
 
     address public adminAddr = makeAddr("smAdmin");
 
     function setUp() public override {
         super.setUp();
 
-        stkUsdc = new MockStakeToken(address(dai), address(usdc));   // staked usdc, reward dai
-        stkDai  = new MockStakeToken(address(dai), address(dai));    // staked dai,  reward dai (same)
+        stkUsdc = new MockStakeToken(address(dai), address(usdc)); // staked usdc, reward dai
+        stkDai = new MockStakeToken(address(dai), address(dai)); // staked dai,  reward dai (same)
 
         AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
             new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](2);
-        init[0] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(stkUsdc), positionDetail: "stkUSDC"});
-        init[1] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(stkDai),  positionDetail: "stkDAI"});
+        init[0] =
+            AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(stkUsdc), positionDetail: "stkUSDC"});
+        init[1] =
+            AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: address(stkDai), positionDetail: "stkDAI"});
 
         oracle = new AaveV3SafetyModuleBalanceOracle(init, adminAddr, address(balances), "Aave V3 Safety Module");
     }
@@ -187,9 +189,7 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     function test_removeStakeToken_rejectsUnregistered() public {
         address ghost = makeAddr("ghost");
         vm.prank(adminAddr);
-        vm.expectRevert(
-            abi.encodeWithSelector(AaveV3SafetyModuleBalanceOracle.StakeTokenNotRegistered.selector, ghost)
-        );
+        vm.expectRevert(abi.encodeWithSelector(AaveV3SafetyModuleBalanceOracle.StakeTokenNotRegistered.selector, ghost));
         oracle.removeStakeToken(ghost);
     }
 
@@ -251,8 +251,8 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     function test_getOracleBalanceForAsset_sumsRewardsAcrossStakeTokens() public {
         // Both stkUsdc and stkDai pay rewards in DAI; they should sum.
         stkUsdc.setRewards(alice, 50);
-        stkDai.setBalance(alice, 200);   // dai staked
-        stkDai.setRewards(alice, 30);    // dai rewards
+        stkDai.setBalance(alice, 200); // dai staked
+        stkDai.setRewards(alice, 30); // dai rewards
         // For DAI: stkUsdc rewards (50) + stkDai staked (200) + stkDai rewards (30) = 280
         (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(dai));
         assertEq(amount, 280);
@@ -271,8 +271,7 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
     // ─────────────────────────────────────────────────────────────────────────
 
     function test_getOracleBalances_zeroAccountReturnsEmptyArrays() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            oracle.getOracleBalances(address(0));
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);

@@ -1,0 +1,75 @@
+{
+  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only — see docs/howto/refresh-integration-test-blocks.md.",
+  "tolerance": 0.01,
+  "$tolerance_comment": "Max relative drift allowed between forge-computed NAV and Debank's USD total at bump time. 0.01 = 1%.",
+  "chains": {
+    "1": {
+      "name": "mainnet",
+      "alchemyNetwork": "eth-mainnet",
+      "debankChainId": "eth",
+      "forkBlock": 24987608
+    },
+    "10": {
+      "name": "optimism",
+      "alchemyNetwork": "opt-mainnet",
+      "debankChainId": "op",
+      "forkBlock": 150944800
+    },
+    "100": {
+      "name": "gnosis",
+      "alchemyNetwork": "gnosis-mainnet",
+      "debankChainId": "xdai",
+      "forkBlock": 45922000
+    },
+    "8453": {
+      "name": "base",
+      "alchemyNetwork": "base-mainnet",
+      "debankChainId": "base",
+      "forkBlock": 45349500
+    },
+    "42161": {
+      "name": "arbitrum",
+      "alchemyNetwork": "arb-mainnet",
+      "debankChainId": "arb",
+      "forkBlock": 457665000
+    }
+  },
+  "accounts": [
+    {
+      "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
+      "label": "ACCOUNT_1",
+      "enabledChains": [1, 10, 100, 8453, 42161],
+      "expected": {
+        "1":     { "navUsd8dp": "17822110300",    "debankUsd": "" },
+        "10":    { "navUsd8dp": "0",              "debankUsd": "" },
+        "100":   { "navUsd8dp": "500474218",      "debankUsd": "" },
+        "8453":  { "navUsd8dp": "999934954",      "debankUsd": "" },
+        "42161": { "navUsd8dp": "1002196979",     "debankUsd": "" }
+      }
+    },
+    {
+      "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
+      "label": "ACCOUNT_2",
+      "enabledChains": [1, 10, 100, 8453, 42161],
+      "expected": {
+        "1":     { "navUsd8dp": "108537887171758", "debankUsd": "" },
+        "10":    { "navUsd8dp": "0",               "debankUsd": "" },
+        "100":   { "navUsd8dp": "0",               "debankUsd": "" },
+        "8453":  { "navUsd8dp": "0",               "debankUsd": "" },
+        "42161": { "navUsd8dp": "0",               "debankUsd": "" }
+      }
+    },
+    {
+      "address": "0x408ea1bC71ec2562ABCB27520cf7077718403496",
+      "label": "ACCOUNT_3",
+      "enabledChains": [1, 10, 100, 8453, 42161],
+      "expected": {
+        "1":     { "navUsd8dp": "26176865974", "debankUsd": "" },
+        "10":    { "navUsd8dp": "0",           "debankUsd": "" },
+        "100":   { "navUsd8dp": "0",           "debankUsd": "" },
+        "8453":  { "navUsd8dp": "0",           "debankUsd": "" },
+        "42161": { "navUsd8dp": "0",           "debankUsd": "" }
+      }
+    }
+  ]
+}

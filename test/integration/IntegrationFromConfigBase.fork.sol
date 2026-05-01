@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Options as UUPSDeployOptions} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {console2} from "forge-std/console2.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
@@ -59,9 +60,11 @@ import "src/constants.sol";
 /// @dev Deployment dispatch is duplicated from script/deploy/{03,04}*.sol so the test can avoid the
 ///      chain-config writes those scripts perform via ConfigReader.writeAdapterAddress.
 abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
+    using stdJson for string;
+
     // Set by child setUp before _setupAndDeploy().
     uint256 internal _chainId;
-    uint256 internal _forkBlock;
+    uint256 internal _forkBlock; // optional override; if 0 the value from accounts.json is used
     string internal _forkNetwork; // e.g. "eth-mainnet"
 
     NAVCalculator public nav;
@@ -72,12 +75,19 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice quoteAsset = address(0) ⇒ NAV value is denominated in USD with 8 decimals.
     address internal constant QUOTE_USD = address(0);
 
+    /// @notice Path to the integration test accounts/snapshot file (relative to project root).
+    string internal constant ACCOUNTS_JSON = "test/integration/accounts.json";
+
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
     function _setupAndDeploy() internal {
         require(_chainId != 0, "child must set _chainId");
         require(bytes(_forkNetwork).length > 0, "child must set _forkNetwork");
+
+        if (_forkBlock == 0) {
+            _forkBlock = _readForkBlockFromAccountsJson(_chainId);
+        }
 
         fork = createSelectForkWithCadence(getAlchemyUrl(_forkNetwork), _forkBlock);
 
@@ -758,5 +768,67 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         console2.log("nav.value (USD, 8dp):", n.value);
         console2.log("nav.stalePriceAssets.length:", n.stalePriceAssets.length);
         console2.log("nav.sequencerDown:", n.sequencerDown);
+    }
+
+    // -----------------------------------------------------------------------
+    // accounts.json: drives both the test asserts and the bump script.
+    // Schema lives in docs/howto/refresh-integration-test-blocks.md.
+    // -----------------------------------------------------------------------
+
+    /// @dev Reads the per-chain `forkBlock` from accounts.json. The bump script keeps this current.
+    function _readForkBlockFromAccountsJson(uint256 chainId) internal view returns (uint256) {
+        string memory json = _readAccountsJson();
+        string memory key = string.concat(".chains.", vm.toString(chainId), ".forkBlock");
+        require(vm.keyExists(json, key), "accounts.json: missing chains.<id>.forkBlock");
+        return json.readUint(key);
+    }
+
+    /// @notice Iterate every account in accounts.json whose enabledChains includes _chainId,
+    ///         read NAV via getAccountNav, log it, and assert it equals the snapshotted expected value.
+    /// @dev On a failed assertion the message includes the account label so failures are attributable
+    ///      even though all accounts share a single test method.
+    function _assertNavsForCurrentChain() internal view {
+        require(_chainId != 0, "_chainId not set");
+        string memory json = _readAccountsJson();
+
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+
+            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            string memory label = json.readString(string.concat(base, ".label"));
+            uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
+
+            if (_contains(enabledChains, _chainId)) {
+                string memory expectedKey = string.concat(base, ".expected.", vm.toString(_chainId), ".navUsd8dp");
+                require(
+                    vm.keyExists(json, expectedKey),
+                    string.concat("accounts.json: missing expected.<chain>.navUsd8dp for ", label)
+                );
+                int256 expected = vm.parseInt(json.readString(expectedKey));
+
+                INAVCalculator.NAV memory n = _readUsdNav(account);
+                _logNav(label, account);
+                assertEq(n.value, expected, string.concat(label, " NAV mismatch (8dp USD)"));
+                assertEq(n.stalePriceAssets.length, 0, string.concat(label, ": stale prices present"));
+                assertEq(n.sequencerDown, false, string.concat(label, ": sequencer down"));
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _readAccountsJson() internal view returns (string memory) {
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        return vm.readFile(string.concat(vm.projectRoot(), "/", ACCOUNTS_JSON));
+    }
+
+    function _contains(uint256[] memory haystack, uint256 needle) internal pure returns (bool) {
+        for (uint256 i; i < haystack.length; ++i) {
+            if (haystack[i] == needle) return true;
+        }
+        return false;
     }
 }

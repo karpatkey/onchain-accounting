@@ -9,9 +9,6 @@ lcov.info
 /broadcast/**/dry-run/
 
 
-# Docs
-docs/
-
 # Dotenv file
 .env
 commit.msg

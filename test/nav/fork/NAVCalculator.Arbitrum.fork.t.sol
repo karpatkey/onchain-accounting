@@ -32,11 +32,15 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
 
     CompoundV3Comet public compoundV3UsdcComet;
 
+    /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.
+    uint256 public constant FORK_BLOCK = 457_665_000;
+
     function setUp() public {
         togglePositionsLogging();
         safe = ARBITRUM_SAFE;
         fork = createForkWithCadence(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
         setupNavCalculator();
     }
 

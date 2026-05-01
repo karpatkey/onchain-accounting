@@ -6,6 +6,7 @@ fs_permissions = [
   { access = "read-write", path = "script" },
   { access = "read-write", path = "out" },
   { access = "read-write", path = "safe-transactions" },
+  { access = "read", path = "test/integration" },
 ]
 ffi = true
 ast = true

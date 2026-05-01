@@ -33,8 +33,7 @@ contract AaveV3SafetyModuleAdapterFactory is BalanceAdapterFactoryBase {
         bytes32 salt
     ) external onlyOwner returns (address adapter) {
         bytes memory initCode = abi.encodePacked(
-            type(AaveV3SafetyModuleBalanceOracle).creationCode,
-            abi.encode(initial, admin, NAV_CALCULATOR, protocol)
+            type(AaveV3SafetyModuleBalanceOracle).creationCode, abi.encode(initial, admin, NAV_CALCULATOR, protocol)
         );
         adapter = _deployCreate2(salt, initCode);
         _track(adapter, true);
@@ -50,8 +49,7 @@ contract AaveV3SafetyModuleAdapterFactory is BalanceAdapterFactoryBase {
         bytes32 salt
     ) external view returns (address) {
         bytes memory initCode = abi.encodePacked(
-            type(AaveV3SafetyModuleBalanceOracle).creationCode,
-            abi.encode(initial, admin, NAV_CALCULATOR, protocol)
+            type(AaveV3SafetyModuleBalanceOracle).creationCode, abi.encode(initial, admin, NAV_CALCULATOR, protocol)
         );
         return _predictCreate2(salt, keccak256(initCode));
     }

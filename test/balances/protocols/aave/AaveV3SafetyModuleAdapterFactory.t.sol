@@ -20,9 +20,17 @@ contract MockStakeToken {
         STAKED_TOKEN = stakedToken_;
     }
 
-    function balanceOf(address) external pure returns (uint256) { return 0; }
-    function previewRedeem(uint256) external pure returns (uint256) { return 0; }
-    function getTotalRewardsBalance(address) external pure returns (uint256) { return 0; }
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function previewRedeem(uint256) external pure returns (uint256) {
+        return 0;
+    }
+
+    function getTotalRewardsBalance(address) external pure returns (uint256) {
+        return 0;
+    }
 }
 
 /// @title AaveV3SafetyModuleAdapterFactoryTest

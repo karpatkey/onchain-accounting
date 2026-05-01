@@ -415,12 +415,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //   }
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        address admin = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "admin")
-        );
+        address admin =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "admin"));
 
         string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(currentChainId), ".json"));
+        string memory path =
+            string(abi.encodePacked(root, "/script/config/chains/", vm.toString(currentChainId), ".json"));
         // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
         address[] memory addrs =

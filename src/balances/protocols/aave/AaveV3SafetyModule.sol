@@ -65,9 +65,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, Ownable {
     //
 
     /// @notice Emitted when a stake token is registered with this adapter.
-    event StakeTokenAdded(
-        address indexed stakeToken, address stakedToken, address rewardToken, string positionDetail
-    );
+    event StakeTokenAdded(address indexed stakeToken, address stakedToken, address rewardToken, string positionDetail);
 
     /// @notice Emitted when a stake token is removed from this adapter.
     event StakeTokenRemoved(address indexed stakeToken);
@@ -268,7 +266,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, Ownable {
             if (_passesFilter(info.stakedToken, assetFilter)) {
                 INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, info.stakedToken);
                 if (assetMeta.asset != address(0)) {
-                    uint256 stakedAmount = IStakeToken(stakeToken).previewRedeem(IStakeToken(stakeToken).balanceOf(account));
+                    uint256 stakedAmount =
+                        IStakeToken(stakeToken).previewRedeem(IStakeToken(stakeToken).balanceOf(account));
                     if (stakedAmount != 0) {
                         tmp[count++] = INAVCalculator.PositionBalance({
                             underlyingAsset: assetMeta,
@@ -289,8 +288,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, Ownable {
             if (info.stakedToken == info.rewardToken) {
                 // Merge rewards into the staked-leg position we just emitted (if any).
                 if (
-                    count > 0
-                        && tmp[count - 1].underlyingAsset.asset == info.stakedToken
+                    count > 0 && tmp[count - 1].underlyingAsset.asset == info.stakedToken
                         && _stringEq(tmp[count - 1].positionDetail, info.positionDetail)
                 ) {
                     uint256 rewards = IStakeToken(stakeToken).getTotalRewardsBalance(account);
@@ -349,11 +347,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, Ownable {
         address rewardToken = IStakeToken(stakeToken).REWARD_TOKEN();
         if (stakedToken == address(0) || rewardToken == address(0)) revert InvalidArguments();
 
-        stakeTokenInfo[stakeToken] = StakeTokenInfo({
-            stakedToken: stakedToken,
-            rewardToken: rewardToken,
-            positionDetail: positionDetail
-        });
+        stakeTokenInfo[stakeToken] =
+            StakeTokenInfo({stakedToken: stakedToken, rewardToken: rewardToken, positionDetail: positionDetail});
         isStakeTokenRegistered[stakeToken] = true;
         _stakeTokenList.push(stakeToken);
         _stakeTokenIndex[stakeToken] = _stakeTokenList.length; // 1-based

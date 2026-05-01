@@ -7,8 +7,7 @@ import {console2} from "forge-std/console2.sol";
 
 import {INAVCalculator} from "../../src/nav/INAVCalculator.sol";
 import {BalanceAdapterRegistry} from "../../src/balances/factories/BalanceAdapterRegistry.sol";
-import {AaveV3SafetyModuleAdapterFactory} from
-    "../../src/balances/protocols/aave/AaveV3SafetyModuleAdapterFactory.sol";
+import {AaveV3SafetyModuleAdapterFactory} from "../../src/balances/protocols/aave/AaveV3SafetyModuleAdapterFactory.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/aave/AaveV3SafetyModule.sol";
 
 /// @title MigrateSafetyModule
@@ -73,9 +72,8 @@ contract MigrateSafetyModule is BaseDeployScript {
             string(abi.encodePacked(root, "/script/config/chains/", vm.toString(currentChainId), ".json"));
         // forge-lint: disable-next-line(unsafe-cheatcode)
         string memory json = vm.readFile(path);
-        address[] memory addrs = vm.parseJsonAddressArray(
-            json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenAddresses"
-        );
+        address[] memory addrs =
+            vm.parseJsonAddressArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenAddresses");
         string[] memory details =
             vm.parseJsonStringArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenDetails");
         require(addrs.length == details.length, "stakeTokenAddresses/Details length mismatch");

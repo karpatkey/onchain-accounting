@@ -1,84 +1,162 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {ArrayLib} from "src/utils/ArrayLib.sol";
 
-/// @title Aave v3 Safety Module Balance Oracle
+/// @title Aave v3 Safety Module Balance Oracle (multi-token)
 /// @author kpk
-/// @notice Tracks user positions in the Aave v3 Safety Module, calculating BALANCES for both staked token and rewards
-/// accrued. Returned BALANCES are denominated in terms of the underlying staked token.
-contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
-    //
-    // Libraries
-    //
-    using SafeCast for uint256;
-
+/// @notice Tracks user positions across **all** Aave v3 Safety Module stake tokens registered with this adapter
+///         (e.g. stkAAVE, stkABPT, stkGHO). Returned amounts are denominated in the underlying staked or reward token.
+/// @dev This is the **only mutable balance adapter** in the framework: the owner (typically the OIV Safe) manages the
+///      list of registered stake tokens via `addStakeToken` / `removeStakeToken`. The deviation from the framework's
+///      "adapters are immutable" rule is intentional and documented in `docs/decisions/0002-aave-safety-module-multi-token.md`.
+contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, Ownable {
     //
     // Type Definitions
     //
 
-    /// @notice Asset balance data structure
-    struct AssetBalanceData {
-        address asset;
-        uint256 amount;
-        bool isDebt;
+    /// @notice Configuration recorded for each registered Safety Module stake token.
+    /// @param stakedToken The asset that gets staked (read once via `STAKED_TOKEN()` at registration).
+    /// @param rewardToken The asset paid out as rewards (read once via `REWARD_TOKEN()` at registration).
+    /// @param positionDetail Admin-supplied label used as `PositionBalance.positionDetail`
+    ///        (e.g. "stkGHO", "stkAAVE"). Distinguishes attribution when multiple stake tokens share an asset.
+    struct StakeTokenInfo {
+        address stakedToken;
+        address rewardToken;
+        string positionDetail;
+    }
+
+    /// @notice Constructor input for seeding the initial stake token list.
+    struct StakeTokenInit {
+        address stakeToken;
+        string positionDetail;
     }
 
     //
     // State Variables
     //
 
-    /// @notice The stake token (e.g. stkAAVE, stkABPT) contract
-    IStakeToken public immutable STAKE_CONTRACT;
-
-    /// @notice The reward token address
-    address public immutable REWARD_TOKEN;
-
-    /// @notice The underlying token address which is staked
-    address public immutable STAKED_TOKEN;
-
-    /// @notice Reference to NAVCalculator for asset registry access
+    /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice Position detail identifier for this oracle
-    string private _positionDetail;
+    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3 Safety Module").
+    string public PROTOCOL;
+
+    /// @notice Per-stake-token configuration.
+    mapping(address stakeToken => StakeTokenInfo) public stakeTokenInfo;
+
+    /// @notice Whether `stakeToken` is currently registered with this adapter.
+    mapping(address stakeToken => bool) public isStakeTokenRegistered;
+
+    /// @dev Iteration list of registered stake tokens. Kept in sync via swap-and-pop on removal.
+    address[] internal _stakeTokenList;
+
+    /// @dev Index into `_stakeTokenList` (1-based; 0 means "not present"). Enables O(1) removal.
+    mapping(address stakeToken => uint256) internal _stakeTokenIndex;
+
+    //
+    // Events
+    //
+
+    /// @notice Emitted when a stake token is registered with this adapter.
+    event StakeTokenAdded(address indexed stakeToken, address stakedToken, address rewardToken, string positionDetail);
+
+    /// @notice Emitted when a stake token is removed from this adapter.
+    event StakeTokenRemoved(address indexed stakeToken);
+
+    //
+    // Errors
+    //
+
+    /// @notice Thrown when adding a stake token that is already registered.
+    error StakeTokenAlreadyRegistered(address stakeToken);
+
+    /// @notice Thrown when removing a stake token that is not registered.
+    error StakeTokenNotRegistered(address stakeToken);
 
     //
     // Constructor
     //
 
-    /// @notice Creates a new Aave v3 Safety Module balance oracle.
-    /// @param stakeToken Address of the stake token (e.g. stkAAVE) contract.
-    /// @param protocol_ Protocol identifier (e.g., "Aave v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "Safety Module").
-    /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
-    constructor(address stakeToken, string memory protocol_, string memory positionDetail_, address navCalculator_) {
-        if (stakeToken == address(0)) revert InvalidArguments();
-        require(stakeToken.code.length > 0, "StakeToken must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+    /// @notice Deploys the adapter with an initial set of stake tokens and the given admin.
+    /// @param initial Initial list of `(stakeToken, positionDetail)` pairs to register at construction.
+    ///        May be empty; the admin can call `addStakeToken` later.
+    /// @param admin The address that owns the adapter (usually the OIV Safe). Manages the stake-token list.
+    /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
+    /// @param protocol_ Protocol identifier (e.g. "Aave V3 Safety Module").
+    constructor(StakeTokenInit[] memory initial, address admin, address navCalculator, string memory protocol_)
+        Ownable(admin)
+    {
+        if (admin == address(0) || navCalculator == address(0)) revert InvalidArguments();
+        require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
 
-        STAKE_CONTRACT = IStakeToken(stakeToken);
-        REWARD_TOKEN = STAKE_CONTRACT.REWARD_TOKEN();
-        STAKED_TOKEN = STAKE_CONTRACT.STAKED_TOKEN();
+        NAV_CALCULATOR = INAVCalculator(navCalculator);
+        PROTOCOL = protocol_;
 
-        if (REWARD_TOKEN == address(0) || STAKED_TOKEN == address(0)) revert InvalidArguments();
-
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        uint256 len = initial.length;
+        for (uint256 i; i < len; ++i) {
+            _addStakeToken(initial[i].stakeToken, initial[i].positionDetail);
+        }
     }
 
     //
-    // IERC165 Implementation
+    // Admin functions
+    //
+
+    /// @notice Registers a Safety Module stake token with this adapter.
+    /// @dev Reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract once and pins them.
+    /// @param stakeToken Address of the stake-token contract (e.g. stkAAVE).
+    /// @param positionDetail Label emitted on every PositionBalance from this stake token (e.g. "stkAAVE").
+    function addStakeToken(address stakeToken, string calldata positionDetail) external onlyOwner {
+        _addStakeToken(stakeToken, positionDetail);
+    }
+
+    /// @notice Removes a stake token from this adapter. Existing on-chain balances of users in that
+    ///         stake token are no longer reported by this oracle (admin's responsibility to coordinate).
+    /// @param stakeToken Address of the stake-token contract to remove.
+    function removeStakeToken(address stakeToken) external onlyOwner {
+        if (!isStakeTokenRegistered[stakeToken]) revert StakeTokenNotRegistered(stakeToken);
+
+        uint256 indexPlusOne = _stakeTokenIndex[stakeToken];
+        uint256 lastIndex = _stakeTokenList.length - 1;
+        uint256 idx = indexPlusOne - 1;
+
+        if (idx != lastIndex) {
+            address last = _stakeTokenList[lastIndex];
+            _stakeTokenList[idx] = last;
+            _stakeTokenIndex[last] = idx + 1;
+        }
+        _stakeTokenList.pop();
+
+        delete stakeTokenInfo[stakeToken];
+        delete _stakeTokenIndex[stakeToken];
+        isStakeTokenRegistered[stakeToken] = false;
+
+        emit StakeTokenRemoved(stakeToken);
+    }
+
+    //
+    // Views
+    //
+
+    /// @notice Returns the list of currently registered stake tokens.
+    function getStakeTokens() external view returns (address[] memory) {
+        return _stakeTokenList;
+    }
+
+    /// @notice Number of currently registered stake tokens.
+    function stakeTokenCount() external view returns (uint256) {
+        return _stakeTokenList.length;
+    }
+
+    //
+    // IERC165
     //
 
     /// @inheritdoc IERC165
@@ -87,41 +165,46 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     }
 
     //
-    // IBalanceOracleAdapter Implementation
+    // IBalanceOracleAdapter
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        if (STAKED_TOKEN == REWARD_TOKEN) {
-            // If staked and reward tokens are the same, return only one address
-            address[] memory assets = new address[](1);
-            assets[0] = STAKED_TOKEN;
-            return assets;
-        } else {
-            address[] memory assets = new address[](2);
-            assets[0] = STAKED_TOKEN;
-            assets[1] = REWARD_TOKEN;
-            return assets;
+    /// @notice Returns the deduplicated union of staked and reward tokens across all registered stake tokens.
+    function underlyingAssetsSupported() public view override returns (address[] memory) {
+        uint256 n = _stakeTokenList.length;
+        address[] memory tmp = new address[](n * 2);
+        uint256 count;
+
+        for (uint256 i; i < n; ++i) {
+            StakeTokenInfo storage info = stakeTokenInfo[_stakeTokenList[i]];
+            if (!_contains(tmp, count, info.stakedToken)) {
+                tmp[count++] = info.stakedToken;
+            }
+            if (info.stakedToken != info.rewardToken && !_contains(tmp, count, info.rewardToken)) {
+                tmp[count++] = info.rewardToken;
+            }
         }
+
+        address[] memory out = new address[](count);
+        for (uint256 i; i < count; ++i) {
+            out[i] = tmp[i];
+        }
+        return out;
     }
 
     /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns the **summed** balance for `asset` across all registered stake tokens.
     function getOracleBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
     {
-        // Return zero for zero account or unsupported/invalid tokens (adapter convention)
-        if (
-            account == address(0) || asset == address(0)
-                || (asset != address(STAKED_TOKEN) && asset != address(REWARD_TOKEN))
-        ) {
-            return (0, false);
-        }
-        return (_calculateBalance(asset, account), false); // Safety Module positions are always credit
+        if (account == address(0) || asset == address(0)) return (0, false);
+        return (_summedBalance(account, asset), false);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
+    /// @notice Returns deduplicated per-asset summed balances. Skips zero amounts.
     function getOracleBalances(address account)
         external
         view
@@ -130,236 +213,220 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         if (account == address(0)) {
             return (new address[](0), new uint256[](0), new bool[](0));
         }
-        address[] memory supportedAssets = this.underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
 
-        address[] memory tempAssets = new address[](assetCount);
-        uint256[] memory tempAmounts = new uint256[](assetCount);
-        uint256 count = 0;
+        address[] memory supported = underlyingAssetsSupported();
+        uint256 n = supported.length;
+        address[] memory tmpAssets = new address[](n);
+        uint256[] memory tmpAmounts = new uint256[](n);
+        uint256 count;
 
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            uint256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances
-            if (balance != 0) {
-                tempAssets[count] = asset;
-                tempAmounts[count] = balance;
-                count++;
+        for (uint256 i; i < n; ++i) {
+            uint256 bal = _summedBalance(account, supported[i]);
+            if (bal != 0) {
+                tmpAssets[count] = supported[i];
+                tmpAmounts[count] = bal;
+                ++count;
             }
         }
 
         assets = new address[](count);
         amounts = new uint256[](count);
         isDebt = new bool[](count);
-        for (uint256 i = 0; i < count; i++) {
-            assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
-            isDebt[i] = false;
+        for (uint256 i; i < count; ++i) {
+            assets[i] = tmpAssets[i];
+            amounts[i] = tmpAmounts[i];
         }
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns balance-only positions for the account's Aave v3 Safety Module positions
-    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
-    /// @dev Only returns positions for assets that are both supported by the protocol and registered in NAVCalculator.
-    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @notice Returns one PositionBalance per `(stakeToken, role)` pair, where role ∈ {staked, reward}.
+    /// @dev Multi-stake-token attribution is preserved via `positionDetail`. A user holding both stkGHO and stkAAVE
+    ///      sees three positions: GHO/"stkGHO", AAVE/"stkGHO" (rewards), AAVE/"stkAAVE" (stake+rewards merged because
+    ///      stkAAVE's staked and reward tokens are both AAVE).
     function getOraclePositions(address account, address assetFilter)
         external
         view
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        if (account == address(0)) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-        // Get supported assets from this oracle
-        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // Get registered assets from NAVCalculator
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        address[] memory registeredAssets = new address[](reg.length);
-        for (uint256 i = 0; i < reg.length; i++) {
-            registeredAssets[i] = reg[i].asset;
-        }
+        INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
 
-        // Find intersection: assets that are both supported and registered
-        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
+        uint256 n = _stakeTokenList.length;
+        // Worst case: 2 positions per stake token (staked + reward).
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](n * 2);
+        uint256 count;
 
-        // Apply asset filter if specified
-        address[] memory filteredAssets;
-        if (assetFilter != address(0)) {
-            // Check if assetFilter is in the registered supported assets
-            bool found = false;
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                if (registeredSupportedAssets[i] == assetFilter) {
-                    found = true;
-                    break;
+        for (uint256 i; i < n; ++i) {
+            address stakeToken = _stakeTokenList[i];
+            StakeTokenInfo storage info = stakeTokenInfo[stakeToken];
+
+            // Staked-token leg
+            if (_passesFilter(info.stakedToken, assetFilter)) {
+                INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, info.stakedToken);
+                if (assetMeta.asset != address(0)) {
+                    uint256 stakedAmount =
+                        IStakeToken(stakeToken).previewRedeem(IStakeToken(stakeToken).balanceOf(account));
+                    if (stakedAmount != 0) {
+                        tmp[count++] = INAVCalculator.PositionBalance({
+                            underlyingAsset: assetMeta,
+                            balanceOracle: address(this),
+                            amount: stakedAmount,
+                            isDebt: false,
+                            protocol: PROTOCOL,
+                            positionDetail: info.positionDetail
+                        });
+                    }
                 }
             }
-            if (found) {
-                filteredAssets = new address[](1);
-                filteredAssets[0] = assetFilter;
-            } else {
-                filteredAssets = new address[](0);
+
+            // Reward-token leg (skip if same as staked — already counted above with `getTotalRewardsBalance`?
+            // No: previewRedeem returns staked-asset amount only. Rewards are a *separate* number, even when
+            // stakedToken == rewardToken. So if they're the same, we still need to add the reward amount but
+            // merge it into the same PositionBalance as the staked leg.)
+            if (info.stakedToken == info.rewardToken) {
+                // Merge rewards into the staked-leg position we just emitted (if any).
+                if (
+                    count > 0 && tmp[count - 1].underlyingAsset.asset == info.stakedToken
+                        && _stringEq(tmp[count - 1].positionDetail, info.positionDetail)
+                ) {
+                    uint256 rewards = IStakeToken(stakeToken).getTotalRewardsBalance(account);
+                    tmp[count - 1].amount += rewards;
+                } else if (_passesFilter(info.rewardToken, assetFilter)) {
+                    // No staked leg was emitted (zero balance); emit a rewards-only position if rewards > 0.
+                    INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, info.rewardToken);
+                    if (assetMeta.asset != address(0)) {
+                        uint256 rewards = IStakeToken(stakeToken).getTotalRewardsBalance(account);
+                        if (rewards != 0) {
+                            tmp[count++] = INAVCalculator.PositionBalance({
+                                underlyingAsset: assetMeta,
+                                balanceOracle: address(this),
+                                amount: rewards,
+                                isDebt: false,
+                                protocol: PROTOCOL,
+                                positionDetail: info.positionDetail
+                            });
+                        }
+                    }
+                }
+            } else if (_passesFilter(info.rewardToken, assetFilter)) {
+                INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, info.rewardToken);
+                if (assetMeta.asset != address(0)) {
+                    uint256 rewards = IStakeToken(stakeToken).getTotalRewardsBalance(account);
+                    if (rewards != 0) {
+                        tmp[count++] = INAVCalculator.PositionBalance({
+                            underlyingAsset: assetMeta,
+                            balanceOracle: address(this),
+                            amount: rewards,
+                            isDebt: false,
+                            protocol: PROTOCOL,
+                            positionDetail: info.positionDetail
+                        });
+                    }
+                }
             }
-        } else {
-            filteredAssets = registeredSupportedAssets;
         }
 
-        // Pre-fetch balance data for filtered assets
-        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](filteredAssets.length);
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < filteredAssets.length; i++) {
-            address asset = filteredAssets[i];
-            uint256 balance = _calculateBalance(asset, account);
-
-            // Only include non-zero balances (credits-only: amount = balance, isDebt = false)
-            if (balance != 0) {
-                assetBalanceData[count] = AssetBalanceData({asset: asset, amount: balance, isDebt: false});
-                count++;
-            }
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i; i < count; ++i) {
+            positions[i] = tmp[i];
         }
-
-        // Resize to actual count
-        AssetBalanceData[] memory finalAssetBalanceData = new AssetBalanceData[](count);
-        for (uint256 i = 0; i < count; i++) {
-            finalAssetBalanceData[i] = assetBalanceData[i];
-        }
-
-        // Build positions from pre-fetched data
-        positions = _buildPositions(finalAssetBalanceData);
     }
 
     //
-    // Internal Functions - Asset Registry & Lookup
+    // Internal — admin
     //
 
-    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
-    /// @param asset The asset address to look up
-    /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
-    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) {
-                return reg[i];
+    function _addStakeToken(address stakeToken, string memory positionDetail) internal {
+        if (stakeToken == address(0)) revert InvalidArguments();
+        require(stakeToken.code.length > 0, "StakeToken must be a contract");
+        if (isStakeTokenRegistered[stakeToken]) revert StakeTokenAlreadyRegistered(stakeToken);
+
+        address stakedToken = IStakeToken(stakeToken).STAKED_TOKEN();
+        address rewardToken = IStakeToken(stakeToken).REWARD_TOKEN();
+        if (stakedToken == address(0) || rewardToken == address(0)) revert InvalidArguments();
+
+        stakeTokenInfo[stakeToken] =
+            StakeTokenInfo({stakedToken: stakedToken, rewardToken: rewardToken, positionDetail: positionDetail});
+        isStakeTokenRegistered[stakeToken] = true;
+        _stakeTokenList.push(stakeToken);
+        _stakeTokenIndex[stakeToken] = _stakeTokenList.length; // 1-based
+
+        emit StakeTokenAdded(stakeToken, stakedToken, rewardToken, positionDetail);
+    }
+
+    //
+    // Internal — balance math
+    //
+
+    /// @dev Sums `asset` balances across every registered stake token. For each stake token:
+    ///      - if `stakedToken == asset`, add `previewRedeem(balanceOf(account))`.
+    ///      - if `rewardToken == asset`, add `getTotalRewardsBalance(account)`.
+    ///      Both apply when `stakedToken == rewardToken == asset` (e.g. stkAAVE → AAVE on both sides).
+    function _summedBalance(address account, address asset) internal view returns (uint256 total) {
+        uint256 n = _stakeTokenList.length;
+        for (uint256 i; i < n; ++i) {
+            address stakeToken = _stakeTokenList[i];
+            StakeTokenInfo storage info = stakeTokenInfo[stakeToken];
+            if (info.stakedToken == asset) {
+                total += IStakeToken(stakeToken).previewRedeem(IStakeToken(stakeToken).balanceOf(account));
+            }
+            if (info.rewardToken == asset) {
+                total += IStakeToken(stakeToken).getTotalRewardsBalance(account);
             }
         }
-        revert("Asset not found in NAVCalculator");
     }
 
     //
-    // Internal Functions - Aave Safety Module Data Retrieval
+    // Internal — helpers
     //
 
-    /// @notice Internal helper to calculate balance for a specific asset
-    /// @param underlyingAsset The asset address
-    /// @param account The account address
-    /// @return balance The calculated balance as uint256 (always non-negative for safety module)
-    /// @dev Returns equivalent balance for either:
-    /// - Staked tokens: Returns the withdrawable amount of underlying tokens
-    /// - Reward tokens: Returns the current unclaimed rewards plus newly accrued rewards
-    /// The staked token can be the same as the reward token (i.e. with stkAAVE, underlyingAsset = AAVE = STAKED_TOKEN =
-    /// REWARD_TOKEN).
-    function _calculateBalance(address underlyingAsset, address account) internal view returns (uint256 balance) {
-        if (underlyingAsset != address(STAKED_TOKEN) && underlyingAsset != address(REWARD_TOKEN)) {
-            revert InvalidArguments();
-        }
-
-        uint256 total = 0;
-
-        // If querying staked token balance
-        if (underlyingAsset == STAKED_TOKEN) {
-            total += STAKE_CONTRACT.previewRedeem(STAKE_CONTRACT.balanceOf(account));
-        }
-
-        // If querying reward token balance. In some cases the staked token can be the same as the reward token (i.e
-        // stkAAVE).
-        if (underlyingAsset == REWARD_TOKEN) {
-            total += STAKE_CONTRACT.getTotalRewardsBalance(account);
-        }
-
-        return total; // Safety module positions are always credit (positive)
+    function _passesFilter(address asset, address assetFilter) internal pure returns (bool) {
+        return assetFilter == address(0) || assetFilter == asset;
     }
 
-    //
-    // Internal Functions - Position Building
-    //
-
-    /// @notice Internal helper that builds all positions for this oracle
-    /// @param assetBalanceData Array of AssetBalanceData with pre-fetched balance data
-    /// @return positions Array of balance-only PositionBalance structs from this oracle
-    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
-    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    /// @dev All assets in assetBalanceData are guaranteed to be registered in NAVCalculator.
-    function _buildPositions(AssetBalanceData[] memory assetBalanceData)
+    function _findRegisteredAsset(INAVCalculator.Asset[] memory registered, address asset)
         internal
-        view
-        returns (INAVCalculator.PositionBalance[] memory positions)
+        pure
+        returns (INAVCalculator.Asset memory)
     {
-        if (assetBalanceData.length == 0) {
-            return new INAVCalculator.PositionBalance[](0);
+        uint256 n = registered.length;
+        for (uint256 i; i < n; ++i) {
+            if (registered[i].asset == asset) return registered[i];
         }
+        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
+    }
 
-        // Pre-allocate array (one position per asset)
-        INAVCalculator.PositionBalance[] memory tempPositions =
-            new INAVCalculator.PositionBalance[](assetBalanceData.length);
-        uint256 positionCount = 0;
-
-        for (uint256 i = 0; i < assetBalanceData.length; i++) {
-            address asset = assetBalanceData[i].asset;
-            // AssetBalanceData already has amount and isDebt, no need to extract
-
-            // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
-            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
-
-            // Build position (balance-only, pricing will be added by NAVCalculator)
-            tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
-                balanceOracle: address(this),
-                amount: assetBalanceData[i].amount,
-                isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: _positionDetail
-            });
-
-            positionCount++;
+    function _contains(address[] memory list, uint256 length, address needle) internal pure returns (bool) {
+        for (uint256 i; i < length; ++i) {
+            if (list[i] == needle) return true;
         }
+        return false;
+    }
 
-        // Resize to actual count
-        positions = new INAVCalculator.PositionBalance[](positionCount);
-        for (uint256 i = 0; i < positionCount; i++) {
-            positions[i] = tempPositions[i];
-        }
+    function _stringEq(string memory a, string memory b) internal pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 }
 
-/// @notice Interface for the Aave StakeToken contract
-/// https://etherscan.io/address/0x50f9d4e28309303f0cdcac8af0b569e8b75ab857#code
+/// @notice Minimal interface for the Aave Safety Module stake token contracts (stkAAVE, stkABPT, stkGHO, …).
+/// @dev Reference: https://etherscan.io/address/0x50f9d4e28309303f0cdcac8af0b569e8b75ab857#code
 interface IStakeToken {
-    /// @notice Address of the reward token
-    /// @return address The contract address of the reward token
+    /// @notice Address of the reward token paid out to stakers.
     //solhint-disable-next-line func-name-mixedcase
     function REWARD_TOKEN() external view returns (address);
 
-    /// @notice Address of the underlying staked token
-    /// @return address The contract address of the staked token
+    /// @notice Address of the underlying token that gets staked.
     //solhint-disable-next-line func-name-mixedcase
     function STAKED_TOKEN() external view returns (address);
 
-    /// @notice Get the balance of tokens for an account
-    /// @param account Address to check balance for
-    /// @return Amount of tokens held
+    /// @notice ERC20 balance of the stake token (in stake-token units).
     function balanceOf(address account) external view returns (uint256);
 
-    /// @notice Preview amount of underlying tokens for shares
-    /// @param shares Amount of shares to preview
-    /// @return Amount of underlying tokens
+    /// @notice Converts `shares` of stake token into the underlying staked-token amount the user could redeem.
     function previewRedeem(uint256 shares) external view returns (uint256);
 
-    /// @dev Return the total rewards pending to claim by an staker
-    /// @param staker The staker address
-    /// @return The rewards
+    /// @notice Total claimable rewards for `staker` (in reward-token units).
     function getTotalRewardsBalance(address staker) external view returns (uint256);
 }

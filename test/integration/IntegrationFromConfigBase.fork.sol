@@ -428,7 +428,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "Convex_")) {
             return _deployConvex(name, navAddr);
         }
-        if (_startsWith(name, "AaveV3SafetyModule_")) {
+        if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
         }
         if (_startsWith(name, "BalancerV3_")) {
@@ -509,12 +509,27 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        address stakeToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "stakeToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new AaveV3SafetyModuleBalanceOracle(stakeToken, protocol, positionDetail, navAddr));
+        address admin = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "admin"));
+
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(_chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+        address[] memory addrs = vm.parseJsonAddressArray(
+            json, string(abi.encodePacked(".balanceAdapters.", name, ".constructor.stakeTokenAddresses"))
+        );
+        string[] memory details = vm.parseJsonStringArray(
+            json, string(abi.encodePacked(".balanceAdapters.", name, ".constructor.stakeTokenDetails"))
+        );
+        require(addrs.length == details.length, "stakeTokenAddresses/Details length mismatch");
+
+        AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
+            new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](addrs.length);
+        for (uint256 i; i < addrs.length; ++i) {
+            init[i] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: addrs[i], positionDetail: details[i]});
+        }
+        return address(new AaveV3SafetyModuleBalanceOracle(init, admin, navAddr, protocol));
     }
 
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
@@ -548,7 +563,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "AaveV3_Optimism";
         names[i++] = "AaveV3_Gnosis";
         names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule_stkGHO";
+        names[i++] = "AaveV3SafetyModule";
         names[i++] = "Cap";
         names[i++] = "MorphoVault_kpkETHPrime_V1";
         names[i++] = "MorphoVault_kpkETHPrime_V2";

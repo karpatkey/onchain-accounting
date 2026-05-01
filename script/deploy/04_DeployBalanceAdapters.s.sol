@@ -52,8 +52,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Spark Lend (Mainnet only) ---
         _deployIfEnabled("SparkLend");
 
-        // --- Aave V3 Safety Module (Mainnet only) ---
-        _deployIfEnabled("AaveV3SafetyModule_stkGHO");
+        // --- Aave V3 Safety Module (Mainnet only; single multi-token adapter, see ADR 0002) ---
+        _deployIfEnabled("AaveV3SafetyModule");
 
         // --- Cap Finance (Mainnet only) ---
         _deployIfEnabled("Cap");
@@ -221,8 +221,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployConvex(adapterName, navCalculator);
         }
 
-        // AaveV3 Safety Module adapters
-        if (_startsWith(adapterName, "AaveV3SafetyModule_")) {
+        // AaveV3 Safety Module: a single multi-token adapter per chain (ADR 0002).
+        if (_equals(adapterName, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(adapterName, navCalculator);
         }
 
@@ -403,16 +403,40 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
-        address stakeToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakeToken")
-        );
+        // Schema (chains/<id>.json):
+        //   "AaveV3SafetyModule": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "protocol": "Aave V3 Safety Module",
+        //       "admin": "0x…safeMultisig",
+        //       "stakeTokenAddresses": ["0x…stkGHO", "0x…stkAAVE"],
+        //       "stakeTokenDetails":   ["stkGHO",   "stkAAVE"]
+        //     }
+        //   }
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+        address admin =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "admin"));
+
+        string memory root = vm.projectRoot();
+        string memory path =
+            string(abi.encodePacked(root, "/script/config/chains/", vm.toString(currentChainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+        address[] memory addrs =
+            vm.parseJsonAddressArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenAddresses");
+        string[] memory details =
+            vm.parseJsonStringArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenDetails");
+        require(addrs.length == details.length, "stakeTokenAddresses/Details length mismatch");
+
+        AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
+            new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](addrs.length);
+        for (uint256 i; i < addrs.length; ++i) {
+            init[i] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: addrs[i], positionDetail: details[i]});
+        }
 
         AaveV3SafetyModuleBalanceOracle adapter =
-            new AaveV3SafetyModuleBalanceOracle(stakeToken, protocol, positionDetail, navCalculator);
+            new AaveV3SafetyModuleBalanceOracle(init, admin, navCalculator, protocol);
         return address(adapter);
     }
 

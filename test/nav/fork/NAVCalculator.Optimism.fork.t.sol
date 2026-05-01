@@ -42,10 +42,14 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
 
     CompoundV3Comet public compoundV3UsdtComet;
 
+    /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.
+    uint256 public constant FORK_BLOCK = 150_944_800;
+
     function setUp() public {
         safe = OPTIMISM_SAFE;
         fork = createForkWithCadence(getAlchemyUrl("opt-mainnet"));
         vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
         setupNavCalculator();
     }
 

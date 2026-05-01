@@ -35,11 +35,15 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     // Morpho Blue Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
     bytes32 public marketIdCbbtcUsdc = 0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836;
 
+    /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.
+    uint256 public constant FORK_BLOCK = 45_349_500;
+
     function setUp() public {
         togglePositionsLogging();
         safe = BASE_SAFE;
         fork = createForkWithCadence(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
         setupNavCalculator();
     }
 

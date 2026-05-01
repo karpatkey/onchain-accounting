@@ -54,11 +54,18 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public dsrManager = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
     address public dsr = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
 
+    /// @dev Pinned to a known-good block. Forking at latest is fragile: when a Chainlink feed
+    ///      (or its proxy) gets replaced, the bare `latestRoundData()` call starts reverting
+    ///      and setUp fails. Re-pin (or migrate to the new feed addresses) when something
+    ///      changes upstream.
+    uint256 public constant FORK_BLOCK = 24_987_608;
+
     function setUp() public {
         togglePositionsLogging();
         safe = MAINNET_SAFE;
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
         setupNavCalculator();
     }
 

@@ -19,10 +19,11 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ 1. cast block-number per chain → forkBlock in accounts.json bumped   │
+│ 1. cast block-number per chain (PARALLEL) → forkBlock bumped         │
 ├──────────────────────────────────────────────────────────────────────┤
-│ 2. forge script per chain → deploys NAV stack at the new fork,       │
-│    reads NAV per enabled account, writes navUsd8dp into JSON         │
+│ 2. forge build once (warm cache) → forge script per chain (PARALLEL) │
+│    → deploys NAV stack at the new fork, reads NAV per enabled        │
+│    account, emits SNAPSHOT|... lines that are applied via jq         │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) curl Debank /v1/user/chain_balance per (chain×account) │
 │    → writes debankUsd into JSON                                      │
@@ -30,6 +31,8 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │ 4. tolerance check + diff report                                     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 
 Tests stay deterministic: they assert against the snapshotted exact NAV in `accounts.json`. The Debank cross-check happens **at bump time only**, so test runs do not depend on Debank availability.
 

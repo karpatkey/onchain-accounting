@@ -3,15 +3,21 @@
 # tests, all driven from test/integration/accounts.json.
 #
 # Steps:
-#   1. For each chain: bump `forkBlock` to the latest block via `cast block-number`.
-#   2. For each chain: run `RefreshIntegrationSnapshot.s.sol` which forks at the new block,
-#      replays the deploy pipeline, reads NAV per enabled account, and prints SNAPSHOT lines.
-#      The script parses those lines and writes navUsd8dp into accounts.json.
+#   1. For each chain (in parallel): bump `forkBlock` to the latest block via `cast block-number`.
+#   2. For each chain (in parallel): run `RefreshIntegrationSnapshot.s.sol` which forks at the
+#      new block, replays the deploy pipeline, reads NAV per enabled account, and prints
+#      SNAPSHOT lines. Each chain's stdout is captured to its own log; once all chains
+#      finish, the script parses SNAPSHOT lines and writes navUsd8dp into accounts.json.
 #   3. (Optional) If `DEBANK_API_KEY` is set: for each (chain × account) call Debank's
 #      /v1/user/chain_balance, write `debankUsd` into accounts.json. Logs the API key tier
 #      and remaining units at the start; degrades gracefully if missing/expired/out of units.
 #   4. Tolerance check: for every (chain × account) with both navUsd8dp and debankUsd,
 #      assert |nav/1e8 - debank| / debank ≤ tolerance. Print a markdown report.
+#
+# Step 2 is the bottleneck (forge fork + deploy pipeline per chain ≈ 1–3 min each).
+# Running 5 chains in parallel takes the wall time from `sum(chains)` to `max(chains)`.
+# A pre-build runs once before the parallel forge invocations so they share a warm cache
+# without racing on `out/`.
 #
 # Authoritative reference: docs/howto/refresh-integration-test-blocks.md.
 
@@ -102,52 +108,101 @@ else
   echo "DEBANK_API_KEY not set — Debank cross-check skipped."
 fi
 
-# ─── 1. Bump forkBlock per chain ──────────────────────────────────────────────
+# ─── 1. Bump forkBlock per chain (parallel) ───────────────────────────────────
 echo
-echo "=== 1. Bumping forkBlock for each chain ==="
+echo "=== 1. Bumping forkBlock for each chain (parallel) ==="
 chain_ids=$(jq -r '.chains | keys[]' "$ACCOUNTS_JSON")
 
+block_dir=$(mktemp -d)
+trap 'rm -rf "$block_dir"' EXIT
+declare -A block_pid
 for chain_id in $chain_ids; do
   rpc=$(rpc_for_chain "$chain_id")
   if [[ -z "$rpc" ]]; then
     echo "  [skip] chain $chain_id: no RPC URL configured (set ALCHEMY_API_KEY or chain-specific *_URL)"
     continue
   fi
+  ( cast block-number --rpc-url "$rpc" > "$block_dir/$chain_id" 2> "$block_dir/$chain_id.err" ) &
+  block_pid[$chain_id]=$!
+done
+
+# Collect results in chain-id order so output is deterministic.
+for chain_id in $chain_ids; do
+  pid="${block_pid[$chain_id]:-}"
+  [[ -z "$pid" ]] && continue
+  if ! wait "$pid"; then
+    echo "  [fail] chain $chain_id: cast block-number errored: $(cat "$block_dir/$chain_id.err" 2>/dev/null)" >&2
+    exit 1
+  fi
+  new_block=$(<"$block_dir/$chain_id")
+  if ! [[ "$new_block" =~ ^[0-9]+$ ]]; then
+    echo "  [fail] chain $chain_id: cast returned non-numeric: $new_block" >&2
+    exit 1
+  fi
   old_block=$(jq -r ".chains.\"$chain_id\".forkBlock" "$ACCOUNTS_JSON")
-  new_block=$(cast block-number --rpc-url "$rpc") || { echo "  [fail] chain $chain_id: cast block-number errored" >&2; exit 1; }
   jq_inplace ".chains.\"$chain_id\".forkBlock = $new_block"
   echo "  chain $chain_id: $old_block -> $new_block"
 done
 
-# ─── 2. Refresh NAV snapshot per chain ────────────────────────────────────────
+# ─── 2. Refresh NAV snapshot per chain (parallel) ─────────────────────────────
 echo
-echo "=== 2. Refreshing NAV snapshots ==="
+echo "=== 2. Refreshing NAV snapshots (parallel) ==="
 
+# Pre-build once so the parallel forge invocations share a warm cache and don't
+# race on `out/` writes during compile.
+echo "  pre-building (so parallel forge scripts share cache)…"
+forge build > /dev/null
+
+forge_dir=$(mktemp -d)
+# Replace EXIT trap so both temp dirs are cleaned up at any exit path.
+trap 'rm -rf "$block_dir" "$forge_dir"' EXIT
+
+declare -A forge_pid
 for chain_id in $chain_ids; do
-  echo "--- chain $chain_id ---"
   rpc=$(rpc_for_chain "$chain_id")
   if [[ -z "$rpc" ]]; then
     echo "  [skip] no RPC for chain $chain_id"
     continue
   fi
-
-  # Run forge script. We don't pass --rpc-url because the script itself calls
-  # vm.createSelectFork via the integration test base.
-  output=$(CHAIN_ID="$chain_id" \
+  (
+    CHAIN_ID="$chain_id" \
     FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-slow}" \
-    forge script script/test/RefreshIntegrationSnapshot.s.sol 2>&1) || {
-      echo "$output" >&2
-      echo "  [fail] forge script errored on chain $chain_id" >&2
-      exit 1
-    }
+      forge script script/test/RefreshIntegrationSnapshot.s.sol \
+      > "$forge_dir/$chain_id.out" 2> "$forge_dir/$chain_id.err"
+    echo $? > "$forge_dir/$chain_id.rc"
+  ) &
+  forge_pid[$chain_id]=$!
+  echo "  chain $chain_id: forge script started (pid=${forge_pid[$chain_id]})"
+done
 
-  # Parse SNAPSHOT|<chainId>|<accountIndex>|<address>|<navUsd8dp>|<sequencerDown>|<staleCount> lines.
+# Wait + harvest. Iterate in chain-id order so output is deterministic.
+fatal=0
+for chain_id in $chain_ids; do
+  pid="${forge_pid[$chain_id]:-}"
+  [[ -z "$pid" ]] && continue
+  wait "$pid" || true
+  rc=$(<"$forge_dir/$chain_id.rc")
+  if [[ "$rc" -ne 0 ]]; then
+    echo "  [FAIL] chain $chain_id (forge rc=$rc) — last 30 lines of stderr:" >&2
+    tail -n 30 "$forge_dir/$chain_id.err" >&2
+    fatal=1
+    continue
+  fi
+  # Parse SNAPSHOT|<chainId>|<accountIndex>|<address>|<navUsd8dp>|<sequencerDown>|<staleCount>.
+  matched=0
   while IFS='|' read -r _marker snap_chain idx _addr nav_value _seq _stale; do
     [[ -z "${snap_chain:-}" ]] && continue
     jq_inplace ".accounts[$idx].expected.\"$snap_chain\".navUsd8dp = \"$nav_value\""
-    echo "  account[$idx] chain $snap_chain: navUsd8dp = $nav_value"
-  done < <(echo "$output" | grep -oE 'SNAPSHOT\|[^[:space:]]+' || true)
+    echo "  chain $snap_chain account[$idx]: navUsd8dp = $nav_value"
+    matched=$((matched+1))
+  done < <(grep -oE 'SNAPSHOT\|[^[:space:]]+' "$forge_dir/$chain_id.out" || true)
+  echo "  chain $chain_id: ${matched} snapshot(s) applied"
 done
+
+if (( fatal != 0 )); then
+  echo "  one or more chains failed during step 2 — aborting" >&2
+  exit 1
+fi
 
 # ─── 3. Refresh Debank reference per (chain × account) ─────────────────────────
 echo

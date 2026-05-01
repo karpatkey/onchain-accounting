@@ -44,9 +44,18 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public usdc = address(0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83); // Circle USDC (native on Gnosis)
     address public usdt = address(0x4ECaBa5870353805a9F068101A40E0f32ed605C6); // Tether USDT
 
+    /// @dev Pinned to a known-good block. Forking at latest broke when one of the hardcoded
+    ///      Chainlink feeds (or its proxy) changed on Gnosis chain after 2026-04-29; the bare
+    ///      `latestRoundData()` call started reverting. Pin a stable block so the test is
+    ///      deterministic and re-pin (or migrate to the new feed addresses) when something
+    ///      changes upstream. The other per-chain NAVCalculator fork tests should follow the
+    ///      same pattern.
+    uint256 public constant FORK_BLOCK = 45_000_000;
+
     function setUp() public {
         fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
         setupNavCalculator();
     }
 

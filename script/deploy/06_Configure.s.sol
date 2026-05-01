@@ -146,7 +146,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "AaveV3_Gnosis";
         // Spark, stkGHO, Cap (Mainnet)
         names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule_stkGHO";
+        names[i++] = "AaveV3SafetyModule";
         names[i++] = "Cap";
         // Morpho Vaults
         names[i++] = "MorphoVault_kpkETHPrime_V1";

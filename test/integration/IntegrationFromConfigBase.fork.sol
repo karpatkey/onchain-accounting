@@ -801,8 +801,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
 
             if (_contains(enabledChains, _chainId)) {
-                string memory expectedKey =
-                    string.concat(base, ".expected.", vm.toString(_chainId), ".navUsd8dp");
+                string memory expectedKey = string.concat(base, ".expected.", vm.toString(_chainId), ".navUsd8dp");
                 require(
                     vm.keyExists(json, expectedKey),
                     string.concat("accounts.json: missing expected.<chain>.navUsd8dp for ", label)
@@ -815,7 +814,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 assertEq(n.stalePriceAssets.length, 0, string.concat(label, ": stale prices present"));
                 assertEq(n.sequencerDown, false, string.concat(label, ": sequencer down"));
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 

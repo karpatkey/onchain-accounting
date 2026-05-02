@@ -18,6 +18,7 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | # | Title | Status |
 |---|---|---|
 | 0001 | [Balance adapter factory pattern](0001-balance-adapter-factory-pattern.md) | accepted |
-| 0002 | [Aave V3 Safety Module: multi-token consolidation](0002-aave-safety-module-multi-token.md) | accepted |
+| 0002 | [Aave V3 Safety Module: multi-token consolidation](0002-aave-safety-module-multi-token.md) | superseded by 0005 |
 | 0003 | [Integration-test snapshot workflow + Debank cross-check](0003-integration-test-snapshot-workflow.md) | accepted |
 | 0004 | [Morpho Blue: project pending interest into NAV (vs use stored values)](0004-morpho-projected-vs-stored-balances.md) | accepted |
+| 0005 | [Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md) | accepted |

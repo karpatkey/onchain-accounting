@@ -144,10 +144,9 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function setupBalanceOracle() internal override {
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
 
-        AaveV3SafetyModuleBalanceOracle stkGhoOracle =
-            new AaveV3SafetyModuleBalanceOracle(stkGho, "Aave v3", "Safety Module", address(nav));
-        AaveV3SafetyModuleBalanceOracle stkAaveOracle =
-            new AaveV3SafetyModuleBalanceOracle(stkAave, "Aave v3", "Safety Module", address(nav));
+        // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav, protocol).
+        AaveV3SafetyModuleBalanceOracle smOracle =
+            new AaveV3SafetyModuleBalanceOracle(address(nav), "Aave V3 Safety Module");
 
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));
@@ -158,8 +157,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         daiDsr = new DaiDsrBalanceOracle(dai, dsr, "Maker", "DSR", address(nav));
 
         nav.addBalanceOracle(address(aaveOracle));
-        nav.addBalanceOracle(address(stkGhoOracle));
-        nav.addBalanceOracle(address(stkAaveOracle));
+        nav.addBalanceOracle(address(smOracle));
         nav.addBalanceOracle(address(compoundV3Comet));
         nav.addBalanceOracle(address(morphoBlueOracle));
         nav.addBalanceOracle(address(daiDsr));

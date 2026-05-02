@@ -428,7 +428,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "Convex_")) {
             return _deployConvex(name, navAddr);
         }
-        if (_startsWith(name, "AaveV3SafetyModule_")) {
+        if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
         }
         if (_startsWith(name, "BalancerV3_")) {
@@ -509,12 +509,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        address stakeToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "stakeToken"));
+        // Set of stake tokens is hardcoded in AaveV3SafetyModuleBalanceOracle. Constructor only needs (nav, protocol).
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new AaveV3SafetyModuleBalanceOracle(stakeToken, protocol, positionDetail, navAddr));
+        return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol));
     }
 
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
@@ -548,7 +545,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "AaveV3_Optimism";
         names[i++] = "AaveV3_Gnosis";
         names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule_stkGHO";
+        names[i++] = "AaveV3SafetyModule";
         names[i++] = "Cap";
         names[i++] = "MorphoVault_kpkETHPrime_V1";
         names[i++] = "MorphoVault_kpkETHPrime_V2";

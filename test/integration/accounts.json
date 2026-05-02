@@ -2,36 +2,67 @@
   "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only — see docs/howto/refresh-integration-test-blocks.md.",
   "tolerance": 0.01,
   "$tolerance_comment": "Max relative drift allowed between forge-computed NAV and Debank's USD total at bump time. 0.01 = 1%.",
+  "$supportedDebankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped ∈ list). Stored as the short id (no chain prefix) — Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
   "chains": {
     "1": {
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 24987608
+      "forkBlock": 24987608,
+      "supportedDebankProtocols": [
+        "aave3",
+        "aura",
+        "balancer3",
+        "capapp",
+        "convex",
+        "curve",
+        "gearbox",
+        "morphoblue",
+        "sky",
+        "spark"
+      ]
     },
     "10": {
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 150944800
+      "forkBlock": 150944800,
+      "supportedDebankProtocols": [
+        "aave3"
+      ]
     },
     "100": {
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 45922000
+      "forkBlock": 45922000,
+      "supportedDebankProtocols": [
+        "aave3"
+      ]
     },
     "8453": {
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45349500
+      "forkBlock": 45349500,
+      "supportedDebankProtocols": [
+        "aave3",
+        "aura",
+        "balancer3",
+        "morphoblue"
+      ]
     },
     "42161": {
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 457665000
+      "forkBlock": 457665000,
+      "supportedDebankProtocols": [
+        "aave3",
+        "aura",
+        "balancer3",
+        "morphoblue"
+      ]
     }
   },
   "accounts": [

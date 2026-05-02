@@ -406,37 +406,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Schema (chains/<id>.json):
         //   "AaveV3SafetyModule": {
         //     "enabled": true,
-        //     "constructor": {
-        //       "protocol": "Aave V3 Safety Module",
-        //       "admin": "0x…safeMultisig",
-        //       "stakeTokenAddresses": ["0x…stkGHO", "0x…stkAAVE"],
-        //       "stakeTokenDetails":   ["stkGHO",   "stkAAVE"]
-        //     }
+        //     "constructor": { "protocol": "Aave V3 Safety Module" }
         //   }
+        // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceOracle).
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        address admin =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "admin"));
-
-        string memory root = vm.projectRoot();
-        string memory path =
-            string(abi.encodePacked(root, "/script/config/chains/", vm.toString(currentChainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        address[] memory addrs =
-            vm.parseJsonAddressArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenAddresses");
-        string[] memory details =
-            vm.parseJsonStringArray(json, ".balanceAdapters.AaveV3SafetyModule.constructor.stakeTokenDetails");
-        require(addrs.length == details.length, "stakeTokenAddresses/Details length mismatch");
-
-        AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
-            new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](addrs.length);
-        for (uint256 i; i < addrs.length; ++i) {
-            init[i] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: addrs[i], positionDetail: details[i]});
-        }
-
-        AaveV3SafetyModuleBalanceOracle adapter =
-            new AaveV3SafetyModuleBalanceOracle(init, admin, navCalculator, protocol);
+        AaveV3SafetyModuleBalanceOracle adapter = new AaveV3SafetyModuleBalanceOracle(navCalculator, protocol);
         return address(adapter);
     }
 

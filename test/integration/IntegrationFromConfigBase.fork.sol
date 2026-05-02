@@ -509,27 +509,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
+        // Set of stake tokens is hardcoded in AaveV3SafetyModuleBalanceOracle. Constructor only needs (nav, protocol).
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        address admin = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "admin"));
-
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(_chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        address[] memory addrs = vm.parseJsonAddressArray(
-            json, string(abi.encodePacked(".balanceAdapters.", name, ".constructor.stakeTokenAddresses"))
-        );
-        string[] memory details = vm.parseJsonStringArray(
-            json, string(abi.encodePacked(".balanceAdapters.", name, ".constructor.stakeTokenDetails"))
-        );
-        require(addrs.length == details.length, "stakeTokenAddresses/Details length mismatch");
-
-        AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory init =
-            new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](addrs.length);
-        for (uint256 i; i < addrs.length; ++i) {
-            init[i] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: addrs[i], positionDetail: details[i]});
-        }
-        return address(new AaveV3SafetyModuleBalanceOracle(init, admin, navAddr, protocol));
+        return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol));
     }
 
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {

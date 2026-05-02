@@ -144,12 +144,9 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function setupBalanceOracle() internal override {
         aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
 
-        AaveV3SafetyModuleBalanceOracle.StakeTokenInit[] memory smInit =
-            new AaveV3SafetyModuleBalanceOracle.StakeTokenInit[](2);
-        smInit[0] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: stkGho, positionDetail: "stkGHO"});
-        smInit[1] = AaveV3SafetyModuleBalanceOracle.StakeTokenInit({stakeToken: stkAave, positionDetail: "stkAAVE"});
+        // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav, protocol).
         AaveV3SafetyModuleBalanceOracle smOracle =
-            new AaveV3SafetyModuleBalanceOracle(smInit, address(this), address(nav), "Aave V3 Safety Module");
+            new AaveV3SafetyModuleBalanceOracle(address(nav), "Aave V3 Safety Module");
 
         compoundV3Comet =
             new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));

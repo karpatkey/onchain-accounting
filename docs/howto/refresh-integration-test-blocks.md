@@ -25,8 +25,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    → deploys NAV stack at the new fork, reads NAV per enabled        │
 │    account, emits SNAPSHOT|... lines that are applied via jq         │
 ├──────────────────────────────────────────────────────────────────────┤
-│ 3. (optional) curl Debank /v1/user/chain_balance per (chain×account) │
-│    → writes debankUsd into JSON                                      │
+│ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
+│    /v1/user/token_list (1× per chain×account), filtered to NAV's     │
+│    supported protocols + registered assets → debankUsd into JSON     │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 4. tolerance check + diff report                                     │
 └──────────────────────────────────────────────────────────────────────┘
@@ -35,6 +36,21 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 
 Tests stay deterministic: they assert against the snapshotted exact NAV in `accounts.json`. The Debank cross-check happens **at bump time only**, so test runs do not depend on Debank availability.
+
+### Why step 3 filters Debank's response
+
+Most test accounts hold positions outside what NAV currently supports — sitting in protocols (Pendle, Yearn, Lido staked positions, random LRTs) for which we haven't shipped a balance adapter, or in tokens that aren't registered as assets. An *unfiltered* Debank total — what `/v1/user/chain_balance` returns — would always exceed NAV by the value of those out-of-scope positions, making the tolerance check meaningless.
+
+The script instead reconstructs a Debank-side total that's restricted to NAV's coverage. Two buckets are summed:
+
+1. **Allowlisted protocols (full value).** `chains.<chainId>.supportedDebankProtocols` in `accounts.json` is the per-chain allowlist of Debank protocol ids that NAV has a dedicated balance adapter for (e.g. `aave3`, `morphoblue`, `balancer3`, `aura`). NAV's adapter handles the position math (debt netting, projected interest, reward accrual, etc.), so for these protocols we trust Debank's pre-aggregated `portfolio_item_list[].stats.net_usd_value` and sum it in full. Debank uses the bare id on Mainnet (`aave3`) and a chain prefix elsewhere (`arb_aave3`); the script accepts both.
+2. **Wallet tokens.** `/v1/user/token_list` entries whose `id` (lowercased token address) is in `assets.json` `.tokens.<chainId>`. This is the simple wallet ERC20 path: USDC, USDT, GHO, BAL, **stETH**, **rsETH**, etc. all flow through here when held — Debank's `token_list[].amount` is empirically the same value as on-chain `IERC20.balanceOf(account)` for every NAV-registered token verified, even those Debank also surfaces under a protocol entry (a 157,065 stETH whale shows up in `token_list` with the full balance). Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
+
+> **Why we don't walk protocol `asset_token_list` for non-allowlisted protocols.** A natural-looking third bucket — "for any non-allowlisted protocol entry, sum its `asset_token_list[]` filtered to NAV-registered tokens" — *over-counts*. Empirically, the per-protocol `asset_token_list` is synthetic: Kelp DAO reports underlying ETH equivalent (id `eth`, ~$700 worth) of an rsETH position whose actual ERC20 balance shows up correctly in `token_list` (id `0xa129…`); Ethena reports an aggregated USDe count larger than `balanceOf(USDe)`; Lido reports pending rewards that never enter `balanceOf`. Walking these would either double-count Bucket 2 or count value NAV's default oracle never sees. The wallet `token_list` is the only reliable wallet-side source — if a NAV-registered token is on-chain, it's there with the right amount.
+
+**When you add a new balance adapter**, ask whether Debank covers the same protocol. If yes, add the Debank short id to `supportedDebankProtocols` for the relevant chains. If no, add nothing and accept that NAV will exceed filtered-Debank by exactly the value of that adapter's positions for the test accounts (which is usually fine — the drift will be visible in the report). To find a Debank protocol id, browse [debank.com/protocols](https://debank.com/protocols) or grep one of your test accounts' `/v1/user/all_complex_protocol_list` response.
+
+**When you add a new asset** to `script/config/assets.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up new entries via the chain's tokens map.
 
 ---
 
@@ -125,17 +141,20 @@ Then run the bump script. It will populate `navUsd8dp` (and, if Debank is config
 
 To **remove** an account: delete the object. To **disable on a chain**: drop the chainId from `enabledChains`. The integration tests will skip whatever isn't enabled.
 
+> Accounts that hold positions outside NAV's coverage are now valid test cases — the filtered Debank comparison only counts protocols + assets NAV supports. Picking an account with a Pendle / Yearn / Lido position alongside its NAV-covered positions just means those balances are excluded from the reference total; they don't poison the tolerance check.
+
 ---
 
 ## Tolerance failures — how to triage
 
 The script's exit-code 2 means at least one (chain × account) had `|navUsd − debankUsd| / debankUsd > tolerance` (default 1%). Common causes, in order of frequency:
 
-1. **Block-time drift between fork and Debank "now."** Debank's `/v1/user/chain_balance` returns a current snapshot, while our forge run forks at the bumped block (which is a few minutes old). Spot prices for volatile assets (LSTs, LRTs, sometimes stables in stress) can move enough to exceed 1% over that window. Re-run the script; if it stabilises, this was the cause.
+1. **Block-time drift between fork and Debank "now."** Debank's protocol/token endpoints return a current snapshot, while our forge run forks at the bumped block (which is a few minutes old). Spot prices for volatile assets (LSTs, LRTs, sometimes stables in stress) can move enough to exceed 1% over that window. Re-run the script; if it stabilises, this was the cause.
 2. **Stale Debank cache for the protocol.** Debank's protocol valuations are refreshed asynchronously; their docs note up-to-12-hour worst case. If the affected position is in a freshly-onboarded protocol or one Debank has poor coverage of, expect drift here.
 3. **Oracle vs market-rate disagreement.** Our NAV uses Chainlink + protocol on-chain rates; Debank uses Coingecko-ish market prices. For peg-deviating assets (USDe, sUSDe under stress) these can diverge meaningfully.
 4. **Morpho Blue projected vs stored balances** (a structural disagreement, *not* a bug). Our `MorphoMarketBalanceOracle` reports projected balances via Morpho's `expectedMarketBalances` library — it folds in IRM-implied accrual since `lastUpdate`. Debank reads the stored `market(id)` values. For any Morpho Blue position in a market that hasn't been touched in a while *and* is at high utilization, our NAV will exceed Debank by the projected delta. This is intentional and documented in [`../decisions/0004-morpho-projected-vs-stored-balances.md`](../decisions/0004-morpho-projected-vs-stored-balances.md). Concrete case: a small USDC supply in `wstUSR/USDC` (24 days stale, 100% util) inflated by ~53% from stored to projected — accounted for nearly all of ACCOUNT_1's intrinsic ~3% Mainnet drift seen on the first cron run. If you see persistent drift on an account that holds Morpho positions, check whether the affected market's `lastUpdate` is far from `block.timestamp` and whether `totalBorrowAssets` is close to `totalSupplyAssets` — that's the signature.
-5. **A real adapter bug.** If 1–4 don't apply and the drift is large or persistent, the adapter is computing the wrong amount or sign. Open the per-protocol fork test for that adapter and compare.
+5. **A new protocol on Debank's side that we haven't allowlisted.** If you added a balance adapter but forgot to add the Debank protocol id to `chains.<chainId>.supportedDebankProtocols`, NAV picks up the position and Debank doesn't — drift in NAV's favour. Inverse: if Debank has split or renamed a protocol id (e.g. an Aave Safety Module entry that used to live under `aave3` now appearing as `aavesm` or similar), the allowlist may need an addition even with no adapter change. Inspect the unfiltered `/v1/user/all_complex_protocol_list` response for the affected account to see what id Debank is now using.
+6. **A real adapter bug.** If 1–5 don't apply and the drift is large or persistent, the adapter is computing the wrong amount or sign. Open the per-protocol fork test for that adapter and compare.
 
 To raise tolerance, edit the top-level `"tolerance"` field in `accounts.json` (and document why in the PR description).
 
@@ -147,7 +166,7 @@ When the script starts, it calls `/v1/account/units` and logs the units balance.
 
 The script re-probes `/v1/account/units` at the end of the run so the report shows units consumed (not the starting balance). All Debank `curl` calls are bounded with `--max-time 30 --retry 2 --retry-delay 5 --retry-connrefused` so a slow Debank can never hang the workflow indefinitely.
 
-If your tier is too low to cover a full run (~1 unit per `/v1/user/chain_balance` call × 5 chains × N accounts, plus 2 units for the start/end units probes), use `DEBANK_API_KEY=` to skip Debank entirely and rely on the snapshotted NAVs alone. Snapshots are still valid for deterministic test asserts; they just lose their independent reference.
+If your tier is too low to cover a full run, use `DEBANK_API_KEY=` to skip Debank entirely and rely on the snapshotted NAVs alone. Snapshots are still valid for deterministic test asserts; they just lose their independent reference. Per-account unit cost: 1 × `/v1/user/all_complex_protocol_list` (covers every chain in one call, units vary with portfolio size — typically 5–15) plus 1 × `/v1/user/token_list` per enabled chain (~1 unit each), plus 2 for the start/end probes.
 
 Reference: [Debank Cloud — User endpoints](https://docs.cloud.debank.com/en/readme/api-pro-reference/user). Pricing/units docs: [Units Usage](https://docs.cloud.debank.com/en/readme/auxiliary-feature/units).
 

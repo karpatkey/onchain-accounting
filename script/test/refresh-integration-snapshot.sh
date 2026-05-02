@@ -8,9 +8,20 @@
 #      new block, replays the deploy pipeline, reads NAV per enabled account, and prints
 #      SNAPSHOT lines. Each chain's stdout is captured to its own log; once all chains
 #      finish, the script parses SNAPSHOT lines and writes navUsd8dp into accounts.json.
-#   3. (Optional) If `DEBANK_API_KEY` is set: for each (chain × account) call Debank's
-#      /v1/user/chain_balance, write `debankUsd` into accounts.json. Logs the API key tier
-#      and remaining units at the start; degrades gracefully if missing/expired/out of units.
+#   3. (Optional) If `DEBANK_API_KEY` is set: per account, fetch /v1/user/all_complex_protocol_list
+#      ONCE (covers all chains), and per (chain × account) fetch /v1/user/token_list. Sum
+#      two buckets into expected.<chainId>.debankUsd:
+#        (a) full net_usd_value of every protocol in chains[chainId].supportedDebankProtocols
+#            — NAV has its own balance adapter for each, so its accounting (debt netting,
+#            interest, rewards) is the apples-to-apples reference;
+#        (b) wallet token_list filtered to NAV-registered assets in script/config/assets.json
+#            (`.tokens.<chainId>`), plus the native sentinel via the chain id when registered.
+#            This mirrors `IERC20.balanceOf(account)` exactly and so is what NAV's default
+#            ERC20 oracle reads (USDC, USDT, GHO, stETH, rsETH, native ETH, …).
+#      The filter is what makes the comparison apples-to-apples: many accounts hold positions
+#      outside NAV's coverage; an unfiltered Debank total would always exceed NAV. Logs the
+#      API key tier and remaining units at the start; degrades gracefully if missing/expired/
+#      out of units.
 #   4. Tolerance check: for every (chain × account) with both navUsd8dp and debankUsd,
 #      assert |nav/1e8 - debank| / debank ≤ tolerance. Print a markdown report.
 #
@@ -28,6 +39,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
 ACCOUNTS_JSON="test/integration/accounts.json"
+ASSETS_JSON="script/config/assets.json"
 REPORT_MD="${REPORT_MD:-refresh-report.md}"
 
 # ─── Prereqs ──────────────────────────────────────────────────────────────────
@@ -42,6 +54,10 @@ if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 
 if [[ ! -f "$ACCOUNTS_JSON" ]]; then
   echo "missing $ACCOUNTS_JSON" >&2
+  exit 1
+fi
+if [[ ! -f "$ASSETS_JSON" ]]; then
+  echo "missing $ASSETS_JSON" >&2
   exit 1
 fi
 
@@ -254,30 +270,109 @@ if (( ${#failed_chains[@]} > 0 )); then
 fi
 
 # ─── 3. Refresh Debank reference per (chain × account) ─────────────────────────
+# Filtered comparison: sum only the Debank protocols whose ids appear in the chain's
+# `supportedDebankProtocols` allowlist, plus only the wallet tokens whose addresses are
+# registered as NAV assets in `script/config/assets.json`. This is what makes drift
+# meaningful — without filtering, any account holding a position outside NAV's coverage
+# would always show NAV < Debank.
+#
+# One /v1/user/all_complex_protocol_list call per account covers every chain (Debank
+# returns all chains in the response and we slice by `.chain == debankChainId`).
+# /v1/user/token_list is fetched once per (chain × account) since it is chain-scoped.
 echo
 if [[ "$debank_active" == "true" ]]; then
-  echo "=== 3. Refreshing Debank references ==="
+  echo "=== 3. Refreshing Debank references (filtered) ==="
   account_count=$(jq '.accounts | length' "$ACCOUNTS_JSON")
-  for chain_id in $chain_ids; do
-    debank_chain=$(jq -r ".chains.\"$chain_id\".debankChainId" "$ACCOUNTS_JSON")
-    for ((i=0; i<account_count; i++)); do
+
+  # Cache complex_protocol_list per account address — one Debank call covers all chains.
+  proto_dir=$(mktemp -d)
+  trap 'rm -rf "$block_dir" "$forge_dir" "$proto_dir"' EXIT
+
+  for ((i=0; i<account_count; i++)); do
+    addr=$(jq -r ".accounts[$i].address" "$ACCOUNTS_JSON")
+    label=$(jq -r ".accounts[$i].label" "$ACCOUNTS_JSON")
+
+    proto_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/all_complex_protocol_list?id=${addr}")
+    if [[ -z "$proto_resp" ]]; then
+      echo "  [warn] $label: complex_protocol_list request failed; protocol totals will be 0"
+      proto_resp="[]"
+    fi
+    echo "$proto_resp" > "$proto_dir/$i.json"
+
+    for chain_id in $chain_ids; do
       enabled=$(jq -r ".accounts[$i].enabledChains | index($chain_id)" "$ACCOUNTS_JSON")
       [[ "$enabled" == "null" ]] && continue
-      addr=$(jq -r ".accounts[$i].address" "$ACCOUNTS_JSON")
-      label=$(jq -r ".accounts[$i].label" "$ACCOUNTS_JSON")
 
-      response=$(debank_curl "https://pro-openapi.debank.com/v1/user/chain_balance?id=${addr}&chain_id=${debank_chain}")
-      if [[ -z "$response" ]]; then
-        echo "  [warn] $label chain $chain_id: Debank request failed; skipping"
-        continue
+      debank_chain=$(jq -r ".chains.\"$chain_id\".debankChainId" "$ACCOUNTS_JSON")
+      supported_protos=$(jq -c ".chains.\"$chain_id\".supportedDebankProtocols // []" "$ACCOUNTS_JSON")
+
+      # Build NAV-registered asset address allowlist for this chain (lowercased).
+      asset_allowlist=$(jq -c \
+        --arg c "$chain_id" \
+        '[(.tokens[$c] // {}) | to_entries[] | .value.address | ascii_downcase]' \
+        "$ASSETS_JSON")
+
+      # Sum 1 — protocols in supportedDebankProtocols: full net_usd_value of every
+      # portfolio_item_list entry. NAV has its own balance adapter for each, so its
+      # accounting (debt netting, interest accrual, etc.) is the apples-to-apples reference.
+      # Debank returns short ids on mainnet (`aave3`) and `<chain>_<short>` elsewhere
+      # (`arb_aave3`); accept either. Bind .id to $pid before the comparison —
+      # `index(.id)` would re-resolve `.id` against $allowed.
+      proto_sum=$(jq -r \
+        --arg dc "$debank_chain" \
+        --argjson allowed "$supported_protos" \
+        '
+          [
+            .[]
+            | select(.chain == $dc)
+            | .id as $pid
+            | select(
+                ($allowed | index($pid)) != null
+                or ($allowed | map($dc + "_" + .) | index($pid)) != null
+              )
+            | (.portfolio_item_list // [])[]
+            | .stats.net_usd_value // 0
+          ] | add // 0
+        ' "$proto_dir/$i.json")
+
+      # Sum 2 — wallet token_list, the canonical mirror of `IERC20.balanceOf(account)`
+      # for every NAV-registered asset. Empirically (verified against on-chain calls
+      # for stETH, rsETH, USDe holders), Debank's token_list `amount` matches `balanceOf`
+      # exactly — including for tokens that *also* appear in a protocol entry. This means
+      # walking protocol asset_token_list[] for non-allowlisted protocols is unsafe: the
+      # numbers there are synthetic (Kelp shows underlying ETH equivalent of rsETH; Ethena
+      # shows an aggregated USDe count > the wallet `balanceOf`; Lido shows pending rewards
+      # not in `balanceOf`) and would either double-count Sum 1/Sum 2 or count value NAV
+      # never sees. So we trust wallet token_list as the only wallet-side source.
+      #
+      # Native token id from Debank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
+      # is accepted iff NAV registers the ERC-7528 native sentinel (0xEee…eEeE) for this
+      # chain — `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for it.
+      tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}")
+      if [[ -z "$tok_resp" ]]; then
+        echo "  [warn] $label chain $chain_id: token_list request failed; using protocol total only"
+        tok_resp="[]"
       fi
-      usd=$(echo "$response" | jq -r '.usd_value // empty')
-      if [[ -z "$usd" ]]; then
-        echo "  [warn] $label chain $chain_id: no usd_value in response: $response"
-        continue
-      fi
-      jq_inplace ".accounts[$i].expected.\"$chain_id\".debankUsd = \"$usd\""
-      printf "  %s chain %s: %s\n" "$label" "$chain_id" "$usd"
+      tok_sum=$(jq -r \
+        --arg dc "$debank_chain" \
+        --argjson allowed "$asset_allowlist" \
+        '
+          ($allowed | index("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")) as $native_ok
+          | [.[]
+             | (.id // "") as $tid
+             | select($tid != "")
+             | select(
+                 ($allowed | index($tid | ascii_downcase)) != null
+                 or ($native_ok != null and $tid == $dc)
+               )
+             | (.amount // 0) * (.price // 0)]
+          | add // 0
+        ' <<<"$tok_resp")
+
+      total=$(awk "BEGIN { printf \"%.6f\", $proto_sum + $tok_sum }")
+      jq_inplace ".accounts[$i].expected.\"$chain_id\".debankUsd = \"$total\""
+      printf "  %s chain %s: protocols=%.4f tokens=%.4f total=%s\n" \
+        "$label" "$chain_id" "$proto_sum" "$tok_sum" "$total"
     done
   done
 else
@@ -341,7 +436,10 @@ for ((i=0; i<account_count; i++)); do
 
     nav_usd=$(awk "BEGIN { printf \"%.6f\", $nav8dp / 100000000 }")
     drift_str="-"
-    if [[ -n "$debank" && "$debank" != "0" && "$debank" != "0.0" ]]; then
+    # Numeric zero check: step 3 writes "0.000000" via printf for empty chains, which
+    # the old string compare against "0"/"0.0" missed → division by 0. Use awk to test
+    # numerically and skip drift entirely for any debankUsd that parses to 0.
+    if [[ -n "$debank" ]] && awk "BEGIN { exit !($debank > 0) }"; then
       drift=$(awk "BEGIN { d = $nav_usd - $debank; if (d<0) d=-d; printf \"%.4f\", d / $debank }")
       drift_str="${drift}"
       if awk "BEGIN { exit !($drift > $tolerance) }"; then

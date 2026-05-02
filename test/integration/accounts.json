@@ -10,6 +10,7 @@
       "debankChainId": "eth",
       "forkBlock": 24987608,
       "supportedDebankProtocols": [
+        "aave2",
         "aave3",
         "aura",
         "balancer3",

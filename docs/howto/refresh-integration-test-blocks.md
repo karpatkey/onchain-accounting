@@ -50,6 +50,8 @@ The script instead reconstructs a Debank-side total that's restricted to NAV's c
 
 **When you add a new balance adapter**, ask whether Debank covers the same protocol. If yes, add the Debank short id to `supportedDebankProtocols` for the relevant chains. If no, add nothing and accept that NAV will exceed filtered-Debank by exactly the value of that adapter's positions for the test accounts (which is usually fine — the drift will be visible in the report). To find a Debank protocol id, browse [debank.com/protocols](https://debank.com/protocols) or grep one of your test accounts' `/v1/user/all_complex_protocol_list` response.
 
+> **When Debank classifies one of NAV's positions under a *different* protocol than expected**, allowlist the Debank id even if no dedicated NAV adapter exists for it yet. Concrete case: the Aave V3 Safety Module adapter (`AaveV3SafetyModuleBalanceOracle`) reads stkAAVE / stkABPT positions whose underlying AAVE rewards Debank surfaces under `aave2` (the legacy Aave V2 protocol id) — *not* `aave3`. So `aave2` is in the Mainnet allowlist purely so the cross-check matches the SM adapter's contribution; it does not imply NAV has an Aave V2 lending-position adapter (we may add one later).
+
 **When you add a new asset** to `script/config/assets.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up new entries via the chain's tokens map.
 
 ---

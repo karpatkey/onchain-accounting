@@ -96,7 +96,17 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         return "";
     }
 
-    /// @notice Internal helper to calculate balance for a specific asset
+    /// @notice Internal helper to calculate balance for a specific asset.
+    /// @dev Uses Morpho's `expectedMarketBalances` (projected) rather than `market(id)` (stored).
+    ///      That folds IRM-implied interest accrued since `lastUpdate` into both
+    ///      `totalSupplyAssets` and `totalBorrowAssets`, so the user's share fraction
+    ///      maps to the same number of assets they would receive on next interaction.
+    ///      This is the same convention Morpho's UI uses, but it diverges from indexers
+    ///      (e.g. Debank) that report stored values: for markets that haven't been touched
+    ///      in a long time at high utilization, our NAV will exceed indexer-based readings
+    ///      by the projected delta. This is intentional and tracked in
+    ///      `docs/decisions/0004-morpho-projected-vs-stored-balances.md` — read that ADR
+    ///      before changing the call.
     /// @param underlyingAsset The asset address
     /// @param account The account address
     /// @return amount Balance magnitude (non-negative)

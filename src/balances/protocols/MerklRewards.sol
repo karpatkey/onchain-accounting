@@ -17,7 +17,7 @@ import "src/errors.sol";
 ///         submission is verified against the live Distributor merkle root, so even the cache's owner cannot
 ///         fabricate amounts. The owner is trusted only to keep the cache fresh; failure to do so makes NAV
 ///         under-count rewards but never over-count.
-/// @dev Trust model and mutability rationale: see `docs/decisions/0006-merkl-trust-minimized-cache.md`.
+/// @dev Trust model and mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
 contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     //
     // Type Definitions

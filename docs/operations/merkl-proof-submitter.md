@@ -1,6 +1,6 @@
 # Merkl proof-submitter bot — operator's guide
 
-The `MerklRewardsBalanceOracle` adapter (`src/balances/protocols/MerklRewards.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0006-merkl-trust-minimized-cache.md`](../decisions/0006-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+The `MerklRewardsBalanceOracle` adapter (`src/balances/protocols/MerklRewards.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
 This document specifies what the bot must do, how often, with what inputs and what failure modes. It does **not** specify the language, framework, or deployment topology — those are operator choices. The bot lives outside this repo; this file is the contract between the on-chain adapter and whatever ops process keeps it fed.
 
@@ -152,7 +152,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 ## Reference
 
 - Adapter source: [`src/balances/protocols/MerklRewards.sol`](../../src/balances/protocols/MerklRewards.sol)
-- Trust-model ADR: [`docs/decisions/0006-merkl-trust-minimized-cache.md`](../decisions/0006-merkl-trust-minimized-cache.md)
+- Trust-model ADR: [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md)
 - Merkl Distributor source: <https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol>
 - Merkl API: <https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}>
 - Canonical Distributor address (every supported chain): `0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae`

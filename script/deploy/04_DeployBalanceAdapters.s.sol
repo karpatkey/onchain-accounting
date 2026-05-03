@@ -18,6 +18,7 @@ import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
@@ -55,6 +56,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Aave V3 Safety Module (Mainnet only; single multi-token adapter, see ADR 0002) ---
         _deployIfEnabled("AaveV3SafetyModule");
+
+        // --- Aave Umbrella (Mainnet only; multi-token adapter mirroring the SM design, see ADR 0006) ---
+        _deployIfEnabled("AaveUmbrella");
 
         // --- Cap Finance (Mainnet only) ---
         _deployIfEnabled("Cap");
@@ -228,6 +232,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // AaveV3 Safety Module: a single multi-token adapter per chain (ADR 0002).
         if (_equals(adapterName, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(adapterName, navCalculator);
+        }
+
+        // Aave Umbrella: a single multi-token adapter per chain (ADR 0006).
+        if (_equals(adapterName, "AaveUmbrella")) {
+            return _deployAaveUmbrella(adapterName, navCalculator);
         }
 
         // Balancer V3 adapters
@@ -421,6 +430,26 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         AaveV3SafetyModuleBalanceOracle adapter = new AaveV3SafetyModuleBalanceOracle(navCalculator, protocol);
+        return address(adapter);
+    }
+
+    function _deployAaveUmbrella(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "AaveUmbrella": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
+        //       "protocol": "Aave Umbrella"
+        //     }
+        //   }
+        // The Umbrella stake-token set is discovered at runtime from the RewardsController address
+        // above via `getAllAssets()`. See ADR 0006 for the dynamic-discovery rationale.
+        address rewardsController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(rewardsController, navCalculator, protocol);
         return address(adapter);
     }
 

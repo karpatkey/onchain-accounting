@@ -11,16 +11,20 @@ import "src/errors.sol";
 /// @title Fluid Vault Balance Oracle (T1)
 /// @author kpk
 /// @notice Reports an account's collateral and debt balances for a single Fluid T1 vault.
-///         Smart vaults (multi-collateral or multi-debt, T2/T3/T4) are explicitly out of scope —
-///         the constructor reverts when the vault's `supplyToken.token1` or `borrowToken.token1`
-///         is non-zero, which is Fluid's marker for a Dex-backed (smart) leg.
-/// @dev    Positions in Fluid are tracked as ERC721 NFTs minted by the VaultFactory. To enumerate
-///         an account's positions across vaults, we call
+///         Smart vaults (T2/T3/T4, Dex-backed legs) use a different vault contract whose
+///         `constantsView()` has a different shape — they are out of scope for this adapter and
+///         must not be wired in config. The constructor's `IFluidVaultT1.constantsView()` decode
+///         requires the deployed implementation to expose `supplyToken` / `borrowToken` as plain
+///         `address` fields (the T1 layout); a Smart-vault address would surface implementation
+///         contracts in those slots, which we guard against best-effort by requiring both tokens
+///         to be non-zero contract addresses.
+/// @dev    Positions in Fluid are tracked as ERC721 NFTs minted by the VaultFactory. To
+///         enumerate an account's positions across vaults, we call
 ///         `IFluidVaultResolver.positionsNftIdOfUser(account)` for the list of NFT IDs, then for
 ///         each NFT call `positionByNftId(nftId)` via low-level staticcall and decode JUST the
 ///         `UserPosition` prefix (12 statically-laid-out 32-byte words). The trailing
-///         `VaultEntireData` payload is ignored — it varies in shape across resolver versions and
-///         we don't need it.
+///         `VaultEntireData` payload is ignored — it varies in shape across resolver versions
+///         and we don't need it.
 ///         FLUID/Merkl reward emissions are NOT included here (separate Merkl adapter).
 contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     //
@@ -144,7 +148,9 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     {
         if (account == address(0) || asset == address(0)) return (0, false);
         if (asset != COLLATERAL_TOKEN && asset != DEBT_TOKEN) return (0, false);
-        return _calculateBalance(account, asset);
+        (uint256 collateral, uint256 debt) = _aggregateUserPositions(account);
+        if (asset == COLLATERAL_TOKEN) return (collateral, false);
+        return (debt, true);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -154,33 +160,8 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         override
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
-        address[] memory supportedAssets = this.underlyingAssetsSupported();
-        uint256 assetCount = supportedAssets.length;
-
-        address[] memory tempAssets = new address[](assetCount);
-        uint256[] memory tempAmounts = new uint256[](assetCount);
-        bool[] memory tempIsDebt = new bool[](assetCount);
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < assetCount; i++) {
-            address asset = supportedAssets[i];
-            (uint256 amt, bool debt) = _calculateBalance(account, asset);
-            if (amt != 0) {
-                tempAssets[count] = asset;
-                tempAmounts[count] = amt;
-                tempIsDebt[count] = debt;
-                count++;
-            }
-        }
-
-        assets = new address[](count);
-        amounts = new uint256[](count);
-        isDebt = new bool[](count);
-        for (uint256 i = 0; i < count; i++) {
-            assets[i] = tempAssets[i];
-            amounts[i] = tempAmounts[i];
-            isDebt[i] = tempIsDebt[i];
-        }
+        (uint256 collateral, uint256 debt) = _aggregateUserPositions(account);
+        return _shapeBalances(collateral, debt);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -201,38 +182,28 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
 
         // Intersection: assets that are both supported by this vault and registered in NAVCalculator
         address[] memory eligible = ArrayLib.intersection(supportedAssets, registeredAssets);
+        if (eligible.length == 0) return _buildPositions(new AssetBalanceData[](0));
 
-        AssetBalanceData[] memory data;
-        if (eligible.length == 0) {
-            data = new AssetBalanceData[](0);
-        } else if (assetFilter != address(0)) {
-            data = new AssetBalanceData[](0);
-            for (uint256 i = 0; i < eligible.length; i++) {
-                if (eligible[i] == assetFilter) {
-                    (uint256 amt, bool debt) = _calculateBalance(account, assetFilter);
-                    if (amt != 0) {
-                        data = new AssetBalanceData[](1);
-                        data[0] = AssetBalanceData({asset: assetFilter, amount: amt, isDebt: debt});
-                    }
-                    break;
-                }
-            }
-        } else {
-            AssetBalanceData[] memory tempData = new AssetBalanceData[](eligible.length);
-            uint256 count = 0;
-            for (uint256 i = 0; i < eligible.length; i++) {
-                (uint256 amt, bool debt) = _calculateBalance(account, eligible[i]);
-                if (amt != 0) {
-                    tempData[count] = AssetBalanceData({asset: eligible[i], amount: amt, isDebt: debt});
-                    count++;
-                }
-            }
-            data = new AssetBalanceData[](count);
-            for (uint256 i = 0; i < count; i++) {
-                data[i] = tempData[i];
-            }
+        // One walk through the user's NFTs is enough to populate both legs.
+        (uint256 collateral, uint256 debt) = _aggregateUserPositions(account);
+
+        AssetBalanceData[] memory tempData = new AssetBalanceData[](eligible.length);
+        uint256 count = 0;
+        for (uint256 i = 0; i < eligible.length; i++) {
+            address asset = eligible[i];
+            if (assetFilter != address(0) && asset != assetFilter) continue;
+
+            (uint256 amt, bool debt_) = _legFor(asset, collateral, debt);
+            if (amt == 0) continue;
+
+            tempData[count] = AssetBalanceData({asset: asset, amount: amt, isDebt: debt_});
+            count++;
         }
 
+        AssetBalanceData[] memory data = new AssetBalanceData[](count);
+        for (uint256 i = 0; i < count; i++) {
+            data[i] = tempData[i];
+        }
         positions = _buildPositions(data);
     }
 
@@ -240,8 +211,7 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     // Internal Helpers
     //
 
-    /// @notice Computes the account's collateral or debt balance for THIS vault by enumerating
-    ///         the user's NFTs through the resolver and aggregating the matching ones.
+    /// @notice Walks the user's NFTs through the resolver ONCE and aggregates both legs.
     /// @dev    Steps:
     ///           1. Fetch the list of NFT IDs owned by the user via
     ///              `IFluidVaultResolver.positionsNftIdOfUser(account)`. Pure dynamic uint array,
@@ -254,14 +224,16 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     ///                - byte offset 288 → `supply` (uint256, in collateral-token decimals)
     ///                - byte offset 320 → `borrow` (uint256, in debt-token decimals)
     ///              The trailing `VaultEntireData` field is ignored.
-    function _calculateBalance(address account, address asset) internal view returns (uint256 amount, bool isDebt) {
-        if (account == address(0)) return (0, false);
-        if (asset != COLLATERAL_TOKEN && asset != DEBT_TOKEN) return (0, false);
-
-        bool wantDebt = (asset == DEBT_TOKEN) && (asset != COLLATERAL_TOKEN);
+    /// @return collateralTotal Total collateral magnitude (in collateral-token decimals).
+    /// @return debtTotal Total debt magnitude (in debt-token decimals).
+    function _aggregateUserPositions(address account)
+        internal
+        view
+        returns (uint256 collateralTotal, uint256 debtTotal)
+    {
+        if (account == address(0)) return (0, 0);
 
         uint256[] memory nftIds = IFluidVaultResolver(VAULT_RESOLVER).positionsNftIdOfUser(account);
-        uint256 total;
         for (uint256 i = 0; i < nftIds.length; i++) {
             uint256 nftId = nftIds[i];
             if (IFluidVaultResolver(VAULT_RESOLVER).vaultByNftId(nftId) != VAULT) continue;
@@ -272,9 +244,53 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
 
             (uint256 supply, uint256 borrow, bool isLiquidated) = _readUserPositionPrefix(ret);
             if (isLiquidated) continue;
-            total += wantDebt ? borrow : supply;
+            collateralTotal += supply;
+            debtTotal += borrow;
         }
-        return (total, wantDebt);
+    }
+
+    /// @notice Maps an asset to its (amount, isDebt) leg given the aggregated totals.
+    function _legFor(address asset, uint256 collateral, uint256 debt) internal view returns (uint256 amt, bool isDebt) {
+        // T1 vaults always have distinct collateral and debt tokens (we enforce non-zero in the
+        // constructor). The COLLATERAL_TOKEN == DEBT_TOKEN case is defensive only.
+        if (asset == COLLATERAL_TOKEN) return (collateral, false);
+        if (asset == DEBT_TOKEN) return (debt, true);
+        return (0, false);
+    }
+
+    /// @notice Builds the IBalanceOracleAdapter.getOracleBalances tuple from aggregated totals,
+    ///         skipping zero-amount entries.
+    function _shapeBalances(uint256 collateral, uint256 debt)
+        internal
+        view
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
+    {
+        address[] memory supportedAssets = this.underlyingAssetsSupported();
+        uint256 assetCount = supportedAssets.length;
+
+        address[] memory tempAssets = new address[](assetCount);
+        uint256[] memory tempAmounts = new uint256[](assetCount);
+        bool[] memory tempIsDebt = new bool[](assetCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            address asset = supportedAssets[i];
+            (uint256 amt, bool debt_) = _legFor(asset, collateral, debt);
+            if (amt == 0) continue;
+            tempAssets[count] = asset;
+            tempAmounts[count] = amt;
+            tempIsDebt[count] = debt_;
+            count++;
+        }
+
+        assets = new address[](count);
+        amounts = new uint256[](count);
+        isDebt = new bool[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+            isDebt[i] = tempIsDebt[i];
+        }
     }
 
     /// @notice Reads the static prefix of a `(UserPosition, VaultEntireData)` ABI-encoded return.

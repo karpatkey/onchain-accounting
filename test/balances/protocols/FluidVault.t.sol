@@ -27,9 +27,10 @@ contract MockFluidVaultT1 {
 }
 
 /// @notice Programmable mock of the Fluid VaultResolver. Stores per-user NFT lists and per-NFT
-///         (vault, supply, borrow, isLiquidated) tuples. `positionByNftId` is implemented to
-///         return a properly-encoded `UserPosition` (and a zero-padded VaultEntireData tail) so
-///         the adapter's low-level staticcall + memory read works in unit tests.
+///         (vault, supply, borrow, isLiquidated) tuples. `positionByNftId` returns just the
+///         `UserPosition` struct — the adapter only reads the static UserPosition prefix from the
+///         staticcall return, so omitting the trailing VaultEntireData payload is sufficient
+///         (the adapter's `ret.length >= 384` guard is satisfied by the 12 × 32 = 384 bytes).
 contract MockFluidVaultResolver {
     struct PosData {
         address vault;

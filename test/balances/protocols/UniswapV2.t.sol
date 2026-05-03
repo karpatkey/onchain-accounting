@@ -22,8 +22,9 @@ contract MockUniswapV2Factory {
 
 /// @notice Minimal Uniswap V2 factory mock that lacks `feeTo()` (used to test defensive fallback).
 contract MockUniswapV2FactoryNoFeeTo {
-// no feeTo() getter
-}
+    // no feeTo() getter
+
+    }
 
 /// @notice Minimal Uniswap V2 pair mock — settable reserves/supply/balances/kLast.
 contract MockUniswapV2Pair {
@@ -94,8 +95,7 @@ contract UniswapV2BalanceOracleTest is Test {
         token0 = new MockToken("TKN0");
         token1 = new MockToken("TKN1");
         mockPair = new MockUniswapV2Pair(address(token0), address(token1), address(mockFactory));
-        oracle =
-            new UniswapV2BalanceOracle(address(mockPair), "Uniswap V2", "TKN0/TKN1 LP", address(mockBalances));
+        oracle = new UniswapV2BalanceOracle(address(mockPair), "Uniswap V2", "TKN0/TKN1 LP", address(mockBalances));
     }
 
     // ============================================
@@ -298,11 +298,9 @@ contract UniswapV2BalanceOracleTest is Test {
     function test_getOracleBalanceForAsset_factoryWithoutFeeTo_treatsAsUnset() public {
         // V2 forks that omit the `feeTo()` getter must be treated as fee-disabled.
         MockUniswapV2FactoryNoFeeTo bareFactory = new MockUniswapV2FactoryNoFeeTo();
-        MockUniswapV2Pair pair2 =
-            new MockUniswapV2Pair(address(token0), address(token1), address(bareFactory));
-        UniswapV2BalanceOracle oracle2 = new UniswapV2BalanceOracle(
-            address(pair2), "Uniswap V2 Fork", "TKN0/TKN1 LP", address(mockBalances)
-        );
+        MockUniswapV2Pair pair2 = new MockUniswapV2Pair(address(token0), address(token1), address(bareFactory));
+        UniswapV2BalanceOracle oracle2 =
+            new UniswapV2BalanceOracle(address(pair2), "Uniswap V2 Fork", "TKN0/TKN1 LP", address(mockBalances));
         pair2.setBalance(alice, 100e18);
         pair2.setReserves(2000e18, 2000e18);
         pair2.setTotalSupply(1_000e18);

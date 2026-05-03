@@ -154,8 +154,7 @@ contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function test_getOraclePositions_assetFilter_restrictsResult() public {
         _deployOracle();
-        INAVCalculator.PositionBalance[] memory positions =
-            oracle.getOraclePositions(STETH_SUPPLY_USDC_BORROW, STETH);
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STETH_SUPPLY_USDC_BORROW, STETH);
         assertEq(positions.length, 1, "asset filter should yield a single asset's positions");
         assertEq(positions[0].underlyingAsset.asset, STETH, "filtered asset matches");
         assertFalse(positions[0].isDebt, "stETH leg is supply");

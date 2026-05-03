@@ -56,7 +56,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45519731,
+      "forkBlock": 45527149,
       "supportedDebankProtocols": [
         "aave3",
         "aura",

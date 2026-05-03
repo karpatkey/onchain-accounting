@@ -178,6 +178,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **SparkLend** | Spark lending positions. | |
 | **StakeWiseV3OsToken** | StakeWise V3 osToken. | |
 | **StakeWiseV3Vault** | StakeWise V3 vault. | |
+| **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. One adapter instance per pair; no rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
 
 Protocol adapters typically take a **NAVCalculator** (or equivalent) in the constructor to read the asset registry (and sometimes symbols/decimals) so they can build correct `Asset` and only report registered assets if desired.
 

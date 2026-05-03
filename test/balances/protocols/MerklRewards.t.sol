@@ -68,9 +68,8 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
         op = _createAndRegisterToken("OP", 18);
         morpho = _createAndRegisterToken("MORPHO", 18);
 
-        oracle = new MerklRewardsBalanceOracle(
-            address(distributor), address(balances), "Merkl", "Unclaimed Rewards", owner
-        );
+        oracle =
+            new MerklRewardsBalanceOracle(address(distributor), address(balances), "Merkl", "Unclaimed Rewards", owner);
     }
 
     // ============================================
@@ -252,9 +251,7 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
 
         bytes32[] memory emptyProof = new bytes32[](0);
         vm.expectEmit(true, true, false, true, address(oracle));
-        emit MerklRewardsBalanceOracle.AllocationCached(
-            alice, address(arb), 100 ether, leaf, uint64(block.timestamp)
-        );
+        emit MerklRewardsBalanceOracle.AllocationCached(alice, address(arb), 100 ether, leaf, uint64(block.timestamp));
         vm.prank(owner);
         oracle.submitProof(alice, address(arb), 100 ether, emptyProof);
     }

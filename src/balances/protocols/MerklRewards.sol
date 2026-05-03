@@ -68,11 +68,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     //
 
     event AllocationCached(
-        address indexed user,
-        address indexed token,
-        uint256 cumulativeAmount,
-        bytes32 root,
-        uint64 submittedAt
+        address indexed user, address indexed token, uint256 cumulativeAmount, bytes32 root, uint64 submittedAt
     );
     event AllocationCleared(address indexed user, address indexed token);
 
@@ -106,7 +102,9 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
         string memory positionDetail_,
         address initialOwner_
     ) Ownable(initialOwner_) {
-        if (distributor_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
+        if (distributor_ == address(0) || navCalculator_ == address(0)) {
+            revert InvalidArguments();
+        }
         require(distributor_.code.length > 0, "Distributor must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 

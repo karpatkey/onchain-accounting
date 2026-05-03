@@ -406,8 +406,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             // empty unless `merkl-proofs.json` has entries for this chain — see `_seedMerklProofs`.
             // This keeps the integration test exercising the Merkl wiring on every run, while
             // production deploys still honor the `enabled` flag.
-            if (!_equals(n, "MerklRewards")
-                && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) continue;
+            if (!_equals(n, "MerklRewards") && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
+                continue;
+            }
             address adapter = _deployBalanceAdapter(n);
             if (adapter == address(0)) {
                 console2.log("[balanceAdapter] SKIP (unknown type):", n);
@@ -563,8 +564,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        address adapter =
-            address(new MerklRewardsBalanceOracle(distributor, navAddr, protocol, positionDetail, admin));
+        address adapter = address(new MerklRewardsBalanceOracle(distributor, navAddr, protocol, positionDetail, admin));
         _merklOracle = adapter;
         return adapter;
     }

@@ -428,14 +428,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Schema (chains/<id>.json):
         //   "AaveUmbrella": {
         //     "enabled": true,
-        //     "constructor": { "protocol": "Aave Umbrella" }
+        //     "constructor": {
+        //       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
+        //       "protocol": "Aave Umbrella"
+        //     }
         //   }
-        // The full Umbrella stake-token set (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1),
-        // their waToken intermediates, the reward aTokens, and the RewardsController address are all
-        // hardcoded in src/balances/protocols/AaveUmbrella.sol (ADR 0006).
+        // The Umbrella stake-token set is discovered at runtime from the RewardsController address
+        // above via `getAllAssets()`. See ADR 0006 for the dynamic-discovery rationale.
+        address rewardsController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
+        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(navCalculator, protocol);
+        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(rewardsController, navCalculator, protocol);
         return address(adapter);
     }
 

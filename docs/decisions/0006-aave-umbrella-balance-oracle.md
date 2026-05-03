@@ -1,81 +1,78 @@
-# 0006 — Aave Umbrella Balance Oracle: hardcoded stake-token list, two-hop ERC4626
+# 0006 — Aave Umbrella Balance Oracle: dynamic discovery via RewardsController
 
 **Status:** accepted
 
 ## Context
 
-Aave Umbrella is the successor to the legacy Aave V3 Safety Module. It deploys a new contract architecture (`Umbrella` controller, per-asset `UmbrellaStakeToken` ERC4626 vaults, and a multi-reward `RewardsController`) that the existing `AaveV3SafetyModuleBalanceOracle` adapter does not see — that adapter only knows about the four legacy stake tokens (`stkAAVE`, `stkABPT`, `stkABPTv2`, `stkGHO @ 0x1a88…1d`). ADR 0005 anticipated this transition: *"A future Aave Umbrella migration (where `stkGHO` becomes `sGHO`, etc.) requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work goes in its own ADR."*
+Aave Umbrella is the successor to the legacy Aave V3 Safety Module. It deploys a new contract architecture (`Umbrella` controller, per-asset `UmbrellaStakeToken` ERC4626 vaults, and a multi-reward `RewardsController`) that the existing `AaveV3SafetyModuleBalanceOracle` adapter does not see — that adapter only knows about the four legacy stake tokens (`stkAAVE`, `stkABPT`, `stkABPTv2`, `stkGHO @ 0x1a88…1d`). ADR 0005 anticipated this transition: *"A future Aave Umbrella migration … requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work goes in its own ADR."*
 
-The Umbrella set on Mainnet (verified via `RewardsController.getAllAssets()` at planning time):
-
-| Symbol | Stake-token address | `asset()` | Reward token |
-|---|---|---|---|
-| stkwaEthUSDC.v1 | `0x6bf183243FdD1e306ad2C4450BC7dcf6f0bf8Aa6` | waEthUSDC `0xD4fa…3E` | aEthUSDC `0x98C2…5c` |
-| stkwaEthUSDT.v1 | `0xA484Ab92fe32B143AEE7019fC1502b1dAA522D31` | waEthUSDT `0x7Bc3…F8` | aEthUSDT `0x2387…6a` |
-| stkwaEthWETH.v1 | `0xaAFD07D53A7365D3e9fb6F3a3B09EC19676B73Ce` | waEthWETH `0x0bfc…02` | aEthWETH `0x4d5F…E8` |
-| stkGHO.v1 | `0x4f827A63755855cDf3e8f3bcD20265C833f15033` | GHO `0x40D1…2f` | GHO (no aToken) |
-
-All four share the same `RewardsController` at `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`.
+The Umbrella set on Mainnet today (verified via `RewardsController.getAllAssets()` at planning time): `stkwaEthUSDC.v1`, `stkwaEthUSDT.v1`, `stkwaEthWETH.v1`, `stkGHO.v1`. All four share the same `RewardsController` at `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`. The wa-backed stake tokens hold StataTokenV2 wrappers (waEthUSDC etc.) over the matching aTokens; rewards are paid in the matching aToken. `stkGHO.v1`'s `asset()` is plain GHO and its reward is also plain GHO.
 
 ## Decision
 
-Ship a new, separate `AaveUmbrellaBalanceOracle` (`src/balances/protocols/AaveUmbrella.sol`) that mirrors the design philosophy of ADR 0005's `AaveV3SafetyModuleBalanceOracle`: **fully immutable, write-function-free, addresses pinned as compile-time `address public constant`**, with the stake-token table assembled in a `pure _records()` helper. Constructor takes only `(navCalculator, protocol)`. The legacy SM adapter remains in place — it owns the legacy four stake tokens; this adapter owns the Umbrella four. Both can be registered on `NAVCalculator` simultaneously without overlap.
+Ship a new, separate `AaveUmbrellaBalanceOracle` (`src/balances/protocols/AaveUmbrella.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
 
-The adapter emits **two `PositionBalance` entries per stake token** with self-describing labels:
-
-- Staked leg: `(<bareReserve>, "<symbol> Staked")`, e.g. `(USDC, "stkwaEthUSDC.v1 Staked")`.
-- Rewards leg: `(<bareReserve>, "<symbol> Rewards")`, e.g. `(USDC, "stkwaEthUSDC.v1 Rewards")`.
-
-Both legs land in the same bare reserve token (`USDC` / `USDT` / `WETH` / `GHO`) so that NAVCalculator can price them out of the existing Chainlink registry without a new price feed. Reward aTokens are 1:1 unit-equivalent with their underlying reserve, so reporting reward amounts in the bare reserve is unit-correct.
-
-Two-hop ERC4626 conversion handles the wa-backed stake tokens:
-
-```
-shares  --stk.convertToAssets-->  waToken amount  --wa.convertToAssets-->  bare reserve
+```solidity
+constructor(address rewardsController, address navCalculator, string memory protocol_)
 ```
 
-For `stkGHO.v1` the underlying is plain GHO and a single hop (`stk.convertToAssets`) suffices.
+The `rewardsController` is the protocol's trust anchor — every other piece of information is discovered at runtime through it:
 
-## Why hardcoded, when on-chain enumeration is available
+- **Stake-token set.** `RewardsController.getAllAssets() → address[]` enumerates every Umbrella stake token currently configured. Aave governance can add a new stake token and the adapter picks it up on the next view call without a redeploy.
+- **Bare reserve per stake token.** The adapter walks the ERC4626 `asset()` chain (up to two hops) until it lands on a non-ERC4626 token, using `try/catch` on `asset()` to detect the boundary. For the wa-backed stake tokens this resolves `stk → waToken → bare reserve`; for `stkGHO.v1` a single hop yields plain GHO.
+- **Bare reserve per reward token.** The adapter calls `IAToken.UNDERLYING_ASSET_ADDRESS()` with `try/catch`; aTokens return the bare reserve, and any reward token that does not implement that getter (e.g. plain GHO) is treated as already-bare.
+- **Symbol for `positionDetail`.** `IERC20Metadata.symbol()` on the stake token gives the human-readable label (`"stkwaEthUSDC.v1"`, etc.); the adapter appends `" Staked"` / `" Rewards"` to disambiguate the two legs.
 
-The Umbrella `RewardsController` does expose `getAllAssets() → address[]` for on-chain stake-token enumeration — strictly more discovery surface than the legacy SM has. We chose **not** to use it at runtime, for the same reasons ADR 0005 chose hardcoding for the legacy SM:
+For each stake position the adapter emits two `PositionBalance` entries:
 
-- Framework rule: "every balance adapter is immutable and write-function-free." Adding a runtime registry call doesn't violate that, but a *fully* hardcoded list keeps every wiring decision under PR review and matches the precedent.
-- A new Umbrella stake token implies a new bare-reserve mapping (which `waToken` wraps it; which aToken pays its rewards). That mapping cannot be inferred from `getAllAssets()` alone — the adapter would still need the bare-reserve correspondence pinned in source. Pinning the addresses too is a strict superset.
-- The test suite (`test/balances/protocols/fork/AaveUmbrella.fork.t.sol`) **does** call `getAllAssets()` and asserts the live set equals the hardcoded set. A governance addition therefore surfaces immediately as a fork-test failure, prompting a deliberate code change rather than silently being ignored.
+- Staked leg: `(<bareReserve>, "<symbol> Staked")` — principal denominated in the bare reserve.
+- Rewards leg: `(<bareReserve>, "<symbol> Rewards")` — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
+
+Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstanceBalanceOracle` uses for unregistered Aave reserves.
+
+## Why dynamic over hardcoded
+
+ADR 0005 hardcodes the legacy Safety Module set because Aave does not publish an on-chain registry for it. Umbrella ships with one (`getAllAssets()`), and other adapters in this repo (notably `AaveV3InstanceBalanceOracle`, which discovers reserves via `dataProvider.getAllReservesTokens()`) follow the *use the registry when it exists* convention. We do the same here:
+
+- A new Umbrella stake token (or a re-configured reward token on an existing one) does not require a code change or a redeploy. The adapter picks up governance changes the next time NAV is computed.
+- The constructor surface stays minimal — one trust-anchor address, no per-token plumbing — so the chain-config schema is small (`rewardsController` + `protocol`).
+- The `try/catch` walk over `asset()` and `UNDERLYING_ASSET_ADDRESS()` is cheap (a handful of view calls per stake token) and isolates the adapter from any single adversarial token contract: a misbehaving wrapper that reverts on `asset()` simply terminates the walk at that level.
+
+The adapter still pins **one** address — the `RewardsController` — as constructor input. That is the protocol's trust root: the entire stake-token graph reachable from it is treated as trusted. If governance ever ships a second controller (covering a disjoint stake-token set), this adapter would be redeployed pointing at the new controller; both adapters could be registered on `NAVCalculator` simultaneously.
 
 ## Slashing and cooldown semantics
 
-`UmbrellaStakeToken` is ERC4626; slashing decreases `totalAssets` while leaving `totalSupply` constant, so `convertToAssets(balanceOf(user))` is automatically post-slash-correct without extra accounting. Cooldown / unstake-window state does not affect `balanceOf`, so the adapter reports total staked principal regardless of which window the user is in. Downstream consumers that need cooldown-state breakdowns query the stake token directly.
+`UmbrellaStakeToken` is ERC4626; slashing decreases `totalAssets` while leaving `totalSupply` constant, so the chained `convertToAssets` walk is automatically post-slash-correct without extra accounting. Cooldown / unstake-window state does not affect `balanceOf`, so the adapter reports total staked principal regardless of which window the user is in. Downstream consumers that need cooldown-state breakdowns query the stake token directly.
 
 ## Reward-token forward compatibility
 
-Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls `(rewardTokens[], amounts[])` via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and only emits a position for the **hardcoded expected** reward token; additional reward tokens added by Aave governance in the future are silently dropped (with a clear comment in source). That tradeoff is intentional: the bare-reserve mapping for any new reward token requires a deliberate code change, not a silent misattribution.
+Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls the full `(rewardTokens[], amounts[])` tuple via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and emits one `Rewards` leg per non-zero entry whose mapped bare reserve equals the stake token's staked-side bare reserve. If governance adds an extra reward token whose bare reserve differs (e.g. an AAVE incentive on top of the aToken reward), it would be silently dropped — `_claimableRewardInBareReserve` only sums entries that map to the same `wantedBareReserve`. This is conservative by design: surfacing AAVE rewards inside an entry whose `underlyingAsset` is USDC would mis-price them. If/when multi-reward Umbrella stake tokens go live, the framework can either extend this adapter to emit additional `(rewardBareReserve, "<symbol> Rewards <bare>")` legs or rely on the existing `ERC20DefaultOracle` to surface the held AAVE balance separately.
+
+## Debank cross-check classification
+
+Debank surfaces Umbrella positions under the existing `aave3` (Aave V3) protocol id rather than a dedicated `aaveumbrella` entry. Verified by querying `/v1/user/all_complex_protocol_list` for a real `stkGHO.v1` holder: the `aave3` portfolio item lists both the staked GHO supply leg and the GHO rewards leg matching this adapter's output unit-for-unit. Since `aave3` is already in `test/integration/accounts.json`'s Mainnet `supportedDebankProtocols` allowlist, **no allowlist change is required** — the cross-check transparently includes Umbrella the moment an account holds an Umbrella position.
+
+The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and remains in place: legacy stkAAVE / stkABPT rewards are still surfaced under `aave2` by Debank.
 
 ## Consequences
 
 **Positive**
 
-- Same uniform rule across the framework — every balance adapter is immutable and review-time-wired.
-- No admin role, no Ownable. Constructor takes two arguments. Chain config has only one field (`protocol`).
-- Live `getAllAssets()` in the fork test acts as a tripwire when Aave governance adds a new Umbrella stake token.
-- Reports in bare reserves means NAVCalculator prices everything via existing Chainlink feeds — no new price-feed adapters required for this PR.
+- One uniform rule across the framework: adapters use the protocol's on-chain registry when it exists. Matches `AaveV3InstanceBalanceOracle`'s precedent.
+- No hardcoded token addresses anywhere in source. The only address pinned is the `RewardsController`, passed via constructor and treated as a trust anchor — the chain-config schema is minimal (`rewardsController` + `protocol`).
+- Aave governance can add a new Umbrella stake token (or change its reward configuration) and the adapter picks it up on the next view call, provided the bare reserve is already registered with `NAVCalculator`.
+- Reports in bare reserves means NAV pricing falls through to existing Chainlink feeds — no new price-feed adapters required for this PR.
 
 **Negative / things to watch**
 
-- Adding a new Umbrella stake token requires a code change + redeploy + Safe transaction. Higher friction than a runtime registry would offer, but acceptable for events that happen at most once or twice a year.
-- Mainnet-only in spirit. The constants are baked in; running this contract on any other chain would resolve the addresses to EOAs and revert at the first `IUmbrellaStakeToken.balanceOf` call. Chain config gates deployment per-chain, so this is not a runtime hazard, but it is worth keeping in mind.
-- Additional reward tokens added by governance for an existing stake token (e.g. an AAVE incentive on top of the aToken reward) are silently dropped until a code change extends the per-stake-token reward mapping.
-
-## Debank cross-check classification
-
-Debank surfaces Umbrella positions under the existing `aave3` (Aave V3) protocol id rather than a dedicated `aaveumbrella` entry. Verified by querying `/v1/user/all_complex_protocol_list` for a real stkGHO.v1 holder: the `aave3` portfolio item lists both the staked GHO supply leg and the GHO rewards leg matching our adapter's output unit-for-unit. Since `aave3` is already in `test/integration/accounts.json`'s Mainnet `supportedDebankProtocols` allowlist, **no allowlist change is required** — the cross-check transparently includes Umbrella the moment an account holds an Umbrella position.
-
-The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and remains in place: legacy stkAAVE / stkABPT rewards are still surfaced under `aave2` by Debank.
+- A few extra view calls per `getOraclePositions` invocation (per stake token: `balanceOf` + `convertToAssets` + 1-2 `asset()` + symbol + per-reward `UNDERLYING_ASSET_ADDRESS`). Acceptable for a view function called for NAV computation, not on a hot path.
+- A misconfigured RewardsController that returns malicious stake-token addresses would be trusted. This is the same trust assumption every dynamically-discovered adapter has — mitigated by pinning the *controller* address at deploy time, so the trust root is fixed even though the discovered set is not.
+- Multi-reward stake tokens whose extra rewards land in a *different* bare reserve are silently dropped (rather than mis-attributed). When this becomes a real configuration, extend the adapter to emit additional `Rewards` legs per distinct reward bare reserve.
+- Mainnet-only in spirit. The RewardsController is Mainnet-specific; deploying on another chain requires passing that chain's controller (or none, if Umbrella is not deployed there).
 
 ## Test holders
 
-Fork tests cover all four stake tokens against real holders sourced from Etherscan top-holder views, verified to have non-zero stake balances **and** non-zero accrued rewards at `FORK_BLOCK = 25_000_000`:
+Fork tests cover the four currently-deployed stake tokens against real holders sourced from Etherscan top-holder views, verified to have non-zero stake balances **and** non-zero accrued rewards at `FORK_BLOCK = 25_000_000`:
 
 | Stake token | Holder |
 |---|---|
@@ -84,19 +81,22 @@ Fork tests cover all four stake tokens against real holders sourced from Ethersc
 | stkwaEthWETH.v1 | `0x000000000004444c5dc75cB358380D2e3dE08A90` (also the legacy SM stkAAVE / stkABPTv2 holder used in ADR 0005's fork tests) |
 | stkGHO.v1 | `0x6Ca0D65fe5c8700a5cc7A2C3bfE801111A1dEd1a` |
 
-When refreshing fork blocks (via the bump workflow described in `docs/howto/refresh-integration-test-blocks.md`), re-verify these addresses still hold positions; if a holder withdraws, swap in a fresh one from an Etherscan top-holder scan or a Transfer-events scan over recent blocks.
+The fork test maps live `getAllAssets()` entries to test holders by **symbol**, so a governance addition that introduces a new symbol surfaces immediately as a `revert` ("no test holder for new Umbrella stake token: <symbol>"), prompting a test update rather than silently passing.
+
+When refreshing fork blocks, re-verify these addresses still hold positions; if a holder withdraws, swap in a fresh one from an Etherscan top-holder scan or a Transfer-events scan over recent blocks.
 
 ## Alternatives considered
 
-1. **Inherit from `RewardsController.getAllAssets()` at runtime.** Rejected per the rationale above — the bare-reserve mapping cannot be derived from the registry alone, so hardcoding the address set is at no extra cost over hardcoding the mapping.
-2. **Report positions in waToken or aToken units instead of the bare reserve.** Rejected because NAVCalculator does not have price feeds registered for waEth* or aEth* (only for the bare reserves). Adding four custom price feeds would be a larger surface area and require independent ADRs.
-3. **Reuse `AaveV3SafetyModuleBalanceOracle` and add Umbrella entries to its hardcoded table.** Rejected because the two protocols have entirely different interfaces (`stkAAVE.previewRedeem`/`getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
-4. **Merge staked + rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's `stkAAVE` collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionDetail` strings preserve that breakdown for downstream accounting.
+1. **Hardcode every stake-token, waToken, aToken, and reserve address as `address public constant` in source (mirroring ADR 0005).** Rejected because Umbrella, unlike the legacy SM, exposes a usable on-chain registry. The framework convention is *use the registry when it exists* (cf. `AaveV3InstanceBalanceOracle`), and a code change every time governance adds a stake token is friction the registry lets us avoid.
+2. **Hybrid: pass the stake-token list via constructor but discover the rest dynamically.** Rejected because the stake-token list is the part most likely to change. Pinning the controller and discovering everything beneath it from a single trust anchor is a strict simplification.
+3. **Report positions in waToken or aToken units instead of the bare reserve.** Rejected because `NAVCalculator` does not have price feeds registered for waEth* or aEth* (only for the bare reserves). Adding four custom price feeds would be a larger surface area and require independent ADRs.
+4. **Reuse `AaveV3SafetyModuleBalanceOracle` and add Umbrella entries.** Rejected because the two protocols have entirely different read interfaces (`stkAAVE.previewRedeem` / `getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
+5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionDetail` strings preserve that breakdown for downstream accounting.
 
 ## Reference
 
 - Adapter: `src/balances/protocols/AaveUmbrella.sol`
 - Tests: `test/balances/protocols/AaveUmbrella.t.sol` (unit), `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` (fork)
-- Deploy schema: `script/config/chains/1.json` `balanceAdapters.AaveUmbrella` (only `protocol` field)
+- Deploy schema: `script/config/chains/1.json` `balanceAdapters.AaveUmbrella` (`rewardsController` + `protocol`)
 - Aave Umbrella source: <https://github.com/aave-dao/aave-umbrella>
 - Companion ADR: [0005 — Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md)

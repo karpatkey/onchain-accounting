@@ -61,10 +61,11 @@
     "AaveUmbrella": {
       "enabled": true,
       "constructor": {
+        "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
         "protocol": "Aave Umbrella"
       },
       "deployed": "",
-      "comment": "Hardcoded multi-token adapter for the Aave Umbrella stake set on Mainnet (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1). The four stake tokens, their waToken intermediates, and the shared RewardsController are pinned as compile-time constants in src/balances/protocols/AaveUmbrella.sol — adding a new Umbrella stake token in the future is a code change + redeploy, mirroring ADR 0005's approach for the legacy SM. See docs/decisions/0006-aave-umbrella-balance-oracle.md."
+      "comment": "Dynamic-discovery adapter for Aave Umbrella stake tokens. The full stake-token set (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1 today) is enumerated at runtime via RewardsController.getAllAssets(); each stake token's bare reserve is resolved by walking its ERC4626 asset() chain. The only address pinned in this adapter is the RewardsController above, passed via constructor and treated as the protocol's trust anchor. New stake tokens added by Aave governance are picked up automatically as long as their bare reserve is registered with NAVCalculator. See docs/decisions/0006-aave-umbrella-balance-oracle.md."
     },
     "Cap": {
       "enabled": true,

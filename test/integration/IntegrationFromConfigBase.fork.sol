@@ -519,9 +519,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
-        // Set of Umbrella stake tokens is hardcoded in AaveUmbrellaBalanceOracle. Constructor takes (nav, protocol).
+        // Stake-token set is discovered at runtime from the RewardsController. Constructor takes
+        // (rewardsController, nav, protocol) — see ADR 0006.
+        address rewardsController =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveUmbrellaBalanceOracle(navAddr, protocol));
+        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr, protocol));
     }
 
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {

@@ -23,6 +23,7 @@ import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
 
@@ -435,6 +436,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
         }
+        if (_equals(name, "AaveUmbrella")) {
+            return _deployAaveUmbrella(name, navAddr);
+        }
         if (_startsWith(name, "BalancerV3_")) {
             return _deployBalancerV3(name, navAddr);
         }
@@ -528,6 +532,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol));
     }
 
+    function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
+        // Stake-token set is discovered at runtime from the RewardsController. Constructor takes
+        // (rewardsController, nav, protocol) — see ADR 0006.
+        address rewardsController =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr, protocol));
+    }
+
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
         address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
         address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
@@ -550,7 +563,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](55);
+        names = new string[](56);
         uint256 i = 0;
         names[i++] = "AaveV3_Core";
         names[i++] = "AaveV3_Prime";
@@ -569,6 +582,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "CompoundV3_AERO";
         names[i++] = "SparkLend";
         names[i++] = "AaveV3SafetyModule";
+        names[i++] = "AaveUmbrella";
         names[i++] = "Cap";
         names[i++] = "MorphoVault_kpkETHPrime_V1";
         names[i++] = "MorphoVault_kpkETHPrime_V2";

@@ -8,18 +8,26 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 24987608,
+      "forkBlock": 25015922,
       "supportedDebankProtocols": [
         "aave2",
         "aave3",
         "aura",
+        "aurafinance",
         "balancer3",
         "capapp",
         "compound",
         "convex",
         "curve",
+        "ethena",
+        "etherfi",
         "gearbox",
+        "kelpdao",
+        "lido",
+        "maple",
         "morphoblue",
+        "renzo",
+        "rocketpool",
         "sky",
         "spark"
       ]
@@ -28,31 +36,37 @@
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 150944800,
+      "forkBlock": 151115016,
       "supportedDebankProtocols": [
         "aave3",
-        "compound"
+        "compound",
+        "lido"
       ]
     },
     "100": {
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 45922000,
+      "forkBlock": 45988301,
       "supportedDebankProtocols": [
-        "aave3"
+        "aave3",
+        "lido",
+        "sky"
       ]
     },
     "8453": {
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45349500,
+      "forkBlock": 45519731,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
+        "aurafinance",
         "balancer3",
         "compound",
+        "etherfi",
+        "lido",
         "morphoblue"
       ]
     },
@@ -60,13 +74,19 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 457665000,
+      "forkBlock": 459018124,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
+        "aurafinance",
         "balancer3",
         "compound",
-        "morphoblue"
+        "etherfi",
+        "kelpdao",
+        "lido",
+        "maple",
+        "morphoblue",
+        "renzo"
       ]
     }
   },
@@ -74,37 +94,114 @@
     {
       "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
       "label": "ACCOUNT_1",
-      "enabledChains": [1, 10, 100, 8453, 42161],
+      "enabledChains": [
+        1,
+        10,
+        100,
+        8453,
+        42161
+      ],
       "expected": {
-        "1":     { "navUsd8dp": "17822110300",    "debankUsd": "" },
-        "10":    { "navUsd8dp": "0",              "debankUsd": "" },
-        "100":   { "navUsd8dp": "500474218",      "debankUsd": "" },
-        "8453":  { "navUsd8dp": "999934954",      "debankUsd": "" },
-        "42161": { "navUsd8dp": "1002196979",     "debankUsd": "" }
+        "1": {
+          "navUsd8dp": "17987561188",
+          "debankUsd": "184.388147"
+        },
+        "10": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "100": {
+          "navUsd8dp": "500723210",
+          "debankUsd": "5.006032"
+        },
+        "8453": {
+          "navUsd8dp": "1000036146",
+          "debankUsd": "10.002350"
+        },
+        "42161": {
+          "navUsd8dp": "1002487164",
+          "debankUsd": "10.023732"
+        }
       }
     },
     {
       "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
       "label": "ACCOUNT_2",
-      "enabledChains": [1, 10, 100, 8453, 42161],
+      "enabledChains": [
+        1,
+        10,
+        100,
+        8453,
+        42161
+      ],
       "expected": {
-        "1":     { "navUsd8dp": "108537887171758", "debankUsd": "" },
-        "10":    { "navUsd8dp": "0",               "debankUsd": "" },
-        "100":   { "navUsd8dp": "0",               "debankUsd": "" },
-        "8453":  { "navUsd8dp": "0",               "debankUsd": "" },
-        "42161": { "navUsd8dp": "0",               "debankUsd": "" }
+        "1": {
+          "navUsd8dp": "113620294618924",
+          "debankUsd": "1139771.872007"
+        },
+        "10": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "100": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "8453": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "42161": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        }
       }
     },
     {
       "address": "0x408ea1bC71ec2562ABCB27520cf7077718403496",
       "label": "ACCOUNT_3",
-      "enabledChains": [1, 10, 100, 8453, 42161],
+      "enabledChains": [
+        1,
+        10,
+        100,
+        8453,
+        42161
+      ],
       "expected": {
-        "1":     { "navUsd8dp": "26176865974", "debankUsd": "" },
-        "10":    { "navUsd8dp": "0",           "debankUsd": "" },
-        "100":   { "navUsd8dp": "0",           "debankUsd": "" },
-        "8453":  { "navUsd8dp": "0",           "debankUsd": "" },
-        "42161": { "navUsd8dp": "0",           "debankUsd": "" }
+        "1": {
+          "navUsd8dp": "27463020851",
+          "debankUsd": "359.573552"
+        },
+        "10": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "100": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "8453": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        },
+        "42161": {
+          "navUsd8dp": "0",
+          "debankUsd": "0.000000"
+        }
+      }
+    },
+    {
+      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (≈ $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout — it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
+      "address": "0x13Ce0C26A44C644cCEB29B1e5B437521095F86DF",
+      "label": "ACCOUNT_4_UMBRELLA",
+      "enabledChains": [
+        1
+      ],
+      "expected": {
+        "1": {
+          "navUsd8dp": "17668958217073",
+          "debankUsd": "176933.101457"
+        }
       }
     },
     {
@@ -113,7 +210,7 @@
       "label": "ACCOUNT_5_COMPOUND_MAINNET",
       "enabledChains": [1],
       "expected": {
-        "1": { "navUsd8dp": "309385808483377", "debankUsd": "" }
+        "1": { "navUsd8dp": "309514908572813", "debankUsd": "" }
       }
     },
     {
@@ -122,7 +219,7 @@
       "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
       "enabledChains": [10],
       "expected": {
-        "10": { "navUsd8dp": "275982304769690", "debankUsd": "" }
+        "10": { "navUsd8dp": "276089838604477", "debankUsd": "" }
       }
     },
     {
@@ -131,7 +228,7 @@
       "label": "ACCOUNT_7_COMPOUND_ARBITRUM",
       "enabledChains": [42161],
       "expected": {
-        "42161": { "navUsd8dp": "205788714883694", "debankUsd": "" }
+        "42161": { "navUsd8dp": "205872919457940", "debankUsd": "" }
       }
     },
     {
@@ -140,7 +237,7 @@
       "label": "ACCOUNT_8_COMPOUND_BASE",
       "enabledChains": [8453],
       "expected": {
-        "8453": { "navUsd8dp": "82251088098026", "debankUsd": "" }
+        "8453": { "navUsd8dp": "82303590123808", "debankUsd": "" }
       }
     }
   ]

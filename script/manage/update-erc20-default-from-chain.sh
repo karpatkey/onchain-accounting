@@ -22,13 +22,14 @@ rpc_url() {
     1)   echo "${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     10)  echo "${OP_URL:-https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     100) echo "${GNOSIS_URL:-https://gnosis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
+    137) echo "${POLYGON_URL:-https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     42161) echo "${ARBITRUM_URL:-https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     8453) echo "${BASE_URL:-https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     *)   echo ""; return 1;;
   esac
 }
 
-CHAIN_IDS=(1 10 100 42161 8453)
+CHAIN_IDS=(1 10 100 137 42161 8453)
 NAV_PROXY_JSON_PATH=".deployed.NAVCalculatorProxy"
 DEPLOYED_JSON_PATH=".balanceAdapters.ERC20Default.deployed"
 

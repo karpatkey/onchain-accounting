@@ -62,6 +62,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         } else if (currentChainId == 100) {
             // Gnosis
             _deployGnosisPriceAdapters();
+        } else if (currentChainId == 137) {
+            // Polygon: only Chainlink-priced assets are registered today (POL, WPOL, WETH,
+            // USDC, USDT). No custom price-feed contracts to deploy. Add a branch here when
+            // wstETH/sUSDe/etc. are onboarded with their custom adapters.
+            console2.log("No custom price feeds to deploy on Polygon (Chainlink-only).");
         } else {
             console2.log("No price feeds configured for chain:", currentChainId);
         }

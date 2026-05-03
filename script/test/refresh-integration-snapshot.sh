@@ -74,6 +74,7 @@ rpc_for_chain() {
     base-mainnet)   [[ -n "${BASE_URL:-}" ]] && { echo "$BASE_URL"; return; } ;;
     opt-mainnet)    [[ -n "${OP_URL:-}" ]] && { echo "$OP_URL"; return; } ;;
     gnosis-mainnet) [[ -n "${GNOSIS_URL:-}" ]] && { echo "$GNOSIS_URL"; return; } ;;
+    polygon-mainnet) [[ -n "${POLYGON_URL:-}" ]] && { echo "$POLYGON_URL"; return; } ;;
   esac
   if [[ -n "${ALCHEMY_API_KEY:-}" ]]; then
     echo "https://${network}.g.alchemy.com/v2/${ALCHEMY_API_KEY}"

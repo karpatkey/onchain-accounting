@@ -15,6 +15,7 @@
         "aura",
         "balancer3",
         "capapp",
+        "compound",
         "convex",
         "curve",
         "gearbox",
@@ -29,7 +30,8 @@
       "debankChainId": "op",
       "forkBlock": 150944800,
       "supportedDebankProtocols": [
-        "aave3"
+        "aave3",
+        "compound"
       ]
     },
     "100": {
@@ -50,6 +52,7 @@
         "aave3",
         "aura",
         "balancer3",
+        "compound",
         "morphoblue"
       ]
     },
@@ -62,6 +65,7 @@
         "aave3",
         "aura",
         "balancer3",
+        "compound",
         "morphoblue"
       ]
     }

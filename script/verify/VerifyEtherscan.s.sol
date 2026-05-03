@@ -60,17 +60,25 @@ contract VerifyEtherscan is BaseDeployScript {
 
     function _emitVerifyBalanceAdapters() internal view {
         address nav = readDeployedAddress("NAVCalculatorProxy");
-        string[10] memory names = [
+        string[18] memory names = [
             "AaveV3_USDC",
             "AaveV3_WETH",
             "CompoundV3_USDC",
+            "CompoundV3_USDS",
+            "CompoundV3_USDT",
+            "CompoundV3_WBTC",
             "CompoundV3_WETH",
+            "CompoundV3_wstETH",
+            "CompoundV3_USDCe",
+            "CompoundV3_USDbC",
+            "CompoundV3_AERO",
             "SparkLend",
             "SparkLend_USDC",
             "MorphoBlue_USDC",
             "DaiDsr",
             "SkySavingsUsds",
-            "ERC20Default"
+            "ERC20Default",
+            "AaveV3SafetyModule"
         ];
         for (uint256 i = 0; i < names.length; i++) {
             address a = _readAdapterDeployed("balanceAdapters", names[i]);

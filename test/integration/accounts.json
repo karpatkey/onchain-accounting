@@ -23,7 +23,9 @@
         "gearbox",
         "kelpdao",
         "lido",
+        "maple",
         "morphoblue",
+        "renzo",
         "rocketpool",
         "sky",
         "spark"
@@ -35,7 +37,8 @@
       "debankChainId": "op",
       "forkBlock": 150944800,
       "supportedDebankProtocols": [
-        "aave3"
+        "aave3",
+        "lido"
       ]
     },
     "100": {
@@ -44,7 +47,9 @@
       "debankChainId": "xdai",
       "forkBlock": 45922000,
       "supportedDebankProtocols": [
-        "aave3"
+        "aave3",
+        "lido",
+        "sky"
       ]
     },
     "8453": {
@@ -55,7 +60,10 @@
       "supportedDebankProtocols": [
         "aave3",
         "aura",
+        "aurafinance",
         "balancer3",
+        "etherfi",
+        "lido",
         "morphoblue"
       ]
     },
@@ -67,8 +75,14 @@
       "supportedDebankProtocols": [
         "aave3",
         "aura",
+        "aurafinance",
         "balancer3",
-        "morphoblue"
+        "etherfi",
+        "kelpdao",
+        "lido",
+        "maple",
+        "morphoblue",
+        "renzo"
       ]
     }
   },

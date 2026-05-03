@@ -90,6 +90,16 @@
         "protocol": "Balancer V3 - Aave GHO/USDC"
       },
       "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
+    },
+    "MerklRewards": {
+      "enabled": false,
+      "constructor": {
+        "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
+        "protocol": "Merkl",
+        "positionDetail": "Unclaimed Rewards"
+      },
+      "deployed": "",
+      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     }
   },
   "bridgeAdapters": {

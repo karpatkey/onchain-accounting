@@ -123,8 +123,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
-        // exist in this repo but are NOT used by either Alpha fund, so they are not wired here.
+        // DaiDsr, SkySavingsUsds, and StakeWiseV3* adapters exist in this repo but are NOT used by
+        // either Alpha fund, so they are not wired here.
 
         vm.stopBroadcast();
 

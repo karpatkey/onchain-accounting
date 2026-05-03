@@ -6,7 +6,6 @@ import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/Compoun
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)

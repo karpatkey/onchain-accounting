@@ -70,17 +70,13 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("UserWithdrawalManager must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(
-            eoa, address(weth), "Stader", "ETH Withdrawal Queue", address(balances)
-        );
+        new StaderWithdrawalQueueBalanceOracle(eoa, address(weth), "Stader", "ETH Withdrawal Queue", address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("NAVCalculator must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(
-            address(manager), address(weth), "Stader", "ETH Withdrawal Queue", eoa
-        );
+        new StaderWithdrawalQueueBalanceOracle(address(manager), address(weth), "Stader", "ETH Withdrawal Queue", eoa);
     }
 
     // ---- Interface ----
@@ -122,11 +118,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1.05e18,
-                ethFinalized: 0,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 0, requestBlock: 0
             })
         );
 
@@ -140,11 +132,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1.05e18,
-                ethFinalized: 1.04e18,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 1.04e18, requestBlock: 0
             })
         );
 
@@ -157,22 +145,14 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1.05e18,
-                ethFinalized: 0,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 0, requestBlock: 0
             })
         );
         manager.pushRequest(
             alice,
             2,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 2e18,
-                ethExpected: 2.10e18,
-                ethFinalized: 2.09e18,
-                requestBlock: 0
+                owner: alice, ethXAmount: 2e18, ethExpected: 2.1e18, ethFinalized: 2.09e18, requestBlock: 0
             })
         );
 
@@ -185,22 +165,14 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1e18,
-                ethFinalized: 1e18,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 1e18, requestBlock: 0
             })
         );
         manager.pushRequest(
             alice,
             2,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 2e18,
-                ethExpected: 2e18,
-                ethFinalized: 2e18,
-                requestBlock: 0
+                owner: alice, ethXAmount: 2e18, ethExpected: 2e18, ethFinalized: 2e18, requestBlock: 0
             })
         );
         manager.clearOwner(1); // simulate claim
@@ -212,8 +184,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     // ---- getOracleBalances ----
 
     function test_getOracleBalances_zeroAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            oracle.getOracleBalances(address(0));
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);
@@ -229,11 +200,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1e18,
-                ethFinalized: 0,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
@@ -259,11 +226,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1e18,
-                ethFinalized: 0,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
 
@@ -276,11 +239,7 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             alice,
             1,
             MockUserWithdrawalManager.Info({
-                owner: alice,
-                ethXAmount: 1e18,
-                ethExpected: 1e18,
-                ethFinalized: 0,
-                requestBlock: 0
+                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
 

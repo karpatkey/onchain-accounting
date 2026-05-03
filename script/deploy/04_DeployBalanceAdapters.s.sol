@@ -498,10 +498,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployStaderWithdrawalQueue(string memory adapterName, address navCalculator)
-        internal
-        returns (address)
-    {
+    function _deployStaderWithdrawalQueue(string memory adapterName, address navCalculator) internal returns (address) {
         address userWithdrawalManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "userWithdrawalManager")
         );

@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
-import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

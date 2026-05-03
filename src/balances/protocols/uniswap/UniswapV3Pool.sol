@@ -43,6 +43,12 @@ import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.so
 ///          the NPM). Adding them would be a sibling adapter using `pool.positions(positionKey)`.
 ///        - A factory wrapper. The constructor signature is shaped to plug into
 ///          `BalanceAdapterFactoryBase`'s CREATE2 flow once PR #16 lands.
+///
+///      Licensing: this adapter is MIT, but it imports `lib/{TickMath, LiquidityAmounts,
+///      FixedPoint128}.sol` which carry their original `GPL-2.0-or-later` SPDX header from
+///      Uniswap v3-core/v3-periphery. That makes the compiled adapter a combined work under
+///      GPL-2.0-or-later. The trade-off is documented in
+///      `docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`.
 contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     //
     // Type Definitions

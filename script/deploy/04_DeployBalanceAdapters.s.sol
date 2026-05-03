@@ -22,6 +22,7 @@ import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/Balancer
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
+import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -110,6 +111,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
         _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
         _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
+
+        // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
+        _deployIfEnabled("MerklRewards");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
@@ -244,6 +248,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 OsToken adapters
         if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(adapterName, navCalculator);
+        }
+
+        // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0006).
+        if (_equals(adapterName, "MerklRewards")) {
+            return _deployMerklRewards(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -486,6 +495,34 @@ contract DeployBalanceAdapters is BaseDeployScript {
         StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
             osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navCalculator
         );
+        return address(adapter);
+    }
+
+    function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "MerklRewards": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",  // same on every supported EVM chain
+        //       "protocol": "Merkl",
+        //       "positionDetail": "Unclaimed Rewards"
+        //     }
+        //   }
+        // Owner is set to chainConfig.admin (the OIV Safe). The Safe will be the only address that can call
+        // submitProof / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
+        // see docs/decisions/0006-merkl-trust-minimized-cache.md.
+        address distributor = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
+
+        MerklRewardsBalanceOracle adapter =
+            new MerklRewardsBalanceOracle(distributor, navCalculator, protocol, positionDetail, chainConfig.admin);
         return address(adapter);
     }
 

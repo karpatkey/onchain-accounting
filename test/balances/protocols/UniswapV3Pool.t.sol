@@ -55,19 +55,11 @@ contract MockUniswapV3Pool {
         _ticks[tick] = TickInfo(fgOut0, fgOut1);
     }
 
-    function slot0()
-        external
-        view
-        returns (uint160, int24, uint16, uint16, uint16, uint8, bool)
-    {
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
         return (_sqrtPriceX96, _tick, 0, 0, 0, 0, false);
     }
 
-    function ticks(int24 tick)
-        external
-        view
-        returns (uint128, int128, uint256, uint256, int56, uint160, uint32, bool)
-    {
+    function ticks(int24 tick) external view returns (uint128, int128, uint256, uint256, int56, uint160, uint32, bool) {
         TickInfo memory info = _ticks[tick];
         return (0, 0, info.feeGrowthOutside0X128, info.feeGrowthOutside1X128, 0, 0, 0, false);
     }
@@ -191,9 +183,7 @@ contract UniswapV3PoolBalanceOracleTest is Test {
         npm = new MockPositionManager();
         nav = new MockNAVCalculatorWithRegistry();
         _registerBothTokens();
-        oracle = new UniswapV3PoolBalanceOracle(
-            address(pool), address(npm), "Uniswap V3", "T0/T1 0.05%", address(nav)
-        );
+        oracle = new UniswapV3PoolBalanceOracle(address(pool), address(npm), "Uniswap V3", "T0/T1 0.05%", address(nav));
     }
 
     function _registerBothTokens() internal {
@@ -492,7 +482,19 @@ contract UniswapV3PoolBalanceOracleTest is Test {
     function test_getOraclePositions_skipsForeignPoolNfts() public {
         // NFT for a different fee tier -> filtered out by adapter.
         pool.setSlot0(TickMath.getSqrtRatioAtTick(0), 0);
-        _mintPosition(alice, 1, address(token0), address(token1), 3000 /* not POOL_FEE */, -100, 100, 1_000_000, 11, 22);
+        _mintPosition(
+            alice,
+            1,
+            address(token0),
+            address(token1),
+            3000,
+            /* not POOL_FEE */
+            -100,
+            100,
+            1_000_000,
+            11,
+            22
+        );
 
         (uint256 amount0,) = oracle.getOracleBalanceForAsset(alice, address(token0));
         (uint256 amount1,) = oracle.getOracleBalanceForAsset(alice, address(token1));

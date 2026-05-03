@@ -343,15 +343,7 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Reads `(feeGrowthOutside0X128, feeGrowthOutside1X128)` from the pool's tick state.
     function _ticksFeeGrowthOutside(int24 tick) internal view returns (uint256 fgOut0, uint256 fgOut1) {
-        (
-            ,
-            ,
-            uint256 _fgOut0,
-            uint256 _fgOut1,
-            ,
-            ,
-            ,
-        ) = IUniswapV3Pool(POOL).ticks(tick);
+        (,, uint256 _fgOut0, uint256 _fgOut1,,,,) = IUniswapV3Pool(POOL).ticks(tick);
         return (_fgOut0, _fgOut1);
     }
 
@@ -363,8 +355,7 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reads a single NFT position from the NPM and returns the subset we use.
     function _readPosition(uint256 tokenId) internal view returns (Position memory p) {
         (
-            ,
-            ,
+            ,,
             address token0_,
             address token1_,
             uint24 fee_,

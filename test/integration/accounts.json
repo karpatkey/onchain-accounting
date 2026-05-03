@@ -102,6 +102,15 @@
         "8453":  { "navUsd8dp": "0",           "debankUsd": "" },
         "42161": { "navUsd8dp": "0",           "debankUsd": "" }
       }
+    },
+    {
+      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (≈ $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout — it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
+      "address": "0x13Ce0C26A44C644cCEB29B1e5B437521095F86DF",
+      "label": "ACCOUNT_4_UMBRELLA",
+      "enabledChains": [1],
+      "expected": {
+        "1":     { "navUsd8dp": "17523860561720", "debankUsd": "" }
+      }
     }
   ]
 }

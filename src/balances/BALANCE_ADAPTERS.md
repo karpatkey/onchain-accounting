@@ -178,6 +178,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **SparkLend** | Spark lending positions. | |
 | **StakeWiseV3OsToken** | StakeWise V3 osToken. | |
 | **StakeWiseV3Vault** | StakeWise V3 vault. | |
+| **StaderWithdrawalQueue** | Stader UserWithdrawalManager pending unstake requests; reports the sum of `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. | Mainnet only; underlying configured to WETH. |
 
 Protocol adapters typically take a **NAVCalculator** (or equivalent) in the constructor to read the asset registry (and sometimes symbols/decimals) so they can build correct `Asset` and only report registered assets if desired.
 

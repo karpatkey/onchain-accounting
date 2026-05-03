@@ -115,6 +115,33 @@ Periodically (weekly is fine):
 - **Audit cache vs. API.** Run a one-shot job that compares the adapter's cache to the Merkl API for every tracked account. Flag drift > 1 cycle as a potential bot stall.
 - **Verify root proofs end-to-end.** Independently fetch Merkl's IPFS-hosted tree (`Distributor.tree().ipfsHash`), reconstruct leaves locally, and confirm the cached values match. This is the "anyone can audit" property exercised internally.
 
+## Double-counting analysis
+
+A reasonable concern when adding a new balance source: does the Merkl adapter's reported amount overlap with anything the existing wallet/protocol adapters already report? The answer is **no — by construction — across all four reward shapes Merkl actually distributes to Karpatkey-tracked accounts**. The argument is the same in each case but it's worth walking through because the reward shapes differ.
+
+The invariant that makes this work: pre-claim, the reward sits at the Distributor (off the user's balance sheet — only the Merkl adapter sees it via the cached proof). Post-claim, `claimed[user][token].amount` advances to match `cumulativeAmount` and the Merkl adapter reads zero, while the reward token has now arrived in the user's wallet (or onward staking position) and is picked up by whichever adapter covers that asset. The transition is exact: `cum - claimed = 0` precisely when the tokens are received.
+
+| Reward shape | Pre-claim | Post-claim | Double count? |
+|---|---|---|---|
+| **Raw ERC20** (MORPHO, ARB, RPL, GEAR, …) | Merkl: `cum - claimed`. Wallet: 0. | Merkl: 0. Wallet: balance picked up by `ERC20DefaultOracle`. | **No** — Merkl pays, wallet receives. |
+| **stkGHO** (Aave SM stake token) | Merkl: `cum - claimed` of stkGHO. SM adapter: `IStakeToken(stkGHO).balanceOf(user)` — does **not** include the unclaimed Merkl bag at the Distributor. | Merkl: 0. SM adapter: now sees the user's increased `balanceOf`. | **No** — `balanceOf` is wallet-resident; Merkl tokens arrive there only after `claim`. |
+| **aTokens** (`aEthRLUSD`, …) | Merkl: `cum - claimed` of the aToken. Aave V3 adapter: `getUserReserveData(user, RLUSD).aTokenBalance` — only the user's existing RLUSD supply on Aave, not Merkl-held aTokens. | Merkl: 0. Aave V3 adapter: increased aToken balance reflects the Merkl reward landing in the user's Aave position. | **No** — aTokens at the Distributor are not user-attributable on Aave's side until claim. |
+| **LP tokens** (Aave-BPT, rETH-waEthWETH LP, …) | Merkl: `cum - claimed` of the LP. Wallet/Balancer/Aura adapters: only count what's in the user's wallet or staked in a known gauge — not what's at the Distributor. | Merkl: 0. The LP either lands in wallet (`ERC20DefaultOracle`) or, if user stakes it, into the BalancerV3/Aura adapter. | **No** — same invariant. |
+
+Even the **root-rotation edge case** preserves this. If the user partially claims under root N, the bot then re-submits a proof under root N+1 with a higher cumulative, and `claimed[user][token].amount` still reflects the partial claim under N, the math is:
+
+```
+NAV(Merkl) + NAV(wallet)
+  = (cum_{N+1} - claimed_partial) + claimed_partial
+  = cum_{N+1}
+```
+
+Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative allocation. After a fresh claim under root N+1, `claimed = cum_{N+1}`, Merkl reports 0, wallet reports the full `cum_{N+1}`. Same total.
+
+**The one shape that *could* double-count, and isn't on the table here**: if Merkl ever distributed AAVE directly (not stkGHO/stkAAVE — bare AAVE), and the Aave Safety Module adapter's reward leg also reported AAVE rewards earned via SM emissions, then a user holding stkGHO *and* receiving AAVE from Merkl would have NAV double-add the AAVE amount briefly between Merkl-claim and SM-claim, depending on timing. We do not see this in any of the test accounts, and Merkl's standing campaigns for Aave assets distribute the Aave-issued *receipt* tokens (stkGHO, aEthRLUSD) rather than bare AAVE — so this stays theoretical. If a campaign that distributes bare AAVE shows up, the operational fix is to exclude the AAVE token from what the bot caches; the trust-min property of the on-chain proof verification is unaffected.
+
+**Operational rule for the bot**: there is no token-level filter required today. If a future campaign emits bare AAVE (or any other asset already double-counted by another adapter), exclude that token from the bot's submission set. Document the exclusion next to the bot's account list.
+
 ## What the bot must NOT do
 
 - Do not call `clearAllocation` automatically — it's a manual operator action triggered by either pruning (above) or an `AmountRegression` investigation.

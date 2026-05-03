@@ -58,6 +58,14 @@
       "legacy_deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD",
       "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceOracle(legacy_deployed) and addBalanceOracle(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source — adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
     },
+    "AaveUmbrella": {
+      "enabled": true,
+      "constructor": {
+        "protocol": "Aave Umbrella"
+      },
+      "deployed": "",
+      "comment": "Hardcoded multi-token adapter for the Aave Umbrella stake set on Mainnet (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1). The four stake tokens, their waToken intermediates, and the shared RewardsController are pinned as compile-time constants in src/balances/protocols/AaveUmbrella.sol — adding a new Umbrella stake token in the future is a code change + redeploy, mirroring ADR 0005's approach for the legacy SM. See docs/decisions/0006-aave-umbrella-balance-oracle.md."
+    },
     "Cap": {
       "enabled": true,
       "constructor": {

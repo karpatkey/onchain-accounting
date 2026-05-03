@@ -22,3 +22,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0003 | [Integration-test snapshot workflow + Debank cross-check](0003-integration-test-snapshot-workflow.md) | accepted |
 | 0004 | [Morpho Blue: project pending interest into NAV (vs use stored values)](0004-morpho-projected-vs-stored-balances.md) | accepted |
 | 0005 | [Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md) | accepted |
+| 0006 | [Aave Umbrella Balance Oracle: hardcoded stake-token list, two-hop ERC4626](0006-aave-umbrella-balance-oracle.md) | accepted |

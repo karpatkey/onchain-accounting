@@ -123,17 +123,19 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
         override
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
+        if (account == address(0)) {
+            return (new address[](0), new uint256[](0), new bool[](0));
+        }
+
         address[] memory supported = _supportedAssets();
         AssetBalanceData[] memory tempData = new AssetBalanceData[](supported.length);
         uint256 count = 0;
 
-        if (account != address(0)) {
-            for (uint256 i = 0; i < supported.length; i++) {
-                uint256 balance = _calculateBalance(account, supported[i]);
-                if (balance > 0) {
-                    tempData[count] = AssetBalanceData({asset: supported[i], amount: balance, isDebt: false});
-                    count++;
-                }
+        for (uint256 i = 0; i < supported.length; i++) {
+            uint256 balance = _calculateBalance(account, supported[i]);
+            if (balance > 0) {
+                tempData[count] = AssetBalanceData({asset: supported[i], amount: balance, isDebt: false});
+                count++;
             }
         }
 
@@ -156,6 +158,8 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
+
         address[] memory supported = _supportedAssets();
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         address[] memory registeredAssets = new address[](reg.length);
@@ -164,7 +168,7 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
         }
 
         address[] memory eligibleAssets = ArrayLib.intersection(supported, registeredAssets);
-        if (eligibleAssets.length == 0 || account == address(0)) {
+        if (eligibleAssets.length == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 

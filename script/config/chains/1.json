@@ -420,6 +420,16 @@
       },
       "deployed": ""
     },
+    "StaderWithdrawalQueue": {
+      "enabled": true,
+      "constructor": {
+        "userWithdrawalManager": "0x9F0491B32DBce587c50c4C43AB303b06478193A7",
+        "underlyingToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "protocol": "Stader",
+        "positionDetail": "ETH Withdrawal Queue"
+      },
+      "deployed": ""
+    },
     "MerklRewards": {
       "enabled": false,
       "constructor": {
@@ -508,6 +518,9 @@
     },
     "syrupUSDC": {
       "deployed": "0xc73Ed3f07e2d1d6C59294936C12048daE2b8CbE7"
+    },
+    "ETHx": {
+      "deployed": ""
     }
   }
 }

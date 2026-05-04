@@ -24,6 +24,8 @@ import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/Balancer
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
+import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
+import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
@@ -132,6 +134,27 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
         _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
         _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
+
+        // --- Fluid Lending (one adapter per fToken; mirrors of the same fToken on each chain) ---
+        _deployIfEnabled("Fluid_fToken_USDC"); // Mainnet, Arbitrum, Base, Polygon
+        _deployIfEnabled("Fluid_fToken_USDT"); // Mainnet, Arbitrum, Polygon
+        _deployIfEnabled("Fluid_fToken_WETH"); // Mainnet, Arbitrum, Base, Polygon
+        _deployIfEnabled("Fluid_fToken_wstETH"); // Mainnet, Arbitrum, Base, Polygon
+        _deployIfEnabled("Fluid_fToken_GHO"); // Mainnet, Arbitrum, Base
+        _deployIfEnabled("Fluid_fToken_sUSDe"); // Mainnet, Arbitrum, Base
+        _deployIfEnabled("Fluid_fToken_USDtb"); // Mainnet
+        _deployIfEnabled("Fluid_fToken_ARB"); // Arbitrum
+        _deployIfEnabled("Fluid_fToken_EURC"); // Base
+        _deployIfEnabled("Fluid_fToken_WPOL"); // Polygon
+        _deployIfEnabled("Fluid_fToken_AUSD"); // Polygon
+
+        // --- Fluid Vaults (one adapter per T1 vault) ---
+        // ETH/USDC vault is intentionally NOT wired — needs to confirm whether the vault uses
+        // the native ETH sentinel (ERC-7528) or WETH on the supply leg. Add the config entry
+        // and the matching `_deployIfEnabled` row in a follow-up.
+        _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
+        _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
+        _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet
 
         // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
         _deployIfEnabled("StaderWithdrawalQueue");
@@ -286,6 +309,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 OsToken adapters
         if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(adapterName, navCalculator);
+        }
+
+        // Fluid Lending fToken adapters (one per fToken instance)
+        if (_startsWith(adapterName, "Fluid_fToken_")) {
+            return _deployFluidFToken(adapterName, navCalculator);
+        }
+
+        // Fluid Vault adapters (one per T1 vault instance)
+        if (_startsWith(adapterName, "Fluid_Vault_")) {
+            return _deployFluidVault(adapterName, navCalculator);
         }
 
         // Stader withdrawal queue
@@ -573,6 +606,35 @@ contract DeployBalanceAdapters is BaseDeployScript {
         StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
             osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navCalculator
         );
+        return address(adapter);
+    }
+
+    function _deployFluidFToken(string memory adapterName, address navCalculator) internal returns (address) {
+        address fToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "fToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        FluidFTokenBalanceOracle adapter = new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployFluidVault(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        address vaultResolver = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        FluidVaultBalanceOracle adapter =
+            new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

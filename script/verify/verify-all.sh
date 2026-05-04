@@ -16,7 +16,7 @@ fi
 # Prefer ALCHEMY_API_KEY, fallback to ALCHEMY_APİ_KEY (alternate name used in config)
 : "${ALCHEMY_API_KEY:=${ALCHEMY_APİ_KEY:-}}"
 
-CHAIN_IDS=(1 10 100 42161 8453)
+CHAIN_IDS=(1 10 100 137 42161 8453)
 rpc_url() {
   local cid="$1"
   local url
@@ -24,6 +24,7 @@ rpc_url() {
     1)   url="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     10)  url="${OP_URL:-https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     100) url="${GNOSIS_URL:-https://gnosis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
+    137) url="${POLYGON_URL:-https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     42161) url="${ARBITRUM_URL:-https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     8453) url="${BASE_URL:-https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}";;
     *)   echo "Unknown chain $cid" >&2; exit 1;;
@@ -36,6 +37,7 @@ api_host() {
     1)   echo "api.etherscan.io";;
     10)  echo "api-optimistic.etherscan.io";;
     100) echo "api.gnosisscan.io";;
+    137) echo "api.polygonscan.com";;
     42161) echo "api.arbiscan.io";;
     8453) echo "api.basescan.org";;
     *)   echo "";;

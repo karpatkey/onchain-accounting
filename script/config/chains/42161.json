@@ -82,6 +82,51 @@
       },
       "deployed": "0x70AC1F4ddbD431Dd022f70f759F06a470663DeeB"
     },
+    "Fluid_fToken_USDC": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fUSDC"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_USDT": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fUSDT"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_WETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fWETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_wstETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fwstETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_GHO": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x037dFf1C12805707d7c29F163E0F09fC9102657A",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fGHO"
+      },
+      "deployed": ""
+    },
     "CompoundV3_USDCe": {
       "enabled": true,
       "constructor": {

@@ -373,6 +373,19 @@ contract RegisterAssets is BaseDeployScript {
             s[4] = "USDT";
             return s;
         }
+        if (chainId == 137) {
+            // Polygon: native is POL (formerly MATIC). Symbols listed must exist as keys under
+            // assets.json `tokens.137`. wstETH/sUSDe/etc. are intentionally not registered yet
+            // — they require chain-specific custom price-feed contracts that aren't deployed
+            // on Polygon. Add them in a follow-up alongside their feed adapter.
+            string[] memory s = new string[](5);
+            s[0] = "POL";
+            s[1] = "WPOL";
+            s[2] = "WETH";
+            s[3] = "USDC";
+            s[4] = "USDT";
+            return s;
+        }
         return new string[](0);
     }
 }

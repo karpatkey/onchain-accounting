@@ -91,6 +91,42 @@
       },
       "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
     },
+    "Fluid_fToken_USDC": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fUSDC"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_WETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x9272D6153133175175Bc276512B2336BE3931CE9",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fWETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_wstETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fwstETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_GHO": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fGHO"
+      },
+      "deployed": ""
+    },
     "CompoundV3_AERO": {
       "enabled": true,
       "constructor": {

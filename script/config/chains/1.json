@@ -369,6 +369,90 @@
       },
       "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
     },
+    "Fluid_fToken_USDC": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fUSDC"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_USDT": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fUSDT"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_WETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fWETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_wstETH": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fwstETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_GHO": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fGHO"
+      },
+      "deployed": ""
+    },
+    "Fluid_fToken_sUSDe": {
+      "enabled": true,
+      "constructor": {
+        "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
+        "protocol": "Fluid Lending",
+        "positionDetail": "fsUSDe"
+      },
+      "deployed": ""
+    },
+    "Fluid_Vault_wstETH_USDC": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
+        "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+        "protocol": "Fluid Vault",
+        "positionDetail": "wstETH/USDC"
+      },
+      "deployed": ""
+    },
+    "Fluid_Vault_weETH_wstETH": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
+        "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+        "protocol": "Fluid Vault",
+        "positionDetail": "weETH/wstETH"
+      },
+      "deployed": ""
+    },
+    "Fluid_Vault_sUSDe_USDC": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
+        "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+        "protocol": "Fluid Vault",
+        "positionDetail": "sUSDe/USDC"
+      },
+      "deployed": ""
+    },
     "CompoundV3_USDC": {
       "enabled": true,
       "constructor": {

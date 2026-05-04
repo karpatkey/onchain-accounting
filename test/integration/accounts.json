@@ -16,6 +16,7 @@
         "aurafinance",
         "balancer3",
         "capapp",
+        "compound",
         "convex",
         "curve",
         "ethena",
@@ -38,6 +39,7 @@
       "forkBlock": 151115016,
       "supportedDebankProtocols": [
         "aave3",
+        "compound",
         "lido"
       ]
     },
@@ -62,6 +64,7 @@
         "aura",
         "aurafinance",
         "balancer3",
+        "compound",
         "etherfi",
         "lido",
         "morphoblue"
@@ -77,6 +80,7 @@
         "aura",
         "aurafinance",
         "balancer3",
+        "compound",
         "etherfi",
         "kelpdao",
         "lido",
@@ -198,6 +202,42 @@
           "navUsd8dp": "17668958217073",
           "debankUsd": "176933.101457"
         }
+      }
+    },
+    {
+      "$comment": "Concentrated cUSDCv3 supplier on Mainnet (~$3.09M at fork block). Sourced via Dune top-net-supplier scan during the Compound V3 adapter rollout — gives an apples-to-apples NAV-vs-Debank cross-check for the new adapter.",
+      "address": "0x9C1b8c994935e3890bD2257AD2a681d6D4465a73",
+      "label": "ACCOUNT_5_COMPOUND_MAINNET",
+      "enabledChains": [1],
+      "expected": {
+        "1": { "navUsd8dp": "309514908572813", "debankUsd": "" }
+      }
+    },
+    {
+      "$comment": "Compound V3 holder on Optimism. Cross-chain holdings (cUSDCv3 base + other Comet markets / Aave / wallet ERC20s) sum to ~$2.76M at fork block.",
+      "address": "0xD20E007881ea62B5922B06D025c9dc1D41962953",
+      "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
+      "enabledChains": [10],
+      "expected": {
+        "10": { "navUsd8dp": "276089838604477", "debankUsd": "" }
+      }
+    },
+    {
+      "$comment": "Compound V3 holder on Arbitrum. Combined cUSDCv3 + other supported-protocol positions ~$2.06M at fork block.",
+      "address": "0x530Bfd7DE5D63329E2DF996cf5afB2616524936D",
+      "label": "ACCOUNT_7_COMPOUND_ARBITRUM",
+      "enabledChains": [42161],
+      "expected": {
+        "42161": { "navUsd8dp": "205872919457940", "debankUsd": "" }
+      }
+    },
+    {
+      "$comment": "Concentrated cUSDCv3 supplier on Base (~$822k at fork block).",
+      "address": "0xA46680F63b905DdC4A5fC3038584328A04623314",
+      "label": "ACCOUNT_8_COMPOUND_BASE",
+      "enabledChains": [8453],
+      "expected": {
+        "8453": { "navUsd8dp": "82305875504272", "debankUsd": "" }
       }
     }
   ]

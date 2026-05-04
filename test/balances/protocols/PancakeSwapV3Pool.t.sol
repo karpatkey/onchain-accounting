@@ -55,7 +55,7 @@ contract MockPancakeV3Pool {
         _ticks[tick] = TickInfo(fgOut0, fgOut1);
     }
 
-    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint32, bool) {
         return (_sqrtPriceX96, _tick, 0, 0, 0, 0, false);
     }
 

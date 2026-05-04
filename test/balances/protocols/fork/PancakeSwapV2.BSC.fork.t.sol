@@ -55,6 +55,14 @@ contract UniswapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
     address internal unknownAccount;
 
     function setUp() public override {
+        // Skip the entire suite if no BSC RPC is configured. BSC isn't in the default CI env
+        // (CI sets MAINNET_URL/ARBITRUM_URL/BASE_URL/OP_URL/GNOSIS_URL/ALCHEMY_API_KEY but not
+        // BSC_URL), so without an explicit BSC_URL or ALCHEMY_API_KEY-with-BSC-coverage we
+        // can't reach BSC. `vm.skip(true)` aborts the test cleanly instead of hard-failing.
+        if (!_bscRpcConfigured()) {
+            vm.skip(true);
+            return;
+        }
         super.setUp();
         _setupFork();
         alice = makeAddr("alice");
@@ -66,6 +74,13 @@ contract UniswapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
         fork = createForkWithCadence(getAlchemyUrl("bnb-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+    }
+
+    /// @dev True iff at least one of `BSC_URL` or `ALCHEMY_API_KEY` is set in the environment.
+    ///      `getAlchemyUrl("bnb-mainnet")` consumes the former first; falls back to the latter.
+    function _bscRpcConfigured() internal view returns (bool) {
+        return bytes(vm.envOr("BSC_URL", string(""))).length != 0
+            || bytes(vm.envOr("ALCHEMY_API_KEY", string(""))).length != 0;
     }
 
     function _setupOracle() internal {

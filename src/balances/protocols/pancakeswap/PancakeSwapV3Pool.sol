@@ -433,7 +433,13 @@ contract PancakeSwapV3PoolBalanceOracle is IBalanceOracleAdapter {
 // Interface Section
 // ---------------------------
 
-/// @notice Minimal PancakeSwap V3 pool interface (matches Uniswap V3 byte-for-byte).
+/// @notice Minimal PancakeSwap V3 pool interface.
+/// @dev One subtle divergence from Uniswap V3: PCS V3's `slot0().feeProtocol` is `uint32`, not
+///      `uint8`. PancakeSwap supports independent protocol-fee tiers per token (each packed into
+///      16 bits → 32 bits total), where Uniswap V3 packs both tiers into 8 bits (4 bits each).
+///      Declaring it as `uint8` here would make Solidity 0.8's strict ABI decoder revert on any
+///      block where the high bits of `feeProtocol` are set, which is the case on every live PCS
+///      V3 pool. All other slot0/ticks/positions/feeGrowthGlobal fields match Uniswap V3 exactly.
 interface IPancakeV3Pool {
     function token0() external view returns (address);
     function token1() external view returns (address);
@@ -450,7 +456,7 @@ interface IPancakeV3Pool {
             uint16 observationIndex,
             uint16 observationCardinality,
             uint16 observationCardinalityNext,
-            uint8 feeProtocol,
+            uint32 feeProtocol,
             bool unlocked
         );
     function ticks(int24 tick)

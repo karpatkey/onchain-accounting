@@ -25,6 +25,7 @@ import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeW
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
+import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -58,7 +59,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Aave V3 Safety Module (Mainnet only; single multi-token adapter, see ADR 0002) ---
         _deployIfEnabled("AaveV3SafetyModule");
 
-        // --- Aave Umbrella (Mainnet only; multi-token adapter mirroring the SM design, see ADR 0006) ---
+        // --- Aave Umbrella (Mainnet only; multi-token adapter mirroring the SM design, see ADR 0007) ---
         _deployIfEnabled("AaveUmbrella");
 
         // --- Cap Finance (Mainnet only) ---
@@ -135,6 +136,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
         _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
         _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet
+
+        // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
+        _deployIfEnabled("MerklRewards");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
@@ -251,7 +255,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployAaveV3SafetyModule(adapterName, navCalculator);
         }
 
-        // Aave Umbrella: a single multi-token adapter per chain (ADR 0006).
+        // Aave Umbrella: a single multi-token adapter per chain (ADR 0007).
         if (_equals(adapterName, "AaveUmbrella")) {
             return _deployAaveUmbrella(adapterName, navCalculator);
         }
@@ -284,6 +288,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Fluid Vault adapters (one per T1 vault instance)
         if (_startsWith(adapterName, "Fluid_Vault_")) {
             return _deployFluidVault(adapterName, navCalculator);
+        }
+
+        // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
+        if (_equals(adapterName, "MerklRewards")) {
+            return _deployMerklRewards(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -465,7 +474,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //     }
         //   }
         // The Umbrella stake-token set is discovered at runtime from the RewardsController address
-        // above via `getAllAssets()`. See ADR 0006 for the dynamic-discovery rationale.
+        // above via `getAllAssets()`. See ADR 0007 for the dynamic-discovery rationale.
         address rewardsController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
         );
@@ -575,6 +584,34 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         FluidVaultBalanceOracle adapter =
             new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "MerklRewards": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",  // same on every supported EVM chain
+        //       "protocol": "Merkl",
+        //       "positionDetail": "Unclaimed Rewards"
+        //     }
+        //   }
+        // Owner is set to chainConfig.admin (the OIV Safe). The Safe will be the only address that can call
+        // submitProof / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
+        // see docs/decisions/0007-merkl-trust-minimized-cache.md.
+        address distributor = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
+
+        MerklRewardsBalanceOracle adapter =
+            new MerklRewardsBalanceOracle(distributor, navCalculator, protocol, positionDetail, chainConfig.admin);
         return address(adapter);
     }
 

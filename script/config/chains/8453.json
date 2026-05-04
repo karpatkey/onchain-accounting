@@ -196,7 +196,7 @@
         "positionDetail": "WETH/COW 0.25%"
       },
       "deployed": "",
-      "comment": "PancakeSwap V3 WETH/COW 0.25% pool on Base (factory.getPool resolves to this address). NPM is the canonical PancakeSwap V3 NonfungiblePositionManager (CREATE2 — same address on every supported chain). Disabled by default; enable when registering the PCS V3 product for NAV. Test holder 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669 holds NFT 936925 in this pool."
+      "comment": "PancakeSwap V3 WETH/COW 0.25% pool on Base (factory.getPool resolves to this address). NPM is the canonical PancakeSwap V3 NonfungiblePositionManager (CREATE2 — same address on every supported chain). Disabled by default: COW on Base is not registered in assets.json (no Chainlink feed available), so enabling this adapter as-is would silently drop the COW leg of any in-range position and value it on WETH alone — understating the position by roughly half. Register Base COW with a working oracle (custom feed or pricing the bridged COW via Mainnet TWAP) before flipping this on. Test holder 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669 holds NFT 936925 in this pool (currently liquidity=0)."
     }
   },
   "bridgeAdapters": {

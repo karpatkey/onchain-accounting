@@ -193,6 +193,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
         ConfigReader.readChainConfig(vm, 100); // Gnosis
         ConfigReader.readChainConfig(vm, 8453); // Base
         ConfigReader.readChainConfig(vm, 10); // Optimism
+        ConfigReader.readChainConfig(vm, 56); // BSC — scaffold present; `deployed` populated when broadcast
 
         // If we reach here, all config files are valid JSON
         assertTrue(true, "All config files are valid");
@@ -264,6 +265,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
         }
     }
 
+    /// @notice The set of chains that carry deployed proxy addresses today. Chain configs that
+    ///         exist only as scaffolds (e.g. chain 56 / BSC, where `deployed.NAVCalculatorProxy`
+    ///         is intentionally empty until the user broadcasts `01_`–`02_` with their deployer
+    ///         key) are *not* listed here, because the consumers of this list assert that the
+    ///         four core deployed addresses are non-zero on every chain. Add a chain ID once
+    ///         its proxies are populated in `script/config/chains/<id>.json`.
     function _supportedChainIds() internal pure returns (uint256[] memory) {
         uint256[] memory chainIds = new uint256[](5);
         chainIds[0] = 1;

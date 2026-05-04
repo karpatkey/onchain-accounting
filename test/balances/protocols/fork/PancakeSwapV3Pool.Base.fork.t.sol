@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
+import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
@@ -293,5 +294,66 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         (uint256 amount1,) = oracle.getOracleBalanceForAsset(synthOwner, BASE_COW);
         assertEq(amount0, 0, "foreign-pool NFT must be filtered out -- no WETH");
         assertEq(amount1, 0, "foreign-pool NFT must be filtered out -- no COW");
+    }
+
+    // ============================================
+    // Shipped-config behaviour: only WETH registered (mirrors `assets.json` on Base — COW has no Chainlink feed)
+    // ============================================
+
+    /// @notice The shipped Base config registers WETH (and the existing Base assets) but
+    ///         intentionally leaves COW unregistered. The PancakeSwap V3 WETH/COW adapter is
+    ///         therefore disabled by default in `chains/8453.json`. This test exercises what
+    ///         would happen if it were enabled anyway: only the WETH leg of an in-range position
+    ///         comes through `getOraclePositions`, and the COW leg is silently dropped — i.e.
+    ///         the adapter would value the position on its WETH side alone, ~half its real worth.
+    ///         This test pins that contract so a future operator who flips the adapter on
+    ///         without pricing COW has a regression bar to compare against.
+    function test_getOraclePositions_productionConfig_dropsCowLeg() public {
+        address synthOwner = makeAddr("synthOwner3");
+
+        // Live pool snapshot (same setup as the in-range principal test).
+        (, int24 tickCurrent,,,,,) = IPancakeV3PoolFork(POOL).slot0();
+        int24 tickLower = ((tickCurrent - 1000) / 50) * 50;
+        int24 tickUpper = ((tickCurrent + 1000) / 50) * 50;
+        if (tickLower == tickUpper) tickUpper += 50;
+
+        uint256 syntheticTokenId = 0xfeedface;
+        vm.mockCall(NPM, abi.encodeCall(IPancakeNPMFork.balanceOf, (synthOwner)), abi.encode(uint256(1)));
+        vm.mockCall(
+            NPM, abi.encodeCall(IPancakeNPMFork.tokenOfOwnerByIndex, (synthOwner, 0)), abi.encode(syntheticTokenId)
+        );
+        vm.mockCall(
+            NPM,
+            abi.encodeCall(IPancakeNPMFork.positions, (syntheticTokenId)),
+            abi.encode(
+                uint96(0),
+                address(0),
+                BASE_WETH,
+                BASE_COW,
+                POOL_FEE,
+                tickLower,
+                tickUpper,
+                uint128(1e18),
+                uint256(0),
+                uint256(0),
+                uint128(0),
+                uint128(0)
+            )
+        );
+
+        // Build a separate Balances registry that mirrors the shipped Base config: only WETH is registered.
+        address[] memory shippedAssets = new address[](1);
+        shippedAssets[0] = BASE_WETH;
+        BalancesHarnessForFork shippedBalances = _deployBalancesForOracle(shippedAssets);
+        PancakeSwapV3PoolBalanceOracle shippedOracle =
+            new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "WETH/COW 0.25%", address(shippedBalances));
+
+        INAVCalculator.PositionBalance[] memory positions = shippedOracle.getOraclePositions(synthOwner, address(0));
+        // The in-range position has both legs non-zero in raw `getAccountAggregates`, but the
+        // registry filter drops COW, so only WETH liquidity (and possibly WETH fees) survive.
+        assertGt(positions.length, 0, "WETH leg(s) should survive the registry filter");
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].underlyingAsset.asset, BASE_WETH, "every surviving entry is WETH -- COW dropped");
+        }
     }
 }

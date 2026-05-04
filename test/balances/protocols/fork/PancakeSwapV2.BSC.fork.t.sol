@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
+import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -210,6 +211,40 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
     function test_getOraclePositions_assetFilter_unsupported() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_HOLDER, address(0xdead));
         assertEq(positions.length, 0);
+    }
+
+    // ============================================
+    // Shipped-config behaviour: only ETH registered (mirrors `assets.json` + `RegisterAssets._symbolsForChain(56)`)
+    // ============================================
+
+    /// @notice The shipped BSC config registers BNB/WBNB/USDC/USDT/ETH/CAKE in NAV but
+    ///         intentionally leaves COW unregistered (no Chainlink feed available). The PancakeSwap
+    ///         V2 ETH/COW adapter is therefore disabled by default in `chains/56.json`. This test
+    ///         exercises what would happen if it were enabled anyway: only the ETH leg of the LP
+    ///         is reported by `getOraclePositions` and the COW leg drops out, producing a NAV that
+    ///         is only the ETH side of the pair (~half the actual position value). The test
+    ///         documents this behaviour so a future operator who flips the adapter on without
+    ///         pricing COW has a regression bar to compare against.
+    function test_getOraclePositions_productionConfig_dropsCowLeg() public {
+        // Build a separate Balances registry that mirrors the shipped BSC config: only ETH is registered.
+        address[] memory shippedAssets = new address[](1);
+        shippedAssets[0] = BSC_ETH;
+        BalancesHarnessForFork shippedBalances = _deployBalancesForOracle(shippedAssets);
+        PancakeSwapV2BalanceOracle shippedOracle =
+            new PancakeSwapV2BalanceOracle(PAIR, "PancakeSwap V2", "ETH/COW LP", address(shippedBalances));
+
+        INAVCalculator.PositionBalance[] memory positions = shippedOracle.getOraclePositions(TEST_HOLDER, address(0));
+        assertEq(positions.length, 1, "only ETH leg should survive the registry filter");
+        assertEq(positions[0].underlyingAsset.asset, BSC_ETH, "the surviving leg is ETH");
+        assertGt(positions[0].amount, 0, "ETH leg is the holder's pro-rata share of the ETH reserve");
+
+        // And the per-asset query for COW returns 0 because COW isn't in the registry — the
+        // adapter still reports a non-zero `getOracleBalanceForAsset` for COW (it's protocol-level,
+        // pre-registry), but `getOraclePositions` is the path NAVCalculator actually consumes,
+        // and that's the path we just confirmed drops COW.
+        (uint256 cowAmount, bool cowIsDebt) = shippedOracle.getOracleBalanceForAsset(TEST_HOLDER, BSC_COW);
+        assertGt(cowAmount, 0, "raw per-asset query bypasses registry filter -- COW is still reported");
+        assertFalse(cowIsDebt);
     }
 
     // ============================================

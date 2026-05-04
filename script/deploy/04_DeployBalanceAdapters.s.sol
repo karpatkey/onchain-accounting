@@ -132,7 +132,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Fluid_fToken_AUSD"); // Polygon
 
         // --- Fluid Vaults (one adapter per T1 vault) ---
-        _deployIfEnabled("Fluid_Vault_ETH_USDC"); // Mainnet
+        // ETH/USDC vault is intentionally NOT wired — needs to confirm whether the vault uses
+        // the native ETH sentinel (ERC-7528) or WETH on the supply leg. Add the config entry
+        // and the matching `_deployIfEnabled` row in a follow-up.
         _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
         _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
         _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet

@@ -184,6 +184,19 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         address[] memory eligible = ArrayLib.intersection(supportedAssets, registeredAssets);
         if (eligible.length == 0) return _buildPositions(new AssetBalanceData[](0));
 
+        // Short-circuit when assetFilter is set to something the vault doesn't track at all,
+        // so we don't pay for an NFT enumeration that's guaranteed to be discarded.
+        if (assetFilter != address(0)) {
+            bool inEligible = false;
+            for (uint256 i = 0; i < eligible.length; i++) {
+                if (eligible[i] == assetFilter) {
+                    inEligible = true;
+                    break;
+                }
+            }
+            if (!inEligible) return _buildPositions(new AssetBalanceData[](0));
+        }
+
         // One walk through the user's NFTs is enough to populate both legs.
         (uint256 collateral, uint256 debt) = _aggregateUserPositions(account);
 

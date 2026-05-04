@@ -354,7 +354,11 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @notice Reads `(sqrtPriceX96, tick)` from the pool's `slot0`.
-    function _slot0() internal view returns (uint160 sqrtPriceX96, int24 tick) {
+    /// @dev `virtual` so Uniswap V3 forks with a divergent `slot0()` ABI can override this
+    ///      single hook without duplicating the rest of the adapter. The first concrete
+    ///      consumer is `PancakeSwapV3PoolBalanceOracle`, which overrides this read because
+    ///      PancakeSwap V3's `slot0().feeProtocol` is `uint32` (vs Uniswap V3's `uint8`).
+    function _slot0() internal view virtual returns (uint160 sqrtPriceX96, int24 tick) {
         (sqrtPriceX96, tick,,,,,) = IUniswapV3Pool(POOL).slot0();
     }
 

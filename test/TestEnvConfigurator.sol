@@ -14,10 +14,10 @@ abstract contract TestEnvConfigurator is Test {
     uint256 private constant FORK_COUNTER_SLOT = uint256(keccak256("TestEnvConfigurator.forkCounter"));
 
     /// @notice Returns the RPC URL for the given network.
-    /// @dev Prefer chain-specific env vars (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL), e.g. from CI
+    /// @dev Prefer chain-specific env vars (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL, BSC_URL), e.g. from CI
     ///      (vars.KNODE_URL + /ethereum?key= + secrets.KNODE_API_KEY). If none set, builds Alchemy URL from
     ///      ALCHEMY_API_KEY. Reverts if neither source is set.
-    /// @param network Alchemy network identifier (e.g. "eth-mainnet", "arb-mainnet", "base-mainnet", "opt-mainnet", "gnosis-mainnet")
+    /// @param network Alchemy network identifier (e.g. "eth-mainnet", "arb-mainnet", "base-mainnet", "opt-mainnet", "gnosis-mainnet", "bnb-mainnet")
     /// @return url The RPC URL to use for forking
     function getAlchemyUrl(string memory network) internal view returns (string memory url) {
         url = _getChainUrl(network);
@@ -47,6 +47,9 @@ abstract contract TestEnvConfigurator is Test {
         }
         if (keccak256(bytes(network)) == keccak256("gnosis-mainnet")) {
             return vm.envOr("GNOSIS_URL", string(""));
+        }
+        if (keccak256(bytes(network)) == keccak256("bnb-mainnet")) {
+            return vm.envOr("BSC_URL", string(""));
         }
         return "";
     }

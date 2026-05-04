@@ -373,6 +373,18 @@ contract RegisterAssets is BaseDeployScript {
             s[4] = "USDT";
             return s;
         }
+        if (chainId == 56) {
+            // BSC. COW has no Chainlink feed and is intentionally omitted (the V2 PCS adapter
+            // still emits it as a position; NAVCalculator drops unregistered assets).
+            string[] memory s = new string[](6);
+            s[0] = "BNB";
+            s[1] = "WBNB";
+            s[2] = "USDC";
+            s[3] = "USDT";
+            s[4] = "ETH";
+            s[5] = "CAKE";
+            return s;
+        }
         if (chainId == 137) {
             // Polygon: native is POL (formerly MATIC). Symbols listed must exist as keys under
             // assets.json `tokens.137`. wstETH/sUSDe/etc. are intentionally not registered yet

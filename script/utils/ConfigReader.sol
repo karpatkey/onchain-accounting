@@ -365,6 +365,7 @@ library ConfigReader {
     function _alchemyNetworkForChainId(uint256 chainId) private pure returns (string memory) {
         if (chainId == 1) return "eth-mainnet";
         if (chainId == 10) return "opt-mainnet";
+        if (chainId == 56) return "bnb-mainnet";
         if (chainId == 100) return "gnosis-mainnet";
         if (chainId == 42161) return "arb-mainnet";
         if (chainId == 8453) return "base-mainnet";

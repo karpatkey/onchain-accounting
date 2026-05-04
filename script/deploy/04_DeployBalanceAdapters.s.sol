@@ -29,6 +29,8 @@ import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.s
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
+import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -164,6 +166,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Uniswap V3 (one instance per pool — Mainnet) ---
         _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
+
+        // --- PancakeSwap V2 (one per pair) ---
+        _deployIfEnabled("PancakeSwapV2_ETH_COW"); // BSC — Binance-Peg ETH / COW
+
+        // --- PancakeSwap V3 (one per pool) ---
+        _deployIfEnabled("PancakeSwapV3_WETH_COW"); // Base — WETH / COW 0.25%
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // DaiDsr, SkySavingsUsds, and StakeWiseV3* adapters exist in this repo but are NOT used by
@@ -331,8 +339,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMerklRewards(adapterName, navCalculator);
         }
 
+        // Uniswap V3 adapters (one instance per pool)
         if (_startsWith(adapterName, "UniswapV3_")) {
             return _deployUniswapV3(adapterName, navCalculator);
+        }
+
+        // PancakeSwap V2 adapters (one instance per pair) — reuses UniswapV2BalanceOracle.
+        if (_startsWith(adapterName, "PancakeSwapV2_")) {
+            return _deployPancakeSwapV2(adapterName, navCalculator);
+        }
+
+        // PancakeSwap V3 adapters (one instance per pool) — separate contract from UniswapV3 due to
+        // PCS V3's `slot0().feeProtocol` being uint32 (vs Uniswap V3's uint8). See PancakeSwapV3Pool.sol NatSpec.
+        if (_startsWith(adapterName, "PancakeSwapV3_")) {
+            return _deployPancakeSwapV3(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -697,6 +717,58 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         UniswapV3PoolBalanceOracle adapter =
             new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployPancakeSwapV2(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "PancakeSwapV2_<pair>": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "pair": "0x...",                 // PCS V2 pair (token0/token1/factory derived from this)
+        //       "protocol": "PancakeSwap V2",
+        //       "positionDetail": "ETH/COW LP"
+        //     }
+        //   }
+        // PancakeSwapV2BalanceOracle is a thin (SparkLend-style) subclass of UniswapV2BalanceOracle
+        // — see src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
+        address pair =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        PancakeSwapV2BalanceOracle adapter =
+            new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployPancakeSwapV3(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "PancakeSwapV3_<pool>": {
+        //     "enabled": true,
+        //     "constructor": {
+        //       "pool": "0x...",                  // PCS V3 pool (token0/token1/fee/tickSpacing derived)
+        //       "positionManager": "0x46A1...",   // canonical PCS V3 NPM (CREATE2; same on every chain)
+        //       "protocol": "PancakeSwap V3",
+        //       "positionDetail": "WETH/COW 0.25%"
+        //     }
+        //   }
+        // Separate contract from UniswapV3PoolBalanceOracle: PCS V3's slot0().feeProtocol is uint32
+        // (vs Uniswap V3's uint8). See src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol NatSpec.
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        PancakeSwapV3PoolBalanceOracle adapter =
+            new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

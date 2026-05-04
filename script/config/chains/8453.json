@@ -186,6 +186,17 @@
       },
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
+    },
+    "PancakeSwapV3_WETH_COW": {
+      "enabled": false,
+      "constructor": {
+        "pool": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF",
+        "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+        "protocol": "PancakeSwap V3",
+        "positionDetail": "WETH/COW 0.25%"
+      },
+      "deployed": "",
+      "comment": "PancakeSwap V3 WETH/COW 0.25% pool on Base (factory.getPool resolves to this address). NPM is the canonical PancakeSwap V3 NonfungiblePositionManager (CREATE2 — same address on every supported chain). Disabled by default: COW on Base is not registered in assets.json (no Chainlink feed available), so enabling this adapter as-is would silently drop the COW leg of any in-range position and value it on WETH alone — understating the position by roughly half. Register Base COW with a working oracle (custom feed or pricing the bridged COW via Mainnet TWAP) before flipping this on. Test holder 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669 holds NFT 936925 in this pool (currently liquidity=0)."
     }
   },
   "bridgeAdapters": {

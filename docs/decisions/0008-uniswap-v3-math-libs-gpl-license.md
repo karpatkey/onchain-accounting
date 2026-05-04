@@ -56,3 +56,15 @@ For *any* future balance adapter that needs to inline upstream math from a non-p
 - The adapter file itself stays MIT.
 
 If a future situation calls for a different posture (clean-room MIT port, GPL-only adapter, dual-licensed lib, …), write a new ADR rather than amending this one.
+
+## Addendum (2026-05-04): PancakeSwap V3 reuses these libs via inheritance
+
+PancakeSwap V3 is a Uniswap V3 fork: same pool view surface, same NPM `positions` struct, same fee-growth math, same `LiquidityAmounts.getAmountsForLiquidity` mapping. The single divergence is that PancakeSwap's `slot0().feeProtocol` is `uint32` (per-token tiers packed into 32 bits) where Uniswap V3's is `uint8` (both tiers packed into 4-bit halves of a single byte). Solidity 0.8's strict ABI decoder rejects a `uint8` read whenever the high bits of the 32-byte word are set, which is the case on every active PancakeSwap V3 pool.
+
+Rather than ship a duplicate ~500-line `PancakeSwapV3PoolBalanceOracle`, we marked `UniswapV3PoolBalanceOracle._slot0()` `virtual` and have PancakeSwap V3 inherit the parent and override only that one read with a local interface declaration containing `uint32 feeProtocol`. The pattern matches `SparkLendBalanceOracle is AaveV3InstanceBalanceOracle` already used elsewhere in this repo.
+
+Implications for this ADR:
+
+- The GPL-2.0-or-later combined-work obligation flows through inheritance the same way it flows through direct calls. `PancakeSwapV3PoolBalanceOracle` consumes `TickMath`/`LiquidityAmounts`/`FixedPoint128` transitively via the parent and is therefore part of the same combined work.
+- The convention "any future Uniswap-math consumer should reuse `lib/` rather than re-inlining" extends to fork adapters: they should reuse `src/balances/protocols/uniswap/lib/*` rather than copying the libs into `protocols/<fork>/lib/`. PancakeSwap V3 is the first such consumer.
+- The `virtual` hook is intentionally narrow (single internal helper) so the GPL-bearing math stays in the parent. Future fork adapters that diverge in similar tightly-scoped ways (different pool ABI fields, different NPM, etc.) should follow the same pattern: virtualize the smallest hook that isolates the divergence.

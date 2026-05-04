@@ -1,0 +1,44 @@
+{
+  "chainId": 56,
+  "name": "bsc",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://bscscan.com",
+  "explorerApiKey": "$BSCSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "BNB",
+  "addresses": {
+    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "$comment": "Roles default to the canonical karpatkey OIV Safe address used on the other 5 chains. Confirm/replace before broadcasting deploy 02 if a different Safe is preferred on BSC."
+  },
+  "deployed": {
+    "NAVCalculatorImplementation": "",
+    "NAVCalculatorProxy": "",
+    "BridgeEscrowImplementation": "",
+    "BridgeEscrowProxy": "",
+    "$comment": "Empty until deploy scripts 01_DeployImplementations and 02_DeployProxies are broadcast on BSC. CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) is present on BSC, so the implementation address will match the other chains."
+  },
+  "balanceAdapters": {
+    "ERC20Default": {
+      "enabled": true,
+      "constructor": {
+        "navCalculator": ""
+      },
+      "deployed": "",
+      "$comment": "navCalculator is filled in after 02_DeployProxies populates `deployed.NAVCalculatorProxy` above."
+    },
+    "PancakeSwapV2_ETH_COW": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0x74D4Ee4CA29Ca2FB69B31E9cbd4523b707e64662",
+        "protocol": "PancakeSwap V2",
+        "positionDetail": "ETH/COW LP"
+      },
+      "deployed": "",
+      "$comment": "Cake-LP for Binance-Peg ETH (0x2170...) / CoW Protocol Token (0x5BfdAa...). Test holder 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669 is the genesis LP. Disabled by default: COW has no Chainlink feed on BSC, so registering it would require a custom price feed first. Until that lands, NAVCalculator's per-asset registry filter would silently drop the COW leg of any PCS V2 ETH/COW LP and value the position only on its ETH side — i.e. understate it by ~half. Enable once COW is priced (or replace this entry with a different pair that has fully-priced tokens)."
+    }
+  },
+  "bridgeAdapters": {},
+  "priceFeeds": {}
+}

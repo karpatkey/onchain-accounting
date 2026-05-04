@@ -594,6 +594,51 @@
         "heartbeat": 86400
       }
     },
+    "56": {
+      "BNB": {
+        "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "type": "Chainlink",
+        "pricefeed": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
+        "heartbeat": 3600
+      },
+      "WBNB": {
+        "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+        "type": "Chainlink",
+        "pricefeed": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
+        "heartbeat": 3600
+      },
+      "USDC": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "type": "Chainlink",
+        "pricefeed": "0x51597f405303C4377E36123cBc172b13269EA163",
+        "heartbeat": 86400
+      },
+      "USDT": {
+        "address": "0x55d398326f99059fF775485246999027B3197955",
+        "type": "Chainlink",
+        "pricefeed": "0xB97Ad0E74fa7d920791E90258A6E2085088b4320",
+        "heartbeat": 86400
+      },
+      "ETH": {
+        "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+        "type": "Chainlink",
+        "pricefeed": "0x9ef1B8c0E4F7dc8bF5719Ea496883DC6401d5b2e",
+        "heartbeat": 86400,
+        "note": "Binance-Peg Ethereum Token (the BSC representation of ETH)."
+      },
+      "CAKE": {
+        "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+        "type": "Chainlink",
+        "pricefeed": "0xB6064eD41d4f67e353768aA239cA86f4F73665a1",
+        "heartbeat": 86400
+      },
+      "COW": {
+        "address": "0x5BfdAa3f7C28B9994B56135403bF1aCEA02595b0",
+        "type": "None",
+        "pricefeed": "",
+        "note": "No Chainlink feed for COW on BSC. NAVCalculator filters per-asset against the registry, so leaving COW unregistered does NOT exclude an ETH/COW LP from NAV — only the COW *leg* drops, while the ETH leg is still priced. The PCS V2 ETH/COW adapter is therefore disabled in chains/56.json until COW is priced (e.g. via a custom feed or a TWAP-based feed); enabling it without registering COW would silently understate the LP's NAV by roughly half."
+      }
+    },
     "137": {
       "POL": {
         "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",

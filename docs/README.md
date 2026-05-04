@@ -11,3 +11,4 @@ Onboarding and reference material that supplements the in-tree per-domain docs (
 | [`howto/add-chain.md`](howto/add-chain.md) | End-to-end walkthrough for adding a new chain (config, asset registry, deploy steps). |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | How to bump the integration-test fork blocks, refresh expected NAVs, and cross-check against Debank. |
 | [`decisions/`](decisions/) | Numbered ADRs (Architecture Decision Records). Read when you want the *why* behind a design. |
+| [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) | Backlog of protocols and position types not yet covered by balance oracles (LST withdrawal queues, restaking primitives, RWA, perps, …). Pick from here when adding a new adapter. |

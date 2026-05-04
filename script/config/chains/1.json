@@ -25,6 +25,15 @@
       },
       "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
+    "AaveV2_Mainnet": {
+      "enabled": true,
+      "constructor": {
+        "dataProvider": "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d",
+        "protocol": "Aave V2"
+      },
+      "deployed": "",
+      "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, so the V2 adapter is a thin subclass of AaveV3InstanceBalanceOracle (see src/balances/protocols/AaveV2Instance.sol). Stable-debt positions are not reported — V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
+    },
     "AaveV3_Core": {
       "enabled": true,
       "constructor": {
@@ -444,6 +453,66 @@
       },
       "deployed": ""
     },
+    "CompoundV3_USDC": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 USDC"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_USDS": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 USDS"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_USDT": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 USDT"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_WBTC": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 WBTC"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_WETH": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 WETH"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_wstETH": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "comet": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound v3 wstETH"
+      },
+      "deployed": ""
+    },
     "StaderWithdrawalQueue": {
       "enabled": true,
       "constructor": {
@@ -463,6 +532,16 @@
       },
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
+    },
+    "UniswapV3_WBTC_WETH_3000": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+        "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "protocol": "Uniswap V3",
+        "positionDetail": "WBTC/WETH 0.3%"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

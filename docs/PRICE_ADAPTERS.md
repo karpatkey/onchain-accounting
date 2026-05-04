@@ -136,6 +136,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `eETH_Price` | eETH | eETH-per-ETH × ETH/USD |
 | `weETH_Price`, `weETH_L2_Price` | weETH | weETH-per-eETH × eETH/USD chain |
 | `ezETH_Price`, `ezETH_L2_Price` | ezETH | Renzo reporter rate × ETH/USD |
+| `ETHx_Price` | ETHx | Stader `StakePoolsManager.getExchangeRate` × ETH/USD |
 
 ### Other derived
 

@@ -1,0 +1,89 @@
+# Balance-adapter coverage roadmap
+
+Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance oracles, with the goal of growing NAV coverage one PR at a time.
+
+The Stader withdrawal-queue adapter (`src/balances/protocols/StaderWithdrawalQueue.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports a single aggregated credit position in the underlying asset. Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
+
+When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultOracle` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
+
+---
+
+## LST/LRT withdrawal queues
+
+The point of these adapters is to track value that has left the LST as ERC20 but hasn't yet returned as ETH/native. While in the queue the position is invisible to `ERC20DefaultOracle`.
+
+| Protocol | Manager (mainnet) | Shape | Notes |
+|---|---|---|---|
+| **Stader (ETHx)** ✅ | `0x9F0491B32DBce587c50c4C43AB303b06478193A7` | Sequential `requestId`, `requestIdsByUserAddress(address, idx)` getter, `userWithdrawRequests(id)` returns `(owner, ethXAmount, ethExpected, ethFinalized, requestBlock)`. `nextRequestIdToFinalize` gates claimability. | Implemented in this repo. |
+| **Lido (stETH)** | `WithdrawalQueueERC721` at `0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1` | ERC721. Enumerate via `getWithdrawalRequests(address) → uint256[]`. Per-id status via `getWithdrawalStatus(uint256[]) → WithdrawalRequestStatus[]` returning `amountOfStETH, amountOfShares, owner, timestamp, isFinalized, isClaimed`. | Highest-volume LST; clearest follow-up. Report stETH amount (1:1-ish to ETH) or convert via the per-request shares. |
+| **etherFi (eETH/weETH)** | `WithdrawRequestNFT` at `0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c` | ERC721. Enumerate via `IERC721Enumerable.tokenOfOwnerByIndex` (the contract is enumerable). Per-id `getRequest(uint256) → (amountOfEEth, shareOfEEth, isValid, feeGwei)`. | Reports eETH amount; convert via `LiquidityPool.amountForShare()` if needed. |
+| **Frax (frxETH/sfrxETH)** | `FraxEtherRedemptionQueue` at `0x82bA8da44Cd5261762e629dd5c605b17715727bd` | ERC721. `nftInformation(uint256)` returns the redemption metadata. | Reports ETH owed at maturity; uses `maturity` block, not finalization batches. |
+| **Renzo (ezETH)** | `WithdrawQueue` at `0xf2F305D14DCD8aaef887E0428B3c9534795D0d60` | ERC721 with explicit `withdrawRequests` mapping; sequential IDs per holder. | Newer queue; finalization tied to Renzo restaking unwinds. |
+| **Kelp (rsETH)** | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b25E5F1828BAB26A73f3aa39` (verify before use) | Per-supported-asset queues (ETH, stETH, ETHx, sfrxETH). Per-asset reads + claim. | Multi-token queue: one adapter instance per supported underlying, or one parameterised by underlying. |
+| **Mantle (mETH)** | `Staking` contract; `unstakeRequest`/`claimUnstakeRequest` | Sequential `unstakeRequestId` per user; struct includes `mETHLocked`, `ethRequested`, `cumulativeETHRequested`, `blockNumber`. | Similar shape to Stader. |
+| **StakeWise V3 exit queue** | per-Vault `enterExitQueue(shares)` returning a position id | Already partially addressed by `StakeWiseV3Vault.sol` for queued shares. **Verify** whether the exit-queue position is tracked end-to-end before adding a separate adapter. | Possibly already covered. |
+| **Rocket Pool (rETH)** | n/a | Burn-for-ETH is instant when the deposit pool has liquidity, otherwise the call reverts; no queue. | No adapter needed. |
+| **Coinbase (cbETH)** | n/a (centralised) | Off-chain wrap/unwrap. | No on-chain queue position. |
+
+### Implementation notes (apply across the queue family)
+
+- **Single aggregated position.** Sum across all open requests for the account, emit one `PositionBalance` in the configured underlying — same as `StaderWithdrawalQueue`. Splitting per request would inflate NAV row count without analytical gain.
+- **Claimed-entry handling.** Some managers `delete` storage on claim (Stader: `owner == address(0)` filter); ERC721-based ones burn the NFT (out of `tokenOfOwnerByIndex` automatically). Each adapter should explicitly skip claimed entries.
+- **Bound the loop.** Even if enumeration is auto-exiting (revert-on-OOB or NFT enumeration), keep a hard `MAX_REQUESTS_PROBED` cap so a malicious/legit pathological account can't blow gas.
+- **Underlying token configurable.** Let the constructor take `underlyingToken_` so each chain config picks WETH or `NATIVE_ADDRESS` (ERC-7528) based on what the rest of the system reports. Mirror `StakeWiseV3OsToken` and the Stader queue.
+- **Pre-finalization vs. finalized amount.** Use `ethFinalized` once set (post-finalization, exact). Before finalization, fall back to whatever rate-converted estimate the protocol stores at request time (`ethExpected` for Stader, `amountOfStETH` × stETH/ETH for Lido, etc.). Never invent a rate inside the adapter.
+
+---
+
+## Other position types not yet covered
+
+These are not queues but represent value that lives outside the wallet and is not currently surfaced.
+
+### Restaking / LRT primitives
+
+- **EigenLayer**: native ETH and LST stake delegated to operators (`StrategyManager`, `DelegationManager`). Open queue: `withdrawalQueue` for delegated unstakes. Likely needed if any Alpha fund delegates to operators.
+- **Symbiotic**: similar shape to EigenLayer; vaults + delegations.
+- **Karak**: ditto.
+
+### Yield / structured products
+
+- **Pendle PT/YT**: principal-token (PT) and yield-token (YT) positions in markets and SY vaults. Each Pendle market issues distinct PT and YT ERC20s; the underlying value is non-trivial (PT depends on time-to-maturity, YT depends on accrued yield since last redemption). One adapter per market or per-LP.
+- **Yearn V3 vaults**: only Morpho vaults are covered today via `MorphoVault.sol`; Yearn V3 vaults are pure ERC4626 and could share that adapter or get a thin wrapper.
+- **Beefy vaults**: ERC4626-shaped, same pattern as Morpho.
+- **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultOracle` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
+- **Maple direct lending pools** (beyond syrupUSDC): pool tokens with withdrawal cooldowns.
+
+### Money markets and credit
+
+- **Compound V3**: adapter exists (`CompoundV3Comet.sol`) but isn't wired into the Alpha funds today; revisit if usage starts.
+- **Euler V2**: cluster-based lending; per-vault EVK accounting.
+- **Fluid**: lending + DEX hybrid; collateral and debt accounting non-trivial.
+- **Ajna**: pool-based lending; inflation-bearing buckets.
+
+### RWA / off-chain backed
+
+- **Centrifuge tranches** (CFG): senior/junior tranche tokens in pools.
+- **Goldfinch / Backed / Maple direct**: per-pool ERC20s with withdrawal mechanics.
+- **Ondo (OUSG, USDY)**: KYC-gated wrappers; if held by kpk, treat as straight ERC20 with a custom price feed.
+
+### Perps / derivatives
+
+- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The `GMX adapter` listed in `BALANCE_ADAPTERS.md` may not yet exist or may be partial — verify.
+- **Hyperliquid (EVM bridge side)**: bridged collateral on `HyperEVM` if used.
+- **Synthetix V3**: collateral and debt positions per pool.
+
+### Cross-chain / locked
+
+- **Bridge in-flight balances**: assets in transit across CCIP/LayerZero/Across — already handled by `BridgeEscrow` accounting on the bridge side; double-check there's no gap when escrow + adapter views diverge.
+
+---
+
+## How to use this list
+
+1. Pick a row whose protocol kpk **actually uses or imminently will**.
+2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
+3. Mirror `StaderWithdrawalQueue.sol` (queue family) or whichever existing adapter is closest in shape.
+4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol` and `06_2_AddBalanceOracles.s.sol` `_balanceAdapterNames()`.
+5. Update this file: cross off the row or add caveats discovered during implementation.
+
+When a row turns out to be irrelevant (e.g. RPL queue, Coinbase off-chain unwrap), strike it through with a one-line reason rather than deleting — future contributors should see it was considered.

@@ -371,9 +371,13 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
 
     /// @dev Returns the unclaimed COMP balance for `account` for this Comet, i.e. accrued − claimed.
     ///      Replays Comet's reward accrual in pure view (the on-chain `getRewardOwed` mutates state).
+    /// @dev Defensive: if the rewards contract is ever reconfigured to emit a token other than
+    ///      `REWARD_TOKEN`, returns 0 instead of pricing the new token's amount under
+    ///      `REWARD_TOKEN`. NAV would otherwise mis-price rewards on a contract upgrade —
+    ///      preferable to redeploy the adapter than silently mislabel the asset.
     function _rewardOwed(address account) internal view returns (uint256) {
         (address token, uint64 rescaleFactor, bool shouldUpscale, uint256 multiplier) = _rewardConfig();
-        if (token == address(0)) return 0;
+        if (token == address(0) || token != address(REWARD_TOKEN)) return 0;
 
         uint256 claimed = COMPOUND_REWARDS.rewardsClaimed(COMET, account);
         uint256 accrued = _rewardAccrued(account, shouldUpscale, rescaleFactor, multiplier);

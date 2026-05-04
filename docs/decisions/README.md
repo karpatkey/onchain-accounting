@@ -23,3 +23,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0004 | [Morpho Blue: project pending interest into NAV (vs use stored values)](0004-morpho-projected-vs-stored-balances.md) | accepted |
 | 0005 | [Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md) | accepted |
 | 0006 | [Aave Umbrella Balance Oracle: dynamic discovery via RewardsController](0006-aave-umbrella-balance-oracle.md) | accepted |
+| 0007 | [Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache](0007-merkl-trust-minimized-cache.md) | accepted |

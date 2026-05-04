@@ -6,7 +6,7 @@ This file is auto-loaded into every Claude Code session in this repo. Treat it a
 
 Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol position oracles), **prices** (Chainlink + custom feeds), **NAV** (`NAVCalculator` aggregates the two), and **bridge** (escrow + per-protocol bridge adapters). No tokenized share or sub/redeem logic lives here — that sits in a separate layer above NAV and the bridge.
 
-`NAVCalculator` is UUPS-upgradeable. Balance and price adapters are deployed standalone (not proxied) — each is immutable post-deploy, with **one documented exception** (the Aave V3 Safety Module adapter; see `docs/decisions/0002-aave-safety-module-multi-token.md`).
+`NAVCalculator` is UUPS-upgradeable. Balance and price adapters are deployed standalone (not proxied) — each is immutable post-deploy, with **one documented exception**: the Merkl rewards adapter (`src/balances/protocols/MerklRewards.sol`) keeps a per-(user, token) merkle-proof cache as mutable storage, gated by `onlyOwner` and verified on-chain against the live Merkl Distributor root, so the owner cannot fabricate amounts. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. (The Aave V3 Safety Module was previously listed as the documented exception per ADR 0002; ADR 0005 superseded that and made the SM adapter fully immutable.)
 
 ## Repo layout
 
@@ -41,7 +41,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 
 - **Adapters report balances, not values.** Every balance oracle returns `INAVCalculator.PositionBalance[]` with `amount` always **positive** and `isDebt` flagging debt vs. credit. NAVCalculator does the pricing and signing. See `src/balances/BALANCE_ADAPTERS.md` §2–§3.
 - **`balanceOracle` field is `address(this)`.** Always. It is the audit trail.
-- **Adapters are immutable.** No `Ownable`, no admin functions, no upgrade. Constructor pins everything. The Safety Module adapter is the documented exception (mutable stake-token list); any new mutable adapter requires a fresh ADR.
+- **Adapters are immutable.** No `Ownable`, no admin functions, no upgrade. Constructor pins everything. The Merkl rewards adapter is the documented exception (proof-verified mutable cache, owner-gated; see ADR 0007). Any new mutable adapter requires a fresh ADR.
 - **Factories are CREATE2.** Every per-protocol factory inherits `BalanceAdapterFactoryBase` and pins `PROTOCOL_KEY = keccak256("<ProtocolName>")` at construction. Cross-chain identical addresses for the same `(initCode, salt)`. Canonical deployer: `0x4e59b44847b379578588920cA78FbF26c0B4956C`. See `src/balances/factories/BalanceAdapterFactoryBase.sol`.
 - **Registration goes through `BalanceAdapterRegistry`.** The registry owns MANAGER on `NAVCalculator`. Factory `deploy()` ends with `REGISTRY.register(adapter)`; never call `NAVCalculator.addBalanceOracle` directly.
 - **Per-protocol folder layout.** New balance protocols go under `src/balances/protocols/<protocol>/` with a sibling factory file (`<Protocol>AdapterFactory.sol`) and matching tests under `test/balances/protocols/`.

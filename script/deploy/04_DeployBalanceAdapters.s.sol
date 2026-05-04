@@ -25,6 +25,7 @@ import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeW
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
+import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -133,6 +134,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
+
+        // --- Uniswap V3 (one instance per pool — Mainnet) ---
+        _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // DaiDsr, SkySavingsUsds, and StakeWiseV3* adapters exist in this repo but are NOT used by
@@ -282,6 +286,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
         if (_equals(adapterName, "MerklRewards")) {
             return _deployMerklRewards(adapterName, navCalculator);
+        }
+
+        if (_startsWith(adapterName, "UniswapV3_")) {
+            return _deployUniswapV3(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -590,6 +598,22 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         MerklRewardsBalanceOracle adapter =
             new MerklRewardsBalanceOracle(distributor, navCalculator, protocol, positionDetail, chainConfig.admin);
+        return address(adapter);
+    }
+
+    function _deployUniswapV3(string memory adapterName, address navCalculator) internal returns (address) {
+        address pool =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        UniswapV3PoolBalanceOracle adapter =
+            new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

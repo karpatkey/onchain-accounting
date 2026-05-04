@@ -439,6 +439,16 @@
       },
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
+    },
+    "UniswapV3_WBTC_WETH_3000": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+        "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "protocol": "Uniswap V3",
+        "positionDetail": "WBTC/WETH 0.3%"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

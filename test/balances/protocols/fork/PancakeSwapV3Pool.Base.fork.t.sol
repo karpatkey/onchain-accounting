@@ -42,7 +42,10 @@ interface IPancakeV3PoolFork {
             uint16 observationIndex,
             uint16 observationCardinality,
             uint16 observationCardinalityNext,
-            uint8 feeProtocol,
+            // PCS V3 packs per-token protocol-fee tiers into uint32 (vs Uniswap V3's uint8 with
+            // both tiers in 4-bit halves). Strict ABI decode rejects uint8 when any of the
+            // upper bits are set, which is the case on every active PCS V3 pool.
+            uint32 feeProtocol,
             bool unlocked
         );
 }

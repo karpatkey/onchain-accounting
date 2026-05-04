@@ -13,13 +13,6 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 
-# The integration test harness deploys ~65 adapters and registers ~28 assets
-# in setUp via repeated vm.readFile of assets.json + chain configs. EVM memory
-# expansion accumulates within the script's outer call frame; the default
-# gas_limit (1 GiB for `forge script`) trips MemoryOOG once the harness covers
-# PR #25–#34's adapter family. Both bumped to 16 GiB to leave headroom.
-gas_limit = 17179869184
-memory_limit = 17179869184
 
 # Default behaviour changed on commit https://github.com/foundry-rs/foundry/commit/39f13df8971b02f5961d4fd2cb278f44e19a717a
 optimizer = true
@@ -56,6 +49,14 @@ show_metrics = true
 # compute_units_per_second: mirrors --compute-units-per-second (throttles RPC during fork; default 330)
 [profile.slow]
 threads = 1
+# The integration harness in test/integration/IntegrationFromConfigBase.fork.sol
+# deploys ~30 balance adapters + registers ~28 assets in a single setUp call
+# frame. EVM memory expansion (quadratic gas cost) accumulates and trips
+# MemoryOOG against the default 1 GiB script gas_limit. Bump both to 16 GiB
+# under the slow profile so the integration tests have headroom; default
+# profile (unit tests) is unaffected.
+gas_limit = 17179869184
+memory_limit = 17179869184
 
 
 [etherscan]

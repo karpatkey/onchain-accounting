@@ -708,7 +708,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](72);
+        names = new string[](73);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -777,6 +777,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "Fluid_fToken_wstETH";
         names[i++] = "Fluid_fToken_GHO";
         names[i++] = "Fluid_fToken_sUSDe";
+        names[i++] = "Fluid_fToken_WPOL"; // Polygon (chain 137); harmless on chains where it isn't enabled.
         names[i++] = "Fluid_Vault_wstETH_USDC";
         names[i++] = "Fluid_Vault_weETH_wstETH";
         names[i++] = "Fluid_Vault_sUSDe_USDC";
@@ -1034,12 +1035,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Iterate every account in accounts.json whose enabledChains includes _chainId,
     ///         read NAV via getAccountNav, log it, and assert it equals the snapshotted expected value.
-    /// @dev On a failed assertion the message includes the account label so failures are attributable
-    ///      even though all accounts share a single test method.
+    /// @dev Deferred-failure: walks every enabled (account, chain) pair, logs each actual NAV vs
+    ///      expected, accumulates mismatches into a single list, and reverts at the end with a
+    ///      summary if any account failed. This way a single CI run surfaces every drifted snapshot
+    ///      at once instead of stopping at the first mismatch — important when the harness adapter
+    ///      surface changes and many snapshots need re-pinning.
     function _assertNavsForCurrentChain() internal view {
         require(_chainId != 0, "_chainId not set");
         string memory json = _readAccountsJson();
 
+        uint256 mismatches = 0;
         uint256 i;
         while (true) {
             string memory base = string.concat(".accounts[", vm.toString(i), "]");
@@ -1059,14 +1064,32 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
                 INAVCalculator.NAV memory n = _readUsdNav(account);
                 _logNav(label, account);
-                assertEq(n.value, expected, string.concat(label, " NAV mismatch (8dp USD)"));
-                assertEq(n.stalePriceAssets.length, 0, string.concat(label, ": stale prices present"));
-                assertEq(n.sequencerDown, false, string.concat(label, ": sequencer down"));
+                if (n.value != expected) {
+                    console2.log("[NAV-MISMATCH]", label, "chainId:", _chainId);
+                    console2.log("  expected (8dp USD):", expected);
+                    console2.log("  actual   (8dp USD):", n.value);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
+                if (n.stalePriceAssets.length != 0) {
+                    console2.log("[STALE-PRICES]", label, "count:", n.stalePriceAssets.length);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
+                if (n.sequencerDown) {
+                    console2.log("[SEQUENCER-DOWN]", label);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
             }
             unchecked {
                 ++i;
             }
         }
+        require(mismatches == 0, "one or more NAV assertions failed; see [NAV-MISMATCH] logs above");
     }
 
     function _readAccountsJson() internal view returns (string memory) {

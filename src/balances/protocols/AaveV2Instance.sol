@@ -5,10 +5,13 @@ import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance
 
 /// @title Aave V2 Instance Balance Oracle
 /// @author kpk
-/// @notice This contract calculates a user's positions in Aave V2 by:
-/// 1. Retrieving the user's supplied and borrowed amounts for each supported reserve via the Protocol Data Provider
-/// 2. Returning separate supply and borrow positions (no netting — supply and borrow are distinct PositionBalance entries)
+/// @notice This contract calculates a user's positions in Aave V2 by retrieving the user's
+/// supplied and borrowed amounts for each supported reserve via the Protocol Data Provider.
 /// The final balance is denominated in the underlying asset of the reserve.
+/// @dev Inherits all logic from `AaveV3InstanceBalanceOracle`, which means:
+/// - `getOracleBalanceForAsset` and `getOracleBalances` return the **net** of supply minus
+///   variable debt per asset, with `isDebt` indicating the sign.
+/// - `getOraclePositions` returns separate legs (Supply/Collateral and Borrow) per asset.
 /// @dev Aave V2's `AaveProtocolDataProvider` exposes the same `getAllReservesTokens()` and
 /// `getUserReserveData(asset, user)` ABI as Aave V3 (9 return values, identical types and order),
 /// so the V3 adapter logic applies unchanged to V2.

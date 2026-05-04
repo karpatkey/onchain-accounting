@@ -7,9 +7,10 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title AaveV2InstanceBalanceOracleForkTest
 /// @notice Fork tests for AaveV2InstanceBalanceOracle using real Mainnet Aave V2 contracts
-/// @dev AaveV2Instance inherits from AaveV3Instance — V2's ProtocolDataProvider exposes the
-/// same getAllReservesTokens() and getUserReserveData(asset, user) ABI as V3, so the V3 logic
-/// applies unchanged. These tests verify that against real on-chain V2 state.
+/// @dev `AaveV2InstanceBalanceOracle` inherits from `AaveV3InstanceBalanceOracle` — V2's
+/// ProtocolDataProvider exposes the same `getAllReservesTokens()` and
+/// `getUserReserveData(asset, user)` ABI as V3, so the V3 logic applies unchanged. These
+/// tests verify that against real on-chain V2 state.
 contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
     // Aave V2 Mainnet addresses
     address public constant AAVE_V2_DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d;

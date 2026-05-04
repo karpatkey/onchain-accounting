@@ -9,9 +9,10 @@ import {MockAaveProtocolDataProvider} from "test/balances/protocols/AaveV3Instan
 /// @title AaveV2InstanceBalanceOracleTest
 /// @notice Unit and implementation tests for AaveV2InstanceBalanceOracle
 /// @dev Tests adapter logic and error handling without requiring fork
-/// @dev AaveV2Instance inherits from AaveV3Instance — the V2 ProtocolDataProvider exposes the
-/// same getAllReservesTokens() and getUserReserveData(asset, user) ABI, so most logic is
-/// covered by the AaveV3Instance unit suite.
+/// @dev `AaveV2InstanceBalanceOracle` inherits from `AaveV3InstanceBalanceOracle` — the V2
+/// ProtocolDataProvider exposes the same `getAllReservesTokens()` and
+/// `getUserReserveData(asset, user)` ABI as V3, so most logic is covered by the
+/// `AaveV3InstanceBalanceOracle` unit suite.
 contract AaveV2InstanceBalanceOracleTest is BalanceAdapterTestBase {
     AaveV2InstanceBalanceOracle public oracle;
     MockAaveProtocolDataProvider public mockDataProvider;
@@ -34,7 +35,7 @@ contract AaveV2InstanceBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
+    function test_getOracleBalanceForAsset_returns_zero_for_zero_address_account() public view {
         (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
         assertEq(amount, 0);
     }

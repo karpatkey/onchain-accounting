@@ -25,6 +25,7 @@ import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeW
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
+import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 
 /// @title DeployBalanceAdapters
@@ -138,6 +139,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
         _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
         _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet
+
+        // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
+        _deployIfEnabled("StaderWithdrawalQueue");
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
@@ -290,6 +294,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Fluid Vault adapters (one per T1 vault instance)
         if (_startsWith(adapterName, "Fluid_Vault_")) {
             return _deployFluidVault(adapterName, navCalculator);
+        }
+
+        // Stader withdrawal queue
+        if (_equals(adapterName, "StaderWithdrawalQueue")) {
+            return _deployStaderWithdrawalQueue(adapterName, navCalculator);
         }
 
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
@@ -586,6 +595,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         FluidVaultBalanceOracle adapter =
             new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStaderWithdrawalQueue(string memory adapterName, address navCalculator) internal returns (address) {
+        address userWithdrawalManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "userWithdrawalManager")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        StaderWithdrawalQueueBalanceOracle adapter = new StaderWithdrawalQueueBalanceOracle(
+            userWithdrawalManager, underlyingToken, protocol, positionDetail, navCalculator
+        );
         return address(adapter);
     }
 

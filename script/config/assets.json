@@ -68,6 +68,17 @@
         }
       }
     },
+    "ETHx": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "ethx": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+          "stakePoolsManager": "0xcf5EA1b38380f6aF39068375516Daf40Ed70D299",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
     "sUSDe": {
       "1": {
         "enabled": true,
@@ -265,6 +276,13 @@
         "type": "Custom",
         "pricefeed": "0x0f580E84d92e89150bE94fCAA4D03C6B855D2FD8",
         "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+      },
+      "ETHx": {
+        "address": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+        "type": "Custom",
+        "pricefeed": "",
+        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935,
+        "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_PriceOracle address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
       },
       "MORPHO": {
         "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",

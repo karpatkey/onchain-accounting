@@ -303,6 +303,22 @@ contract UniswapV2BalanceOracleTest is Test {
         assertEq(amount, 200e18);
     }
 
+    function test_getOracleBalanceForAsset_pairWithoutKLast_treatsAsFeeDisabled() public {
+        // V2 forks that omit (or revert on) the `kLast()` getter must be treated as fee-disabled
+        // (no dilution adjustment), even when `factory.feeTo()` is non-zero.
+        mockFactory.setFeeTo(feeRecipient);
+        vm.mockCallRevert(address(mockPair), abi.encodeWithSignature("kLast()"), "");
+
+        mockPair.setBalance(alice, 100e18);
+        mockPair.setReserves(2000e18, 2000e18);
+        mockPair.setTotalSupply(1_000e18);
+        // (No `setKLast` — it would be ignored anyway since the call is mocked to revert.)
+
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(token0));
+        // No dilution (kLast() reverts → pendingMint = 0) → naive 10% × 2000 = 200
+        assertEq(amount, 200e18);
+    }
+
     // ============================================
     // getOracleBalances
     // ============================================

@@ -33,6 +33,36 @@
       },
       "deployed": "0xa6AA9bFC2257347C7c7041Ac1037410C55f4C806"
     },
+    "CompoundV3_USDC": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
+        "comet": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
+        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+        "protocol": "Compound v3 USDC"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_USDT": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
+        "comet": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214",
+        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+        "protocol": "Compound v3 USDT"
+      },
+      "deployed": ""
+    },
+    "CompoundV3_WETH": {
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
+        "comet": "0xE36A30D249f7761327fd973001A32010b521b6Fd",
+        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+        "protocol": "Compound v3 WETH"
+      },
+      "deployed": ""
+    },
     "MerklRewards": {
       "enabled": false,
       "constructor": {

@@ -14,6 +14,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
@@ -424,6 +425,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "AaveV3_")) {
             return _deployAaveV3(name, navAddr);
         }
+        if (_startsWith(name, "CompoundV3_")) {
+            return _deployCompoundV3(name, navAddr);
+        }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             return _deploySparkLend(name, navAddr);
         }
@@ -475,6 +479,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new SparkLendBalanceOracle(dataProvider, protocol, navAddr));
+    }
+
+    function _deployCompoundV3(string memory name, address navAddr) internal returns (address) {
+        address compoundRewards =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
+        address comet = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "comet"));
+        address rewardToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, navAddr));
     }
 
     function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {
@@ -582,7 +596,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](48);
+        names = new string[](57);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -591,6 +605,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "AaveV3_Base";
         names[i++] = "AaveV3_Optimism";
         names[i++] = "AaveV3_Gnosis";
+        names[i++] = "CompoundV3_USDC";
+        names[i++] = "CompoundV3_USDS";
+        names[i++] = "CompoundV3_USDT";
+        names[i++] = "CompoundV3_WBTC";
+        names[i++] = "CompoundV3_WETH";
+        names[i++] = "CompoundV3_wstETH";
+        names[i++] = "CompoundV3_USDCe";
+        names[i++] = "CompoundV3_USDbC";
+        names[i++] = "CompoundV3_AERO";
         names[i++] = "SparkLend";
         names[i++] = "AaveV3SafetyModule";
         names[i++] = "AaveUmbrella";

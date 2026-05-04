@@ -52,6 +52,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("AaveV3_Optimism");
         _deployIfEnabled("AaveV3_Gnosis");
 
+        // --- Compound V3 (one instance per Comet) ---
+        _deployIfEnabled("CompoundV3_USDC"); // Mainnet, Optimism, Arbitrum, Base
+        _deployIfEnabled("CompoundV3_USDS"); // Mainnet, Base
+        _deployIfEnabled("CompoundV3_USDT"); // Mainnet, Optimism, Arbitrum
+        _deployIfEnabled("CompoundV3_WETH"); // Mainnet, Optimism, Arbitrum, Base
+        _deployIfEnabled("CompoundV3_WBTC"); // Mainnet
+        _deployIfEnabled("CompoundV3_wstETH"); // Mainnet
+        _deployIfEnabled("CompoundV3_USDCe"); // Arbitrum (legacy USDC.e)
+        _deployIfEnabled("CompoundV3_USDbC"); // Base
+        _deployIfEnabled("CompoundV3_AERO"); // Base
+
         // --- Spark Lend (Mainnet only) ---
         _deployIfEnabled("SparkLend");
 
@@ -124,8 +135,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MerklRewards");
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
-        // exist in this repo but are NOT used by either Alpha fund, so they are not wired here.
+        // DaiDsr, SkySavingsUsds, and StakeWiseV3* adapters exist in this repo but are NOT used by
+        // either Alpha fund, so they are not wired here.
 
         vm.stopBroadcast();
 

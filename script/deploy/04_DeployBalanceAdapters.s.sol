@@ -28,8 +28,8 @@ import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
-import {UniswapV2BalanceOracle} from "../../src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 
 /// @title DeployBalanceAdapters
@@ -730,9 +730,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //       "positionDetail": "ETH/COW LP"
         //     }
         //   }
-        // PancakeSwap V2 is a byte-for-byte fork of Uniswap V2 (same _mintFee math, same feeTo/kLast),
-        // so we deploy the existing UniswapV2BalanceOracle with PancakeSwap labels rather than a separate
-        // contract. Compatibility is exercised by test/balances/protocols/fork/PancakeSwapV2.BSC.fork.t.sol.
+        // PancakeSwapV2BalanceOracle is a thin (SparkLend-style) subclass of UniswapV2BalanceOracle
+        // — see src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
         address pair =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
         string memory protocol =
@@ -740,7 +739,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
 
-        UniswapV2BalanceOracle adapter = new UniswapV2BalanceOracle(pair, protocol, positionDetail, navCalculator);
+        PancakeSwapV2BalanceOracle adapter =
+            new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

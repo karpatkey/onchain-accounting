@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
+import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
@@ -24,7 +24,7 @@ interface IPancakeV2FactoryFork {
     function feeTo() external view returns (address);
 }
 
-/// @title UniswapV2BalanceOracle fork tests — ETH/COW pair on BSC
+/// @title PancakeSwapV2BalanceOracle fork tests — ETH/COW pair on BSC
 /// @notice Tests the adapter against a live PancakeSwap V2 pair on BSC. The pair is
 ///         `0x74d4ee4ca29ca2fb69b31e9cbd4523b707e64662` (Cake-LP for Binance-Peg ETH × CoW Protocol),
 ///         and the test account `0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669` is effectively
@@ -34,7 +34,7 @@ interface IPancakeV2FactoryFork {
 ///         Requires either `BSC_URL` env var (preferred — KNode/Alchemy/QuickNode/etc.) or the
 ///         `ALCHEMY_API_KEY` fallback (which builds an Alchemy `bnb-mainnet` URL). Without
 ///         either, `vm.envOr` returns empty and `getAlchemyUrl` reverts with `RpcUrlNotSet`.
-contract UniswapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
+contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
     // PancakeSwap V2 BSC contracts.
     address public constant PAIR = 0x74D4Ee4CA29Ca2FB69B31E9cbd4523b707e64662;
     address public constant V2_FACTORY = 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
@@ -50,7 +50,7 @@ contract UniswapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
     // of the chain (RPC-stability margin).
     uint256 public constant FORK_BLOCK = 96_200_000;
 
-    UniswapV2BalanceOracle public oracle;
+    PancakeSwapV2BalanceOracle public oracle;
     address internal alice;
     address internal unknownAccount;
 
@@ -88,7 +88,7 @@ contract UniswapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBase {
         assets[0] = BSC_ETH;
         assets[1] = BSC_COW;
         balances = _deployBalancesForOracle(assets);
-        oracle = new UniswapV2BalanceOracle(PAIR, "PancakeSwap V2", "ETH/COW LP", address(balances));
+        oracle = new PancakeSwapV2BalanceOracle(PAIR, "PancakeSwap V2", "ETH/COW LP", address(balances));
     }
 
     // ============================================

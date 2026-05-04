@@ -63,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45569017,
+      "forkBlock": 45527149,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
@@ -120,7 +120,7 @@
           "debankUsd": "5.006032"
         },
         "8453": {
-          "navUsd8dp": "999991952",
+          "navUsd8dp": "1000036146",
           "debankUsd": "10.002350"
         },
         "42161": {

@@ -6,6 +6,7 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
+import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
@@ -52,6 +53,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("AaveV3_Base");
         _deployIfEnabled("AaveV3_Optimism");
         _deployIfEnabled("AaveV3_Gnosis");
+
+        // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
+        _deployIfEnabled("AaveV2_Mainnet");
 
         // --- Compound V3 (one instance per Comet) ---
         _deployIfEnabled("CompoundV3_USDC"); // Mainnet, Optimism, Arbitrum, Base
@@ -193,6 +197,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return address(0);
         }
 
+        // AaveV2 adapters (Aave V2's data provider has the same getUserReserveData / getAllReservesTokens
+        // ABI as V3, so the V2 adapter is a thin subclass — see src/balances/protocols/AaveV2Instance.sol)
+        if (_equals(adapterName, "AaveV2") || _startsWith(adapterName, "AaveV2_")) {
+            return _deployAaveV2(adapterName, navCalculator);
+        }
+
         // AaveV3 adapters
         if (_startsWith(adapterName, "AaveV3_")) {
             return _deployAaveV3(adapterName, navCalculator);
@@ -295,6 +305,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Unknown adapter type
         console2.log("Unknown adapter type:", adapterName);
         return address(0);
+    }
+
+    function _deployAaveV2(string memory adapterName, address navCalculator) internal returns (address) {
+        address dataProvider = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        AaveV2InstanceBalanceOracle adapter = new AaveV2InstanceBalanceOracle(dataProvider, protocol, navCalculator);
+        return address(adapter);
     }
 
     function _deployAaveV3(string memory adapterName, address navCalculator) internal returns (address) {

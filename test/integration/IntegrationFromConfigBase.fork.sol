@@ -14,6 +14,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
@@ -27,6 +28,13 @@ import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
 import {MerklRewardsBalanceOracle} from "src/balances/protocols/MerklRewards.sol";
+import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
+import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
+import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
+import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
+import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
@@ -134,11 +142,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (chainId == 10) return 0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389; // Optimism
         if (chainId == 42161) return 0xFdB631F5EE196F0ed6FAa767959853A9F217697D; // Arbitrum
         if (chainId == 8453) return 0xBCF85224fc0756B9Fa45aA7892530B47e10b6433; // Base
-        return address(0); // Mainnet, Gnosis (L1 / no sequencer feed)
+        // Mainnet (1), Gnosis (100), BSC (56), Polygon (137): no L2 sequencer feed.
+        return address(0);
     }
 
     function _nativeSymbol(uint256 chainId) internal pure returns (string memory) {
         if (chainId == 100) return "xDAI";
+        if (chainId == 56) return "BNB";
+        if (chainId == 137) return "POL";
         return "ETH";
     }
 
@@ -464,6 +475,30 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
+        if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
+            return _deployAaveV2(name, navAddr);
+        }
+        if (_startsWith(name, "Fluid_fToken_")) {
+            return _deployFluidFToken(name, navAddr);
+        }
+        if (_startsWith(name, "Fluid_Vault_")) {
+            return _deployFluidVault(name, navAddr);
+        }
+        if (_equals(name, "StaderWithdrawalQueue")) {
+            return _deployStaderWithdrawalQueue(name, navAddr);
+        }
+        if (_startsWith(name, "UniswapV2_")) {
+            return _deployUniswapV2(name, navAddr);
+        }
+        if (_startsWith(name, "UniswapV3_")) {
+            return _deployUniswapV3Pool(name, navAddr);
+        }
+        if (_startsWith(name, "PancakeSwapV2_")) {
+            return _deployPancakeSwapV2(name, navAddr);
+        }
+        if (_startsWith(name, "PancakeSwapV3_")) {
+            return _deployPancakeSwapV3Pool(name, navAddr);
+        }
         return address(0);
     }
 
@@ -595,8 +630,85 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new Aura(pool, gauge, booster, pid, protocol, positionDetail, navAddr));
     }
 
+    function _deployAaveV2(string memory name, address navAddr) internal returns (address) {
+        address dataProvider =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new AaveV2InstanceBalanceOracle(dataProvider, protocol, navAddr));
+    }
+
+    function _deployFluidFToken(string memory name, address navAddr) internal returns (address) {
+        address fToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "fToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, navAddr));
+    }
+
+    function _deployFluidVault(string memory name, address navAddr) internal returns (address) {
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        address vaultResolver =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, navAddr));
+    }
+
+    function _deployStaderWithdrawalQueue(string memory name, address navAddr) internal returns (address) {
+        address userWithdrawalManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "userWithdrawalManager")
+        );
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(
+            new StaderWithdrawalQueueBalanceOracle(
+                userWithdrawalManager, underlyingToken, protocol, positionDetail, navAddr
+            )
+        );
+    }
+
+    function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
+        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new UniswapV2BalanceOracle(pair, protocol, positionDetail, navAddr));
+    }
+
+    function _deployUniswapV3Pool(string memory name, address navAddr) internal returns (address) {
+        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navAddr));
+    }
+
+    function _deployPancakeSwapV2(string memory name, address navAddr) internal returns (address) {
+        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, navAddr));
+    }
+
+    function _deployPancakeSwapV3Pool(string memory name, address navAddr) internal returns (address) {
+        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navAddr));
+    }
+
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](57);
+        names = new string[](72);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -655,6 +767,24 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "Convex_crvUSD_USDC";
         names[i++] = "Convex_crvUSD_USDT";
         names[i++] = "Convex_RLUSD_USDC";
+
+        // PR #25–#34 adapter family: AaveV2, Fluid (fToken/Vault), Stader queue,
+        // Uniswap V2/V3, PancakeSwap V2/V3. Names match the chain-config keys.
+        names[i++] = "AaveV2_Mainnet";
+        names[i++] = "Fluid_fToken_USDC";
+        names[i++] = "Fluid_fToken_USDT";
+        names[i++] = "Fluid_fToken_WETH";
+        names[i++] = "Fluid_fToken_wstETH";
+        names[i++] = "Fluid_fToken_GHO";
+        names[i++] = "Fluid_fToken_sUSDe";
+        names[i++] = "Fluid_Vault_wstETH_USDC";
+        names[i++] = "Fluid_Vault_weETH_wstETH";
+        names[i++] = "Fluid_Vault_sUSDe_USDC";
+        names[i++] = "StaderWithdrawalQueue";
+        names[i++] = "UniswapV3_WBTC_WETH_3000";
+        names[i++] = "UniswapV3_WETH_COW_3000";
+        names[i++] = "PancakeSwapV2_ETH_COW";
+        names[i++] = "PancakeSwapV3_WETH_COW";
     }
 
     // -----------------------------------------------------------------------

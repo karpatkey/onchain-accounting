@@ -102,8 +102,7 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         assets[0] = BASE_WETH;
         assets[1] = BASE_COW;
         balances = _deployBalancesForOracle(assets);
-        oracle =
-            new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "WETH/COW 0.25%", address(balances));
+        oracle = new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "WETH/COW 0.25%", address(balances));
     }
 
     // ============================================
@@ -216,9 +215,7 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         uint256 syntheticTokenId = 0xdeadbeef;
         vm.mockCall(NPM, abi.encodeCall(IPancakeNPMFork.balanceOf, (synthOwner)), abi.encode(uint256(1)));
         vm.mockCall(
-            NPM,
-            abi.encodeCall(IPancakeNPMFork.tokenOfOwnerByIndex, (synthOwner, 0)),
-            abi.encode(syntheticTokenId)
+            NPM, abi.encodeCall(IPancakeNPMFork.tokenOfOwnerByIndex, (synthOwner, 0)), abi.encode(syntheticTokenId)
         );
         vm.mockCall(
             NPM,
@@ -268,9 +265,7 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         uint256 syntheticTokenId = 0xcafef00d;
         vm.mockCall(NPM, abi.encodeCall(IPancakeNPMFork.balanceOf, (synthOwner)), abi.encode(uint256(1)));
         vm.mockCall(
-            NPM,
-            abi.encodeCall(IPancakeNPMFork.tokenOfOwnerByIndex, (synthOwner, 0)),
-            abi.encode(syntheticTokenId)
+            NPM, abi.encodeCall(IPancakeNPMFork.tokenOfOwnerByIndex, (synthOwner, 0)), abi.encode(syntheticTokenId)
         );
         vm.mockCall(
             NPM,

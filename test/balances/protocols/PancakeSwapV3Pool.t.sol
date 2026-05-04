@@ -185,8 +185,9 @@ contract PancakeSwapV3PoolBalanceOracleTest is Test {
         npm = new MockPositionManager();
         nav = new MockNAVCalculatorWithRegistry();
         _registerBothTokens();
-        oracle =
-            new PancakeSwapV3PoolBalanceOracle(address(pool), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(nav));
+        oracle = new PancakeSwapV3PoolBalanceOracle(
+            address(pool), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(nav)
+        );
     }
 
     function _registerBothTokens() internal {
@@ -269,7 +270,9 @@ contract PancakeSwapV3PoolBalanceOracleTest is Test {
 
     function test_constructor_reverts_eoaPositionManager() public {
         vm.expectRevert("PositionManager must be a contract");
-        new PancakeSwapV3PoolBalanceOracle(address(pool), address(0xdead), "PancakeSwap V3", "T0/T1 0.25%", address(nav));
+        new PancakeSwapV3PoolBalanceOracle(
+            address(pool), address(0xdead), "PancakeSwap V3", "T0/T1 0.25%", address(nav)
+        );
     }
 
     function test_constructor_reverts_eoaNavCalculator() public {

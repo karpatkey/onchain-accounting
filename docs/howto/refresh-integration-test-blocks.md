@@ -21,9 +21,15 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 ┌──────────────────────────────────────────────────────────────────────┐
 │ 1. cast block-number per chain (PARALLEL) → forkBlock bumped         │
 ├──────────────────────────────────────────────────────────────────────┤
+│ 1.5. Merkl proof capture per (chain × account) — Merkl API → fixture │
+│    test/integration/merkl-proofs.json. Captures Distributor          │
+│    merkleRoot at the new fork block for diagnostics. Failed proof    │
+│    submissions in step 2 are tolerated (NAV treats them as 0).       │
+├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge script per chain (PARALLEL) │
-│    → deploys NAV stack at the new fork, reads NAV per enabled        │
-│    account, emits SNAPSHOT|... lines that are applied via jq         │
+│    → deploys NAV stack (incl. MerklRewards) at the new fork, replays │
+│    fixture proofs into the cache, reads NAV per enabled account,     │
+│    emits SNAPSHOT|... lines that are applied via jq                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
 │    /v1/user/token_list (1× per chain×account), filtered to NAV's     │
@@ -32,6 +38,8 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │ 4. tolerance check + diff report                                     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. After step 1.5, `merkl-proofs.json` is the source of truth that the integration test consumes deterministically — the Merkl API isn't queried during test runs.
 
 Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 

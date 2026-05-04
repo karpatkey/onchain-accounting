@@ -24,6 +24,12 @@ contract MockUserWithdrawalManager {
     mapping(address => uint256[]) private _userIds;
     mapping(uint256 => Info) public userWithdrawRequests;
 
+    /// @dev Set by tests to inject a non-OOB panic from `requestIdsByUserAddress`.
+    bool public injectArithmeticPanic;
+
+    /// @dev Set by tests to inject a non-empty plain revert (i.e. not the legacy-OOB sentinel).
+    bool public injectStringRevert;
+
     function pushRequest(address user, uint256 requestId, Info memory info) external {
         _userIds[user].push(requestId);
         userWithdrawRequests[requestId] = info;
@@ -33,8 +39,25 @@ contract MockUserWithdrawalManager {
         userWithdrawRequests[requestId].owner = address(0);
     }
 
+    function setInjectArithmeticPanic(bool v) external {
+        injectArithmeticPanic = v;
+    }
+
+    function setInjectStringRevert(bool v) external {
+        injectStringRevert = v;
+    }
+
     function requestIdsByUserAddress(address user, uint256 index) external view returns (uint256) {
-        return _userIds[user][index]; // intentionally reverts on out-of-bounds
+        if (injectArithmeticPanic) {
+            // Panic(0x12) — division by zero. Anything other than 0x32 (OOB) should propagate.
+            uint256 zero;
+            return uint256(1) / zero;
+        }
+        if (injectStringRevert) {
+            // Plain revert with non-empty data — must propagate (not be treated as OOB sentinel).
+            revert("boom");
+        }
+        return _userIds[user][index]; // intentionally reverts on out-of-bounds (Panic 0x32)
     }
 }
 
@@ -213,12 +236,11 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     // ---- getOraclePositions ----
 
     function test_getOraclePositions_emptyWhenAssetUnregistered() public {
-        // remove weth registration by deploying a fresh harness without weth
-        StaderWithdrawalQueueBalanceOracle freshOracle;
-        // create a new harness scope: a token never added to balances
+        // Build a fresh adapter pointing at an asset that was never registered with the harness.
+        // The constructor only requires non-zero, not contract-shaped, for `underlyingToken_`, so a
+        // bare EOA-style address is enough to demonstrate the asset-registry filtering behaviour.
         address unregisteredAsset = makeAddr("unregisteredAsset");
-        vm.etch(unregisteredAsset, hex"60006000"); // make it look like a contract for require check
-        freshOracle = new StaderWithdrawalQueueBalanceOracle(
+        StaderWithdrawalQueueBalanceOracle freshOracle = new StaderWithdrawalQueueBalanceOracle(
             address(manager), unregisteredAsset, "Stader", "ETH Withdrawal Queue", address(balances)
         );
 
@@ -259,5 +281,26 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     function test_getOraclePositions_zeroBalanceProducesEmpty() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 0);
+    }
+
+    // ---- Panic propagation ----
+
+    function test_getOracleBalanceForAsset_propagatesNonOOBPanic() public {
+        // OOB panic ends enumeration silently. Any other panic must surface as UnexpectedPanic
+        // so NAVCalculator's outer try/catch sees the failure rather than the adapter silently
+        // returning 0 and undercounting NAV.
+        manager.setInjectArithmeticPanic(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(StaderWithdrawalQueueBalanceOracle.UnexpectedPanic.selector, uint256(0x12))
+        );
+        oracle.getOracleBalanceForAsset(alice, address(weth));
+    }
+
+    function test_getOracleBalanceForAsset_propagatesNonEmptyRevert() public {
+        // Empty bytes revert is the legacy-Solidity OOB sentinel and must end enumeration; any
+        // revert with data must propagate.
+        manager.setInjectStringRevert(true);
+        vm.expectRevert(bytes("boom"));
+        oracle.getOracleBalanceForAsset(alice, address(weth));
     }
 }

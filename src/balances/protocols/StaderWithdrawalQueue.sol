@@ -14,6 +14,14 @@ import {InvalidArguments} from "src/errors.sol";
 ///      account's open requests into a single position denominated in `UNDERLYING_TOKEN` (typically WETH).
 contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
+    // Errors
+    //
+
+    /// @notice Thrown when `requestIdsByUserAddress` panics with a code other than 0x32 (array OOB).
+    /// @dev Surfaces the unexpected panic rather than silently treating it as enumeration end.
+    error UnexpectedPanic(uint256 panicCode);
+
+    //
     // Constants
     //
 
@@ -75,10 +83,18 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @notice Sums the ETH owed across all open withdrawal requests for `account`.
-    /// @dev Iterates `requestIdsByUserAddress(account, i)` until the call reverts (out-of-bounds),
-    ///      then reads each request via `userWithdrawRequests(id)`. Skips entries deleted on claim
-    ///      (owner == address(0)). Uses `ethFinalized` once the batch has been finalized; otherwise
-    ///      falls back to `ethExpected` (the rate-converted estimate at request time).
+    /// @dev Iterates `requestIdsByUserAddress(account, i)` until the auto-generated getter signals
+    ///      array-out-of-bounds, then reads each request via `userWithdrawRequests(id)`. Skips
+    ///      entries deleted on claim (owner == address(0)). Uses `ethFinalized` once the batch has
+    ///      been finalized; otherwise falls back to `ethExpected` (the rate-converted estimate at
+    ///      request time).
+    /// @dev OOB enumeration end is detected via two complementary paths:
+    ///      1. **Modern Solidity (≥0.8)**: array OOB raises Panic(0x32).
+    ///      2. **Legacy Solidity (Stader's deployed UserWithdrawalManager)**: array OOB raises a
+    ///         bare empty revert with no return data.
+    ///      Any other panic / revert with data propagates as `UnexpectedPanic` / re-thrown bytes
+    ///      so NAVCalculator's outer try/catch surfaces the failure rather than the adapter
+    ///      silently undercounting NAV.
     function _ethOwed(address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
@@ -96,9 +112,22 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
                 }
 
                 total += ethFinalized > 0 ? ethFinalized : ethExpected;
-            } catch {
-                // Out-of-bounds on the user's request id array — enumeration done.
-                return total;
+            } catch Panic(uint256 panicCode) {
+                // 0x32 = array index out of bounds — list exhausted, return what we have.
+                if (panicCode == 0x32) {
+                    return total;
+                }
+                revert UnexpectedPanic(panicCode);
+            } catch (bytes memory data) {
+                // Legacy-compiled getter raises a bare revert (no return data) when the index is
+                // past the end of the array. Treat empty revert as the OOB sentinel; anything else
+                // is a real error and is bubbled up.
+                if (data.length == 0) {
+                    return total;
+                }
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
             }
         }
     }

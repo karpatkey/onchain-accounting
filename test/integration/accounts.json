@@ -210,7 +210,7 @@
       }
     },
     {
-      "$comment": "Concentrated cUSDCv3 supplier on Mainnet (~$3.09M at fork block). Sourced via Dune top-net-supplier scan during the Compound V3 adapter rollout — gives an apples-to-apples NAV-vs-Debank cross-check for the new adapter.",
+      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending — the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
       "address": "0x9C1b8c994935e3890bD2257AD2a681d6D4465a73",
       "label": "ACCOUNT_5_COMPOUND_MAINNET",
       "enabledChains": [

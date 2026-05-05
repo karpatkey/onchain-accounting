@@ -1,5 +1,18 @@
 import { arbitrum, base, gnosis, mainnet, optimism } from 'viem/chains'
 
+export const EXPLORER_URLS: Record<number, string> = {
+  1:     'https://etherscan.io',
+  10:    'https://optimistic.etherscan.io',
+  100:   'https://gnosisscan.io',
+  42161: 'https://arbiscan.io',
+  8453:  'https://basescan.org',
+}
+
+export function explorerAddressUrl(chainId: number, address: string): string {
+  const base = EXPLORER_URLS[chainId]
+  return base ? `${base}/address/${address}` : '#'
+}
+
 export const NAV_CALCULATOR_ADDRESS =
   '0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19' as const
 

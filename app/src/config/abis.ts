@@ -100,4 +100,27 @@ export const navCalcAbi = [
       { name: 'stalePriceAssets', type: 'address[]' },
     ],
   },
+  {
+    name: 'chainlinkL2SequencerGracePeriod',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const
+
+export const aggregatorV3Abi = [
+  {
+    name: 'latestRoundData',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'roundId', type: 'uint80' },
+      { name: 'answer', type: 'int256' },
+      { name: 'startedAt', type: 'uint256' },
+      { name: 'updatedAt', type: 'uint256' },
+      { name: 'answeredInRound', type: 'uint80' },
+    ],
+  },
 ] as const

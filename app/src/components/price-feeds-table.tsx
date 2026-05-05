@@ -8,6 +8,7 @@ import {
   Th,
   Td,
   Badge,
+  Launch,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -15,6 +16,7 @@ import {
 } from '@karpatkey/design-system'
 import type { ChainPriceFeeds } from '@/hooks/use-price-feeds'
 import { formatAge, formatHeartbeat, formatPrice, isStaleWarning, shortenAddress } from '@/lib/format'
+import { explorerAddressUrl } from '@/config/chains'
 
 const PRICE_TYPES = ['Chainlink', 'Custom'] as const
 
@@ -36,7 +38,7 @@ function FeedStatusBadge({ feed }: { feed: ChainPriceFeeds['feeds'][number] }) {
 }
 
 export function PriceFeedsTable({ data }: PriceFeedsTableProps) {
-  const { feeds, isLoading, isError } = data
+  const { feeds, isLoading, isError, chainId } = data
 
   if (isLoading) {
     return (
@@ -80,14 +82,24 @@ export function PriceFeedsTable({ data }: PriceFeedsTableProps) {
                 </Badge>
               </Td>
               <Td>
-                <Tooltip>
-                  <TooltipTrigger className="font-mono text-sm cursor-default">
-                    {shortenAddress(feed.priceFeed)}
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <span className="font-mono">{feed.priceFeed}</span>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="flex items-center gap-1.5">
+                  <Tooltip>
+                    <TooltipTrigger className="font-mono text-sm cursor-default">
+                      {shortenAddress(feed.priceFeed)}
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <span className="font-mono">{feed.priceFeed}</span>
+                    </TooltipContent>
+                  </Tooltip>
+                  <a
+                    href={explorerAddressUrl(chainId, feed.priceFeed)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-neutral-500 hover:text-neutral-950 inline-flex items-center"
+                  >
+                    <Launch className="w-3 h-3" />
+                  </a>
+                </div>
               </Td>
               <Td className="text-right tabular-nums">
                 {formatPrice(feed.price, feed.decimals)}

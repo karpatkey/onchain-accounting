@@ -558,7 +558,9 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `StakeWiseV3Vault_*`, `StakeWiseV3OsToken_*`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
+**StakeWise V3 (Mainnet):** `StakeWiseV3OsToken_ETH` (raw osETH wallet balance, returned as ETH-sentinel via `OsTokenVaultController.convertToAssets`), `StakeWiseV3Vault_Genesis` (Genesis Vault deposit net of minted-osETH debt — `vaultAssets - mintedOs`). Wired primarily for integration-report cross-checks against accounts holding StakeWise positions; the Alpha funds themselves do not currently use StakeWise. No dedicated `osETH` price feed is needed — both adapters report positions denominated in ETH (sentinel), which is already a registered priceable asset on Mainnet.
+
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 

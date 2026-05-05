@@ -19,7 +19,6 @@ import {rsETH_PriceOracle} from "../../src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "../../src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "../../src/prices/protocols/ezETH_Price.sol";
 import {ETHx_PriceOracle} from "../../src/prices/protocols/ETHx_Price.sol";
-import {osETH_PriceOracle} from "../../src/prices/protocols/osETH_Price.sol";
 // sXDAI shares the sDAI contract name — aliased import to avoid a naming collision
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "../../src/prices/protocols/sXDAI_Price.sol";
 
@@ -151,10 +150,11 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployEthx();
         }
 
-        // Deploy osETH Price Oracle (StakeWise V3)
-        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
-            _deployOsEth();
-        }
+        // Note: StakeWise V3 osETH does not need a dedicated price feed. The StakeWise V3
+        // balance adapters (StakeWiseV3OsToken_*, StakeWiseV3Vault_*) call
+        // OsTokenVaultController.convertToAssets(...) internally and return PositionBalance
+        // values denominated in the underlying asset (ETH-sentinel on Mainnet), which is
+        // already a registered priceable asset. See script/NAV_V2_DEPLOYMENT_RUNBOOK.md.
 
         vm.stopBroadcast();
     }
@@ -285,27 +285,6 @@ contract DeployPriceFeeds is BaseDeployScript {
         ETHx_PriceOracle ethxAdapter = new ETHx_PriceOracle(ethx, stakePoolsManager, ethUsdOracle, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ETHx", address(ethxAdapter));
         console2.log("ETHx_PriceOracle deployed at:", address(ethxAdapter));
-    }
-
-    function _deployOsEth() internal {
-        address deployed = _readAdapterDeployed("priceFeeds", "osETH");
-        if (deployed != address(0)) {
-            console2.log("osETH_PriceOracle already deployed at:", deployed);
-            return;
-        }
-
-        address osEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETH", "osEth"));
-        address osTokenVaultController =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETH", "osTokenVaultController"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETH", "ethToUsdChainlinkHeartbeat"));
-
-        osETH_PriceOracle osEthAdapter =
-            new osETH_PriceOracle(osEth, osTokenVaultController, ethUsdOracle, ethUsdHeartbeat);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "osETH", address(osEthAdapter));
-        console2.log("osETH_PriceOracle deployed at:", address(osEthAdapter));
     }
 
     function _deployWstEth() internal {

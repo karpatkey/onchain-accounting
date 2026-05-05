@@ -161,6 +161,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
         _deployIfEnabled("StaderWithdrawalQueue");
 
+        // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
+        _deployIfEnabled("StakeWiseV3OsToken_ETH");
+        _deployIfEnabled("StakeWiseV3Vault_Genesis");
+
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
 
@@ -174,8 +178,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("PancakeSwapV3_WETH_COW"); // Base — WETH / COW 0.25%
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // DaiDsr, SkySavingsUsds, and StakeWiseV3* adapters exist in this repo but are NOT used by
-        // either Alpha fund, so they are not wired here.
+        // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
+        // fund, so they are not wired here. StakeWiseV3* adapters are wired above so accounts
+        // holding osETH or Genesis-Vault deposits get full coverage in the integration report.
 
         vm.stopBroadcast();
 

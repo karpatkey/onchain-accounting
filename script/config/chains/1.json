@@ -524,6 +524,16 @@
       },
       "deployed": ""
     },
+    "StakeWiseV3Vault_Genesis": {
+      "enabled": true,
+      "constructor": {
+        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
+        "protocol": "Stakewise v3",
+        "positionDetail": "Genesis Vault"
+      },
+      "deployed": ""
+    },
     "StaderWithdrawalQueue": {
       "enabled": true,
       "constructor": {

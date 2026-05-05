@@ -51,7 +51,6 @@ import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "src/prices/protocols/ezETH_Price.sol";
 import {ETHx_PriceOracle} from "src/prices/protocols/ETHx_Price.sol";
-import {osETH_PriceOracle} from "src/prices/protocols/osETH_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 
 // Price feed adapters (L2)
@@ -175,7 +174,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
             _tryDeployPriceFeed("ETHx", _deployEthx);
-            _tryDeployPriceFeed("osETH", _deployOsEth);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -419,17 +417,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
         return address(new ETHx_PriceOracle(ethx, stakePoolsManager, ethUsd, ethUsdHb));
-    }
-
-    function _deployOsEth() internal returns (address) {
-        address osEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "osEth"));
-        address osTokenVaultController =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "osTokenVaultController"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new osETH_PriceOracle(osEth, osTokenVaultController, ethUsd, ethUsdHb));
     }
 
     // -----------------------------------------------------------------------
@@ -952,7 +939,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](30);
+            string[] memory s = new string[](29);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -982,7 +969,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
             s[28] = "ETHx";
-            s[29] = "osETH";
             return s;
         }
         if (chainId == 42161) {

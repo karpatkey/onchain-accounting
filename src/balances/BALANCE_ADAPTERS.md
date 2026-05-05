@@ -177,8 +177,8 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **MorphoMarket** | Morpho market positions. | |
 | **SkySavingsUsds** | Sky savings USDS. | |
 | **SparkLend** | Spark lending positions. | |
-| **StakeWiseV3OsToken** | StakeWise V3 osToken. | |
-| **StakeWiseV3Vault** | StakeWise V3 vault. | |
+| **StakeWiseV3OsToken** | StakeWise V3 osToken wallet balance, returned as the underlying token via `OsTokenVaultController.convertToAssets(shares)`. Constructor is parameterized (`osToken`, `underlyingToken`, `osTokenVaultController`) so the same contract serves osETH on Mainnet and osGNO on Gnosis identically. | Mainnet: `StakeWiseV3OsToken_ETH` (osETH → ETH-sentinel). |
+| **StakeWiseV3Vault** | StakeWise V3 vault deposit net of minted-osToken debt: `vaultAssets - mintedOs`. One adapter instance per vault (each StakeWise V3 vault is independent). Underlying-agnostic via the same parameterization as the osToken adapter. | Mainnet: `StakeWiseV3Vault_Genesis` (`0xAC0F906E433d58FA868F936E8A43230473652885`). |
 | **StaderWithdrawalQueue** | Stader UserWithdrawalManager pending unstake requests; reports the sum of `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. | Mainnet only; underlying configured to WETH. |
 | **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. One adapter instance per pair; no rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
 

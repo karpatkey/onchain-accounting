@@ -8,10 +8,17 @@ RefreshIntegrationSnapshot) and Debank position detail (live API).
 
 Usage:
     . ./.env && python3 script/test/generate-comparison-report.py
+    . ./.env && python3 script/test/generate-comparison-report.py --refresh-debank
+
+By default writes back debankUsd only to empty slots (preserves forge-time
+captures). Pass --refresh-debank to recapture every slot against current chain
+state — pairs anchor with regenerated NAV but introduces a small temporal gap
+between fork-block-pinned NAV and now-pinned Debank for volatile assets.
 
 Output: comparison-report.md
 """
 
+import argparse
 import json
 import os
 import subprocess
@@ -22,9 +29,22 @@ DEBANK_API_KEY = os.environ.get("DEBANK_API_KEY", "")
 DEBANK_BASE = "https://pro-openapi.debank.com"
 ACCOUNTS_JSON = "test/integration/accounts.json"
 ASSETS_JSON = "script/config/assets.json"
+CHAINS_CONFIG_DIR = "script/config/chains"
 NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 OUT_FILE = "comparison-report.md"
 NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
+# Adapters that read wallet token balances directly and aggregate them into a
+# single protocol-denominated PositionBalance (e.g. Cap reads balanceOf(cUsd)
+# and balanceOf(stcUsd), then returns the combined amount in USDC). For these,
+# the wallet tokens are NOT registered as standalone priceable assets, but they
+# ARE in NAV — so the report should mark them ✅ Covered and include them in
+# the filtered Debank total. Map: adapter_key (as it appears under
+# chains/<cid>.json.balanceAdapters) → list of constructor param names whose
+# values are the wallet token addresses to credit.
+WALLET_AGGREGATING_ADAPTERS = {
+    "Cap": ["cUsd", "stcUsd"],
+}
 
 
 def debank_get(path, params=""):
@@ -64,6 +84,28 @@ def token_inline(t):
     price = t.get("price", 0)
     usd = amt * price
     return f"{sym} {fmt_amt(amt)} ({fmt_usd(usd)})"
+
+
+def adapter_aggregated_addrs(cid: str) -> set[str]:
+    """Return lowercase token addresses that wallet-aggregating adapters consume
+    on chain `cid`. Reads from script/config/chains/<cid>.json so addresses are
+    sourced from the canonical chain config (no duplication)."""
+    try:
+        with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
+            adapters = json.load(f).get("balanceAdapters", {})
+    except FileNotFoundError:
+        return set()
+    addrs: set[str] = set()
+    for key, params in WALLET_AGGREGATING_ADAPTERS.items():
+        cfg = adapters.get(key)
+        if not cfg or not cfg.get("enabled"):
+            continue
+        ctor = cfg.get("constructor", {})
+        for p in params:
+            v = ctor.get(p)
+            if v:
+                addrs.add(v.lower())
+    return addrs
 
 
 def load_nav_positions(chain_id: str) -> dict[str, list]:
@@ -106,7 +148,7 @@ def render_nav_positions(positions: list) -> list[str]:
     return lines
 
 
-def main():
+def main(refresh_debank: bool = False):
     with open(ACCOUNTS_JSON) as f:
         data = json.load(f)
     with open(ASSETS_JSON) as f:
@@ -116,10 +158,17 @@ def main():
     accounts = data["accounts"]
     tolerance = data["tolerance"]
 
-    # Build registered-token address sets: chain_id -> {lowercase_address}
+    # Build registered-token address sets: chain_id -> {lowercase_address}.
+    # Two sources:
+    #   1. assets.json `tokens` — directly priceable via NAVCalculator's registry.
+    #   2. WALLET_AGGREGATING_ADAPTERS — wallet tokens that an adapter consumes
+    #      via balanceOf(...) and rolls into a protocol position. Not standalone
+    #      priceable, but still in NAV — so they should count as Covered here.
     registered = {}
     for cid, tokens in assets.get("tokens", {}).items():
         registered[cid] = {v["address"].lower() for v in tokens.values()}
+    for cid in chains_cfg:
+        registered.setdefault(cid, set()).update(adapter_aggregated_addrs(cid))
 
     # Load NAV position detail files (written by RefreshIntegrationSnapshot)
     nav_positions_by_chain: dict[str, dict[str, list]] = {}
@@ -133,12 +182,28 @@ def main():
     # debank_totals[account_index][chain_id] = computed filtered USD total
     debank_totals: dict[int, dict[str, float]] = {}
 
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = []
     lines += [
         "# NAV vs Debank — Detailed Comparison Report",
         "",
-        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}  ",
-        f"Tolerance: {tolerance * 100:.0f}%",
+        f"Generated: {generated_at}  ",
+        f"Tolerance: {tolerance * 100:.0f}%  ",
+    ]
+    if refresh_debank:
+        lines.append(
+            f"Debank captured: {generated_at} (current chain state) — "
+            f"NAV is pinned to the per-chain fork block below. "
+            f"Volatile-asset accounts may show small drift purely from price ticks "
+            f"between the fork block and now.  "
+        )
+    else:
+        lines.append(
+            "Debank anchor: from `accounts.json.expected.<cid>.debankUsd` "
+            "(captured at forge-snapshot time). Re-run with `--refresh-debank` "
+            "to recapture against current chain state.  "
+        )
+    lines += [
         "",
         "## Fork blocks",
         "",
@@ -165,6 +230,12 @@ def main():
             c = p.get("chain", "")
             protos_by_chain.setdefault(c, []).append(p)
 
+        def proto_net(p):
+            return sum(
+                i.get("stats", {}).get("net_usd_value", 0)
+                for i in p.get("portfolio_item_list", [])
+            )
+
         for cid in enabled:
             ccfg = chains_cfg[cid]
             dbank_chain = ccfg["debankChainId"]
@@ -175,18 +246,70 @@ def main():
             dbank_usd_s = exp.get("debankUsd", "")
             nav_usd = int(nav_raw) / 1e8
 
+            # === Phase 1: fetch Debank data ===
+            chain_protos = protos_by_chain.get(dbank_chain, [])
+            if chain_protos:
+                chain_protos = sorted(chain_protos, key=proto_net, reverse=True)
+
+            print(f"  [{label}] fetching token list chain {cid}...", file=sys.stderr)
+            tok_resp = debank_get("/v1/user/token_list", f"id={addr}&chain_id={dbank_chain}&is_all=false")
+
+            reg_addrs = registered.get(cid, set())
+
+            in_nav, out_nav = [], []
+            for t in tok_resp:
+                tid = (t.get("id") or "").lower()
+                amt = t.get("amount", 0)
+                price = t.get("price", 0)
+                usd = amt * price
+                if usd < 0.50:
+                    continue
+                lookup = NATIVE_SENTINEL if tid == dbank_chain else tid
+                bucket = in_nav if lookup in reg_addrs else out_nav
+                bucket.append((t.get("symbol", "?"), amt, price, usd, tid))
+
+            in_nav.sort(key=lambda x: -x[3])
+            out_nav.sort(key=lambda x: -x[3])
+
+            # === Phase 2: compute fresh filtered total ===
+            def _short(pid):
+                prefix = f"{dbank_chain}_"
+                return pid[len(prefix):] if pid.startswith(prefix) else pid
+
+            filtered_proto_sum = sum(
+                proto_net(p) for p in chain_protos if _short(p.get("id", "")) in supported_ids
+            )
+            filtered_token_sum = sum(usd for _, _, _, usd, _ in in_nav)
+            fresh_filtered = filtered_proto_sum + filtered_token_sum
+            debank_totals[acc_idx][cid] = fresh_filtered
+
+            # === Phase 3: pick anchor for header ===
+            # Under --refresh-debank, use the just-computed fresh value so the
+            # header drift % matches what gets written back to accounts.json.
+            # Otherwise use the existing forge-time snapshot.
+            if refresh_debank:
+                anchor_usd = fresh_filtered
+                has_anchor = True
+            elif dbank_usd_s and dbank_usd_s.strip():
+                anchor_usd = float(dbank_usd_s)
+                has_anchor = True
+            else:
+                anchor_usd = None
+                has_anchor = False
+
+            # === Phase 4: render the section ===
             lines += [f"### {chain_name.title()} (chain {cid})", ""]
 
-            if dbank_usd_s and dbank_usd_s.strip():
-                dbank_usd = float(dbank_usd_s)
-                if dbank_usd > 0:
-                    drift = (nav_usd - dbank_usd) / dbank_usd
-                    drift_s = f"{drift * 100:+.2f}%"
-                    flag = "✅" if abs(drift) <= tolerance else "⚠️"
-                else:
-                    drift_s, flag = "—", ""
+            if has_anchor and anchor_usd > 0:
+                drift = (nav_usd - anchor_usd) / anchor_usd
+                drift_s = f"{drift * 100:+.2f}%"
+                flag = "✅" if abs(drift) <= tolerance else "⚠️"
                 lines.append(
-                    f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(dbank_usd)} | Drift: {drift_s} {flag}**"
+                    f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: {drift_s} {flag}**"
+                )
+            elif has_anchor:
+                lines.append(
+                    f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: — **"
                 )
             else:
                 lines.append(f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: — (not available)**")
@@ -201,16 +324,7 @@ def main():
                 lines += ["_NAV position detail not available — run refresh script._", ""]
 
             # ── Debank protocol positions ────────────────────────────────────
-            chain_protos = protos_by_chain.get(dbank_chain, [])
             if chain_protos:
-                def proto_net(p):
-                    return sum(
-                        i.get("stats", {}).get("net_usd_value", 0)
-                        for i in p.get("portfolio_item_list", [])
-                    )
-
-                chain_protos = sorted(chain_protos, key=proto_net, reverse=True)
-
                 lines += [
                     "#### Debank protocol positions",
                     "",
@@ -219,10 +333,7 @@ def main():
                 ]
                 for p in chain_protos:
                     pid = p.get("id", "")
-                    short_id = pid
-                    for prefix in (f"{dbank_chain}_",):
-                        if short_id.startswith(prefix):
-                            short_id = short_id[len(prefix):]
+                    short_id = _short(pid)
                     pname = p.get("name", pid)
                     in_filter = short_id in supported_ids
                     total_net = proto_net(p)
@@ -257,32 +368,7 @@ def main():
             else:
                 lines += ["_No Debank protocol positions on this chain._", ""]
 
-            # ── Wallet tokens ───────────────────────────────────────────────
-            print(f"  [{label}] fetching token list chain {cid}...", file=sys.stderr)
-            tok_resp = debank_get("/v1/user/token_list", f"id={addr}&chain_id={dbank_chain}&is_all=false")
-
-            reg_addrs = registered.get(cid, set())
-
-            in_nav, out_nav = [], []
-            for t in tok_resp:
-                tid = (t.get("id") or "").lower()
-                amt = t.get("amount", 0)
-                price = t.get("price", 0)
-                usd = amt * price
-                if usd < 0.50:
-                    continue
-                lookup = NATIVE_SENTINEL if tid == dbank_chain else tid
-                bucket = in_nav if lookup in reg_addrs else out_nav
-                bucket.append((t.get("symbol", "?"), amt, price, usd, tid))
-
-            in_nav.sort(key=lambda x: -x[3])
-            out_nav.sort(key=lambda x: -x[3])
-
-            filtered_proto_sum = sum(proto_net(p) for p in chain_protos
-                                     if (lambda pid: pid[len(f"{dbank_chain}_"):] if pid.startswith(f"{dbank_chain}_") else pid)(p.get("id", "")) in supported_ids)
-            filtered_token_sum = sum(usd for _, _, _, usd, _ in in_nav)
-            debank_totals[acc_idx][cid] = filtered_proto_sum + filtered_token_sum
-
+            # ── Debank wallet tokens ────────────────────────────────────────
             all_tokens = [(sym, amt, price, usd, tid, True) for sym, amt, price, usd, tid in in_nav] + \
                          [(sym, amt, price, usd, tid, False) for sym, amt, price, usd, tid in out_nav]
 
@@ -302,11 +388,15 @@ def main():
             else:
                 lines += ["_No significant wallet token balances on this chain._", ""]
 
-    # Write computed Debank totals back to accounts.json — only fill empty slots
+    # Write computed Debank totals back to accounts.json. By default only fill
+    # empty slots so we don't overwrite values captured at the same time as the
+    # forge snapshot. With --refresh-debank, overwrite every slot — pairs the
+    # comparison anchor with the regenerated NAV at the cost of a small
+    # NAV-fork-block-vs-Debank-now temporal mismatch on volatile assets.
     for acc_idx, chain_totals in debank_totals.items():
         for cid, total in chain_totals.items():
             exp = accounts[acc_idx].setdefault("expected", {}).setdefault(cid, {})
-            if not exp.get("debankUsd", "").strip():
+            if refresh_debank or not exp.get("debankUsd", "").strip():
                 exp["debankUsd"] = f"{total:.6f}"
     with open(ACCOUNTS_JSON, "w") as f:
         json.dump(data, f, indent=2)
@@ -319,7 +409,16 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--refresh-debank",
+        action="store_true",
+        help="Overwrite expected.<cid>.debankUsd in accounts.json with the freshly "
+             "captured Debank totals. Default is to fill only empty slots so "
+             "forge-time captures are preserved.",
+    )
+    args = parser.parse_args()
     if not DEBANK_API_KEY:
         print("DEBANK_API_KEY not set — source .env first", file=sys.stderr)
         sys.exit(1)
-    main()
+    main(refresh_debank=args.refresh_debank)

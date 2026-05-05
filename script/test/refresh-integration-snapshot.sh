@@ -292,7 +292,7 @@ echo "=== 2. Refreshing NAV snapshots (parallel, MAX_PARALLEL=$MAX_PARALLEL) ===
 # Pre-build once so the parallel forge invocations share a warm cache and don't
 # race on `out/` writes during compile.
 echo "  pre-building (so parallel forge scripts share cache)…"
-forge build > /dev/null
+forge build --skip 'test/**' > /dev/null
 
 forge_dir=$(mktemp -d)
 # Replace EXIT trap so both temp dirs are cleaned up at any exit path.

@@ -157,8 +157,8 @@ def main():
                 lines += [
                     "#### Protocol positions",
                     "",
-                    "| Protocol | Debank ID | NAV USD | Debank USD | Position detail |",
-                    "|---|---|---:|---:|---|",
+                    "| Protocol | Debank ID | Covered | Debank USD | Position detail |",
+                    "|---|---|:---:|---:|---|",
                 ]
                 for p in chain_protos:
                     pid = p.get("id", "")
@@ -170,9 +170,7 @@ def main():
                     pname = p.get("name", pid)
                     in_filter = short_id in supported_ids
                     total_net = proto_net(p)
-                    # NAV value: adapter covers this protocol → ≈ Debank value;
-                    # not covered → $0 (position dropped entirely from NAV).
-                    nav_proto = fmt_usd(total_net) if in_filter else "$0 ❌"
+                    nav_proto = "✅" if in_filter else "❌"
 
                     # Flatten positions into readable text
                     pos_cells = []
@@ -239,11 +237,11 @@ def main():
                 lines += [
                     "#### Wallet tokens",
                     "",
-                    "| Symbol | Amount | Price | NAV USD | Debank USD | Address |",
-                    "|---|---:|---:|---:|---:|---|",
+                    "| Symbol | Amount | Price | Covered | Debank USD | Address |",
+                    "|---|---:|---:|:---:|---:|---|",
                 ]
                 for sym, amt, price, usd, tid, in_assets in all_tokens:
-                    nav_col = fmt_usd(usd) if in_assets else "$0 ❌"
+                    nav_col = "✅" if in_assets else "❌"
                     lines.append(
                         f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} | {nav_col} | {fmt_usd(usd)} | `{tid}` |"
                     )

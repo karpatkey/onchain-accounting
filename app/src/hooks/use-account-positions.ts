@@ -1,0 +1,57 @@
+'use client'
+
+import { useReadContracts } from 'wagmi'
+import { zeroAddress } from 'viem'
+import { navCalcAbi } from '@/config/abis'
+import { DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
+
+export type OnchainPosition = {
+  underlyingAsset: { asset: `0x${string}`; symbol: string; decimals: number }
+  balanceOracle: `0x${string}`
+  amount: bigint
+  isDebt: boolean
+  quoteAsset: { asset: `0x${string}`; symbol: string; decimals: number }
+  value: bigint
+  price: bigint
+  priceDecimals: number
+  stale: boolean
+  protocol: string
+  positionDetail: string
+}
+
+export type ChainPositions = {
+  chainId: number
+  label: string
+  positions: readonly OnchainPosition[]
+  isLoading: boolean
+  isError: boolean
+}
+
+export function useAccountPositions(account: `0x${string}` | undefined): ChainPositions[] {
+  const contracts = DEPLOYED_CHAINS.map(({ chain }) => ({
+    chainId: chain.id,
+    address: NAV_CALCULATOR_ADDRESS,
+    abi: navCalcAbi,
+    functionName: 'getAccountPositions' as const,
+    args: [account ?? zeroAddress, zeroAddress] as const,
+  }))
+
+  const { data, isLoading } = useReadContracts({
+    contracts,
+    query: { enabled: !!account },
+  })
+
+  return DEPLOYED_CHAINS.map(({ chain, label }, i) => {
+    const result = data?.[i]
+    return {
+      chainId: chain.id,
+      label,
+      positions:
+        result?.status === 'success'
+          ? (result.result as readonly OnchainPosition[])
+          : [],
+      isLoading,
+      isError: result?.status === 'failure',
+    }
+  })
+}

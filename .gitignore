@@ -17,3 +17,8 @@ commit.msg
 safe-transactions/
 .claude/
 pr1_body.md
+
+# NAV Dashboard app
+app/.next/
+app/node_modules/
+app/.env.local

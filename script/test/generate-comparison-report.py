@@ -157,7 +157,7 @@ def main():
                 lines += [
                     "#### Protocol positions",
                     "",
-                    "| Protocol | Debank ID | Covered | Debank USD | Position detail |",
+                    "| Protocol | Debank ID | Covered | Debank USD | Debank position detail |",
                     "|---|---|:---:|---:|---|",
                 ]
                 for p in chain_protos:

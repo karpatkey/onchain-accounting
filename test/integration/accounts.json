@@ -1,8 +1,8 @@
 {
-  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only — see docs/howto/refresh-integration-test-blocks.md.",
+  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only \u2014 see docs/howto/refresh-integration-test-blocks.md.",
   "tolerance": 0.01,
   "$tolerance_comment": "Max relative drift allowed between forge-computed NAV and Debank's USD total at bump time. 0.01 = 1%.",
-  "$supportedDebankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped ∈ list). Stored as the short id (no chain prefix) — Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
+  "$supportedDebankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped \u2208 list). Stored as the short id (no chain prefix) \u2014 Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
   "chains": {
     "1": {
       "name": "mainnet",
@@ -16,7 +16,7 @@
         "aurafinance",
         "balancer3",
         "capapp",
-        "compound",
+        "compound3",
         "convex",
         "curve",
         "ethena",
@@ -44,7 +44,7 @@
       "forkBlock": 151176452,
       "supportedDebankProtocols": [
         "aave3",
-        "compound",
+        "compound3",
         "lido"
       ]
     },
@@ -69,7 +69,7 @@
         "aura",
         "aurafinance",
         "balancer3",
-        "compound",
+        "compound3",
         "etherfi",
         "lido",
         "morphoblue"
@@ -85,7 +85,7 @@
         "aura",
         "aurafinance",
         "balancer3",
-        "compound",
+        "compound3",
         "etherfi",
         "kelpdao",
         "lido",
@@ -196,7 +196,7 @@
       }
     },
     {
-      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (≈ $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout — it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
+      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (\u2248 $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout \u2014 it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
       "address": "0x13Ce0C26A44C644cCEB29B1e5B437521095F86DF",
       "label": "ACCOUNT_4_UMBRELLA",
       "enabledChains": [
@@ -210,7 +210,7 @@
       }
     },
     {
-      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending — the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
+      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending \u2014 the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
       "address": "0x9C1b8c994935e3890bD2257AD2a681d6D4465a73",
       "label": "ACCOUNT_5_COMPOUND_MAINNET",
       "enabledChains": [
@@ -219,7 +219,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "814148502222514",
-          "debankUsd": "5045686.401618"
+          "debankUsd": "8143059.081845"
         }
       }
     },
@@ -233,7 +233,7 @@
       "expected": {
         "10": {
           "navUsd8dp": "276120465480617",
-          "debankUsd": "116.587629"
+          "debankUsd": "2765715.536785"
         }
       }
     },
@@ -247,7 +247,7 @@
       "expected": {
         "42161": {
           "navUsd8dp": "205874263367622",
-          "debankUsd": "3.103733"
+          "debankUsd": "2059102.641222"
         }
       }
     },
@@ -261,12 +261,12 @@
       "expected": {
         "8453": {
           "navUsd8dp": "82315202926832",
-          "debankUsd": "55.557419"
+          "debankUsd": "823604.688107"
         }
       }
     },
     {
-      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet — register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) and StakeWise ($560 osETH) are unaccounted by NAV; both excluded from supportedDebankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
+      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet \u2014 register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) and StakeWise ($560 osETH) are unaccounted by NAV; both excluded from supportedDebankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
       "address": "0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669",
       "label": "ACCOUNT_9_MAINNET_DIVERSIFIED",
       "enabledChains": [
@@ -275,12 +275,12 @@
       "expected": {
         "1": {
           "navUsd8dp": "1513376456725939",
-          "debankUsd": "20247493.254809"
+          "debankUsd": "18111180.813997"
         }
       }
     },
     {
-      "$comment": "Mainnet LST/yield holder (~$96M Debank). Exercises a broad slice of the existing harness via wallet receipt tokens valued through ERC20DefaultOracle: sUSDS (~$29.6M Sky savings), ETHx (~$24.5M Stader LST), rETH (~$4.14M RocketPool), MORPHO rewards, plus the Merkl proof-cached adapter. Morpho Blue lending positions (~$13.2M) flow through the existing MorphoMarket adapter. Known structural drift: ~$24.6M of StakeWise V3 osETH is unaccounted (no harness import for StakeWiseV3OsToken / StakeWiseV3Vault yet, and osETH is not in script/config/assets.json on Mainnet) — expect ~25% drift vs Debank until those are wired (separate PR).",
+      "$comment": "Mainnet LST/yield holder (~$96M Debank). Exercises a broad slice of the existing harness via wallet receipt tokens valued through ERC20DefaultOracle: sUSDS (~$29.6M Sky savings), ETHx (~$24.5M Stader LST), rETH (~$4.14M RocketPool), MORPHO rewards, plus the Merkl proof-cached adapter. Morpho Blue lending positions (~$13.2M) flow through the existing MorphoMarket adapter. Known structural drift: ~$24.6M of StakeWise V3 osETH is unaccounted (no harness import for StakeWiseV3OsToken / StakeWiseV3Vault yet, and osETH is not in script/config/assets.json on Mainnet) \u2014 expect ~25% drift vs Debank until those are wired (separate PR).",
       "address": "0x4F2083f5fBede34C2714aFfb3105539775f7FE64",
       "label": "ACCOUNT_10_MAINNET_LST_YIELD",
       "enabledChains": [
@@ -289,7 +289,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "4702232716780170",
-          "debankUsd": "130157284.876842"
+          "debankUsd": "71750758.804370"
         }
       }
     }

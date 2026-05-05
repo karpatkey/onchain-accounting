@@ -80,6 +80,9 @@ def main():
     for cid, tokens in assets.get("tokens", {}).items():
         registered[cid] = {v["address"].lower() for v in tokens.values()}
 
+    # debank_totals[account_index][chain_id] = computed filtered USD total
+    debank_totals: dict[int, dict[str, float]] = {}
+
     lines = []
     lines += [
         "# NAV vs Debank — Detailed Comparison Report",
@@ -96,10 +99,11 @@ def main():
         lines.append(f"| {ccfg['name']} ({cid}) | {ccfg['forkBlock']} |")
     lines.append("")
 
-    for acc in accounts:
+    for acc_idx, acc in enumerate(accounts):
         addr = acc["address"]
         label = acc["label"]
         enabled = [str(c) for c in acc["enabledChains"]]
+        debank_totals[acc_idx] = {}
 
         lines += ["---", "", f"## {label}", "", f"**Address:** `{addr}`", ""]
 
@@ -221,6 +225,13 @@ def main():
 
             in_nav.sort(key=lambda x: -x[3])
             out_nav.sort(key=lambda x: -x[3])
+
+            # Compute filtered Debank total for this (account, chain) and store for write-back
+            filtered_proto_sum = sum(proto_net(p) for p in chain_protos
+                                     if (lambda pid: pid[len(f"{dbank_chain}_"):] if pid.startswith(f"{dbank_chain}_") else pid)(p.get("id","")) in supported_ids)
+            filtered_token_sum = sum(usd for _, _, _, usd, _ in in_nav)
+            debank_totals[acc_idx][cid] = filtered_proto_sum + filtered_token_sum
+
             all_tokens = [(sym, amt, price, usd, tid, True) for sym, amt, price, usd, tid in in_nav] + \
                          [(sym, amt, price, usd, tid, False) for sym, amt, price, usd, tid in out_nav]
 
@@ -240,9 +251,21 @@ def main():
             else:
                 lines += ["_No significant wallet token balances on this chain._", ""]
 
+    # Write computed Debank totals back to accounts.json — only fill empty slots
+    # so we don't overwrite values captured at the same time as the forge snapshot.
+    for acc_idx, chain_totals in debank_totals.items():
+        for cid, total in chain_totals.items():
+            exp = accounts[acc_idx].setdefault("expected", {}).setdefault(cid, {})
+            if not exp.get("debankUsd", "").strip():
+                exp["debankUsd"] = f"{total:.6f}"
+    with open(ACCOUNTS_JSON, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    print(f"Updated: {ACCOUNTS_JSON}", file=sys.stderr)
+
     with open(OUT_FILE, "w") as f:
         f.write("\n".join(lines) + "\n")
-    print(f"\nWritten: {OUT_FILE}", file=sys.stderr)
+    print(f"Written: {OUT_FILE}", file=sys.stderr)
 
 
 if __name__ == "__main__":

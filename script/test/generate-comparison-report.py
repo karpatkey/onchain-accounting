@@ -153,8 +153,8 @@ def main():
                 lines += [
                     "#### Protocol positions",
                     "",
-                    "| Protocol | Debank ID | In filter | Net USD | Position detail |",
-                    "|---|---|:---:|---:|---|",
+                    "| Protocol | Debank ID | NAV USD | Debank USD | Position detail |",
+                    "|---|---|---:|---:|---|",
                 ]
                 for p in chain_protos:
                     pid = p.get("id", "")
@@ -164,8 +164,11 @@ def main():
                         if short_id.startswith(prefix):
                             short_id = short_id[len(prefix):]
                     pname = p.get("name", pid)
-                    in_filter = "✅" if short_id in supported_ids else "❌"
+                    in_filter = short_id in supported_ids
                     total_net = proto_net(p)
+                    # NAV value: adapter covers this protocol → ≈ Debank value;
+                    # not covered → $0 (position dropped entirely from NAV).
+                    nav_proto = fmt_usd(total_net) if in_filter else "$0 ❌"
 
                     # Flatten positions into readable text
                     pos_cells = []
@@ -191,7 +194,7 @@ def main():
 
                     detail_col = "<br>".join(pos_cells) if pos_cells else "—"
                     lines.append(
-                        f"| {pname} | `{short_id}` | {in_filter} | {fmt_usd(total_net)} | {detail_col} |"
+                        f"| {pname} | `{short_id}` | {nav_proto} | {fmt_usd(total_net)} | {detail_col} |"
                     )
                 lines.append("")
             else:
@@ -218,29 +221,22 @@ def main():
 
             in_nav.sort(key=lambda x: -x[3])
             out_nav.sort(key=lambda x: -x[3])
+            all_tokens = [(sym, amt, price, usd, tid, True) for sym, amt, price, usd, tid in in_nav] + \
+                         [(sym, amt, price, usd, tid, False) for sym, amt, price, usd, tid in out_nav]
 
-            if in_nav or out_nav:
-                lines += ["#### Wallet tokens", ""]
-                if in_nav:
-                    lines += [
-                        "**Registered in `assets.json` (counted by NAV):**",
-                        "",
-                        "| Symbol | Amount | Price | USD | Address |",
-                        "|---|---:|---:|---:|---|",
-                    ]
-                    for sym, amt, price, usd, tid in in_nav:
-                        lines.append(f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(usd)} | `{tid}` |")
-                    lines.append("")
-                if out_nav:
-                    lines += [
-                        "**NOT in `assets.json` — unpriced / not counted by NAV:**",
-                        "",
-                        "| Symbol | Amount | Price | USD | Address |",
-                        "|---|---:|---:|---:|---|",
-                    ]
-                    for sym, amt, price, usd, tid in out_nav:
-                        lines.append(f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(usd)} | `{tid}` |")
-                    lines.append("")
+            if all_tokens:
+                lines += [
+                    "#### Wallet tokens",
+                    "",
+                    "| Symbol | Amount | Price | NAV USD | Debank USD | Address |",
+                    "|---|---:|---:|---:|---:|---|",
+                ]
+                for sym, amt, price, usd, tid, in_assets in all_tokens:
+                    nav_col = fmt_usd(usd) if in_assets else "$0 ❌"
+                    lines.append(
+                        f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} | {nav_col} | {fmt_usd(usd)} | `{tid}` |"
+                    )
+                lines.append("")
             else:
                 lines += ["_No significant wallet token balances on this chain._", ""]
 

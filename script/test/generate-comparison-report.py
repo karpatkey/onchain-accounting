@@ -2,9 +2,9 @@
 """
 Generate a detailed NAV vs Debank comparison report in Markdown.
 
-For each account × chain: shows every Debank protocol position (with token
-breakdown) and every wallet token (split into NAV-registered vs unregistered),
-alongside the NAV value from accounts.json.
+For each account × chain: shows NAV position detail (from
+test/integration/nav-positions-<chainId>.json written by
+RefreshIntegrationSnapshot) and Debank position detail (live API).
 
 Usage:
     . ./.env && python3 script/test/generate-comparison-report.py
@@ -22,6 +22,7 @@ DEBANK_API_KEY = os.environ.get("DEBANK_API_KEY", "")
 DEBANK_BASE = "https://pro-openapi.debank.com"
 ACCOUNTS_JSON = "test/integration/accounts.json"
 ASSETS_JSON = "script/config/assets.json"
+NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 OUT_FILE = "comparison-report.md"
 NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
@@ -65,6 +66,46 @@ def token_inline(t):
     return f"{sym} {fmt_amt(amt)} ({fmt_usd(usd)})"
 
 
+def load_nav_positions(chain_id: str) -> dict[str, list]:
+    """Load nav-positions-<chainId>.json; returns {} if missing."""
+    path = NAV_POSITIONS_PATTERN.format(chain_id=chain_id)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    # Keys are checksummed addresses; normalise to lowercase for lookup.
+    return {k.lower(): v for k, v in data.get("accounts", {}).items()}
+
+
+def render_nav_positions(positions: list) -> list[str]:
+    """Render a NAV positions table from a list of Position dicts."""
+    if not positions:
+        return ["_No NAV positions reported by oracle._", ""]
+
+    lines = [
+        "#### NAV positions (from on-chain oracle)",
+        "",
+        "| Protocol | Detail | Asset | Amount | USD value |",
+        "|---|---|---|---:|---:|",
+    ]
+    for pos in positions:
+        symbol = pos.get("symbol", "?")
+        decimals = int(pos.get("decimals", 18))
+        amount_raw = int(pos.get("amount", 0))
+        amount = amount_raw / 10 ** decimals
+        value_8dp = int(pos.get("valueUsd8dp", "0"))
+        usd = value_8dp / 1e8
+        protocol = pos.get("protocol", "")
+        detail = pos.get("positionDetail", "")
+        is_debt = pos.get("isDebt", False)
+        sign = "−" if is_debt else ""
+        lines.append(
+            f"| {protocol} | {detail} | {symbol} | {fmt_amt(amount)} | {sign}{fmt_usd(abs(usd))} |"
+        )
+    lines.append("")
+    return lines
+
+
 def main():
     with open(ACCOUNTS_JSON) as f:
         data = json.load(f)
@@ -79,6 +120,15 @@ def main():
     registered = {}
     for cid, tokens in assets.get("tokens", {}).items():
         registered[cid] = {v["address"].lower() for v in tokens.values()}
+
+    # Load NAV position detail files (written by RefreshIntegrationSnapshot)
+    nav_positions_by_chain: dict[str, dict[str, list]] = {}
+    for cid in chains_cfg:
+        nav_positions_by_chain[cid] = load_nav_positions(cid)
+        if nav_positions_by_chain[cid]:
+            print(f"  [nav-positions] chain {cid}: loaded {len(nav_positions_by_chain[cid])} account(s)", file=sys.stderr)
+        else:
+            print(f"  [nav-positions] chain {cid}: no file (run refresh script to generate)", file=sys.stderr)
 
     # debank_totals[account_index][chain_id] = computed filtered USD total
     debank_totals: dict[int, dict[str, float]] = {}
@@ -142,10 +192,17 @@ def main():
                 lines.append(f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: — (not available)**")
             lines.append("")
 
-            # ── Protocol positions ──────────────────────────────────────────
+            # ── NAV positions (from forge oracle) ───────────────────────────
+            nav_pos_map = nav_positions_by_chain.get(cid, {})
+            account_positions = nav_pos_map.get(addr.lower(), None)
+            if account_positions is not None:
+                lines += render_nav_positions(account_positions)
+            else:
+                lines += ["_NAV position detail not available — run refresh script._", ""]
+
+            # ── Debank protocol positions ────────────────────────────────────
             chain_protos = protos_by_chain.get(dbank_chain, [])
             if chain_protos:
-                # Sort by descending net USD value
                 def proto_net(p):
                     return sum(
                         i.get("stats", {}).get("net_usd_value", 0)
@@ -155,14 +212,13 @@ def main():
                 chain_protos = sorted(chain_protos, key=proto_net, reverse=True)
 
                 lines += [
-                    "#### Protocol positions",
+                    "#### Debank protocol positions",
                     "",
                     "| Protocol | Debank ID | Covered | Debank USD | Debank position detail |",
                     "|---|---|:---:|---:|---|",
                 ]
                 for p in chain_protos:
                     pid = p.get("id", "")
-                    # Normalise: strip chain prefix so arb_aave3 → aave3
                     short_id = pid
                     for prefix in (f"{dbank_chain}_",):
                         if short_id.startswith(prefix):
@@ -172,7 +228,6 @@ def main():
                     total_net = proto_net(p)
                     nav_proto = "✅" if in_filter else "❌"
 
-                    # Flatten positions into readable text
                     pos_cells = []
                     for item in p.get("portfolio_item_list", []):
                         detail = item.get("detail", {})
@@ -181,7 +236,7 @@ def main():
                         supply = detail.get("supply_token_list", [])
                         borrow = detail.get("borrow_token_list", [])
                         reward = detail.get("reward_token_list", [])
-                        token = detail.get("token_list", [])  # LP / vault tokens
+                        token = detail.get("token_list", [])
                         if supply:
                             parts.append("supply: " + " + ".join(token_inline(t) for t in supply))
                         if borrow:
@@ -214,9 +269,8 @@ def main():
                 amt = t.get("amount", 0)
                 price = t.get("price", 0)
                 usd = amt * price
-                if usd < 0.50:  # ignore dust
+                if usd < 0.50:
                     continue
-                # Native token: Debank uses the chain string as id
                 lookup = NATIVE_SENTINEL if tid == dbank_chain else tid
                 bucket = in_nav if lookup in reg_addrs else out_nav
                 bucket.append((t.get("symbol", "?"), amt, price, usd, tid))
@@ -224,9 +278,8 @@ def main():
             in_nav.sort(key=lambda x: -x[3])
             out_nav.sort(key=lambda x: -x[3])
 
-            # Compute filtered Debank total for this (account, chain) and store for write-back
             filtered_proto_sum = sum(proto_net(p) for p in chain_protos
-                                     if (lambda pid: pid[len(f"{dbank_chain}_"):] if pid.startswith(f"{dbank_chain}_") else pid)(p.get("id","")) in supported_ids)
+                                     if (lambda pid: pid[len(f"{dbank_chain}_"):] if pid.startswith(f"{dbank_chain}_") else pid)(p.get("id", "")) in supported_ids)
             filtered_token_sum = sum(usd for _, _, _, usd, _ in in_nav)
             debank_totals[acc_idx][cid] = filtered_proto_sum + filtered_token_sum
 
@@ -235,7 +288,7 @@ def main():
 
             if all_tokens:
                 lines += [
-                    "#### Wallet tokens",
+                    "#### Debank wallet tokens",
                     "",
                     "| Symbol | Amount | Price | Covered | Debank USD | Address |",
                     "|---|---:|---:|:---:|---:|---|",
@@ -250,7 +303,6 @@ def main():
                 lines += ["_No significant wallet token balances on this chain._", ""]
 
     # Write computed Debank totals back to accounts.json — only fill empty slots
-    # so we don't overwrite values captured at the same time as the forge snapshot.
     for acc_idx, chain_totals in debank_totals.items():
         for cid, total in chain_totals.items():
             exp = accounts[acc_idx].setdefault("expected", {}).setdefault(cid, {})

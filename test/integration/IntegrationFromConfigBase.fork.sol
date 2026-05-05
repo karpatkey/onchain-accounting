@@ -1072,6 +1072,68 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     // -----------------------------------------------------------------------
+    // NAV position detail serialization (used by RefreshIntegrationSnapshot)
+    // -----------------------------------------------------------------------
+
+    /// @notice Serializes one Position to a JSON object string.
+    /// @dev Protocol/positionDetail strings are written verbatim — our adapters use
+    ///      plain ASCII labels with no quotes or backslashes, so no escaping is needed.
+    function _positionToJson(INAVCalculator.Position memory pos) internal pure returns (string memory out) {
+        out = string.concat(
+            '{"symbol":"',
+            pos.underlyingAsset.symbol,
+            '","address":"',
+            vm.toString(pos.underlyingAsset.asset),
+            '","decimals":',
+            vm.toString(uint256(pos.underlyingAsset.decimals))
+        );
+        out = string.concat(out, ',"amount":"', vm.toString(pos.amount), '","isDebt":', pos.isDebt ? "true" : "false");
+        out = string.concat(
+            out,
+            ',"valueUsd8dp":"',
+            vm.toString(pos.value),
+            '","price":"',
+            vm.toString(pos.price),
+            '","priceDecimals":',
+            vm.toString(uint256(pos.priceDecimals))
+        );
+        out = string.concat(out, ',"protocol":"', pos.protocol, '","positionDetail":"', pos.positionDetail, '"}');
+    }
+
+    /// @notice Calls getAccountPositions for every enabled account on _chainId and returns
+    ///         a JSON object string keyed by account address.
+    function _buildPositionDetailsJson() internal view returns (string memory out) {
+        string memory json = _readAccountsJson();
+        out = "{";
+        bool first = true;
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+
+            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
+
+            if (_contains(enabled, _chainId)) {
+                if (!first) out = string.concat(out, ",");
+                first = false;
+
+                INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, QUOTE_USD);
+                out = string.concat(out, '"', vm.toString(account), '":[');
+                for (uint256 j = 0; j < positions.length; j++) {
+                    if (j > 0) out = string.concat(out, ",");
+                    out = string.concat(out, _positionToJson(positions[j]));
+                }
+                out = string.concat(out, "]");
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        out = string.concat(out, "}");
+    }
+
+    // -----------------------------------------------------------------------
     // accounts.json: drives both the test asserts and the bump script.
     // Schema lives in docs/howto/refresh-integration-test-blocks.md.
     // -----------------------------------------------------------------------

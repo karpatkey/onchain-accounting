@@ -250,6 +250,30 @@ def build_debank_proto_detail(p: dict) -> str:
     return "<br>".join(cells) if cells else "—"
 
 
+def build_item_label(item: dict) -> str:
+    """Short label for one Debank portfolio item: description or name + pool controller."""
+    desc = item.get("detail", {}).get("description", "")
+    name = item.get("name", "")
+    ctrl = (item.get("pool") or {}).get("controller", "")
+    label = desc or name or "—"
+    if ctrl:
+        label += f" (`{ctrl[:10]}…`)"
+    return label
+
+
+def build_item_tokens(item: dict) -> str:
+    """Compact token summary for a single Debank portfolio item."""
+    detail = item.get("detail", {})
+    parts = []
+    for tok in detail.get("supply_token_list", []):
+        parts.append(f"supply {tok.get('symbol','?')} {fmt_amt(tok.get('amount', 0))}")
+    for tok in detail.get("borrow_token_list", []):
+        parts.append(f"borrow {tok.get('symbol','?')} {fmt_amt(tok.get('amount', 0))}")
+    for tok in detail.get("reward_token_list", []):
+        parts.append(f"reward {tok.get('symbol','?')} {fmt_amt(tok.get('amount', 0))}")
+    return " + ".join(parts) if parts else "—"
+
+
 def render_unified_table(
     nav_positions: list,
     chain_protos: list,
@@ -298,42 +322,42 @@ def render_unified_table(
             for did in debank_ids_for_nav_protocol(pos.get("protocol", "")):
                 nav_adapters_by_debank.setdefault(did, []).append((idx, pos))
 
-    def _nav_rows_for_proto(short_id: str) -> list[tuple[str, str, str]]:
-        """Return [(nav_market, nav_position, nav_usd)] for a Debank protocol short_id.
-        Each tuple becomes its own table row. Returns [] when there is no NAV match."""
-        # 1. Adapter positions — one row per NAV position
-        adapter_matches = [(idx, p) for idx, p in nav_adapters_by_debank.get(short_id, [])
-                           if idx not in matched_nav]
-        if adapter_matches:
-            rows = []
-            for idx, p in adapter_matches:
-                proto = p.get("protocol", "")
-                sym = p.get("symbol", "?")
-                decimals = int(p.get("decimals", 18))
-                amt = int(p.get("amount", 0)) / 10 ** decimals
-                usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                label = "borrow" if p.get("isDebt") else "supply"
-                rows.append((proto, f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
-                matched_nav.add(idx)
-            return rows
-        # 2. Price-feed positions (LSTs/yield-bearing) — one row per symbol
-        pf_syms = debank_to_pf_symbols.get(short_id, set())
-        pf_matches = []
-        for sym_l in pf_syms:
-            entry = nav_pf_by_symbol.get(sym_l)
-            if entry and entry[0] not in matched_nav:
-                pf_matches.append(entry)
-        if pf_matches:
-            rows = []
-            for idx, p in pf_matches:
-                sym = p.get("symbol", "?")
-                decimals = int(p.get("decimals", 18))
-                amt = int(p.get("amount", 0)) / 10 ** decimals
-                usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                rows.append(("price feed", f"{sym} {fmt_amt(amt)}", fmt_usd(usd)))
-                matched_nav.add(idx)
-            return rows
-        return []
+    def _match_nav_for_item(item: dict, short_id: str) -> tuple[str, str, str]:
+        """Match one Debank portfolio item to the best NAV adapter position.
+        Matches on the largest supply token by (symbol, closest amount within 10%).
+        Returns (nav_market, nav_position, nav_usd_str) or ("—", "—", "—")."""
+        supply = item.get("detail", {}).get("supply_token_list", [])
+        candidates = [(idx, p) for idx, p in nav_adapters_by_debank.get(short_id, [])
+                      if idx not in matched_nav]
+        if not candidates or not supply:
+            return "—", "—", "—"
+        # Use the largest supply token as the matching key
+        primary = max(supply, key=lambda t: t.get("amount", 0))
+        s_sym = primary.get("symbol", "").lower()
+        s_amt = float(primary.get("amount", 0))
+        if s_amt <= 0:
+            return "—", "—", "—"
+        best_idx, best_pos, best_score = None, None, float("inf")
+        for idx, p in candidates:
+            if p.get("symbol", "").lower() != s_sym:
+                continue
+            decimals = int(p.get("decimals", 18))
+            p_amt = int(p.get("amount", 0)) / 10 ** decimals
+            if p_amt <= 0:
+                continue
+            score = abs(p_amt - s_amt) / s_amt
+            if score < best_score:
+                best_score = score
+                best_idx, best_pos = idx, p
+        if best_idx is None or best_score > 0.10:
+            return "—", "—", "—"
+        matched_nav.add(best_idx)
+        sym = best_pos.get("symbol", "?")
+        decimals = int(best_pos.get("decimals", 18))
+        amt = int(best_pos.get("amount", 0)) / 10 ** decimals
+        usd = int(best_pos.get("valueUsd8dp", 0)) / 1e8
+        label = "borrow" if best_pos.get("isDebt") else "supply"
+        return best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)
 
     lines: list[str] = []
 
@@ -342,8 +366,8 @@ def render_unified_table(
         lines += [
             "#### Debank protocol positions",
             "",
-            "| Protocol | Debank ID | Covered | Debank USD | Debank position detail | NAV market | NAV position | NAV USD |",
-            "|---|---|:---:|---:|---|---|---|---:|",
+            "| Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |",
+            "|---|---|:---:|---:|---|---|---:|---|---|---:|",
         ]
         for p in chain_protos:
             short_id = p.get("_short_id", "")
@@ -351,23 +375,58 @@ def render_unified_table(
             in_filter = short_id in supported_ids
             covered = "✅" if in_filter else "❌"
             total = proto_net_usd(p)
-            detail_col = build_debank_proto_detail(p)
-            nav_rows = _nav_rows_for_proto(short_id)
-            if not nav_rows:
+            items = [i for i in p.get("portfolio_item_list", [])
+                     if abs(i.get("stats", {}).get("net_usd_value", 0)) >= 0.01]
+
+            has_adapters = bool(nav_adapters_by_debank.get(short_id))
+            pf_syms = debank_to_pf_symbols.get(short_id, set())
+            # Pre-collect price-feed matches for non-adapter protocols (LSTs etc.)
+            pf_pool: list[tuple[int, dict]] = []
+            if not has_adapters and pf_syms:
+                for sym_l in pf_syms:
+                    entry = nav_pf_by_symbol.get(sym_l)
+                    if entry and entry[0] not in matched_nav:
+                        pf_pool.append(entry)
+
+            first_row = True
+            for item in items:
+                item_usd = item.get("stats", {}).get("net_usd_value", 0)
+                item_label = build_item_label(item)
+                item_tokens = build_item_tokens(item)
+
+                if has_adapters:
+                    nav_market, nav_pos, nav_usd_s = _match_nav_for_item(item, short_id)
+                elif pf_pool:
+                    idx, pos = pf_pool.pop(0)
+                    matched_nav.add(idx)
+                    sym = pos.get("symbol", "?")
+                    decimals = int(pos.get("decimals", 18))
+                    amt = int(pos.get("amount", 0)) / 10 ** decimals
+                    usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
+                    nav_market = "price feed"
+                    nav_pos = f"{sym} {fmt_amt(amt)}"
+                    nav_usd_s = fmt_usd(usd_val)
+                else:
+                    nav_market, nav_pos, nav_usd_s = "—", "—", "—"
+
+                if first_row:
+                    lines.append(
+                        f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                        f"| {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
+                        f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
+                    )
+                    first_row = False
+                else:
+                    lines.append(
+                        f"| | | | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
+                        f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
+                    )
+
+            if first_row:  # protocol had no items above threshold
                 lines.append(
                     f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
-                    f"| {detail_col} | — | — | — |"
+                    f"| — | — | — | — | — | — |"
                 )
-            else:
-                # First row carries all Debank metadata
-                market0, pos0, usd0 = nav_rows[0]
-                lines.append(
-                    f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
-                    f"| {detail_col} | {market0} | {pos0} | {usd0} |"
-                )
-                # Continuation rows: empty Debank cells, one NAV position each
-                for market, pos, usd in nav_rows[1:]:
-                    lines.append(f"| | | | | | {market} | {pos} | {usd} |")
         lines.append("")
 
     # ── Wallet tokens table ───────────────────────────────────────────────────────

@@ -109,6 +109,17 @@
         }
       }
     },
+    "osETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "osEth": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+          "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
+          "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
     "sXDAI": {
       "100": {
         "enabled": true,
@@ -283,6 +294,13 @@
         "pricefeed": "",
         "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935,
         "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_PriceOracle address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
+      },
+      "osETH": {
+        "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+        "type": "Custom",
+        "pricefeed": "",
+        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935,
+        "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed osETH_PriceOracle address back to chains/1.json.priceFeeds.osETH.deployed; copy that into pricefeed before running RegisterAssets."
       },
       "MORPHO": {
         "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",

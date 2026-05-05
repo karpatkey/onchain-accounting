@@ -513,6 +513,17 @@
       },
       "deployed": ""
     },
+    "StakeWiseV3OsToken_ETH": {
+      "enabled": true,
+      "constructor": {
+        "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
+        "protocol": "Stakewise v3",
+        "positionDetail": "osETH"
+      },
+      "deployed": ""
+    },
     "StaderWithdrawalQueue": {
       "enabled": true,
       "constructor": {

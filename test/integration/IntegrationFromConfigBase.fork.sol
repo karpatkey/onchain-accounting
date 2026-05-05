@@ -31,6 +31,7 @@ import {MerklRewardsBalanceOracle} from "src/balances/protocols/MerklRewards.sol
 import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
@@ -49,6 +50,8 @@ import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "src/prices/protocols/ezETH_Price.sol";
+import {ETHx_PriceOracle} from "src/prices/protocols/ETHx_Price.sol";
+import {osETH_PriceOracle} from "src/prices/protocols/osETH_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 
 // Price feed adapters (L2)
@@ -171,6 +174,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("rsETH", _deployRsEth);
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
+            _tryDeployPriceFeed("ETHx", _deployEthx);
+            _tryDeployPriceFeed("osETH", _deployOsEth);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -405,6 +410,28 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new syrupUSDC_L2_PriceOracle(syrup, syrupChainlink, usdcUsd, syrupHb, usdcUsdHb));
     }
 
+    function _deployEthx() internal returns (address) {
+        address ethx = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethx"));
+        address stakePoolsManager =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "stakePoolsManager"));
+        address ethUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
+        return address(new ETHx_PriceOracle(ethx, stakePoolsManager, ethUsd, ethUsdHb));
+    }
+
+    function _deployOsEth() internal returns (address) {
+        address osEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "osEth"));
+        address osTokenVaultController =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "osTokenVaultController"));
+        address ethUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "osETH", "ethToUsdChainlinkHeartbeat"));
+        return address(new osETH_PriceOracle(osEth, osTokenVaultController, ethUsd, ethUsdHb));
+    }
+
     // -----------------------------------------------------------------------
     // Balance adapter deployment
     // -----------------------------------------------------------------------
@@ -486,6 +513,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_equals(name, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(name, navAddr);
+        }
+        if (_startsWith(name, "StakeWiseV3OsToken_")) {
+            return _deployStakeWiseV3OsToken(name, navAddr);
         }
         if (_startsWith(name, "UniswapV2_")) {
             return _deployUniswapV2(name, navAddr);
@@ -671,6 +701,22 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
     }
 
+    function _deployStakeWiseV3OsToken(string memory name, address navAddr) internal returns (address) {
+        address osToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osToken"));
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
+        );
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(
+            new StakeWiseV3OsTokenBalanceOracle(osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navAddr)
+        );
+    }
+
     function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
         address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
@@ -708,7 +754,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](73);
+        names = new string[](74);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -782,6 +828,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "Fluid_Vault_weETH_wstETH";
         names[i++] = "Fluid_Vault_sUSDe_USDC";
         names[i++] = "StaderWithdrawalQueue";
+        names[i++] = "StakeWiseV3OsToken_ETH";
         names[i++] = "UniswapV3_WBTC_WETH_3000";
         names[i++] = "UniswapV3_WETH_COW_3000";
         names[i++] = "PancakeSwapV2_ETH_COW";
@@ -903,7 +950,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](28);
+            string[] memory s = new string[](30);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -932,6 +979,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[25] = "crvUSD";
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
+            s[28] = "ETHx";
+            s[29] = "osETH";
             return s;
         }
         if (chainId == 42161) {

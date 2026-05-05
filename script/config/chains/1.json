@@ -565,7 +565,7 @@
       "deployed": ""
     },
     "UniswapV3_WETH_COW_3000": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "pool": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -573,7 +573,7 @@
         "positionDetail": "WETH/COW 0.3%"
       },
       "deployed": "",
-      "comment": "Uniswap V3 WETH/COW 0.3% pool on Mainnet (factory.getPool resolves to this address). NPM is the canonical Uniswap V3 NonfungiblePositionManager. COW is not registered in script/config/assets.json on Mainnet (no Chainlink feed), so NAVCalculator filters the COW leg of any in-range position and values it on WETH alone. Used in the integration test to exercise the UniswapV3 adapter dispatch end-to-end against ACCOUNT_9 (0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669) which holds an LP NFT in this pool. Until COW is priced on Mainnet, expect the LP's NAV contribution to be ~half of the Debank value."
+      "comment": "Disabled: COW has no Chainlink price feed on Mainnet, so the COW leg of any in-range position would be silently dropped, understating NAV by ~half. Re-enable once a COW price feed is registered in assets.json."
     }
   },
   "bridgeAdapters": {

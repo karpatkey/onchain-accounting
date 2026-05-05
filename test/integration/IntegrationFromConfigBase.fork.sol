@@ -713,7 +713,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         return address(
-            new StakeWiseV3OsTokenBalanceOracle(osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navAddr)
+            new StakeWiseV3OsTokenBalanceOracle(
+                osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navAddr
+            )
         );
     }
 

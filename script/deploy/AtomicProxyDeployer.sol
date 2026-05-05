@@ -88,8 +88,9 @@ contract AtomicProxyDeployer {
         address chainlinkSequencerFeed,
         string memory nativeTokenSymbol
     ) private {
-        bytes memory navInitData =
-            abi.encodeCall(NAVCalculator.initialize, (address(this), chainlinkSequencerFeed, nativeTokenSymbol));
+        bytes memory navInitData = abi.encodeCall(
+            NAVCalculator.initialize, (address(this), chainlinkSequencerFeed, nativeTokenSymbol)
+        );
         UUPSUpgradeable(navProxy).upgradeToAndCall(navImpl, navInitData);
     }
 

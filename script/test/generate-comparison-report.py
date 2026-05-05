@@ -298,26 +298,25 @@ def render_unified_table(
             for did in debank_ids_for_nav_protocol(pos.get("protocol", "")):
                 nav_adapters_by_debank.setdefault(did, []).append((idx, pos))
 
-    def _nav_for_proto(short_id: str) -> tuple[str, str, str]:
-        """Return (nav_type_label, nav_detail_str, nav_usd_str) for a Debank protocol short_id."""
-        # 1. Adapter positions
+    def _nav_rows_for_proto(short_id: str) -> list[tuple[str, str, str]]:
+        """Return [(nav_market, nav_position, nav_usd)] for a Debank protocol short_id.
+        Each tuple becomes its own table row. Returns [] when there is no NAV match."""
+        # 1. Adapter positions — one row per NAV position
         adapter_matches = [(idx, p) for idx, p in nav_adapters_by_debank.get(short_id, [])
                            if idx not in matched_nav]
         if adapter_matches:
-            total_usd = sum(int(p.get("valueUsd8dp", 0)) / 1e8 for _, p in adapter_matches)
-            parts = []
-            for _, p in adapter_matches:
+            rows = []
+            for idx, p in adapter_matches:
                 proto = p.get("protocol", "")
                 sym = p.get("symbol", "?")
                 decimals = int(p.get("decimals", 18))
                 amt = int(p.get("amount", 0)) / 10 ** decimals
                 usd = int(p.get("valueUsd8dp", 0)) / 1e8
                 label = "borrow" if p.get("isDebt") else "supply"
-                parts.append(f"{proto}: {label} {sym} {fmt_amt(amt)} → {fmt_usd(usd)}")
-            for idx, _ in adapter_matches:
+                rows.append((proto, f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 matched_nav.add(idx)
-            return "adapter", "<br>".join(parts), fmt_usd(total_usd)
-        # 2. Price-feed positions (LSTs/yield-bearing: stETH→lido, rETH→rocketpool…)
+            return rows
+        # 2. Price-feed positions (LSTs/yield-bearing) — one row per symbol
         pf_syms = debank_to_pf_symbols.get(short_id, set())
         pf_matches = []
         for sym_l in pf_syms:
@@ -325,18 +324,16 @@ def render_unified_table(
             if entry and entry[0] not in matched_nav:
                 pf_matches.append(entry)
         if pf_matches:
-            total_usd = sum(int(p.get("valueUsd8dp", 0)) / 1e8 for _, p in pf_matches)
-            parts = []
-            for _, p in pf_matches:
+            rows = []
+            for idx, p in pf_matches:
                 sym = p.get("symbol", "?")
                 decimals = int(p.get("decimals", 18))
                 amt = int(p.get("amount", 0)) / 10 ** decimals
                 usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                parts.append(f"{sym} {fmt_amt(amt)} → {fmt_usd(usd)}")
-            for idx, _ in pf_matches:
+                rows.append(("price feed", f"{sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 matched_nav.add(idx)
-            return "price feed", "<br>".join(parts), fmt_usd(total_usd)
-        return "—", "—", "—"
+            return rows
+        return []
 
     lines: list[str] = []
 
@@ -345,7 +342,7 @@ def render_unified_table(
         lines += [
             "#### Debank protocol positions",
             "",
-            "| Protocol | Debank ID | Covered | Debank USD | Debank position detail | NAV type | NAV detail | NAV USD |",
+            "| Protocol | Debank ID | Covered | Debank USD | Debank position detail | NAV market | NAV position | NAV USD |",
             "|---|---|:---:|---:|---|---|---|---:|",
         ]
         for p in chain_protos:
@@ -355,11 +352,22 @@ def render_unified_table(
             covered = "✅" if in_filter else "❌"
             total = proto_net_usd(p)
             detail_col = build_debank_proto_detail(p)
-            nav_type_s, nav_detail_s, nav_usd_s = _nav_for_proto(short_id)
-            lines.append(
-                f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
-                f"| {detail_col} | {nav_type_s} | {nav_detail_s} | {nav_usd_s} |"
-            )
+            nav_rows = _nav_rows_for_proto(short_id)
+            if not nav_rows:
+                lines.append(
+                    f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                    f"| {detail_col} | — | — | — |"
+                )
+            else:
+                # First row carries all Debank metadata
+                market0, pos0, usd0 = nav_rows[0]
+                lines.append(
+                    f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                    f"| {detail_col} | {market0} | {pos0} | {usd0} |"
+                )
+                # Continuation rows: empty Debank cells, one NAV position each
+                for market, pos, usd in nav_rows[1:]:
+                    lines.append(f"| | | | | | {market} | {pos} | {usd} |")
         lines.append("")
 
     # ── Wallet tokens table ───────────────────────────────────────────────────────

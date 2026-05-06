@@ -1,6 +1,6 @@
 # 0002 — Aave V3 Safety Module: multi-token consolidation
 
-**Status:** accepted (implementation lands in the same PR as this ADR; see the Safety Module commit)
+**Status:** **superseded by [0005](0005-aave-safety-module-hardcoded-immutable.md)** (2026-XX-XX). The multi-token adapter described below was reverted in favour of a single-instance-per-stake-token immutable adapter — see ADR 0005 for the rationale. This document is preserved as the historical context for the change.
 
 ## Context
 

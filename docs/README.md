@@ -25,6 +25,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 | [`howto/add-price-feed.md`](howto/add-price-feed.md) | Adding a new custom price feed. Same recipe shape, framework reference is [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md). |
 | [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain (`chains/<id>.json`, asset registry, deploy steps). |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against Debank. |
+| [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
 
 ---
 
@@ -82,7 +83,6 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
 | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
 | [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` and `assets.json`. |
-| [`script/config/ORACLE_HEARTBEAT_VERIFICATION.md`](../script/config/ORACLE_HEARTBEAT_VERIFICATION.md) | How to look up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
 | [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `06_…` deploy scripts. |
 | [`script/test/README.md`](../script/test/README.md) | Per-folder index for `script/test/` (snapshot refresh + comparison report). |

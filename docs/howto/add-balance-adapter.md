@@ -110,6 +110,16 @@ Conventions:
 
 ## 2. Write the factory
 
+> **⚠ Aspirational section.** The factory framework (`BalanceAdapterFactoryBase`, `BalanceAdapterRegistry`, the `5_DeployAdapterFactories` script, etc.) is described in [ADR 0001](../decisions/0001-balance-adapter-factory-pattern.md) but is **not yet implemented in the codebase as of `4def473` (2026-05-06)**. `src/balances/factories/` does not exist. Until the framework lands, **skip this section** and use the current direct-deploy path:
+>
+> 1. Skip writing a factory contract. Your adapter is a single Solidity file under `src/balances/protocols/<protocol>/` (or directly under `src/balances/protocols/` for single-file adapters).
+> 2. Add a `_deployIfEnabled("MyProtocol_<instance>")` call to `script/deploy/04_DeployBalanceAdapters.s.sol` so the production deploy picks it up. Wire dispatch via `_deployBalanceAdapter` (e.g. follow the pattern of `_deployMorphoVault`).
+> 3. Add the chain-config entry under `chains/<id>.json.balanceAdapters.MyProtocol_<instance>` with the constructor params your adapter needs.
+> 4. Registration on `NAVCalculator` happens via `script/deploy/06_Configure.s.sol`'s Safe TX bundle calling `addBalanceOracle(adapter)` directly — no factory in the loop.
+> 5. Skip §3 (factory tests), §5 (factory deploy block), and §6 (registry handoff) below; jump to §4 (adapter unit + fork tests) and §7 (Safe TX flow via `06_Configure`).
+>
+> The aspirational instructions below describe the target end state; preserve them so the recipe is ready to use the moment ADR 0001 ships, but **do not** create `src/balances/factories/*` files in your PR until that framework is shipped.
+
 File: `src/balances/protocols/<protocol>/<MyProtocol>AdapterFactory.sol`.
 
 ```solidity

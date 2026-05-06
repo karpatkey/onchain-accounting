@@ -41,7 +41,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public cUsdCv3 = address(0xc3d688B66703497DAA19211EEdff47f25384cdc3);
     address public compoundRewardContract = address(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
-    // Morpho Blue (Ethereum Mainnet)
+    // Morpho (Ethereum Mainnet)
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
     bytes32 public marketIdSusdsUsdt = 0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b; // sUSDS/USDT
 

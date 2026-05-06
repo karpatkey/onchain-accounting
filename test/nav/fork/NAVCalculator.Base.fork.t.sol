@@ -30,9 +30,9 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     address public cUsdCv3 = address(0xb125E6687d4313864e53df431d5425969c15Eb2F);
     address public compoundRewardContract = address(0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1);
 
-    // Morpho Blue (Base) — cbBTC/USDC market (USD Prime fund position)
+    // Morpho (Base) — cbBTC/USDC market (USD Prime fund position)
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-    // Morpho Blue Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
+    // Morpho Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
     bytes32 public marketIdCbbtcUsdc = 0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836;
 
     /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.

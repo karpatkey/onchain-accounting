@@ -150,7 +150,7 @@ The user's authoritative kpk Morpho vault list (from the kpk catalog) cross-refe
 
 ## 3. Morpho Markets per kpk Vault — TODO
 
-The user requested the catalog to also include the underlying Morpho Blue markets each kpk vault supplies into. Enumerating these on-chain requires `MetaMorpho.withdrawQueueLength()` + `withdrawQueue(uint256)` per vault, then `MorphoBlue.idToMarketParams(Id)` per market — multiple round-trips per vault. The audit script attempted this but the function selector was incorrect; markets-per-vault enumeration is **deferred**.
+The user requested the catalog to also include the underlying Morpho markets each kpk vault supplies into. Enumerating these on-chain requires `MetaMorpho.withdrawQueueLength()` + `withdrawQueue(uint256)` per vault, then `MorphoBlue.idToMarketParams(Id)` per market — multiple round-trips per vault. The audit script attempted this but the function selector was incorrect; markets-per-vault enumeration is **deferred**.
 
 ### 3.1 What we already have
 
@@ -202,6 +202,36 @@ Deduplicate market IDs across the 13 vaults. Cross-reference against the `market
 | 2 | `0xA9d17f6D…2e0AABa64` | `kpkwstETH` | wstETH v3 | ✅ `GearboxMarket_kpkwstETH` (deployed) |
 
 **Both already deployed.** No action needed.
+
+---
+
+## 4.5 MorphoMarket protocol-string realignment
+
+PR #35 renamed the user-facing `protocol` field in every `MorphoMarket_*` chain-config entry from `"Morpho Blue - <pair>"` to `"Morpho - <pair>"` (per the convention codified in [`CLAUDE.md`](../CLAUDE.md) and `feedback_morpho_naming` memory). The constructor arg change → different CREATE2 address for new deploys.
+
+The currently-deployed mainnet/Base/Arbitrum `MorphoMarket_*` adapters were deployed BEFORE this rename, so their immutable bytecode still pins `"Morpho Blue - <pair>"`. After PR #35 merges:
+
+- Integration tests (which deploy adapters ephemerally on a fork from the new chain config) return `"Morpho - <pair>"` ✓
+- Production NAVCalculator queries the deployed adapters and gets back `"Morpho Blue - <pair>"` from their bytecode
+
+Cosmetic divergence — doesn't affect NAV math, but worth aligning so the production reports match the integration-test reports. Action: **redeploy** every `MorphoMarket_*` adapter with the new string and update `chains/<id>.json.balanceAdapters.<key>.deployed`.
+
+**Affected adapters:** 12 on mainnet, 2 on Base, 1 on Arbitrum (per `chains/<id>.json` entries). Use the standard `04_DeployBalanceAdapters.s.sol` flow — but **first wipe the existing `deployed` fields** so the script doesn't think they're already up. Pre-redeploy step:
+
+```bash
+# Mainnet
+python3 -c "
+import json
+c = json.load(open('script/config/chains/1.json'))
+for k, v in c['balanceAdapters'].items():
+    if k.startswith('MorphoMarket_'):
+        v['deployed'] = ''
+json.dump(c, open('script/config/chains/1.json','w'), indent=2)
+"
+# Repeat for chains/8453.json and chains/42161.json.
+```
+
+Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. The Safe TX bundle from `06_Configure.s.sol` will need to call `addBalanceOracle(<new>)` AND `removeBalanceOracle(<old>)` for each affected adapter — old + new addresses both kept in chain config until cutover.
 
 ---
 

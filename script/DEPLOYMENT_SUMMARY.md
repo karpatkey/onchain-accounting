@@ -341,7 +341,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `AaveV2InstanceBalanceOracle` - Aave V2 aTokens (legacy)
 - `AaveUmbrellaBalanceOracle` - Aave Umbrella stake tokens
 - `CompoundV3Comet` - Compound V3 (Comet) base + collateral + rewards
-- `MorphoMarketBalanceOracle` - Morpho Blue direct market positions
+- `MorphoMarketBalanceOracle` - Morpho direct market positions
 - `MorphoVaultBalanceOracle` - MetaMorpho vault positions
 - `SparkLendBalanceOracle` - Spark Lend positions
 - `BalancerV3BalanceOracle` - Balancer V3 LPs

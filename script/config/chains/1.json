@@ -138,7 +138,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
-        "protocol": "Morpho Blue - wstETH/USDC"
+        "protocol": "Morpho - wstETH/USDC"
       },
       "deployed": "0x4A68C3dA533fF7527CD67390f80d87ca6a95551d"
     },
@@ -147,7 +147,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
-        "protocol": "Morpho Blue - cbBTC/USDC"
+        "protocol": "Morpho - cbBTC/USDC"
       },
       "deployed": "0x8b0F047127D58692C869033a551872c4Fe55e758"
     },
@@ -156,7 +156,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
-        "protocol": "Morpho Blue - wstUSR/USDC"
+        "protocol": "Morpho - wstUSR/USDC"
       },
       "deployed": "0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42"
     },
@@ -165,7 +165,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
-        "protocol": "Morpho Blue - ETH+/USDC"
+        "protocol": "Morpho - ETH+/USDC"
       },
       "deployed": "0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2"
     },
@@ -174,7 +174,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
-        "protocol": "Morpho Blue - WBTC/USDC"
+        "protocol": "Morpho - WBTC/USDC"
       },
       "deployed": "0xe1CE19c8C668cD3659f2AE64E2C9D078c71Ef8F6"
     },
@@ -183,7 +183,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
-        "protocol": "Morpho Blue - RLP/USDC"
+        "protocol": "Morpho - RLP/USDC"
       },
       "deployed": "0x9970D0D8932051d21883C854fC42eb67a54348FF"
     },
@@ -192,7 +192,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
-        "protocol": "Morpho Blue - syrupUSDC/USDC"
+        "protocol": "Morpho - syrupUSDC/USDC"
       },
       "deployed": "0x7A7e9F5562C0126fb2bCC2f29D1098b60A452431"
     },
@@ -201,7 +201,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
-        "protocol": "Morpho Blue - sUSDS/USDT"
+        "protocol": "Morpho - sUSDS/USDT"
       },
       "deployed": "0x6837d6a2F1335fffBb6B21b51d24D34F12a02DaA"
     },
@@ -210,7 +210,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
-        "protocol": "Morpho Blue - ETH+/WETH"
+        "protocol": "Morpho - ETH+/WETH"
       },
       "deployed": "0x618207B0650cE45C241760CE0b6E560167EcC1AA"
     },
@@ -219,7 +219,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
-        "protocol": "Morpho Blue - wstETH/WETH"
+        "protocol": "Morpho - wstETH/WETH"
       },
       "deployed": "0xAF28F8E8E24B6B23f6BB667f868b9bAFFBEfd8B6"
     },
@@ -228,7 +228,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
-        "protocol": "Morpho Blue - weETH/WETH"
+        "protocol": "Morpho - weETH/WETH"
       },
       "deployed": "0x537E83dc59b2Ee2C7bD46B2f4801c5DF3B3f8aD1"
     },
@@ -237,7 +237,7 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
-        "protocol": "Morpho Blue - rsETH/WETH"
+        "protocol": "Morpho - rsETH/WETH"
       },
       "deployed": "0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b"
     },

@@ -55,7 +55,7 @@ with open(WALLET_AGGREGATING_ADAPTERS_JSON) as _wa_f:
 
 # Maps NAV adapter `protocol` prefixes to Debank protocol short-IDs.
 # Matching is prefix-based: e.g. "Aave V3" matches "Aave V3 Core", "Aave V3 Prime",
-# "Aave V3 Safety Module", etc.  "Morpho" matches "Morpho Vault", "Morpho Blue - *".
+# "Aave V3 Safety Module", etc.  "Morpho" matches "Morpho Vault", "Morpho - *".
 # Longer prefixes take priority over shorter ones.
 NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "Aave V3": ["aave3"],
@@ -397,7 +397,7 @@ def render_unified_table(
             # is just a 1:1 match — Stage 1 already had a chance and chose not to
             # take it (or already took it). Re-claiming a 1:1 candidate here
             # would steal it from a *later* item that legitimately needs the
-            # 1:1 match (observed on ACCOUNT_1 Morpho: each `Morpho Blue *` is
+            # 1:1 match (observed on ACCOUNT_1 Morpho: each `Morpho *` is
             # its own protocol group with 1 position; Stage 2 was attaching them
             # all to the first item and starving items 5-6 of their natural
             # matches). Restrict to multi-position groups.

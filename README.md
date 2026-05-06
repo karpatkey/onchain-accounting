@@ -167,7 +167,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 | `@optimism/` | Optimism contracts-bedrock (Superchain adapter) |
 | `aave-v3-core/` | Aave V3 |
 | `comet-contracts/` | Compound III |
-| `morpho-blue/` | Morpho Blue |
+| `morpho-blue/` | Morpho |
 | `gmx-contracts/` | GMX |
 | `openzeppelin-foundry-upgrades/` | UUPS deploy helpers |
 

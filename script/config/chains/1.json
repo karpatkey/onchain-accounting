@@ -584,6 +584,26 @@
       },
       "deployed": "",
       "comment": "Disabled: COW has no Chainlink price feed on Mainnet, so the COW leg of any in-range position would be silently dropped, understating NAV by ~half. Re-enable once a COW price feed is registered in assets.json."
+    },
+    "UniswapV3_USDC_WETH_500": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+        "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "protocol": "Uniswap V3",
+        "positionDetail": "USDC/WETH 0.05%"
+      },
+      "deployed": ""
+    },
+    "UniswapV3_WETH_USDT_3000": {
+      "enabled": true,
+      "constructor": {
+        "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
+        "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "protocol": "Uniswap V3",
+        "positionDetail": "WETH/USDT 0.3%"
+      },
+      "deployed": ""
     }
   },
   "bridgeAdapters": {

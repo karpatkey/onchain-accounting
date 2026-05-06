@@ -1,14 +1,14 @@
 {
-  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only \u2014 see docs/howto/refresh-integration-test-blocks.md.",
+  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only — see docs/howto/refresh-integration-test-blocks.md.",
   "tolerance": 0.01,
   "$tolerance_comment": "Max relative drift allowed between forge-computed NAV and Debank's USD total at bump time. 0.01 = 1%.",
-  "$supportedDebankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped \u2208 list). Stored as the short id (no chain prefix) \u2014 Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
+  "$supportedDebankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped ∈ list). Stored as the short id (no chain prefix) — Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
   "chains": {
     "1": {
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25033963,
+      "forkBlock": 25038439,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
@@ -36,13 +36,13 @@
         "uniswap2",
         "uniswap3"
       ],
-      "$untracked_by_design": "Protocols and wallet tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS: aave2 (deprecated by Aave \u2014 stkAAVE Safety Module lives here, no new deposits expected); balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP \u2014 not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 \u2014 only V3 covered). WALLET TOKENS without a Chainlink mainnet price feed: COW, HEX, POL, CASHW. POL has feeds on Polygon but not on Ethereum mainnet, so it's unpriceable here. COW-containing UniV3/PancakeSwap pools are also disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
+      "$untracked_by_design": "Protocols and wallet tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS: aave2 (deprecated by Aave — stkAAVE Safety Module lives here, no new deposits expected); balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered). WALLET TOKENS without a Chainlink mainnet price feed: COW, HEX, POL, CASHW. POL has feeds on Polygon but not on Ethereum mainnet, so it's unpriceable here. COW-containing UniV3/PancakeSwap pools are also disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 151223694,
+      "forkBlock": 151250626,
       "supportedDebankProtocols": [
         "aave3",
         "compound3",
@@ -53,7 +53,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46030673,
+      "forkBlock": 46041192,
       "supportedDebankProtocols": [
         "aave3",
         "gnosis",
@@ -65,7 +65,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45628409,
+      "forkBlock": 45655341,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
@@ -81,7 +81,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 459884021,
+      "forkBlock": 460099462,
       "supportedDebankProtocols": [
         "aave3",
         "aura",
@@ -111,24 +111,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "18082663392",
-          "debankUsd": "180.095228"
+          "navUsd8dp": "18106349308",
+          "debankUsd": "180.094576"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500661088",
-          "debankUsd": "5.004768"
+          "navUsd8dp": "500669856",
+          "debankUsd": "5.006002"
         },
         "8453": {
           "navUsd8dp": "999979700",
-          "debankUsd": "10.002350"
+          "debankUsd": "10.001350"
         },
         "42161": {
-          "navUsd8dp": "1002568640",
-          "debankUsd": "10.025606"
+          "navUsd8dp": "1002583936",
+          "debankUsd": "10.025085"
         }
       }
     },
@@ -144,8 +144,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "115215540679437",
-          "debankUsd": "1154510.877102"
+          "navUsd8dp": "114397936487775",
+          "debankUsd": "1146839.689822"
         },
         "10": {
           "navUsd8dp": "0",
@@ -177,8 +177,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "27797396225",
-          "debankUsd": "277.030422"
+          "navUsd8dp": "27611181921",
+          "debankUsd": "276.304123"
         },
         "10": {
           "navUsd8dp": "0",
@@ -199,7 +199,7 @@
       }
     },
     {
-      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (\u2248 $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout \u2014 it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
+      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (≈ $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout — it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
       "address": "0x13Ce0C26A44C644cCEB29B1e5B437521095F86DF",
       "label": "ACCOUNT_4_UMBRELLA",
       "enabledChains": [
@@ -207,13 +207,13 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "17705459671728",
-          "debankUsd": "176966.637901"
+          "navUsd8dp": "17694555224078",
+          "debankUsd": "176912.978898"
         }
       }
     },
     {
-      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending \u2014 the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
+      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending — the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
       "address": "0x9C1b8c994935e3890bD2257AD2a681d6D4465a73",
       "label": "ACCOUNT_5_COMPOUND_MAINNET",
       "enabledChains": [
@@ -221,8 +221,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "814323034492657",
-          "debankUsd": "8143659.568395"
+          "navUsd8dp": "814324715249681",
+          "debankUsd": "8143152.313419"
         }
       }
     },
@@ -235,8 +235,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "276647171980337",
-          "debankUsd": "2765622.570036"
+          "navUsd8dp": "276617908413537",
+          "debankUsd": "2765527.854390"
         }
       }
     },
@@ -249,8 +249,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "205901889508245",
-          "debankUsd": "2059532.531382"
+          "navUsd8dp": "205910614468627",
+          "debankUsd": "2059532.523526"
         }
       }
     },
@@ -263,13 +263,13 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "82358071765715",
-          "debankUsd": "823809.635352"
+          "navUsd8dp": "82364174655970",
+          "debankUsd": "823808.452098"
         }
       }
     },
     {
-      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is now covered once StakeWiseV3OsToken_ETH is deployed and registered (see StakeWise V3 wiring in NAV_V2_DEPLOYMENT_RUNBOOK.md). Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet \u2014 register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDebankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
+      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is now covered once StakeWiseV3OsToken_ETH is deployed and registered (see StakeWise V3 wiring in NAV_V2_DEPLOYMENT_RUNBOOK.md). Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet — register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDebankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
       "address": "0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669",
       "label": "ACCOUNT_9_MAINNET_DIVERSIFIED",
       "enabledChains": [
@@ -277,8 +277,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1755109486191208",
-          "debankUsd": "18074380.237526"
+          "navUsd8dp": "1767346680756890",
+          "debankUsd": "18199003.932551"
         }
       }
     },
@@ -291,8 +291,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "9608999924251786",
-          "debankUsd": "95849716.191966"
+          "navUsd8dp": "9517476013698545",
+          "debankUsd": "95211546.157842"
         }
       }
     },
@@ -304,8 +304,22 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "503609873336495",
-          "debankUsd": "5027528.124051"
+          "navUsd8dp": "503244146429732",
+          "debankUsd": "5036182.785959"
+        }
+      }
+    },
+    {
+      "$comment": "Mainnet Uniswap V3 LP with 2 active positions in registered pairs: USDC/WETH 500bp (#1231724) and WETH/USDT 3000bp (#1276763). Added to exercise the UniswapV3 balance adapter on a clean, minimal account with no other protocol positions.",
+      "address": "0x8d27deb2405717d649346502f52b959aab4eb3af",
+      "label": "ACCOUNT_12_MAINNET_UNISWAP_V3_LP",
+      "enabledChains": [
+        1
+      ],
+      "expected": {
+        "1": {
+          "navUsd8dp": "86174813563",
+          "debankUsd": "876.209826"
         }
       }
     }

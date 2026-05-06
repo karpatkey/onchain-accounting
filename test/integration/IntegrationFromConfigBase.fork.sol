@@ -766,7 +766,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](73);
+        names = new string[](75);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -844,6 +844,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "StakeWiseV3OsToken_ETH";
         names[i++] = "StakeWiseV3Vault_Genesis";
         names[i++] = "UniswapV3_WBTC_WETH_3000";
+        names[i++] = "UniswapV3_USDC_WETH_500";
+        names[i++] = "UniswapV3_WETH_USDT_3000";
         // COW pools omitted: COW has no price feed so the COW leg is dropped silently.
     }
 

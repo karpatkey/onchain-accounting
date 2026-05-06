@@ -80,7 +80,7 @@ abstract contract Prices is IPrices, Initializable {
             // Secondary staleness check via the feed's own Chainlink round data. Only active when a non-zero
             // heartbeat has been configured for this custom feed, and only when the feed hasn't already flagged stale.
             if (!stale && config.chainlinkHeartbeat != 0) {
-                (,,,uint256 updatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
+                (,,, uint256 updatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
                 if (updatedAt != 0) {
                     stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
                 }

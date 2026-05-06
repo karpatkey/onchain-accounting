@@ -46,12 +46,7 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
 
     /// @inheritdoc IPriceFeedCustom
     /// @dev ETH+ has no Chainlink dependency; returns all zeros as a sentinel.
-    function latestRoundData()
-        external
-        pure
-        override
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0);
     }
 

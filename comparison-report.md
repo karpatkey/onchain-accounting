@@ -1,6 +1,6 @@
 # NAV vs Debank — Detailed Comparison Report
 
-Generated: 2026-05-06 02:46 UTC  
+Generated: 2026-05-06 03:19 UTC  
 Tolerance: 1%
 
 Debank anchor: from `accounts.json.expected.<cid>.debankUsd` (captured at forge-snapshot time). Re-run with `--refresh-debank` to recapture against current chain state.  
@@ -35,30 +35,30 @@ Debank anchor: from `accounts.json.expected.<cid>.debankUsd` (captured at forge-
 | | | | | Deposit (`0xbbbbbbbb…`) | supply USDC 16.183234 | $16.1832 | Morpho Blue - wstUSR/USDC | supply USDC 17.154567 | $17.1520 |
 | | | | | Deposit (`0xbbbbbbbb…`) | supply USDC 10.088323 | $10.0883 | Morpho Blue - wstETH/USDC | supply USDC 10.088117 | $10.0866 |
 | | | | | USDC Prime (`0xe108fbc0…`) | supply USDC 10.084795 | $10.0848 | Morpho Vault | supply USDC 10.084579 | $10.0831 |
-| Aave V3 | `aave3` | ✅ | $52.5469 | Staked (`0x1a88df1c…`) | supply GHO 10.000000 | $9.9890 | Aave V3 Safety Module | supply GHO 10.000000 | $9.9982 |
-| | | | | Lending (`0x87870bca…`) | supply USDC 9.082349 + supply USDT 10.085052 + supply USDe 5.023880 + supply sUSDe 3.000000 + supply RLUSD 14.671598 + reward USDS 0.008929 | $42.5579 | Aave V3 Core | supply USDC 9.082279 | $9.0809 |
+| Aave V3 | `aave3` | ✅ | $52.5476 | Staked (`0x1a88df1c…`) | supply GHO 10.000000 | $9.9890 | Aave V3 Safety Module | supply GHO 10.000000 | $9.9982 |
+| | | | | Lending (`0x87870bca…`) | supply USDC 9.082349 + supply USDT 10.085052 + supply USDe 5.023880 + supply sUSDe 3.000000 + supply RLUSD 14.671598 + reward USDS 0.008929 | $42.5586 | Aave V3 Core | supply USDC 9.082279 | $9.0809 |
 | | | | | | | | Aave V3 Core | supply USDT 10.084958 | $10.0843 |
 | | | | | | | | Aave V3 Core | supply USDe 5.023847 | $5.0204 |
 | | | | | | | | Aave V3 Core | supply sUSDe 3.000000 | $3.6883 |
 | | | | | | | | Aave V3 Core | supply RLUSD 14.671525 | $14.6716 |
-| Balancer V3 | `balancer3` | ✅ | $7.0001 | Aave GHO/USDT/USDC (`0x85b2b559…`) | supply USDT 1.844668 + supply GHO 3.184493 + supply USDC 1.974626 | $7.0001 | Balancer V3 - Aave GHO/USDT/USDC | supply USDT 1.790512 | $1.7904 |
+| Balancer V3 | `balancer3` | ✅ | $7.0001 | Aave GHO/USDT/USDC (`0x85b2b559…`) | supply USDT 1.844655 + supply GHO 3.183650 + supply USDC 1.975489 | $7.0001 | Balancer V3 - Aave GHO/USDT/USDC | supply USDT 1.790512 | $1.7904 |
 | | | | | | | | Balancer V3 - Aave GHO/USDT/USDC | supply GHO 3.182706 | $3.1821 |
 | | | | | | | | Balancer V3 - Aave GHO/USDT/USDC | supply USDC 2.030515 | $2.0302 |
 | cap | `capapp` | ✅ | $5.0600 | Staked cap USD (`0x88887be4…`) | supply cUSD 5.060023 | $5.0600 | — | — | — |
-| Sky | `sky` | ✅ | $5.0537 | Savings USDS (`0xa3931d71…`) | supply USDS 5.053685 | $5.0537 | price feed | sUSDS 4.612968 | $5.0515 |
-| Ethena | `ethena` | ✅ | $4.4847 | sUSDe (`0x9d39a5de…`) | supply USDe 4.487362 | $4.4847 | price feed | sUSDe 3.647417 | $4.4843 |
-| Merkl | `merkl` | ✅ | $0.3030 | Rewards (`0x3ef3d8ba…`) | supply RLUSD 0.113333 + supply MORPHO 0.022386 + supply GHO 0.139132 + supply USDT 0.000053 + supply USDC 0.000056 | $0.3030 | — | — | — |
+| Sky | `sky` | ✅ | $5.0527 | Savings USDS (`0xa3931d71…`) | supply USDS 5.053685 | $5.0527 | price feed | sUSDS 4.612968 | $5.0515 |
+| Ethena | `ethena` | ✅ | $4.4842 | sUSDe (`0x9d39a5de…`) | supply USDe 4.487362 | $4.4842 | price feed | sUSDe 3.647417 | $4.4843 |
+| Merkl | `merkl` | ✅ | $0.3029 | Rewards (`0x3ef3d8ba…`) | supply RLUSD 0.113333 + supply MORPHO 0.022386 + supply GHO 0.139132 + supply USDT 0.000053 + supply USDC 0.000056 | $0.3029 | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
 | GHO | 8.905915 | $0.9989 | ✅ | $8.8961 | `0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f` | price feed | wallet / Holding | 8.905915 | $8.9043 |
-| USDe | 0.999922 | $0.9994 | ✅ | $0.9993 | `0x4c9edd5852cd905f086c759e8383e09bff1e68b3` | price feed | wallet / Holding | 0.999922 | $0.9992 |
+| USDe | 0.999922 | $0.9993 | ✅ | $0.9992 | `0x4c9edd5852cd905f086c759e8383e09bff1e68b3` | price feed | wallet / Holding | 0.999922 | $0.9992 |
 | USDC | 9.626826 | $1.0000 | ✅ | $9.6268 | `0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` | price feed | wallet / Holding | 9.626826 | $9.6254 |
 | cUSD | 4.990006 | $1.0000 | ✅ | $4.9900 | `0xcccc62962d17b8914c62d74ffb843d73b2a3cccc` | — | — | — | — |
 | USDT | 4.717667 | $0.9999 | ✅ | $4.7172 | `0xdac17f958d2ee523a2206206994597c13d831ec7` | price feed | wallet / Holding | 4.717667 | $4.7174 |
-| USDS | 14.831886 | $1.0000 | ✅ | $14.8319 | `0xdc035d45d973e3ec169d2276ddab16f1e407384f` | price feed | wallet / Holding | 14.831886 | $14.8257 |
+| USDS | 14.831886 | $0.9998 | ✅ | $14.8289 | `0xdc035d45d973e3ec169d2276ddab16f1e407384f` | price feed | wallet / Holding | 14.831886 | $14.8257 |
 
 #### NAV positions without Debank counterpart
 
@@ -81,15 +81,15 @@ _No positions on this chain._
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Aave V3 | `aave3` | ✅ | $2.0088 | Lending (`0xb5020155…`) | supply WXDAI 2.008813 | $2.0088 | Aave V3 Gnosis | supply WXDAI 2.008799 | $2.0088 |
-| Gnosis | `gnosis` | ❌ | $0.0000 | — | — | — | — | — | — |
+| Aave V3 | `aave3` | ✅ | $2.0084 | Lending (`0xb5020155…`) | supply WXDAI 2.008813 | $2.0084 | Aave V3 Gnosis | supply WXDAI 2.008799 | $2.0088 |
+| Gnosis | `gnosis` | ✅ | $0.0000 | — | — | — | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
 | GHO | 0.998493 | $0.9994 | ✅ | $0.9979 | `0xfc421ad3c883bf9e7c4f42de845c4e4405799e73` | price feed | wallet / Holding | 0.998493 | $0.9983 |
-| xDai | 1.999518 | $1.0000 | ✅ | $1.9995 | `xdai` | price feed | wallet / Holding | 1.999518 | $1.9995 |
+| xDai | 1.999518 | $0.9998 | ✅ | $1.9991 | `xdai` | price feed | wallet / Holding | 1.999518 | $1.9995 |
 
 #### NAV positions without Debank counterpart
 
@@ -156,18 +156,18 @@ _No positions on this chain._
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Aave V3 | `aave3` | ✅ | $1.150M | Lending (`0x87870bca…`) | supply WETH 0.011597 + supply rsETH 2,326.4202 + borrow WETH 2,001.4307 | $1.150M | Aave V3 Core | supply WETH 0.011597 | $27.3145 |
+| Aave V3 | `aave3` | ✅ | $1.152M | Lending (`0x87870bca…`) | supply WETH 0.011597 + supply rsETH 2,326.4202 + borrow WETH 2,001.4307 | $1.152M | Aave V3 Core | supply WETH 0.011597 | $27.3145 |
 | | | | | | | | Aave V3 Core | supply rsETH 2,326.4202 | $5.861M |
 | | | | | | | | Aave V3 Core | borrow WETH 2,001.4271 | $-4.714M |
-| Kelp DAO | `kelpdao` | ✅ | $741.1595 | rsETH (`0xa1290d69…`) | supply ETH 0.313371 | $741.1595 | price feed | rsETH 0.292977 | $738.0949 |
-| Merkl | `merkl` | ✅ | $27.5797 | Rewards (`0x3ef3d8ba…`) | supply GEAR 91,169.3043 + supply ETH 0.000000 | $27.5797 | — | — | — |
+| Kelp DAO | `kelpdao` | ✅ | $742.6261 | rsETH (`0xa1290d69…`) | supply ETH 0.313371 | $742.6261 | price feed | rsETH 0.292977 | $738.0949 |
+| Merkl | `merkl` | ✅ | $27.6079 | Rewards (`0x3ef3d8ba…`) | supply GEAR 91,169.3043 + supply ETH 0.000000 | $27.6079 | — | — | — |
 | LIDO | `lido` | ✅ | $0.0058 | — | — | — | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| ETH | 0.002564 | $2,365.12 | ✅ | $6.0649 | `eth` | price feed | wallet / Holding | 0.002564 | $6.0398 |
+| ETH | 0.002564 | $2,369.80 | ✅ | $6.0769 | `eth` | price feed | wallet / Holding | 0.002564 | $6.0398 |
 
 #### NAV positions without Debank counterpart
 
@@ -214,27 +214,27 @@ _No positions on this chain._
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Balancer V3 | `balancer3` | ✅ | $82.8766 | Farming (`0x62a66eb9…`) | supply WETH 0.017500 + supply ETH 0.017492 + reward BAL 0.757598 | $82.8766 | Balancer V3 - rETH/Aave WETH | supply WETH 0.017500 | $41.2183 |
-| Aave V3 | `aave3` | ✅ | $68.6348 | Lending (`0x4e033931…`) | supply wstETH 0.005000 + supply WETH 0.005019 + supply ezETH 0.005000 + borrow WETH 0.005024 | $27.2825 | Aave V3 Prime | supply wstETH 0.005000 | $14.5298 |
+| Balancer V3 | `balancer3` | ✅ | $83.0408 | Farming (`0x62a66eb9…`) | supply WETH 0.017348 + supply ETH 0.017644 + reward BAL 0.757598 | $83.0408 | Balancer V3 - rETH/Aave WETH | supply WETH 0.017500 | $41.2183 |
+| Aave V3 | `aave3` | ✅ | $68.7013 | Lending (`0x4e033931…`) | supply wstETH 0.005000 + supply WETH 0.005019 + supply ezETH 0.005000 + borrow WETH 0.005024 | $27.3305 | Aave V3 Prime | supply wstETH 0.005000 | $14.5298 |
 | | | | | | | | Aave V3 Prime | supply WETH 0.005019 | $11.8208 |
 | | | | | | | | Aave V3 Prime | supply ezETH 0.005000 | $12.6861 |
 | | | | | | | | Aave V3 Prime | borrow WETH 0.005024 | $-11.8343 |
-| | | | | Lending (`0x87870bca…`) | supply WETH 0.002969 + supply wstETH 0.059712 + borrow WETH 0.059002 | $41.3523 | Aave V3 Core | supply WETH 0.002969 | $6.9922 |
+| | | | | Lending (`0x87870bca…`) | supply WETH 0.002969 + supply wstETH 0.059712 + borrow WETH 0.059002 | $41.3708 | Aave V3 Core | supply WETH 0.002969 | $6.9922 |
 | | | | | | | | Aave V3 Core | supply wstETH 0.059712 | $173.5063 |
 | | | | | | | | Aave V3 Core | borrow WETH 0.059004 | $-138.9742 |
-| Rocket Pool | `rocketpool` | ✅ | $41.2155 | rETH (`0xae78736c…`) | supply ETH 0.017426 | $41.2155 | price feed | rETH 0.014986 | $41.0451 |
-| Convex | `convex` | ✅ | $30.2102 | Staked (`0x5411cc58…`) | supply WETH 0.001178 + supply ETH 0.011576 + reward CRV 0.183834 + reward CVX 0.000062 | $30.2102 | Convex | supply WETH 0.001178 | $2.7750 |
-| ether.fi | `etherfi` | ✅ | $21.3151 | weETH (`0xcd5fe23c…`) | supply ETH 0.009012 | $21.3151 | price feed | weETH 0.008237 | $21.1680 |
-| Kelp DAO | `kelpdao` | ✅ | $10.8602 | rsETH (`0xa1290d69…`) | supply ETH 0.004592 | $10.8602 | price feed | rsETH 0.004293 | $10.8153 |
-| Merkl | `merkl` | ✅ | $0.2096 | Rewards (`0x3ef3d8ba…`) | supply WETH 0.000006 + supply ETH 0.000006 + supply GEAR 6.174863 + supply RPL 0.092808 | $0.2096 | Merkl | supply RPL 0.094626 | $0.1838 |
-| Aura Finance | `aurafinance` | ✅ | $0.0943 | aurarETH-waEthWETH-vault (`0x20283cce…`) | supply WETH 0.000000 + supply ETH 0.000000 + reward BAL 0.489289 + reward AURA 1.130822 | $0.0943 | — | — | — |
+| Rocket Pool | `rocketpool` | ✅ | $41.2971 | rETH (`0xae78736c…`) | supply ETH 0.017426 | $41.2971 | price feed | rETH 0.014986 | $41.0451 |
+| Convex | `convex` | ✅ | $30.2700 | Staked (`0x5411cc58…`) | supply WETH 0.001194 + supply ETH 0.011560 + reward CRV 0.183834 + reward CVX 0.000062 | $30.2700 | Convex | supply WETH 0.001178 | $2.7750 |
+| ether.fi | `etherfi` | ✅ | $21.3573 | weETH (`0xcd5fe23c…`) | supply ETH 0.009012 | $21.3573 | price feed | weETH 0.008237 | $21.1680 |
+| Kelp DAO | `kelpdao` | ✅ | $10.8817 | rsETH (`0xa1290d69…`) | supply ETH 0.004592 | $10.8817 | price feed | rsETH 0.004293 | $10.8153 |
+| Merkl | `merkl` | ✅ | $0.2104 | Rewards (`0x3ef3d8ba…`) | supply WETH 0.000006 + supply ETH 0.000006 + supply GEAR 6.174863 + supply RPL 0.092808 | $0.2104 | Merkl | supply RPL 0.094626 | $0.1838 |
+| Aura Finance | `aurafinance` | ✅ | $0.0946 | aurarETH-waEthWETH-vault (`0x20283cce…`) | supply WETH 0.000000 + supply ETH 0.000000 + reward BAL 0.489289 + reward AURA 1.130822 | $0.0946 | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| WETH | 0.002000 | $2,365.12 | ✅ | $4.7302 | `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2` | price feed | wallet / Holding | 0.002000 | $4.7107 |
-| ETH | 0.007468 | $2,365.12 | ✅ | $17.6635 | `eth` | price feed | wallet / Holding | 0.007468 | $17.5904 |
+| WETH | 0.002000 | $2,369.80 | ✅ | $4.7396 | `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2` | price feed | wallet / Holding | 0.002000 | $4.7107 |
+| ETH | 0.007468 | $2,369.80 | ✅ | $17.6984 | `eth` | price feed | wallet / Holding | 0.007468 | $17.5904 |
 
 #### NAV positions without Debank counterpart
 
@@ -285,16 +285,16 @@ _No positions on this chain._
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Aave V3 | `aave3` | ✅ | $176,990.55 | Umbrella Stake Gho Token v1 (`0x4f827a63…`) | supply GHO 66,390.6641 + reward GHO 35.184884 | $66,352.78 | Aave Umbrella | supply GHO 66,390.6641 | $66,378.85 |
-| | | | | Umbrella Stake Wrapped Aave Ethereum USDC v1 (`0x6bf18324…`) | supply USDC 65,192.5660 + reward USDC 10.995750 | $65,203.56 | Aave Umbrella | supply USDC 65,191.9425 | $65,182.16 |
-| | | | | Umbrella Stake Wrapped Aave Ethereum USDT v1 (`0xa484ab92…`) | supply USDT 27,656.6247 + reward USDT 6.010076 | $27,659.87 | Aave Umbrella | supply USDT 27,656.2988 | $27,654.46 |
-| | | | | Umbrella Stake Wrapped Aave Ethereum WETH v1 (`0xaafd07d5…`) | supply WETH 7.514123 + reward WETH 0.001072 | $17,774.34 | Aave Umbrella | supply WETH 7.514041 | $17,698.13 |
+| Aave V3 | `aave3` | ✅ | $177,028.59 | Umbrella Stake Gho Token v1 (`0x4f827a63…`) | supply GHO 66,390.6641 + reward GHO 35.184884 | $66,352.78 | Aave Umbrella | supply GHO 66,390.6641 | $66,378.85 |
+| | | | | Umbrella Stake Wrapped Aave Ethereum USDC v1 (`0x6bf18324…`) | supply USDC 65,192.6282 + reward USDC 10.995750 | $65,203.62 | Aave Umbrella | supply USDC 65,191.9425 | $65,182.16 |
+| | | | | Umbrella Stake Wrapped Aave Ethereum USDT v1 (`0xa484ab92…`) | supply USDT 27,656.6576 + reward USDT 6.010076 | $27,660.18 | Aave Umbrella | supply USDT 27,656.2988 | $27,654.46 |
+| | | | | Umbrella Stake Wrapped Aave Ethereum WETH v1 (`0xaafd07d5…`) | supply WETH 7.514131 + reward WETH 0.001072 | $17,812.01 | Aave Umbrella | supply WETH 7.514041 | $17,698.13 |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| ETH | 0.000282 | $2,365.12 | ✅ | $0.6672 | `eth` | price feed | wallet / Holding | 0.000282 | $0.6644 |
+| ETH | 0.000282 | $2,370.13 | ✅ | $0.6686 | `eth` | price feed | wallet / Holding | 0.000282 | $0.6644 |
 
 #### NAV positions without Debank counterpart
 
@@ -331,7 +331,7 @@ _No positions on this chain._
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| ETH | 0.086040 | $2,365.12 | ✅ | $203.4942 | `eth` | price feed | wallet / Holding | 0.086040 | $202.6528 |
+| ETH | 0.086040 | $2,370.13 | ✅ | $203.9253 | `eth` | price feed | wallet / Holding | 0.086040 | $202.6528 |
 
 #### NAV positions without Debank counterpart
 
@@ -362,7 +362,7 @@ _No positions on this chain._
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| ETH | 0.049027 | $2,365.12 | ✅ | $115.9552 | `op` | price feed | wallet / Holding | 0.049027 | $115.8626 |
+| ETH | 0.049027 | $2,370.13 | ✅ | $116.2008 | `op` | price feed | wallet / Holding | 0.049027 | $115.8626 |
 
 #### NAV positions without Debank counterpart
 
@@ -391,7 +391,7 @@ _No positions on this chain._
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| ETH | 0.001305 | $2,365.12 | ✅ | $3.0866 | `arb` | price feed | wallet / Holding | 0.001305 | $3.0940 |
+| ETH | 0.001305 | $2,370.13 | ✅ | $3.0932 | `arb` | price feed | wallet / Holding | 0.001305 | $3.0940 |
 
 ---
 
@@ -414,8 +414,8 @@ _No positions on this chain._
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| CASHW | 420,069.0000 | $0.0000 | ❌ | $2.8975 | `0x56d149dffd01564a0f472c4898b350a43439143d` | — | — | — | — |
-| ETH | 0.023361 | $2,365.12 | ✅ | $55.2511 | `base` | price feed | wallet / Holding | 0.023361 | $55.4338 |
+| CASHW | 420,069.0000 | $0.0000 | ❌ | $2.9041 | `0x56d149dffd01564a0f472c4898b350a43439143d` | — | — | — | — |
+| ETH | 0.023361 | $2,370.13 | ✅ | $55.3681 | `base` | price feed | wallet / Holding | 0.023361 | $55.4338 |
 
 #### NAV positions without Debank counterpart
 
@@ -439,14 +439,14 @@ _No positions on this chain._
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
 | Morpho | `morphoblue` | ✅ | $5.759M | kpk USDC (`0x4ef53d2c…`) | supply USDC 2.6526M | $2.653M | Morpho Vault | supply USDC 2.6528M | $2.652M |
-| | | | | kpk EURC (`0xa877d5bb…`) | supply EURC 2.2006M | $2.578M | — | — | — |
-| | | | | kpk ETH (`0xbb50a534…`) | supply WETH 223.223882 | $527,951.27 | Morpho Vault | supply WETH 223.230043 | $525,782.79 |
-| LIDO | `lido` | ✅ | $2.129M | wstETH (`0x7f39c581…`) | supply stETH 212.614503 | $501,641.45 | price feed | stETH 687.856992 | $1.620M |
-| | | | | stETH (`0xae7ab965…`) | supply ETH 687.856992 | $1.627M | price feed | wstETH 172.342940 | $500,779.58 |
-| Sablier | `sablier` | ❌ | $1.389M | SAB-LOCKUP:sender#1173 (`0xcf8ce57f…`) | supply COW 7.9177M | $1.389M | — | — | — |
-| Uniswap V3 | `uniswap3` | ✅ | $521,205.00 | #1213124 (`0xfbb81382…`) | supply WETH 70.216581 + supply COW 2.0222M + reward WETH 0.094348 + reward COW 1,219.5370 | $521,205.00 | — | — | — |
-| StakeWise | `stakewise` | ✅ | $560.4686 | Lending (`0x15639e82…`) | supply ETH 0.388010 + borrow osETH 0.142290 | $560.4686 | — | — | — |
-| Aave V3 | `aave3` | ✅ | $0.0564 | Lending (`0x87870bca…`) | supply WETH 0.000024 | $0.0564 | Aave V3 Core | supply WETH 0.000024 | $0.0562 |
+| | | | | kpk EURC (`0xa877d5bb…`) | supply EURC 2.2006M | $2.577M | — | — | — |
+| | | | | kpk ETH (`0xbb50a534…`) | supply WETH 223.223882 | $529,069.62 | Morpho Vault | supply WETH 223.230043 | $525,782.79 |
+| LIDO | `lido` | ✅ | $2.133M | wstETH (`0x7f39c581…`) | supply stETH 212.614503 | $502,759.43 | price feed | wstETH 172.342940 | $500,779.58 |
+| | | | | stETH (`0xae7ab965…`) | supply ETH 687.856992 | $1.630M | price feed | stETH 687.856992 | $1.620M |
+| Sablier | `sablier` | ❌ | $1.387M | SAB-LOCKUP:sender#1173 (`0xcf8ce57f…`) | supply COW 7.9177M | $1.387M | — | — | — |
+| Uniswap V3 | `uniswap3` | ✅ | $521,152.57 | #1213124 (`0xfbb81382…`) | supply WETH 70.216581 + supply COW 2.0222M + reward WETH 0.094348 + reward COW 1,219.5370 | $521,152.57 | — | — | — |
+| StakeWise | `stakewise` | ✅ | $561.7473 | Lending (`0x15639e82…`) | supply ETH 0.388010 + borrow osETH 0.142290 | $561.7473 | — | — | — |
+| Aave V3 | `aave3` | ✅ | $0.0565 | Lending (`0x87870bca…`) | supply WETH 0.000024 | $0.0565 | Aave V3 Core | supply WETH 0.000024 | $0.0562 |
 | Compound V3 | `compound3` | ✅ | $0.0014 | — | — | — | — | — | — |
 | Balancer V2 | `balancer2` | ❌ | $0.0000 | — | — | — | — | — | — |
 
@@ -455,9 +455,9 @@ _No positions on this chain._
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
 | USDC | 9.6573M | $1.0000 | ✅ | $9.657M | `0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` | price feed | wallet / Holding | 9.6573M | $9.656M |
-| WETH | 0.540302 | $2,365.12 | ✅ | $1,277.88 | `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2` | price feed | wallet / Holding | 0.540302 | $1,272.60 |
-| USDT | 152.306225 | $0.9999 | ✅ | $152.2910 | `0xdac17f958d2ee523a2206206994597c13d831ec7` | price feed | wallet / Holding | 152.306225 | $152.2961 |
-| COW | 20.9085M | $0.1754 | ❌ | $3.667M | `0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab` | — | — | — | — |
+| WETH | 0.540302 | $2,370.13 | ✅ | $1,280.59 | `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2` | price feed | wallet / Holding | 0.540302 | $1,272.60 |
+| USDT | 152.306225 | $0.9999 | ✅ | $152.2925 | `0xdac17f958d2ee523a2206206994597c13d831ec7` | price feed | wallet / Holding | 152.306225 | $152.2961 |
+| COW | 20.9085M | $0.1752 | ❌ | $3.663M | `0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab` | — | — | — | — |
 
 ---
 
@@ -473,33 +473,33 @@ _No positions on this chain._
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Sky | `sky` | ✅ | $29.608M | Savings USDS (`0xa3931d71…`) | supply USDS 29.6075M | $29.608M | price feed | sUSDS 27.0258M | $29.595M |
-| StakeWise | `stakewise` | ✅ | $24.562M | Lending (`0xac0f906e…`) | supply ETH 10,385.1012 + borrow osETH 0.000006 | $24.562M | Stakewise v3 | supply ETH 10,385.1012 | $24.460M |
-| Stader | `stader` | ✅ | $24.511M | ETHx (`0xa35b1b31…`) | supply ETH 10,363.3953 | $24.511M | — | — | — |
-| Morpho | `morphoblue` | ✅ | $13.230M | kpk USDC (`0x4ef53d2c…`) | supply USDC 5.0710M | $5.071M | Morpho Vault | supply USDC 5.0710M | $5.070M |
-| | | | | kpk ETH (`0xbb50a534…`) | supply WETH 3,449.8432 | $8.159M | Morpho Vault | supply WETH 3,449.8469 | $8.126M |
-| Rocket Pool | `rocketpool` | ✅ | $4.135M | rETH (`0xae78736c…`) | supply ETH 1,748.4463 | $4.135M | price feed | rETH 1,503.6269 | $4.118M |
-| Merkl | `merkl` | ✅ | $3,637.85 | Rewards (`0x3ef3d8ba…`) | supply MORPHO 1,611.6671 | $3,637.85 | — | — | — |
+| Sky | `sky` | ✅ | $29.602M | Savings USDS (`0xa3931d71…`) | supply USDS 29.6075M | $29.602M | price feed | sUSDS 27.0258M | $29.595M |
+| StakeWise | `stakewise` | ✅ | $24.614M | Lending (`0xac0f906e…`) | supply ETH 10,385.1012 + borrow osETH 0.000006 | $24.614M | Stakewise v3 | supply ETH 10,385.1012 | $24.460M |
+| Stader | `stader` | ✅ | $24.563M | ETHx (`0xa35b1b31…`) | supply ETH 10,363.3953 | $24.563M | — | — | — |
+| Morpho | `morphoblue` | ✅ | $13.248M | kpk USDC (`0x4ef53d2c…`) | supply USDC 5.0710M | $5.071M | Morpho Vault | supply USDC 5.0710M | $5.070M |
+| | | | | kpk ETH (`0xbb50a534…`) | supply WETH 3,449.8432 | $8.177M | Morpho Vault | supply WETH 3,449.8469 | $8.126M |
+| Rocket Pool | `rocketpool` | ✅ | $4.144M | rETH (`0xae78736c…`) | supply ETH 1,748.4463 | $4.144M | price feed | rETH 1,503.6269 | $4.118M |
+| Merkl | `merkl` | ✅ | $3,627.54 | Rewards (`0x3ef3d8ba…`) | supply MORPHO 1,611.6671 | $3,627.54 | — | — | — |
 | Compound V3 | `compound3` | ✅ | $1,682.08 | Lending (`0x5d409e56…`) | reward COMP 70.521281 | $1,681.93 | — | — | — |
 | | | | | Lending (`0xc3d688b6…`) | reward COMP 0.006016 | $0.1435 | — | — | — |
-| LIDO | `lido` | ✅ | $354.8091 | wstETH (`0x7f39c581…`) | supply stETH 0.150381 | $354.8091 | price feed | stETH 0.000000 | $0.0000 |
-| Uniswap V3 | `uniswap3` | ✅ | $44.8237 | ETH / sETH2 (`0x7379e812…`) | supply WETH 0.001364 + supply ETH 0.015757 + reward WETH 0.000907 + reward ETH 0.000925 | $44.8237 | — | — | — |
-| Aave V3 | `aave3` | ✅ | $0.4353 | Lending (`0x87870bca…`) | reward USDS 0.435315 | $0.4353 | — | — | — |
-| Balancer V2 | `balancer2` | ❌ | $0.1489 | Farming (`0xc592c33e…`) | supply WETH 0.000000 + supply osETH 0.000000 + reward BAL 0.969753 | $0.1489 | — | — | — |
+| LIDO | `lido` | ✅ | $355.5998 | wstETH (`0x7f39c581…`) | supply stETH 0.150381 | $355.5998 | price feed | wstETH 0.121897 | $354.1995 |
+| Uniswap V3 | `uniswap3` | ✅ | $44.9186 | ETH / sETH2 (`0x7379e812…`) | supply WETH 0.001364 + supply ETH 0.015757 + reward WETH 0.000907 + reward ETH 0.000925 | $44.9186 | — | — | — |
+| Aave V3 | `aave3` | ✅ | $0.4352 | Lending (`0x87870bca…`) | reward USDS 0.435315 | $0.4352 | — | — | — |
+| Balancer V2 | `balancer2` | ❌ | $0.1493 | Farming (`0xc592c33e…`) | supply WETH 0.000000 + supply osETH 0.000000 + reward BAL 0.969753 | $0.1493 | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| HEX | 1,895.0000 | $0.0006 | ❌ | $1.1397 | `0x2b591e99afe9f32eaa6214f7b7629768c40eeb39` | — | — | — | — |
+| HEX | 1,895.0000 | $0.0006 | ❌ | $1.1481 | `0x2b591e99afe9f32eaa6214f7b7629768c40eeb39` | — | — | — | — |
 | USDC | 3,043.7273 | $1.0000 | ✅ | $3,043.73 | `0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` | price feed | wallet / Holding | 3,043.7273 | $3,043.27 |
-| ETH | 24.999996 | $2,365.12 | ✅ | $59,127.99 | `eth` | price feed | wallet / Holding | 24.999996 | $58,883.51 |
+| ETH | 24.999996 | $2,370.39 | ✅ | $59,259.74 | `eth` | price feed | wallet / Holding | 24.999996 | $58,883.51 |
 
 #### NAV positions without Debank counterpart
 
 | NAV type | NAV detail | Asset | NAV amount | NAV USD |
 |---|---|---|---:|---:|
-| price feed | wallet / Holding | wstETH | 0.121897 | $354.1995 |
+| price feed | wallet / Holding | stETH | 0.000000 | $0.0000 |
 
 ---
 
@@ -509,39 +509,39 @@ _No positions on this chain._
 
 ### Mainnet (chain 1)
 
-**NAV: $0.0000 | Debank filtered: — (not available)**
+**NAV: $0.0000 | Debank filtered: $6.856M | Drift: -100.00% ⚠️**
 
 #### Debank protocol positions
 
 | Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |
 |---|---|:---:|---:|---|---|---:|---|---|---:|
-| Aave V2 | `aave2` | ✅ | $1.821M | Staked (`0x4da27a54…`) | supply AAVE 19,442.9617 + reward AAVE 0.614491 | $1.821M | — | — | — |
-| | | | | Lending (`0x7d2768de…`) | supply BAL 58.491558 | $8.9827 | Aave V2 | supply BAL 58.491558 | $9.0179 |
-| StakeWise | `stakewise` | ✅ | $878,715.88 | Rewards (`0x20bc832c…`) | supply ETH 0.000374 | $0.8857 | — | — | — |
-| | | | | Lending (`0xac0f906e…`) | supply ETH 371.527015 | $878,705.97 | Stakewise v3 | supply ETH 371.527015 | $875,072.68 |
-| | | | | Staked (`0xfe2e6372…`) | supply ETH 0.003813 | $9.0189 | — | — | — |
-| Rocket Pool | `rocketpool` | ✅ | $172,422.81 | rETH (`0xae78736c…`) | supply ETH 72.902352 | $172,422.81 | price feed | rETH 62.694486 | $171,709.87 |
-| Aave V3 | `aave3` | ✅ | $49,397.37 | Lending (`0x87870bca…`) | supply BAL 320,140.0752 | $49,164.67 | Aave V3 Core | supply BAL 320,140.5676 | $49,357.67 |
+| Aave V2 | `aave2` | ✅ | $1.823M | Staked (`0x4da27a54…`) | supply AAVE 19,442.9617 + reward AAVE 0.614491 | $1.823M | — | — | — |
+| | | | | Lending (`0x7d2768de…`) | supply BAL 58.491558 | $9.0055 | Aave V2 | supply BAL 58.491558 | $9.0179 |
+| StakeWise | `stakewise` | ✅ | $880,673.85 | Rewards (`0x20bc832c…`) | supply ETH 0.000374 | $0.8877 | — | — | — |
+| | | | | Lending (`0xac0f906e…`) | supply ETH 371.527015 | $880,663.92 | Stakewise v3 | supply ETH 371.527015 | $875,072.68 |
+| | | | | Staked (`0xfe2e6372…`) | supply ETH 0.003813 | $9.0390 | — | — | — |
+| Rocket Pool | `rocketpool` | ✅ | $172,807.01 | rETH (`0xae78736c…`) | supply ETH 72.902352 | $172,807.01 | price feed | rETH 62.694486 | $171,709.87 |
+| Aave V3 | `aave3` | ✅ | $49,522.36 | Lending (`0x87870bca…`) | supply BAL 320,140.0752 | $49,289.66 | Aave V3 Core | supply BAL 320,140.5676 | $49,357.67 |
 | | | | | Wrapped Aave Ethereum Lido GHO (`0xc71ea051…`) | supply GHO 232.956129 | $232.6999 | — | — | — |
-| Balancer V2 | `balancer2` | ❌ | $35,609.70 | Liquidity Pool (`0xc5c91aea…`) | supply BAL 92,276.4690 + supply WETH 9.064479 | $35,609.70 | — | — | — |
-| Across V2 | `acrocc_v2` | ❌ | $12,760.15 | Liquidity Pool (`0xfacd2ec4…`) | supply BAL 83,088.8503 | $12,760.15 | — | — | — |
+| Balancer V2 | `balancer2` | ❌ | $35,693.43 | Liquidity Pool (`0xc5c91aea…`) | supply BAL 92,276.3405 + supply WETH 9.064462 | $35,693.43 | — | — | — |
+| Across V2 | `acrocc_v2` | ❌ | $12,792.59 | Liquidity Pool (`0xfacd2ec4…`) | supply BAL 83,088.8503 | $12,792.59 | — | — | — |
 | Compound V3 | `compound3` | ✅ | $107.4004 | Lending (`0xc3d688b6…`) | reward COMP 4.437373 | $105.8313 | — | — | — |
 | | | | | Yield (`0xc3d688b6…`) | supply USDC 1.569025 | $1.5690 | Compound v3 USDC | supply USDC 1.569038 | $1.5688 |
-| Uniswap V3 | `uniswap3` | ✅ | $9.9184 | ETH / sETH2 (`0x7379e812…`) | supply WETH 0.000154 + supply ETH 0.001778 + reward WETH 0.000102 + reward ETH 0.000104 | $5.0596 | Uniswap V3 | supply WETH 0.001972 | $4.6436 |
+| Uniswap V3 | `uniswap3` | ✅ | $9.9405 | ETH / sETH2 (`0x7379e812…`) | supply WETH 0.000154 + supply ETH 0.001778 + reward WETH 0.000102 + reward ETH 0.000104 | $5.0708 | Uniswap V3 | supply WETH 0.001972 | $4.6436 |
 | | | | | | | | Uniswap V3 | supply WETH 0.000027 | $0.0625 |
-| | | | | #418522 (`0xcbcdf962…`) | supply WBTC 0.000000 + supply WETH 0.001972 + reward WBTC 0.000002 + reward WETH 0.000027 | $4.8588 | — | — | — |
-| Multichain | `multichain` | ❌ | $3.2502 | anyBAL (`0xcb9d0b8c…`) | supply BAL 21.164100 | $3.2502 | — | — | — |
-| Compound | `compound` | ❌ | $2.1145 | Lending (`0x3d981921…`) | supply DAI 1.132199 + supply AAVE 0.010451 + reward COMP 0.000146 | $2.1145 | — | — | — |
+| | | | | #418522 (`0xcbcdf962…`) | supply WBTC 0.000000 + supply WETH 0.001972 + reward WBTC 0.000002 + reward WETH 0.000027 | $4.8697 | — | — | — |
+| Multichain | `multichain` | ❌ | $3.2585 | anyBAL (`0xcb9d0b8c…`) | supply BAL 21.164100 | $3.2585 | — | — | — |
+| Compound | `compound` | ❌ | $2.1152 | Lending (`0x3d981921…`) | supply DAI 1.132199 + supply AAVE 0.010451 + reward COMP 0.000146 | $2.1152 | — | — | — |
 | LIDO | `lido` | ✅ | $0.0000 | — | — | — | — | — | — |
 
 #### Debank wallet tokens
 
 | Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |
 |---|---:|---:|:---:|---:|---|---|---|---:|---:|
-| POL | 91,874.4838 | $0.0978 | ❌ | $8,981.63 | `0x455e53cbb86018ac2b8092fdcd39d8444affc3f6` | — | — | — | — |
+| POL | 91,874.4838 | $0.0978 | ❌ | $8,988.47 | `0x455e53cbb86018ac2b8092fdcd39d8444affc3f6` | — | — | — | — |
 | USDC | 3.5520M | $1.0000 | ✅ | $3.552M | `0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` | price feed | wallet / Holding | 3.5520M | $3.551M |
-| BAL | 2.4916M | $0.1536 | ✅ | $382,641.36 | `0xba100000625a3754423978a60c9317c58a424e3d` | price feed | wallet / Holding | 2.4916M | $384,142.90 |
-| COW | 1.1876M | $0.1754 | ❌ | $208,307.36 | `0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab` | — | — | — | — |
+| BAL | 2.4916M | $0.1540 | ✅ | $383,614.16 | `0xba100000625a3754423978a60c9317c58a424e3d` | price feed | wallet / Holding | 2.4916M | $384,142.90 |
+| COW | 1.1876M | $0.1752 | ❌ | $208,069.84 | `0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab` | — | — | — | — |
 
 #### NAV positions without Debank counterpart
 

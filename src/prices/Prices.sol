@@ -74,14 +74,12 @@ abstract contract Prices is IPrices, Initializable {
             price = chainlinkPrice;
             stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
         } else {
-            (,,, uint256 updatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
             uint256 customPrice;
-            (customPrice,) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+            (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
 
             if (customPrice == 0) return (0, decimals, true);
 
             price = customPrice.toInt256();
-            stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
         }
     }
 

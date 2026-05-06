@@ -94,18 +94,21 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_AfterHearBeat() public {
-        // Both Chainlink and Custom feeds are subject to the same heartbeat check now.
-        manager.setPriceFeed(usdc, address(oracleusdc), 1, IPrices.PriceType.Custom);
+        // Chainlink: stale when block.timestamp - latestRoundData().updatedAt > heartbeat.
+        // Custom: stale is determined solely by getLatestPrice().stale (per-feed checks inside the adapter).
+        manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), 1, IPrices.PriceType.Chainlink);
 
         vm.warp(block.timestamp + 2);
 
         vm.startPrank(alice);
+        // Custom feed: mock always returns stale=false from getLatestPrice() — not stale by heartbeat.
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
-        assertTrue(stale); // custom feed now also stale via latestRoundData().updatedAt heartbeat check
+        assertFalse(stale);
 
+        // Chainlink feed: updatedAt is stale after warp past heartbeat=1.
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);
         assertEq(decimals, 8);
@@ -115,17 +118,17 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_CustomOracleStaled() public {
-        // Mock_CustomPriceFeedStaled.latestRoundData() returns updatedAt=0 — always stale.
+        // Mock_CustomPriceFeedStaled.getLatestPrice() returns stale=true — always stale.
         manager.setPriceFeed(usdc, address(customStaled), 1, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
-        vm.warp(2); // block.timestamp=2; 2 - 0 > 1 is true
+        vm.warp(2);
 
         vm.startPrank(alice);
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
-        assertTrue(stale); // stale: latestRoundData().updatedAt=0, exceeds heartbeat=1
+        assertTrue(stale); // stale: getLatestPrice() returns stale=true
 
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);

@@ -74,9 +74,14 @@ abstract contract Prices is IPrices, Initializable {
             price = chainlinkPrice;
             stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
         } else {
+            (,,, uint256 updatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
             uint256 customPrice;
-            (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+            (customPrice,) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+
+            if (customPrice == 0) return (0, decimals, true);
+
             price = customPrice.toInt256();
+            stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
         }
     }
 
@@ -118,14 +123,15 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Sets the price feed for a given token.
     /// @param token The address of the token.
     /// @param priceFeed The address of the price feed.
-    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for Chainlink feeds; unused for Custom feeds (they manage staleness internally).
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds.
     /// @param priceType The type of the price feed.
     function _setPriceFeed(address token, address priceFeed, uint256 chainlinkHeartbeat, PriceType priceType) internal {
         checkPriceOracleSupport(token, priceFeed, priceType);
 
+        if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
+
         uint8 decimals;
         if (priceType == PriceType.Chainlink) {
-            if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
             decimals = AggregatorV3Interface(priceFeed).decimals();
         } else {
             decimals = IPriceFeedCustom(priceFeed).decimals();

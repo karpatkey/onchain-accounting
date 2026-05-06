@@ -24,19 +24,18 @@ flowchart LR
     A[asset address] --> P[Prices._latestPrice]
     P --> C{priceType}
     C -->|Chainlink| CL[AggregatorV3.latestRoundData]
-    C -->|Custom| IF[IPriceFeedCustom.getLatestPrice]
+    C -->|Custom| IF[IPriceFeedCustom.getLatestPrice\n+ latestRoundData]
     CL --> SH[heartbeat check]
-    IF --> SI[feed-internal stale flag]
+    IF --> SH
     SH --> SQ[L2 sequencer uptime + grace]
-    SI --> SQ
     SQ --> R[(price, decimals, stale)]
 ```
 
 Steps in code (`src/prices/Prices.sol`):
 
 1. **Lookup** — `priceOracles[asset]` returns `PriceFeedConfig { priceFeed, decimals, chainlinkHeartbeat, priceType }`. Reverts if unset.
-2. **Fetch** — Chainlink branch reads `latestRoundData()`; Custom branch calls `getLatestPrice()` (returns `(uint256 price, bool stale)`).
-3. **Freshness** — Chainlink branch flags `stale = block.timestamp - updatedAt > chainlinkHeartbeat`. Custom branch uses the feed's own `stale` flag — every custom feed is responsible for its own heartbeat checks internally in `getLatestPrice()`.
+2. **Fetch** — Chainlink branch reads `latestRoundData()` for both price and `updatedAt`. Custom branch calls `latestRoundData()` for `updatedAt` and `getLatestPrice()` for the price value.
+3. **Freshness** — Both branches: `stale = block.timestamp - updatedAt > chainlinkHeartbeat`. A non-positive or zero price short-circuits to `(0, stale=true)`. The `bool stale` returned by `getLatestPrice()` is not used by `Prices.sol` — staleness is determined solely via the registered heartbeat and `latestRoundData().updatedAt`.
 4. **L2 sequencer** — Top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down or within `chainlinkL2SequencerGracePeriod` (default 1 hour) of recovery. On L1, the sequencer feed is the zero address and this check is a no-op.
 5. **Return** — `(int256 price, uint8 decimals, bool stale)`. Sign is positive in practice (Chainlink prices are positive; custom feeds cast from `uint256`).
 
@@ -52,12 +51,12 @@ Defined in `IPrices`.
 |---|---|---|
 | `priceFeed` | `address` | Chainlink aggregator or custom contract (`IPriceFeedCustom`). |
 | `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself. |
-| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for Chainlink feeds; staleness = `block.timestamp − updatedAt > heartbeat`. Unused for Custom feeds — they manage staleness internally in `getLatestPrice()`. |
+| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for **all** feeds. `Prices.sol` checks `block.timestamp − latestRoundData().updatedAt > heartbeat` for both Chainlink and Custom feeds. |
 | `priceType` | `PriceType` | Enum `{ Chainlink, Custom }`. |
 
 ### 3.2 Custom feed return shape
 
-`IPriceFeedCustom.getLatestPrice()` returns `(uint256 price, bool stale)`. Convention: when *any* underlying input is non-positive or stale, the feed should return `(0, true)` rather than reverting. This keeps NAV calculation robust (the position is just flagged stale, not a failed call).
+`IPriceFeedCustom.getLatestPrice()` returns `(uint256 price, bool stale)`. The `bool stale` flag is **not used by `Prices.sol`** — staleness is determined at the registry level via `latestRoundData().updatedAt` and the registered heartbeat. The convention of returning `(0, true)` on failure still applies: a zero price is treated as stale by `Prices.sol` regardless, so it is a reliable way for custom feeds to signal "I have no valid price".
 
 ---
 
@@ -70,7 +69,7 @@ Defined in `IPrices`.
 
 Internal API (used by NAVCalculator):
 
-- `_setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType)` — checks support, reads decimals from the feed, stores `PriceFeedConfig`. Heartbeat must be non-zero for Chainlink.
+- `_setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType)` — checks support, reads decimals from the feed, stores `PriceFeedConfig`. Heartbeat must be non-zero for all feed types.
 - `_unsetPriceFeed(asset)` — removes entry; subsequent `latestPrice` reverts with `PriceFeedNotSet`.
 - `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; ERC165 check for custom, sanity round-data fetch for Chainlink.
 
@@ -84,8 +83,8 @@ Every custom feed must implement this interface (and ERC165).
 
 | Method | Purpose |
 |---|---|
-| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. |
-| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. For external observability only; `Prices.sol` does not call it. |
+| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. The `stale` flag is ignored by `Prices.sol`; a zero price is the reliable signal. |
+| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` reads `updatedAt` from this call** to check `block.timestamp - updatedAt > registeredHeartbeat`. Also used for external observability. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |
 | `supportsInterface(bytes4)` | Must return `true` for `type(IPriceFeedCustom).interfaceId` and `IERC165`. |
@@ -97,11 +96,13 @@ Conventions:
 - **Return `(0, true)` on any failure or staleness path.** Don't revert.
 - **All inputs are immutable, including heartbeats.** Pin every Chainlink heartbeat in the constructor as an immutable. New feed = redeploy. No setter, no MANAGER call needed after deployment.
 
-### 5.1 Self-contained staleness in `getLatestPrice()`
+### 5.1 Staleness: `latestRoundData().updatedAt` + registered heartbeat
 
-Every custom feed owns its staleness logic entirely. `Prices.sol` trusts the `stale` flag from `getLatestPrice()` — there is no secondary check at the NAV layer.
+`Prices.sol` determines staleness the same way for all feeds: `block.timestamp - latestRoundData().updatedAt > registeredHeartbeat`. The `bool stale` returned by `getLatestPrice()` is not checked.
 
-**For Chainlink-backed feeds**: store each feed's heartbeat as an immutable constructor arg (e.g. `ETH_TO_USD_CHAINLINK_HEARTBEAT`), call `latestRoundData()` in `getLatestPrice()`, and check `block.timestamp - updatedAt > heartbeat`. Look up official heartbeat values at:
+**What `latestRoundData()` must return for a custom feed:** a meaningful `updatedAt` — the timestamp of the most recent oracle refresh that backs the price. See §5.1 table below. The heartbeat registered in `Prices.sol` (via `registerAsset`) must match the update cadence of whatever `updatedAt` represents.
+
+**For Chainlink-backed feeds**: `latestRoundData()` should pass through the underlying Chainlink feed's round data (or the lowest-`updatedAt` tuple when there are multiple feeds). Store the Chainlink heartbeat as an immutable constructor arg and register the same value in `Prices.sol`. Look up official heartbeat values at:
 - https://data.chain.link/ (UI — search by feed name)
 - JSON registry per chain (machine-readable; `heartbeat` field in each feed entry):
 

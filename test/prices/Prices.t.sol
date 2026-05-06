@@ -94,7 +94,8 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_AfterHearBeat() public {
-        manager.setPriceFeed(usdc, address(oracleusdc), 0, IPrices.PriceType.Custom);
+        // Both Chainlink and Custom feeds are subject to the same heartbeat check now.
+        manager.setPriceFeed(usdc, address(oracleusdc), 1, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), 1, IPrices.PriceType.Chainlink);
 
         vm.warp(block.timestamp + 2);
@@ -103,7 +104,7 @@ contract PricesTest is Test {
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
-        assertFalse(stale);
+        assertTrue(stale); // custom feed now also stale via latestRoundData().updatedAt heartbeat check
 
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);
@@ -114,14 +115,17 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_CustomOracleStaled() public {
-        manager.setPriceFeed(usdc, address(customStaled), 0, IPrices.PriceType.Custom);
+        // Mock_CustomPriceFeedStaled.latestRoundData() returns updatedAt=0 — always stale.
+        manager.setPriceFeed(usdc, address(customStaled), 1, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.warp(2); // block.timestamp=2; 2 - 0 > 1 is true
 
         vm.startPrank(alice);
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
-        assertTrue(stale);
+        assertTrue(stale); // stale: latestRoundData().updatedAt=0, exceeds heartbeat=1
 
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);
@@ -181,9 +185,14 @@ contract PricesTest is Test {
         manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Chainlink);
     }
 
-    function test_setPriceFeed_chainlinkZeroHeartbeat() public {
+    function test_setPriceFeed_zeroHeartbeat_chainlink() public {
         vm.expectRevert();
         manager.setPriceFeed(buidl, address(oracleaBuidl), 0, IPrices.PriceType.Chainlink);
+    }
+
+    function test_setPriceFeed_zeroHeartbeat_custom() public {
+        vm.expectRevert();
+        manager.setPriceFeed(usdc, address(oracleusdc), 0, IPrices.PriceType.Custom);
     }
 
     function test_unsetPriceFeed_notSet() public {

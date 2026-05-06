@@ -101,6 +101,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Freshly deployed price oracle addresses keyed by feed name hash.
+    /// Used in _registerAssetIfPossible to bypass the stale on-chain oracle addresses in assets.json
+    /// when the IPriceFeedCustom interface ID has changed (adding latestRoundData() changed the ERC165 ID).
+    mapping(bytes32 => address) internal _freshPriceOracles;
+
     function _setupAndDeploy() internal {
         require(_chainId != 0, "child must set _chainId");
         require(bytes(_forkNetwork).length > 0, "child must set _forkNetwork");
@@ -196,7 +201,19 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return;
         }
         address addr = deployer();
+        _freshPriceOracles[keccak256(bytes(name))] = addr;
         console2.log("[priceFeed]", name, addr);
+    }
+
+    /// @notice Returns the price feed name (as used in _deployAllPriceFeeds) for a given token symbol.
+    function _priceFeedNameForSymbol(string memory symbol) internal view returns (string memory) {
+        if (_chainId == 1) {
+            return symbol;
+        }
+        if (_chainId == 100 && _equals(symbol, "sDAI")) {
+            return "sXDAI";
+        }
+        return string(abi.encodePacked(symbol, "_L2"));
     }
 
     function _deploySdai() internal returns (address) {
@@ -849,6 +866,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
 
         IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
+
+        // For Custom feeds the ERC165 interface ID changed (latestRoundData() was added). Deployed
+        // on-chain addresses in assets.json have the old ID and fail checkPriceOracleSupport().
+        // Use the freshly deployed oracle (which has the new ID) when available.
+        if (pt == IPrices.PriceType.Custom) {
+            address fresh = _freshPriceOracles[keccak256(bytes(_priceFeedNameForSymbol(symbol)))];
+            if (fresh != address(0)) oracle = fresh;
+        }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
         // pre-registered asset) use setPriceFeed instead of registerAsset.

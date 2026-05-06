@@ -1,4 +1,2 @@
-@import "tailwindcss";
-@plugin "tailwindcss-animate";
-
+@import "../../node_modules/@karpatkey/design-system/dist/tokens.css";
 @source "../../node_modules/@karpatkey/design-system/dist/index.js";

@@ -102,8 +102,18 @@ Conventions:
 Every custom feed owns its staleness logic entirely. `Prices.sol` trusts the `stale` flag from `getLatestPrice()` — there is no secondary check at the NAV layer.
 
 **For Chainlink-backed feeds**: store each feed's heartbeat as an immutable constructor arg (e.g. `ETH_TO_USD_CHAINLINK_HEARTBEAT`), call `latestRoundData()` in `getLatestPrice()`, and check `block.timestamp - updatedAt > heartbeat`. Look up official heartbeat values at:
-- https://data.chain.link/
-- https://reference-data-directory.vercel.app/feeds-mainnet.json (or replace `mainnet` with the target network)
+- https://data.chain.link/ (UI — search by feed name)
+- JSON registry per chain (machine-readable; `heartbeat` field in each feed entry):
+
+| Chain | ChainId | URL |
+|---|---|---|
+| Ethereum | 1 | https://reference-data-directory.vercel.app/feeds-mainnet.json |
+| Arbitrum One | 42161 | https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-arbitrum-1.json |
+| Base | 8453 | https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-base-1.json |
+| Optimism | 10 | https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-optimism-1.json |
+| Polygon | 137 | https://reference-data-directory.vercel.app/feeds-matic-mainnet.json |
+| Gnosis | 100 | https://reference-data-directory.vercel.app/feeds-xdai-mainnet.json |
+| BNB Chain | 56 | https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json |
 
 **For feeds with indirect oracle exposure** (e.g. ETHPlus via Reserve Protocol): store a `RESERVE_PROTOCOL_HEARTBEAT` immutable. Derive `updatedAt` from the protocol's own refresh timestamps (for ETHPlus: `min(IAsset.lastSave())` across prime basket components) and check it against the heartbeat. Set the heartbeat to the longest Chainlink heartbeat among the basket's underlying feeds — for the current ETH+ basket all ETH-denominated feeds are 24 h (86 400 s). Re-evaluate if basket composition changes via governance.
 

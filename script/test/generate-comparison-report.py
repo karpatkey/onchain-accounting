@@ -393,6 +393,16 @@ def render_unified_table(
             groups.setdefault(p.get("protocol", ""), []).append((idx, p))
 
         for group in groups.values():
+            # Stage 2 is the LP-pool / multi-leg fallback. A single-position group
+            # is just a 1:1 match — Stage 1 already had a chance and chose not to
+            # take it (or already took it). Re-claiming a 1:1 candidate here
+            # would steal it from a *later* item that legitimately needs the
+            # 1:1 match (observed on ACCOUNT_1 Morpho: each `Morpho Blue *` is
+            # its own protocol group with 1 position; Stage 2 was attaching them
+            # all to the first item and starving items 5-6 of their natural
+            # matches). Restrict to multi-position groups.
+            if len(group) < 2:
+                continue
             group_syms = {p.get("symbol", "").lower() for _, p in group}
             if not group_syms.intersection(all_debank_syms):
                 continue
@@ -439,9 +449,11 @@ def render_unified_table(
 
     if covered_protos:
         lines += [
-            "#### Debank protocol positions",
+            "#### Protocol positions",
             "",
-            "| Protocol | Debank ID | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |",
+            "_Left side ↙ Debank's view (from /v1/user/all_complex_protocol_list). Right side ↘ NAV's view (from registered balance adapters)._",
+            "",
+            "| Protocol | Debank ID | Debank Σ USD | Debank item | Debank tokens | Debank $ | NAV adapter | NAV tokens | NAV $ |",
             "|---|---|---:|---|---|---:|---|---|---:|",
         ]
         for p in covered_protos:
@@ -560,10 +572,12 @@ def render_unified_table(
 
     if covered_wallet:
         lines += [
-            "#### Debank wallet tokens",
+            "#### Wallet tokens",
             "",
-            "| Symbol | Amount | Price | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |",
-            "|---|---:|---:|---:|---|---|---|---:|---:|",
+            "_Left side ↙ Debank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._",
+            "",
+            "| Symbol | Address | Debank amount | Debank price | Debank $ | NAV source | NAV amount | NAV $ |",
+            "|---|---|---:|---:|---:|---|---:|---:|",
         ]
         for t in covered_wallet:
             tid = (t.get("id") or "").lower()
@@ -574,7 +588,7 @@ def render_unified_table(
             is_native = tid == dbank_chain.lower()
             lookup = NATIVE_SENTINEL if is_native else tid
 
-            nav_type_s, nav_detail_s, nav_amt_s, nav_usd_s = "—", "—", "—", "—"
+            nav_source_s, nav_amt_s, nav_usd_s = "—", "—", "—"
             entry = nav_pf_by_addr.get(lookup)
             if entry:
                 idx, pos = entry
@@ -583,15 +597,14 @@ def render_unified_table(
                     decimals = int(pos.get("decimals", 18))
                     nav_amt_val = int(pos.get("amount", 0)) / 10 ** decimals
                     nav_usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
-                    nav_detail_s = f"{pos.get('protocol', '')} / {pos.get('positionDetail', '')}"
-                    nav_type_s = "price feed"
+                    nav_source_s = f"price feed ({pos.get('protocol', '')}/{pos.get('positionDetail', '')})"
                     nav_amt_s = fmt_amt(nav_amt_val)
                     nav_usd_s = fmt_usd(nav_usd_val)
 
             lines.append(
-                f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} "
-                f"| {fmt_usd(tok_usd)} | `{tid}` "
-                f"| {nav_type_s} | {nav_detail_s} | {nav_amt_s} | {nav_usd_s} |"
+                f"| {sym} | `{tid}` "
+                f"| {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
+                f"| {nav_source_s} | {nav_amt_s} | {nav_usd_s} |"
             )
         lines.append("")
 
@@ -638,9 +651,11 @@ def render_unified_table(
     ]
     if unmatched:
         lines += [
-            "#### NAV positions without Debank counterpart",
+            "#### NAV positions with no Debank counterpart row",
             "",
-            "| NAV type | NAV detail | Asset | NAV amount | NAV USD |",
+            "_NAV reports these but Debank either doesn't surface them at all, or surfaces them under a Debank shape the matcher couldn't pair (e.g. the Cap adapter aggregates cUSD+stcUSD into a USDC `PositionBalance` on the NAV side, while Debank reports the Cap protocol as a cUSD entry plus a separate cUSD wallet token). Their dollar value IS counted in the headline NAV total — only the per-row pairing failed._",
+            "",
+            "| NAV source | Detail | Asset | NAV amount | NAV $ |",
             "|---|---|---|---:|---:|",
         ]
         for _, pos in unmatched:

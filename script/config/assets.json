@@ -409,6 +409,12 @@
         "type": "Chainlink",
         "pricefeed": "0x547a514d5e3769680Ce22B2361c10Ea13619e8a9",
         "heartbeat": 86400
+      },
+      "COMP": {
+        "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "type": "Chainlink",
+        "pricefeed": "0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5",
+        "heartbeat": 3600
       }
     },
     "42161": {
@@ -477,6 +483,12 @@
         "type": "Custom",
         "pricefeed": "0xc65227D1aF82A4BcaaC3d77C42F52D557d59D63A",
         "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+      },
+      "COMP": {
+        "address": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
+        "type": "Chainlink",
+        "pricefeed": "0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884",
+        "heartbeat": 3600
       }
     },
     "100": {
@@ -572,6 +584,12 @@
         "type": "Chainlink",
         "pricefeed": "0x42868EFcee13C0E71af89c04fF7d96f5bec479b0",
         "heartbeat": 86400
+      },
+      "COMP": {
+        "address": "0x9e1028F5F1D5EDE59748FFcee5532509976840E0",
+        "type": "Chainlink",
+        "pricefeed": "0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428",
+        "heartbeat": 86400
       }
     },
     "10": {
@@ -603,6 +621,12 @@
         "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
         "type": "Chainlink",
         "pricefeed": "0xECef79E109e997bCA29c1c0897ec9d7b03647F5E",
+        "heartbeat": 86400
+      },
+      "COMP": {
+        "address": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+        "type": "Chainlink",
+        "pricefeed": "0xe1011160d78a80E2eEBD60C228EEf7af4Dfcd4d7",
         "heartbeat": 86400
       }
     },

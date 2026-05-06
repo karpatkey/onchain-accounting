@@ -975,7 +975,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](30);
+            string[] memory s = new string[](31);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -1006,6 +1006,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[27] = "syrupUSDC";
             s[28] = "ETHx";
             s[29] = "COMP";
+            s[30] = "EURC";
             return s;
         }
         if (chainId == 42161) {

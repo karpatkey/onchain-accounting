@@ -302,6 +302,13 @@
         "pricefeed": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
         "heartbeat": 82800
       },
+      "EURC": {
+        "$comment": "Circle's EURC priced via the dedicated Chainlink EURC/USD feed (https://data.chain.link/feeds/ethereum/mainnet/eurc-usd). Captures the actual EURC peg, not just EUR/USD — so a hypothetical EURC de-peg event would be reflected in NAV. 8 decimals, 86400s heartbeat.",
+        "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+        "type": "Chainlink",
+        "pricefeed": "0x04F84020Fdf10d9ee64D1dcC2986EDF2F556DA11",
+        "heartbeat": 86400
+      },
       "BAL": {
         "address": "0xba100000625a3754423978a60c9317c58a424e3D",
         "type": "Chainlink",

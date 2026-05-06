@@ -29,7 +29,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 |---|---|
 | Add a new balance adapter | `docs/howto/add-balance-adapter.md`, then `src/balances/BALANCE_ADAPTERS.md` for interface + framework details |
 | Pick the next protocol to cover | `docs/roadmap/balance-adapter-coverage.md` (backlog of LST queues, restaking, RWA, perps) |
-| Add a new price feed | `docs/howto/add-price-feed.md`, then `docs/PRICE_ADAPTERS.md` for interface + existing feeds |
+| Add a new price feed | `docs/howto/add-price-feed.md`, then `src/prices/PRICE_ADAPTERS.md` for interface + existing feeds |
 | Add a new chain | `docs/howto/add-chain.md`, then `script/config/CONFIG_GUIDE.md` and `script/deploy/README.md` |
 | Refresh integration-test fork blocks or add a test account | `docs/howto/refresh-integration-test-blocks.md` (single source of truth: `test/integration/accounts.json`) |
 | Add a new bridge adapter | `src/bridge/BRIDGE_ADAPTERS.md` (full design + how-to in one file) |

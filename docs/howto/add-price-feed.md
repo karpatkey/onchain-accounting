@@ -2,7 +2,7 @@
 
 End-to-end walkthrough for adding a custom price oracle (a contract implementing `IPriceFeedCustom`). For Chainlink-only feeds, you do not need a custom contract — just register the asset directly with `priceType = Chainlink`.
 
-Read [`../PRICE_ADAPTERS.md`](../PRICE_ADAPTERS.md) first if you have not — it's the framework reference; this is the recipe.
+Read [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) first if you have not — it's the framework reference; this is the recipe.
 
 ---
 
@@ -181,18 +181,17 @@ Add the symbol to `_symbolsForChain(chainId)` in `script/manage/RegisterAssets.s
 
 ## 5. Deploy and register
 
-Custom feeds are deployed independently of balance adapters. Find the price-feed deploy script (typically `script/deploy/03_RegisterAssets.s.sol` and any sibling that deploys custom feeds — `grep -R "MY_ASSET_Price\|sDAI_PriceOracle" script/`). Add a deploy block following the existing pattern.
+Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `assets.json.priceFeeds` and calls `_deployIfEnabled` per entry — your new entry from §4 above will get picked up automatically. The deployed feed address is written back into `chains/<chainId>.json.priceFeeds.<adapterName>.deployed` and (on a Safe-TX-only flow) you copy it into `assets.json.tokens.<chainId>.<symbol>.pricefeed`.
 
-After deploy, register the asset on `NAVCalculator`:
+After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
 
 ```bash
-forge script script/deploy/03_RegisterAssets.s.sol \
-  --chain-id <chainId> \
-  --account $DEPLOYER_NAME \
-  --broadcast
+forge script script/manage/RegisterAssets.s.sol \
+  --rpc-url <RPC> \
+  --sig 'run()'
 ```
 
-This calls `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, 0)`. For pre-registered assets that just need the feed swapped, use `setPriceFeed` instead.
+This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, 0)` (or `setPriceFeed(asset, newFeed, ...)` for pre-registered assets needing only a feed swap). Owners sign and execute on the chain's admin Safe.
 
 Verify:
 

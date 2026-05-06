@@ -335,14 +335,29 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `CrossRatePriceAdapter` - Cross-rate calculations
 
 ### Balance Adapters (Protocol Integrations)
-- `AaveV3InstanceBalanceOracle` - Aave V3 deposits
-- `CompoundV3Comet` - Compound V3 deposits
-- `SparkLendBalanceOracle` - Spark Lend deposits
-- `MorphoMarketBalanceOracle` - Morpho Blue positions
-- `GmxBalanceOracle` - GMX vault positions
+- `ERC20DefaultOracle` - Wallet ERC20 + native, auto-registered at NAV initialization
+- `AaveV3InstanceBalanceOracle` - Aave V3 lending positions
+- `AaveV3SafetyModuleBalanceOracle` - Aave V3 Safety Module (stkGHO etc.)
+- `AaveV2InstanceBalanceOracle` - Aave V2 aTokens (legacy)
+- `AaveUmbrellaBalanceOracle` - Aave Umbrella stake tokens
+- `CompoundV3Comet` - Compound V3 (Comet) base + collateral + rewards
+- `MorphoMarketBalanceOracle` - Morpho Blue direct market positions
+- `MorphoVaultBalanceOracle` - MetaMorpho vault positions
+- `SparkLendBalanceOracle` - Spark Lend positions
+- `BalancerV3BalanceOracle` - Balancer V3 LPs
+- `Aura` - Aura vault/LP positions
+- `Curve` - Curve LPs + gauges
+- `Convex` - Convex staking
+- `CapBalanceOracle` - Cap (cUSD + stcUSD aggregated → USDC)
 - `DaiDsrBalanceOracle` - DAI Savings Rate
-- `SkySavingsUsdsBalanceOracle` - Sky USDS savings
-- `ERC20DefaultOracle` - Generic ERC20 balances
+- `SkySavingsUsdsBalanceOracle` - Sky USDS savings (sUSDS)
+- `FluidFTokenBalanceOracle`, `FluidVaultBalanceOracle` - Fluid lending + vaults
+- `GearboxMarketBalanceOracle` - Gearbox kpk-curated markets
+- `StakeWiseV3OsTokenBalanceOracle`, `StakeWiseV3VaultBalanceOracle` - StakeWise V3 osToken + Genesis Vault
+- `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
+- `UniswapV2BalanceOracle`, `UniswapV3BalanceOracle` - Uni V2 pairs / V3 pools
+- `PancakeSwapV2`, `PancakeSwapV3` - PancakeSwap variants
+- `MerklRewardsBalanceOracle` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
 
 ### Bridge Adapters
 - CCIP (Chainlink)

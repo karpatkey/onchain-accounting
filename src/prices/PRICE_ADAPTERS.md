@@ -1,6 +1,6 @@
 # Price Adapters: Architecture and Integration
 
-This is the price-side counterpart to [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md). It describes the `Prices` abstract registry, the `IPriceFeedCustom` interface, the existing per-asset custom adapters, and how to add a new one.
+This is the price-side counterpart to [`src/balances/BALANCE_ADAPTERS.md`](../balances/BALANCE_ADAPTERS.md). It describes the `Prices` abstract registry, the `IPriceFeedCustom` interface, the existing per-asset custom adapters, and how to add a new one.
 
 ---
 
@@ -152,7 +152,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 ## 8. How to create a new custom price feed
 
-Detailed walkthrough lives at [`./howto/add-price-feed.md`](./howto/add-price-feed.md). Quick checklist:
+Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md). Quick checklist:
 
 ### 8.1 Contract layout
 
@@ -187,7 +187,7 @@ Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, Pric
 
 ### 9.1 Asset registration
 
-Per-chain config lives at `script/config/chains/<chainId>.json` under the `assets` and `priceFeeds` blocks (see [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) for the schema). For a custom feed, the entry typically looks like:
+Per-chain config lives at `script/config/chains/<chainId>.json` under the `assets` and `priceFeeds` blocks (see [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) for the schema). For a custom feed, the entry typically looks like:
 
 ```json
 {
@@ -217,5 +217,5 @@ Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address),
 - **Registry:** `src/prices/Prices.sol` and `src/prices/IPrices.sol`
 - **Config:** `priceOracles[asset]` → `PriceFeedConfig`
 - **Existing feeds:** `src/prices/protocols/`
-- **Walkthrough:** [`./howto/add-price-feed.md`](./howto/add-price-feed.md)
-- **Cross-reference:** [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (balance side of the same architecture)
+- **Walkthrough:** [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md)
+- **Cross-reference:** [`src/balances/BALANCE_ADAPTERS.md`](../balances/BALANCE_ADAPTERS.md) (balance side of the same architecture)

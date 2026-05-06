@@ -952,7 +952,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](29);
+            string[] memory s = new string[](30);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -982,10 +982,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
             s[28] = "ETHx";
+            s[29] = "COMP";
             return s;
         }
         if (chainId == 42161) {
-            string[] memory s = new string[](11);
+            string[] memory s = new string[](12);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -997,6 +998,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[8] = "USDT";
             s[9] = "GHO";
             s[10] = "syrupUSDC";
+            s[11] = "COMP";
             return s;
         }
         if (chainId == 100) {
@@ -1011,7 +1013,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return s;
         }
         if (chainId == 8453) {
-            string[] memory s = new string[](8);
+            string[] memory s = new string[](9);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -1020,15 +1022,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[5] = "MORPHO";
             s[6] = "USDC";
             s[7] = "GHO";
+            s[8] = "COMP";
             return s;
         }
         if (chainId == 10) {
-            string[] memory s = new string[](5);
+            string[] memory s = new string[](6);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
             s[3] = "USDC";
             s[4] = "USDT";
+            s[5] = "COMP";
             return s;
         }
         return new string[](0);

@@ -293,8 +293,8 @@ echo "=== 2. Refreshing NAV snapshots (parallel, MAX_PARALLEL=$MAX_PARALLEL) ===
 
 # Pre-build once so the parallel forge invocations share a warm cache and don't
 # race on `out/` writes during compile.
-echo "  pre-building (so parallel forge scripts share cache)…"
-forge build --skip 'test/**' > /dev/null
+echo "  pre-building (so parallel forge tests share cache)…"
+forge build > /dev/null
 
 forge_dir=$(mktemp -d)
 # Replace EXIT trap so both temp dirs are cleaned up at any exit path.
@@ -307,19 +307,39 @@ ok_chains=()
 # Reap any already-finished children to keep the active count accurate.
 running=0
 
-# Spawn one forge process for chain_id, redirecting stdout/stderr to per-chain logs.
+# Map chain ID to the concrete integration test contract name (child of IntegrationFromConfigBase).
+chain_to_contract() {
+  case "$1" in
+    1)     echo "MainnetIntegrationFromConfig" ;;
+    10)    echo "OptimismIntegrationFromConfig" ;;
+    100)   echo "GnosisIntegrationFromConfig" ;;
+    8453)  echo "BaseIntegrationFromConfig" ;;
+    42161) echo "ArbitrumIntegrationFromConfig" ;;
+    *)     echo "" ;;
+  esac
+}
+
+# Spawn one forge test process for chain_id, redirecting stdout+stderr to per-chain logs.
+# Uses `forge test --match-test test_emitSnapshots` instead of `forge script` to avoid
+# the chain-1 hang (forge script hangs on Mainnet; forge test does not — see
+# docs/howto/refresh-integration-test-blocks.md §"forge script hangs on Mainnet").
+# SNAPSHOT line format is identical so harvest_chain needs no changes.
 spawn_forge() {
   local chain_id="$1"
+  local contract
+  contract=$(chain_to_contract "$chain_id")
   (
-    CHAIN_ID="$chain_id" \
     FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-slow}" \
-      forge script script/test/RefreshIntegrationSnapshot.s.sol \
+      forge test \
+        --match-contract "$contract" \
+        --match-test "test_emitSnapshots" \
+        -vv \
       > "$forge_dir/$chain_id.out" 2> "$forge_dir/$chain_id.err"
     echo $? > "$forge_dir/$chain_id.rc"
     # Drop a marker so the parent can detect "this chain finished" via filesystem.
     touch "$forge_dir/$chain_id.done"
   ) &
-  echo "  chain $chain_id: forge script started (pid=$!, slot $((running+1))/$MAX_PARALLEL)"
+  echo "  chain $chain_id: forge test started (pid=$!, slot $((running+1))/$MAX_PARALLEL)"
 }
 
 # Apply SNAPSHOTs for one finished chain and bucket it by outcome.

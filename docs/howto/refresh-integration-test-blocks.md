@@ -186,21 +186,11 @@ Reference: [Debank Cloud — User endpoints](https://docs.cloud.debank.com/en/re
 
 ## Known issues
 
-### `forge script` hangs on Mainnet
+### ~~`forge script` hangs on Mainnet~~ (resolved)
 
-Empirically reproduced on this codebase: `forge script script/test/RefreshIntegrationSnapshot.s.sol` against Mainnet (chain 1) parks at 0.9% CPU on a single open TCP socket and never produces SNAPSHOT lines, even after 15+ minutes. The other four chains (Optimism, Arbitrum, Base, Gnosis) run cleanly via the same script in 1–3 min each.
+`forge script script/test/RefreshIntegrationSnapshot.s.sol` against Mainnet (chain 1) used to park at 0.9% CPU on a single open TCP socket and never produce SNAPSHOT lines. The exact same deploy pipeline ran cleanly via `forge test --match-contract MainnetIntegrationFromConfig` in ~1 second, confirming a `forge script`-specific bug.
 
-Confirmed it's **not** memory pressure (reproduces with `MAX_PARALLEL=1`), **not** Alchemy throttling (curl to the same endpoint returns sub-second), **not** the `slow` profile (reproduces without it). The exact same deploy pipeline runs on Mainnet via `forge test --match-contract MainnetIntegrationFromConfig` in **~1 second**, so the bug is `forge script`-specific against this code path.
-
-Mitigation today:
-- The shell wrapper's per-chain non-fatal handling (introduced as part of this workflow) means Mainnet's hang doesn't kill the run — kill the stuck `forge` PID, the wrapper records chain 1 as failed, and step 3 + 4 still produce a useful report covering the surviving 4 chains.
-- For local "I want all 5 chains right now" use, run Mainnet via `forge test`:
-  ```bash
-  FOUNDRY_PROFILE=slow forge test --match-contract MainnetIntegrationFromConfig -vv 2>&1 | grep "nav.value"
-  ```
-  This logs all three accounts' NAVs at the bumped Mainnet block from `accounts.json`.
-
-Cleanest follow-up is to switch the orchestrator from `forge script` to `forge test --match-contract <Chain>IntegrationFromConfig` per chain — same deploy pipeline, no hang. Out of scope for the initial workflow PR; tracked as a follow-up.
+**Fixed:** `refresh-integration-snapshot.sh` now uses `forge test --match-test test_emitSnapshots` for all chains. The `test_emitSnapshots()` function in `IntegrationFromConfigBase` emits SNAPSHOT lines in the same format that `harvest_chain` already parses, so the shell-script plumbing is unchanged. `RefreshIntegrationSnapshot.s.sol` is retained for reference but is no longer invoked by the refresh script.
 
 ### Drift profile observed in practice
 

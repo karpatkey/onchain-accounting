@@ -1245,4 +1245,59 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         return false;
     }
+
+    // -----------------------------------------------------------------------
+    // Snapshot emission — called by refresh-integration-snapshot.sh via
+    // `forge test --match-test test_emitSnapshots` (replaces forge script to
+    // avoid the chain-1 hang documented in docs/howto/refresh-integration-test-blocks.md).
+    // -----------------------------------------------------------------------
+
+    /// @notice Emits SNAPSHOT lines + writes nav-positions JSON without asserting.
+    ///         Always passes; the shell script greps SNAPSHOT lines and applies them to
+    ///         accounts.json with jq — identical to the forge-script path.
+    function test_emitSnapshots() public {
+        _emitNavSnapshotsForCurrentChain();
+        _emitNavPositionsForCurrentChain();
+    }
+
+    function _emitNavSnapshotsForCurrentChain() internal view {
+        string memory json = _readAccountsJson();
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
+            if (_contains(enabled, _chainId)) {
+                INAVCalculator.NAV memory n = _readUsdNav(account);
+                // SNAPSHOT format must match RefreshIntegrationSnapshot.s.sol exactly so that
+                // the harvest_chain parser in refresh-integration-snapshot.sh works unchanged.
+                console2.log(
+                    string.concat(
+                        "SNAPSHOT|",
+                        vm.toString(_chainId), "|",
+                        vm.toString(i), "|",
+                        vm.toString(account), "|",
+                        vm.toString(n.value), "|",
+                        n.sequencerDown ? "true" : "false", "|",
+                        vm.toString(n.stalePriceAssets.length)
+                    )
+                );
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _emitNavPositionsForCurrentChain() internal {
+        vm.writeFile(
+            string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json"),
+            string.concat(
+                '{"chainId":', vm.toString(_chainId),
+                ',"forkBlock":', vm.toString(_forkBlock),
+                ',"accounts":', _buildPositionDetailsJson(), "}"
+            )
+        );
+    }
 }

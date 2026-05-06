@@ -30,11 +30,13 @@ export function formatAmount(amount: bigint, decimals: number, symbol: string): 
 
 export function formatPrice(price: bigint, decimals: number): string {
   const num = Number(formatUnits(price, decimals))
+  // 2dp for ≥$1 (consistent column alignment), 4dp for sub-$1 to show minor depegs
+  const maxFd = num >= 1 ? 2 : num >= 0.01 ? 4 : 6
   return num.toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
-    maximumFractionDigits: num < 1 ? 6 : 2,
+    maximumFractionDigits: maxFd,
   })
 }
 

@@ -2,7 +2,7 @@
 
 import { useReadContracts } from 'wagmi'
 import { navCalcAbi } from '@/config/abis'
-import { DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
+import { AUTOREFRESH_INTERVAL_MS, DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
 
 export type OnchainAsset = {
   asset: `0x${string}`
@@ -50,6 +50,7 @@ export function useChainPriceFeeds(chainIdx: number): ChainPriceFeeds {
         functionName: 'healthCheck' as const,
       },
     ],
+    query: { refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
   const assets =
@@ -72,7 +73,7 @@ export function useChainPriceFeeds(chainIdx: number): ChainPriceFeeds {
 
   const { data: feedsData, isLoading: feedsLoading } = useReadContracts({
     contracts: priceContracts,
-    query: { enabled: assets.length > 0 },
+    query: { enabled: assets.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
   const feeds: PriceFeedInfo[] = assets.map((asset, i) => {

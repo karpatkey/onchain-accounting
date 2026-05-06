@@ -3,7 +3,7 @@
 import { useReadContracts } from 'wagmi'
 import { zeroAddress } from 'viem'
 import { navCalcAbi } from '@/config/abis'
-import { DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
+import { AUTOREFRESH_INTERVAL_MS, DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
 
 export type ChainNav = {
   chainId: number
@@ -19,7 +19,7 @@ export type ChainNav = {
   isError: boolean
 }
 
-export function useAccountNav(account: `0x${string}` | undefined): ChainNav[] {
+export function useAccountNav(account: `0x${string}` | undefined): { chains: ChainNav[]; refetch: () => void } {
   const contracts = DEPLOYED_CHAINS.map(({ chain }) => ({
     chainId: chain.id,
     address: NAV_CALCULATOR_ADDRESS,
@@ -28,12 +28,12 @@ export function useAccountNav(account: `0x${string}` | undefined): ChainNav[] {
     args: [account ?? zeroAddress, zeroAddress] as const,
   }))
 
-  const { data, isLoading } = useReadContracts({
+  const { data, isLoading, refetch } = useReadContracts({
     contracts,
-    query: { enabled: !!account },
+    query: { enabled: !!account, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
-  return DEPLOYED_CHAINS.map(({ chain, label }, i) => {
+  const chains = DEPLOYED_CHAINS.map(({ chain, label }, i) => {
     const result = data?.[i]
     return {
       chainId: chain.id,
@@ -43,4 +43,6 @@ export function useAccountNav(account: `0x${string}` | undefined): ChainNav[] {
       isError: result?.status === 'failure',
     }
   })
+
+  return { chains, refetch: () => { void refetch() } }
 }

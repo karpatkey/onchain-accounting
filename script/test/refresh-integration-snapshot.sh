@@ -484,20 +484,28 @@ if [[ "$debank_active" == "true" ]]; then
           ] | add // 0
         ' "$proto_dir/$i.json")
 
-      # Sum 2 — wallet token_list, the canonical mirror of `IERC20.balanceOf(account)`
-      # for every NAV-registered asset. Empirically (verified against on-chain calls
-      # for stETH, rsETH, USDe holders), Debank's token_list `amount` matches `balanceOf`
-      # exactly — including for tokens that *also* appear in a protocol entry. This means
-      # walking protocol asset_token_list[] for non-allowlisted protocols is unsafe: the
-      # numbers there are synthetic (Kelp shows underlying ETH equivalent of rsETH; Ethena
-      # shows an aggregated USDe count > the wallet `balanceOf`; Lido shows pending rewards
-      # not in `balanceOf`) and would either double-count Sum 1/Sum 2 or count value NAV
-      # never sees. So we trust wallet token_list as the only wallet-side source.
+      # Sum 2 — wallet token_list, restricted to NAV-registered assets that AREN'T
+      # already accounted for in a protocol entry above.
+      #
+      # We pass `is_all=false` because Debank's default (`is_all=true`) returns every
+      # wallet-held token including LSTs (rETH, sUSDS, wstETH, ETHx, …) which Debank
+      # *also* categorises under their staking protocols (Rocket Pool, Sky, Lido,
+      # Stader). Summing both Sum 1 and an `is_all=true` Sum 2 double-counts those
+      # positions — observed as ACCOUNT_10 mainnet anchor inflated by ~$58M from
+      # rETH+sUSDS+ETHx+wstETH wallet entries that were already counted under their
+      # respective protocols. With `is_all=false`, Debank suppresses tokens that have
+      # a protocol_list entry, leaving only "pure wallet" holdings (USDC, GHO, native
+      # ETH, etc.) — matching how NAV counts each economic position exactly once
+      # (either via a balance adapter OR a wallet/Holding price feed, never both).
+      #
+      # generate-comparison-report.py uses the same `is_all=false` flag for its
+      # rendered Debank wallet table; keeping the two scripts symmetric is what
+      # makes the stored anchor reconcile with the rendered tables.
       #
       # Native token id from Debank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
       # is accepted iff NAV registers the ERC-7528 native sentinel (0xEee…eEeE) for this
       # chain — `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for it.
-      tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}")
+      tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}&is_all=false")
       if [[ -z "$tok_resp" ]]; then
         echo "  [warn] $label chain $chain_id: token_list request failed; using protocol total only"
         tok_resp="[]"

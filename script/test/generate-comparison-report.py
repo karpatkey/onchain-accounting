@@ -331,6 +331,7 @@ def render_unified_table(
         tokens = (
             [(t, False) for t in detail.get("supply_token_list", [])]
             + [(t, True) for t in detail.get("borrow_token_list", [])]
+            + [(t, False) for t in detail.get("reward_token_list", [])]
         )
         candidates = [(idx, p) for idx, p in nav_adapters_by_debank.get(short_id, [])
                       if idx not in matched_nav]
@@ -371,16 +372,13 @@ def render_unified_table(
             label = "borrow" if best_pos.get("isDebt") else "supply"
             results.append((best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
 
-        if results:
-            return results
-
         # Stage 2: LP-pool / reward fallback — handles cases where per-token amounts
         # diverge (e.g. Balancer pool rebalancing), symbols differ between NAV and
         # Debank (e.g. weETH vs ETH), or rewards sit in reward_token_list rather
         # than supply_token_list (e.g. Convex CRV/CVX).
-        # Groups NAV candidates by protocol name; accepts a group when at least one
-        # symbol overlaps with the Debank item's supply+reward symbols AND the
-        # group's total USD is within 10% of the item USD.
+        # Uses the full candidates snapshot (includes stage-1-matched entries) for
+        # group USD calculation so partial stage-1 matches don't skew the total.
+        # Only emits positions not already claimed by stage 1 (local_matched).
         all_debank_syms = {
             tok.get("symbol", "").lower()
             for tok_list in [detail.get("supply_token_list", []),
@@ -390,7 +388,7 @@ def render_unified_table(
         }
         item_usd = item.get("stats", {}).get("net_usd_value", 0)
         if not all_debank_syms or item_usd <= 0:
-            return []
+            return results
 
         groups: dict[str, list[tuple[int, dict]]] = {}
         for idx, p in candidates:
@@ -403,7 +401,10 @@ def render_unified_table(
             group_usd = sum(int(p.get("valueUsd8dp", 0)) / 1e8 for _, p in group)
             if item_usd > 0 and abs(group_usd - item_usd) / item_usd > 0.10:
                 continue
+            stage2_added = False
             for idx, p in group:
+                if idx in local_matched:
+                    continue
                 matched_nav.add(idx)
                 sym = p.get("symbol", "?")
                 decimals = int(p.get("decimals", 18))
@@ -411,7 +412,9 @@ def render_unified_table(
                 usd = int(p.get("valueUsd8dp", 0)) / 1e8
                 label = "borrow" if p.get("isDebt") else "supply"
                 results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
-            break
+                stage2_added = True
+            if stage2_added:
+                break
 
         return results
 
@@ -564,8 +567,27 @@ def render_unified_table(
             )
         lines.append("")
 
+    # ── Silent wallet absorption: sub-threshold Debank wallet tokens ─────────────
+    # Debank may hold wallet tokens below the $0.50 display cut-off. Absorb any
+    # unmatched NAV wallet position whose token address appears in that list so
+    # they don't surface as "without counterpart".
+    for t in wallet_tokens:
+        if t.get("amount", 0) * t.get("price", 0) >= 0.50:
+            continue  # already handled in the table above
+        tid = (t.get("id") or "").lower()
+        is_native = tid == dbank_chain.lower()
+        lookup = NATIVE_SENTINEL if is_native else tid
+        entry = nav_pf_by_addr.get(lookup)
+        if entry:
+            idx, _ = entry
+            matched_nav.add(idx)
+
     # ── Unmatched NAV positions ───────────────────────────────────────────────────
-    unmatched = [(idx, pos) for idx, pos in enumerate(nav_positions) if idx not in matched_nav]
+    unmatched = [
+        (idx, pos) for idx, pos in enumerate(nav_positions)
+        if idx not in matched_nav
+        and abs(int(pos.get("valueUsd8dp", 0))) / 1e8 >= 0.01
+    ]
     if unmatched:
         lines += [
             "#### NAV positions without Debank counterpart",

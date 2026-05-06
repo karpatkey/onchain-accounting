@@ -94,21 +94,33 @@ library ConfigReader {
     /// @notice Reads enabled adapters for a given type from chain config
     /// @dev Placeholder implementation - returns empty array
     /// @return names Array of adapter names that are enabled
-    function getEnabledAdapters(
-        Vm,
-        /* vm */
-        uint256,
-        /* chainId */
-        string memory /* adapterType */
-    )
+    /// @notice Returns every key in `.<adapterType>` of the chain config, excluding `$`-prefixed
+    ///         metadata keys (e.g. `$comment`). Does NOT filter by `enabled`; callers that want
+    ///         only enabled adapters should call `isAdapterEnabled` per key.
+    function getEnabledAdapters(Vm vm, uint256 chainId, string memory adapterType)
         internal
-        pure
+        view
         returns (string[] memory names)
     {
-        // This is a simplified version - in practice you'd need to parse the JSON
-        // and iterate through the adapter type to find enabled ones
-        // For now, returning empty array as placeholder
-        names = new string[](0);
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+        string memory jsonPath = string(abi.encodePacked(".", adapterType));
+        if (!vm.keyExists(json, jsonPath)) return new string[](0);
+
+        string[] memory allKeys = vm.parseJsonKeys(json, jsonPath);
+
+        // Count non-metadata keys first (excludes "$comment", "$foo", etc.).
+        uint256 count;
+        for (uint256 i; i < allKeys.length; ++i) {
+            if (bytes(allKeys[i]).length > 0 && bytes(allKeys[i])[0] != "$") ++count;
+        }
+        names = new string[](count);
+        uint256 j;
+        for (uint256 i; i < allKeys.length; ++i) {
+            if (bytes(allKeys[i]).length > 0 && bytes(allKeys[i])[0] != "$") names[j++] = allKeys[i];
+        }
     }
 
     /// @notice Reads price feed constructor parameter from assets config (script/config/assets.json)

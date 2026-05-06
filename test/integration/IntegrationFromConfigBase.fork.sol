@@ -434,7 +434,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     // -----------------------------------------------------------------------
 
     function _deployAllBalanceAdapters() internal {
-        string[] memory names = _balanceAdapterNames();
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, _chainId, "balanceAdapters");
         for (uint256 i = 0; i < names.length; i++) {
             string memory n = names[i];
             // MerklRewards is always deployed in the integration test (independent of the
@@ -765,89 +765,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navAddr));
     }
 
-    function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](75);
-        uint256 i = 0;
-        names[i++] = "MerklRewards";
-        names[i++] = "AaveV3_Core";
-        names[i++] = "AaveV3_Prime";
-        names[i++] = "AaveV3_Arbitrum";
-        names[i++] = "AaveV3_Base";
-        names[i++] = "AaveV3_Optimism";
-        names[i++] = "AaveV3_Gnosis";
-        names[i++] = "CompoundV3_USDC";
-        names[i++] = "CompoundV3_USDS";
-        names[i++] = "CompoundV3_USDT";
-        names[i++] = "CompoundV3_WBTC";
-        names[i++] = "CompoundV3_WETH";
-        names[i++] = "CompoundV3_wstETH";
-        names[i++] = "CompoundV3_USDCe";
-        names[i++] = "CompoundV3_USDbC";
-        names[i++] = "CompoundV3_AERO";
-        names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule";
-        names[i++] = "AaveUmbrella";
-        names[i++] = "Cap";
-        names[i++] = "MorphoVault_kpkETHPrime_V1";
-        names[i++] = "MorphoVault_kpkETHPrime_V2";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V1";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V2";
-        names[i++] = "MorphoVault_kpkEURC_V1";
-        names[i++] = "MorphoVault_kpkUSDCYieldV1";
-        names[i++] = "MorphoMarket_wstETH_USDC";
-        names[i++] = "MorphoMarket_cbBTC_USDC";
-        names[i++] = "MorphoMarket_wstUSR_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_USDC";
-        names[i++] = "MorphoMarket_WBTC_USDC";
-        names[i++] = "MorphoMarket_RLP_USDC";
-        names[i++] = "MorphoMarket_syrupUSDC_USDC";
-        names[i++] = "MorphoMarket_sUSDS_USDT";
-        names[i++] = "MorphoMarket_sUSDS_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_WETH";
-        names[i++] = "MorphoMarket_wstETH_WETH";
-        names[i++] = "MorphoMarket_weETH_WETH";
-        names[i++] = "MorphoMarket_rsETH_WETH";
-        names[i++] = "MorphoMarket_cbETH_USDC";
-        names[i++] = "GearboxMarket_kpkWETH";
-        names[i++] = "GearboxMarket_kpkwstETH";
-        names[i++] = "BalancerV3_rETH_WETH";
-        names[i++] = "BalancerV3_GHO_USDT_USDC";
-        names[i++] = "BalancerV3_GHO_USDC_USDT";
-        names[i++] = "BalancerV3_GHO_USDC";
-        names[i++] = "Aura_rETH_WETH";
-        names[i++] = "Aura_GHO_USDT_USDC";
-        names[i++] = "Aura_GHO_USDC_USDT";
-        names[i++] = "Aura_GHO_USDC";
-        names[i++] = "Curve_weETH_WETH";
-        names[i++] = "Curve_crvUSD_USDC";
-        names[i++] = "Curve_crvUSD_USDT";
-        names[i++] = "Curve_RLUSD_USDC";
-        names[i++] = "Convex_weETH_WETH";
-        names[i++] = "Convex_crvUSD_USDC";
-        names[i++] = "Convex_crvUSD_USDT";
-        names[i++] = "Convex_RLUSD_USDC";
-
-        // PR #25–#34 adapter family: AaveV2, Fluid (fToken/Vault), Stader queue,
-        // Uniswap V2/V3, PancakeSwap V2/V3. Names match the chain-config keys.
-        names[i++] = "AaveV2_Mainnet";
-        names[i++] = "Fluid_fToken_USDC";
-        names[i++] = "Fluid_fToken_USDT";
-        names[i++] = "Fluid_fToken_WETH";
-        names[i++] = "Fluid_fToken_wstETH";
-        names[i++] = "Fluid_fToken_GHO";
-        names[i++] = "Fluid_fToken_sUSDe";
-        names[i++] = "Fluid_fToken_WPOL"; // Polygon (chain 137); harmless on chains where it isn't enabled.
-        names[i++] = "Fluid_Vault_wstETH_USDC";
-        names[i++] = "Fluid_Vault_weETH_wstETH";
-        names[i++] = "Fluid_Vault_sUSDe_USDC";
-        names[i++] = "StaderWithdrawalQueue";
-        names[i++] = "StakeWiseV3OsToken_ETH";
-        names[i++] = "StakeWiseV3Vault_Genesis";
-        names[i++] = "UniswapV3_WBTC_WETH_3000";
-        names[i++] = "UniswapV3_USDC_WETH_500";
-        names[i++] = "UniswapV3_WETH_USDT_3000";
-        // COW pools omitted: COW has no price feed so the COW leg is dropped silently.
-    }
 
     // -----------------------------------------------------------------------
     // Asset registration (uses assets.json oracle addresses verbatim — these

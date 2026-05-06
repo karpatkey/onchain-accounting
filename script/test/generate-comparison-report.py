@@ -322,42 +322,98 @@ def render_unified_table(
             for did in debank_ids_for_nav_protocol(pos.get("protocol", "")):
                 nav_adapters_by_debank.setdefault(did, []).append((idx, pos))
 
-    def _match_nav_for_item(item: dict, short_id: str) -> tuple[str, str, str]:
-        """Match one Debank portfolio item to the best NAV adapter position.
-        Matches on the largest supply token by (symbol, closest amount within 10%).
-        Returns (nav_market, nav_position, nav_usd_str) or ("—", "—", "—")."""
-        supply = item.get("detail", {}).get("supply_token_list", [])
+    def _match_nav_for_item(item: dict, short_id: str) -> list[tuple[str, str, str]]:
+        """Match one Debank portfolio item to ALL matching NAV adapter positions.
+        For each supply/borrow token, finds the closest unmatched NAV position by
+        (symbol, isDebt, amount within 10%). Returns a list of
+        (nav_market, nav_position, nav_usd_str), one entry per matched token."""
+        detail = item.get("detail", {})
+        tokens = (
+            [(t, False) for t in detail.get("supply_token_list", [])]
+            + [(t, True) for t in detail.get("borrow_token_list", [])]
+        )
         candidates = [(idx, p) for idx, p in nav_adapters_by_debank.get(short_id, [])
                       if idx not in matched_nav]
-        if not candidates or not supply:
-            return "—", "—", "—"
-        # Use the largest supply token as the matching key
-        primary = max(supply, key=lambda t: t.get("amount", 0))
-        s_sym = primary.get("symbol", "").lower()
-        s_amt = float(primary.get("amount", 0))
-        if s_amt <= 0:
-            return "—", "—", "—"
-        best_idx, best_pos, best_score = None, None, float("inf")
+        if not candidates:
+            return []
+
+        results: list[tuple[str, str, str]] = []
+        local_matched: set[int] = set()
+
+        for tok, is_borrow in tokens:
+            s_sym = tok.get("symbol", "").lower()
+            s_amt = float(tok.get("amount", 0))
+            if s_amt <= 0:
+                continue
+            best_idx, best_pos, best_score = None, None, float("inf")
+            for idx, p in candidates:
+                if idx in local_matched:
+                    continue
+                if p.get("symbol", "").lower() != s_sym:
+                    continue
+                if bool(p.get("isDebt", False)) != is_borrow:
+                    continue
+                decimals = int(p.get("decimals", 18))
+                p_amt = int(p.get("amount", 0)) / 10 ** decimals
+                if p_amt <= 0:
+                    continue
+                score = abs(p_amt - s_amt) / s_amt
+                if score < best_score:
+                    best_score, best_idx, best_pos = score, idx, p
+            if best_idx is None or best_score > 0.10:
+                continue
+            local_matched.add(best_idx)
+            matched_nav.add(best_idx)
+            sym = best_pos.get("symbol", "?")
+            decimals = int(best_pos.get("decimals", 18))
+            amt = int(best_pos.get("amount", 0)) / 10 ** decimals
+            usd = int(best_pos.get("valueUsd8dp", 0)) / 1e8
+            label = "borrow" if best_pos.get("isDebt") else "supply"
+            results.append((best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+
+        if results:
+            return results
+
+        # Stage 2: LP-pool / reward fallback — handles cases where per-token amounts
+        # diverge (e.g. Balancer pool rebalancing), symbols differ between NAV and
+        # Debank (e.g. weETH vs ETH), or rewards sit in reward_token_list rather
+        # than supply_token_list (e.g. Convex CRV/CVX).
+        # Groups NAV candidates by protocol name; accepts a group when at least one
+        # symbol overlaps with the Debank item's supply+reward symbols AND the
+        # group's total USD is within 10% of the item USD.
+        all_debank_syms = {
+            tok.get("symbol", "").lower()
+            for tok_list in [detail.get("supply_token_list", []),
+                             detail.get("reward_token_list", [])]
+            for tok in tok_list
+            if tok.get("amount", 0) > 0
+        }
+        item_usd = item.get("stats", {}).get("net_usd_value", 0)
+        if not all_debank_syms or item_usd <= 0:
+            return []
+
+        groups: dict[str, list[tuple[int, dict]]] = {}
         for idx, p in candidates:
-            if p.get("symbol", "").lower() != s_sym:
+            groups.setdefault(p.get("protocol", ""), []).append((idx, p))
+
+        for group in groups.values():
+            group_syms = {p.get("symbol", "").lower() for _, p in group}
+            if not group_syms.intersection(all_debank_syms):
                 continue
-            decimals = int(p.get("decimals", 18))
-            p_amt = int(p.get("amount", 0)) / 10 ** decimals
-            if p_amt <= 0:
+            group_usd = sum(int(p.get("valueUsd8dp", 0)) / 1e8 for _, p in group)
+            if item_usd > 0 and abs(group_usd - item_usd) / item_usd > 0.10:
                 continue
-            score = abs(p_amt - s_amt) / s_amt
-            if score < best_score:
-                best_score = score
-                best_idx, best_pos = idx, p
-        if best_idx is None or best_score > 0.10:
-            return "—", "—", "—"
-        matched_nav.add(best_idx)
-        sym = best_pos.get("symbol", "?")
-        decimals = int(best_pos.get("decimals", 18))
-        amt = int(best_pos.get("amount", 0)) / 10 ** decimals
-        usd = int(best_pos.get("valueUsd8dp", 0)) / 1e8
-        label = "borrow" if best_pos.get("isDebt") else "supply"
-        return best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)
+            for idx, p in group:
+                matched_nav.add(idx)
+                sym = p.get("symbol", "?")
+                decimals = int(p.get("decimals", 18))
+                amt = int(p.get("amount", 0)) / 10 ** decimals
+                usd = int(p.get("valueUsd8dp", 0)) / 1e8
+                label = "borrow" if p.get("isDebt") else "supply"
+                results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+            break
+
+        return results
 
     lines: list[str] = []
 
@@ -395,7 +451,7 @@ def render_unified_table(
                 item_tokens = build_item_tokens(item)
 
                 if has_adapters:
-                    nav_market, nav_pos, nav_usd_s = _match_nav_for_item(item, short_id)
+                    nav_matches = _match_nav_for_item(item, short_id)
                 elif pf_pool:
                     idx, pos = pf_pool.pop(0)
                     matched_nav.add(idx)
@@ -403,11 +459,11 @@ def render_unified_table(
                     decimals = int(pos.get("decimals", 18))
                     amt = int(pos.get("amount", 0)) / 10 ** decimals
                     usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
-                    nav_market = "price feed"
-                    nav_pos = f"{sym} {fmt_amt(amt)}"
-                    nav_usd_s = fmt_usd(usd_val)
+                    nav_matches = [("price feed", f"{sym} {fmt_amt(amt)}", fmt_usd(usd_val))]
                 else:
-                    nav_market, nav_pos, nav_usd_s = "—", "—", "—"
+                    nav_matches = []
+
+                nav_market, nav_pos, nav_usd_s = nav_matches[0] if nav_matches else ("—", "—", "—")
 
                 if first_row:
                     lines.append(
@@ -420,6 +476,11 @@ def render_unified_table(
                     lines.append(
                         f"| | | | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
                         f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
+                    )
+
+                for nav_market, nav_pos, nav_usd_s in nav_matches[1:]:
+                    lines.append(
+                        f"| | | | | | | | {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
 
             if first_row:  # protocol had no items above threshold

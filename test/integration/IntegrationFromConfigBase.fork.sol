@@ -713,8 +713,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");

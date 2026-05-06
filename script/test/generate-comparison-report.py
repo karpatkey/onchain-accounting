@@ -418,19 +418,35 @@ def render_unified_table(
 
     lines: list[str] = []
 
+    # Capture untracked-by-design entries while we walk Debank's response so we can
+    # render them in a single compact footer instead of polluting the main tables.
+    untracked_protos: list[tuple[str, str, float, str]] = []   # (name, short_id, usd, detail)
+    untracked_wallet: list[tuple[str, float, str]] = []         # (symbol, usd, address)
+
     # ── Protocol positions table ──────────────────────────────────────────────────
-    if chain_protos:
+    covered_protos = [p for p in chain_protos if p.get("_short_id", "") in supported_ids]
+
+    # Collect untracked Debank protocols for the footer (full inline render skipped
+    # to keep the main tables focused on what NAV actually attempts to track).
+    for p in chain_protos:
+        short_id = p.get("_short_id", "")
+        if short_id in supported_ids:
+            continue
+        usd = proto_net_usd(p)
+        if abs(usd) < 0.01:
+            continue
+        untracked_protos.append((p.get("name", short_id), short_id, usd, build_debank_proto_detail(p)))
+
+    if covered_protos:
         lines += [
             "#### Debank protocol positions",
             "",
-            "| Protocol | Debank ID | Covered | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |",
-            "|---|---|:---:|---:|---|---|---:|---|---|---:|",
+            "| Protocol | Debank ID | Protocol USD | Debank item | Debank position | Item USD | NAV market | NAV position | NAV USD |",
+            "|---|---|---:|---|---|---:|---|---|---:|",
         ]
-        for p in chain_protos:
+        for p in covered_protos:
             short_id = p.get("_short_id", "")
             pname = p.get("name", short_id)
-            in_filter = short_id in supported_ids
-            covered = "✅" if in_filter else "❌"
             total = proto_net_usd(p)
             items = [i for i in p.get("portfolio_item_list", [])
                      if abs(i.get("stats", {}).get("net_usd_value", 0)) >= 0.01]
@@ -475,20 +491,20 @@ def render_unified_table(
 
                 if first_row:
                     lines.append(
-                        f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                        f"| {pname} | `{short_id}` | {fmt_usd(total)} "
                         f"| {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
                         f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
                     first_row = False
                 else:
                     lines.append(
-                        f"| | | | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
+                        f"| | | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
                         f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
 
                 for nav_market, nav_pos, nav_usd_s in nav_matches[1:]:
                     lines.append(
-                        f"| | | | | | | | {nav_market} | {nav_pos} | {nav_usd_s} |"
+                        f"| | | | | | | {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
 
             if first_row:  # protocol had no items above threshold
@@ -505,18 +521,18 @@ def render_unified_table(
                         p_usd = int(p_pos.get("valueUsd8dp", 0)) / 1e8
                         if j == 0:
                             lines.append(
-                                f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                                f"| {pname} | `{short_id}` | {fmt_usd(total)} "
                                 f"| — | — | — "
                                 f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
                             )
                         else:
                             lines.append(
-                                f"| | | | | | | "
+                                f"| | | | | | "
                                 f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
                             )
                 else:
                     lines.append(
-                        f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                        f"| {pname} | `{short_id}` | {fmt_usd(total)} "
                         f"| — | — | — | — | — | — |"
                     )
         lines.append("")
@@ -526,14 +542,30 @@ def render_unified_table(
         t for t in wallet_tokens
         if t.get("amount", 0) * t.get("price", 0) >= 0.50
     ]
-    if significant_wallet:
+
+    # Partition into covered (NAV-priceable) and untracked. Render the covered ones
+    # in the main wallet table; the untracked ones land in the footer alongside
+    # untracked Debank protocols.
+    covered_wallet: list[dict] = []
+    for t in significant_wallet:
+        tid = (t.get("id") or "").lower()
+        is_native = tid == dbank_chain.lower()
+        lookup = NATIVE_SENTINEL if is_native else tid
+        if lookup in all_covered:
+            covered_wallet.append(t)
+        else:
+            sym = t.get("symbol", "?")
+            usd = t.get("amount", 0) * t.get("price", 0)
+            untracked_wallet.append((sym, usd, tid))
+
+    if covered_wallet:
         lines += [
             "#### Debank wallet tokens",
             "",
-            "| Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |",
-            "|---|---:|---:|:---:|---:|---|---|---|---:|---:|",
+            "| Symbol | Amount | Price | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD |",
+            "|---|---:|---:|---:|---|---|---|---:|---:|",
         ]
-        for t in significant_wallet:
+        for t in covered_wallet:
             tid = (t.get("id") or "").lower()
             sym = t.get("symbol", "?")
             amt = t.get("amount", 0)
@@ -541,8 +573,6 @@ def render_unified_table(
             tok_usd = amt * price
             is_native = tid == dbank_chain.lower()
             lookup = NATIVE_SENTINEL if is_native else tid
-            in_covered = lookup in all_covered
-            covered = "✅" if in_covered else "❌"
 
             nav_type_s, nav_detail_s, nav_amt_s, nav_usd_s = "—", "—", "—", "—"
             entry = nav_pf_by_addr.get(lookup)
@@ -559,10 +589,30 @@ def render_unified_table(
                     nav_usd_s = fmt_usd(nav_usd_val)
 
             lines.append(
-                f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} | {covered} "
+                f"| {sym} | {fmt_amt(amt)} | {fmt_usd(price)} "
                 f"| {fmt_usd(tok_usd)} | `{tid}` "
                 f"| {nav_type_s} | {nav_detail_s} | {nav_amt_s} | {nav_usd_s} |"
             )
+        lines.append("")
+
+    # ── Untracked-by-design footer ────────────────────────────────────────────────
+    # Debank entries that NAV deliberately doesn't track. Rationale lives in
+    # accounts.json.chains.<id>.$untracked_by_design (read by humans, not parsed
+    # here). Showing them in a small footer keeps the main tables focused and
+    # reassures reviewers that ❌ entries aren't oversights.
+    if untracked_protos or untracked_wallet:
+        lines += [
+            "#### Untracked by design",
+            "",
+            "_Debank reports these but NAV doesn't (deliberately). See `accounts.json.chains.<id>.$untracked_by_design` for the full rationale._",
+            "",
+            "| Source | Type | $ value | Detail |",
+            "|---|---|---:|---|",
+        ]
+        for pname, sid, usd, detail in sorted(untracked_protos, key=lambda x: -abs(x[2])):
+            lines.append(f"| {pname} (`{sid}`) | protocol | {fmt_usd(usd)} | {detail} |")
+        for sym, usd, addr in sorted(untracked_wallet, key=lambda x: -abs(x[1])):
+            lines.append(f"| {sym} | wallet token | {fmt_usd(usd)} | `{addr}` |")
         lines.append("")
 
     # ── Silent wallet absorption: sub-threshold Debank wallet tokens ─────────────
@@ -668,6 +718,13 @@ def main(refresh_debank: bool = False) -> None:
         lines.append(f"| {ccfg['name']} ({cid}) | {ccfg['forkBlock']} |")
     lines.append("")
 
+    # Drift summary table goes here — filled in after the per-account loop runs.
+    # We splice it in via this sentinel so the loop can still walk in order.
+    SUMMARY_SENTINEL = "<<DRIFT_SUMMARY_TABLE>>"
+    lines.append(SUMMARY_SENTINEL)
+    lines.append("")
+    summary_rows: list[dict] = []  # one entry per (account, chain) we render
+
     for acc_idx, acc in enumerate(accounts):
         addr = acc["address"]
         label = acc["label"]
@@ -698,6 +755,15 @@ def main(refresh_debank: bool = False) -> None:
             for p in raw_protos:
                 p["_short_id"] = normalise_pid(p.get("id", ""), dbank_chain)
             chain_protos = sorted(raw_protos, key=proto_net_usd, reverse=True)
+
+            # Early skip: if the account has no NAV positions on this chain AND Debank
+            # reports no protocol entries AND the cached anchor is empty/zero, the
+            # section would just render a "_No positions on this chain._" stub. Skip
+            # entirely (avoids the wallet-token Debank fetch too — saves credits)
+            # and don't add a summary row for it. Pure noise reduction.
+            anchor_zero = (not dbank_usd_s) or (not dbank_usd_s.strip()) or float(dbank_usd_s or 0) == 0
+            if nav_usd == 0 and not chain_protos and anchor_zero:
+                continue
 
             # Wallet tokens
             print(f"  [{label}] fetching token list chain {cid}...", file=sys.stderr)
@@ -749,12 +815,27 @@ def main(refresh_debank: bool = False) -> None:
                 lines.append(
                     f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: {drift_s} {flag}**"
                 )
+                summary_rows.append({
+                    "label": label, "chain": chain_name, "cid": cid,
+                    "nav": nav_usd, "anchor": anchor_usd,
+                    "drift_s": drift_s, "flag": flag,
+                })
             elif has_anchor:
                 lines.append(
                     f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: — **"
                 )
+                summary_rows.append({
+                    "label": label, "chain": chain_name, "cid": cid,
+                    "nav": nav_usd, "anchor": anchor_usd,
+                    "drift_s": "—", "flag": "",
+                })
             else:
                 lines.append(f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: — (not available)**")
+                summary_rows.append({
+                    "label": label, "chain": chain_name, "cid": cid,
+                    "nav": nav_usd, "anchor": None,
+                    "drift_s": "—", "flag": "",
+                })
             lines.append("")
 
             # NAV positions for this account × chain
@@ -790,6 +871,33 @@ def main(refresh_debank: bool = False) -> None:
                     agg_addrs,
                     dbank_chain,
                 )
+
+    # Splice the drift summary into the SUMMARY_SENTINEL slot.
+    # Only counts rows with a meaningful comparison (anchor > 0).
+    summary_block: list[str] = ["## Drift summary", ""]
+    countable = [r for r in summary_rows if r["anchor"] not in (None, 0)]
+    in_tol = sum(1 for r in countable if r["flag"] == "✅")
+    over = sum(1 for r in countable if r["flag"] == "⚠️")
+    if countable:
+        summary_block.append(
+            f"**{in_tol} of {len(countable)} account-chain pairs within {int(tolerance * 100)}% tolerance.**"
+            + (f" ⚠ {over} over tolerance — see per-account section for breakdown." if over else "")
+        )
+        summary_block.append("")
+    summary_block += [
+        "| Account | Chain | NAV | Debank filtered | Drift |  |",
+        "|---|---|---:|---:|---:|:---:|",
+    ]
+    for r in summary_rows:
+        anchor_s = fmt_usd(r["anchor"]) if r["anchor"] not in (None, 0) else "—"
+        summary_block.append(
+            f"| {r['label']} | {r['chain']} | {fmt_usd(r['nav'])} | {anchor_s} | {r['drift_s']} | {r['flag']} |"
+        )
+    summary_block.append("")
+
+    if SUMMARY_SENTINEL in lines:
+        sidx = lines.index(SUMMARY_SENTINEL)
+        lines = lines[:sidx] + summary_block + lines[sidx + 1:]
 
     # Write Debank totals back to accounts.json.
     # By default only fill empty slots so forge-time captures are preserved.

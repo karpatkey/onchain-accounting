@@ -100,11 +100,7 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     }
 
     /// @notice Returns the minimum lastSave() timestamp across all prime basket components.
-    function _minBasketLastSave(IMain main, IBasketHandler basketHandler)
-        internal
-        view
-        returns (uint48 minLastSave)
-    {
+    function _minBasketLastSave(IMain main, IBasketHandler basketHandler) internal view returns (uint48 minLastSave) {
         IAssetRegistry registry = main.assetRegistry();
         (IERC20[] memory erc20s,,) = basketHandler.getPrimeBasket();
         minLastSave = type(uint48).max;
@@ -143,7 +139,7 @@ enum CollateralStatus {
     DISABLED
 }
 
-interface IERC20 { }
+interface IERC20 {}
 
 interface IRToken {
     function basketsNeeded() external view returns (uint192);

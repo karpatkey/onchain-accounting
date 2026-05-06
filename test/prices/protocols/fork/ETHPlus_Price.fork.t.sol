@@ -29,9 +29,7 @@ contract ETHPlus_PriceOracleForkTest is TestEnvConfigurator {
     function test_getLatestPrice_stale_when_iffy() public {
         address basketHandlerAddr = _basketHandlerAddress();
         vm.mockCall(
-            basketHandlerAddr,
-            abi.encodeWithSelector(IBasketHandler.status.selector),
-            abi.encode(CollateralStatus.IFFY)
+            basketHandlerAddr, abi.encodeWithSelector(IBasketHandler.status.selector), abi.encode(CollateralStatus.IFFY)
         );
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, 0);

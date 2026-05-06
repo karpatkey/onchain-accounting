@@ -438,8 +438,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             return;
         }
 
-        address ethPlus =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHPlus", "ethPlus"));
+        address ethPlus = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHPlus", "ethPlus"));
         uint256 heartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHPlus", "reserveProtocolHeartbeat"));
 

@@ -102,6 +102,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Maps token symbol → ephemerally-deployed price feed address. Populated by
+    ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Used by _registerAssetIfPossible
+    ///         as a fallback when assets.json.tokens[chain][symbol].pricefeed is empty (i.e. the
+    ///         feed exists in code but isn't yet deployed to production). Lets the integration
+    ///         test exercise feeds before their mainnet deploy lands. Production registration via
+    ///         RegisterAssets.s.sol still reads pricefeed from assets.json — this mapping is fork-only.
+    mapping(string => address) internal _ephemeralPriceFeeds;
+
     function _setupAndDeploy() internal {
         require(_chainId != 0, "child must set _chainId");
         require(bytes(_forkNetwork).length > 0, "child must set _forkNetwork");
@@ -197,6 +205,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return;
         }
         address addr = deployer();
+        _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
     }
 
@@ -857,10 +866,23 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         string memory typeStr = ConfigReader.readTokenType(vm, _chainId, symbol);
         if (_equals(typeStr, "None")) return;
-        if (!ConfigReader.hasTokenOracle(vm, _chainId, symbol)) return;
 
-        string memory oracleStr = ConfigReader.readTokenOracle(vm, _chainId, symbol);
-        address oracle = vm.parseAddress(oracleStr);
+        // Resolve the oracle address. Prefer assets.json's hardcoded `pricefeed` (set by
+        // 03_DeployPriceFeeds at production deploy time). When that field is blank — i.e. the
+        // feed contract exists in code but hasn't been deployed to production yet, e.g. ETHx
+        // pre-mainnet-deploy — fall back to the ephemerally-deployed instance from
+        // _deployAllPriceFeeds. This makes the integration test exercise the feed end-to-end
+        // before the production deploy lands. Once the production deploy completes and
+        // assets.json.pricefeed is populated, this branch becomes inert for that symbol.
+        address oracle;
+        if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
+            oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
+        } else if (_ephemeralPriceFeeds[symbol] != address(0)) {
+            oracle = _ephemeralPriceFeeds[symbol];
+            console2.log("[asset/ephemeral]", symbol, oracle);
+        } else {
+            return;
+        }
         uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
 
         IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;

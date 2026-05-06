@@ -10,7 +10,6 @@
       "debankChainId": "eth",
       "forkBlock": 25033963,
       "supportedDebankProtocols": [
-        "aave2",
         "aave3",
         "aura",
         "aurafinance",
@@ -36,7 +35,8 @@
         "stakewise",
         "uniswap2",
         "uniswap3"
-      ]
+      ],
+      "$untracked_by_design": "Protocols and wallet tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS: aave2 (deprecated by Aave \u2014 stkAAVE Safety Module lives here, no new deposits expected); balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP \u2014 not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 \u2014 only V3 covered). WALLET TOKENS without a Chainlink mainnet price feed: COW, HEX, POL, CASHW. POL has feeds on Polygon but not on Ethereum mainnet, so it's unpriceable here. COW-containing UniV3/PancakeSwap pools are also disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
@@ -111,7 +111,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "18082663392",
-          "debankUsd": "180.089129"
+          "debankUsd": "180.095228"
         },
         "10": {
           "navUsd8dp": "0",
@@ -119,15 +119,15 @@
         },
         "100": {
           "navUsd8dp": "500661088",
-          "debankUsd": "5.005871"
+          "debankUsd": "5.004768"
         },
         "8453": {
           "navUsd8dp": "999979700",
-          "debankUsd": "10.001350"
+          "debankUsd": "10.002350"
         },
         "42161": {
           "navUsd8dp": "1002568640",
-          "debankUsd": "10.024801"
+          "debankUsd": "10.025606"
         }
       }
     },
@@ -144,7 +144,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "115215540679437",
-          "debankUsd": "1161671.849571"
+          "debankUsd": "1154510.877102"
         },
         "10": {
           "navUsd8dp": "0",
@@ -177,7 +177,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "27797396225",
-          "debankUsd": "277.320425"
+          "debankUsd": "277.030422"
         },
         "10": {
           "navUsd8dp": "0",
@@ -207,7 +207,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "17705459671728",
-          "debankUsd": "176942.730392"
+          "debankUsd": "176966.637901"
         }
       }
     },
@@ -221,7 +221,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "814323034492657",
-          "debankUsd": "8143351.740965"
+          "debankUsd": "8143659.568395"
         }
       }
     },
@@ -235,7 +235,7 @@
       "expected": {
         "10": {
           "navUsd8dp": "276647171980337",
-          "debankUsd": "2765699.617818"
+          "debankUsd": "2765622.570036"
         }
       }
     },
@@ -249,7 +249,7 @@
       "expected": {
         "42161": {
           "navUsd8dp": "205901889508245",
-          "debankUsd": "2059326.577249"
+          "debankUsd": "2059532.531382"
         }
       }
     },
@@ -263,7 +263,7 @@
       "expected": {
         "8453": {
           "navUsd8dp": "82358071765715",
-          "debankUsd": "823728.318239"
+          "debankUsd": "823809.635352"
         }
       }
     },
@@ -277,7 +277,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "1496856077871285",
-          "debankUsd": "18066592.475506"
+          "debankUsd": "18074380.237526"
         }
       }
     },
@@ -291,7 +291,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "9608999924251786",
-          "debankUsd": "95836959.565461"
+          "debankUsd": "95849716.191966"
         }
       }
     },
@@ -304,7 +304,7 @@
       "expected": {
         "1": {
           "navUsd8dp": "503609873336495",
-          "debankUsd": "6832105.538099"
+          "debankUsd": "5027528.124051"
         }
       }
     }

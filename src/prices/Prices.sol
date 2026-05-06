@@ -77,14 +77,6 @@ abstract contract Prices is IPrices, Initializable {
             uint256 customPrice;
             (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
             price = customPrice.toInt256();
-            // Secondary staleness check via the feed's own Chainlink round data. Only active when a non-zero
-            // heartbeat has been configured for this custom feed, and only when the feed hasn't already flagged stale.
-            if (!stale && config.chainlinkHeartbeat != 0) {
-                (,,, uint256 updatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
-                if (updatedAt != 0) {
-                    stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
-                }
-            }
         }
     }
 
@@ -126,8 +118,7 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Sets the price feed for a given token.
     /// @param token The address of the token.
     /// @param priceFeed The address of the price feed.
-    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for Chainlink feeds. For Custom
-    /// feeds, set to 0 to disable the secondary staleness check or to max(underlying Chainlink heartbeats) to enable it.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for Chainlink feeds; unused for Custom feeds (they manage staleness internally).
     /// @param priceType The type of the price feed.
     function _setPriceFeed(address token, address priceFeed, uint256 chainlinkHeartbeat, PriceType priceType) internal {
         checkPriceOracleSupport(token, priceFeed, priceType);
@@ -145,16 +136,6 @@ abstract contract Prices is IPrices, Initializable {
         });
 
         emit PriceFeedSet(token, priceFeed, chainlinkHeartbeat, priceType);
-    }
-
-    /// @notice Updates only the heartbeat for an already-registered price feed.
-    /// @param token The address of the token.
-    /// @param heartbeat The new heartbeat interval in seconds. Must be non-zero.
-    function _setChainlinkHeartbeat(address token, uint256 heartbeat) internal {
-        if (priceOracles[token].priceFeed == address(0)) revert PriceFeedNotSet(token);
-        if (heartbeat == 0) revert InvalidPriceOracle();
-        priceOracles[token].chainlinkHeartbeat = heartbeat;
-        emit ChainlinkHeartbeatSet(token, heartbeat);
     }
 
     /// @notice Unsets the price feed for a given token.

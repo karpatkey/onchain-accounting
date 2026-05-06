@@ -1,6 +1,15 @@
 {
   "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom pricefeed per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
   "priceFeeds": {
+    "ETHPlus": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "ethPlus": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+          "reserveProtocolHeartbeat": "86400"
+        }
+      }
+    },
     "wstETH": {
       "1": {
         "enabled": true,

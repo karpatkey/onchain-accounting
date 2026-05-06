@@ -14,9 +14,8 @@ interface IPrices {
     /// @notice Struct representing a price feed configuration (stored price feed configuration).
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
-    /// @param chainlinkHeartbeat The heartbeat interval in seconds. For Chainlink feeds this is the primary staleness
-    /// threshold. For Custom feeds it is an optional secondary staleness threshold checked against the updatedAt
-    /// returned by IPriceFeedCustom.latestRoundData(); set to 0 to skip the secondary check.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for Chainlink feeds; unused for
+    /// Custom feeds (which manage staleness internally in getLatestPrice()).
     /// @param priceType The type of the price feed (Chainlink or Custom).
     struct PriceFeedConfig {
         address priceFeed;
@@ -38,11 +37,6 @@ interface IPrices {
     /// @notice Emitted when a price feed is removed for a token.
     /// @param underlyingAsset The address of the token.
     event PriceFeedUnset(address indexed underlyingAsset);
-
-    /// @notice Emitted when only the heartbeat is updated for an already-registered price feed.
-    /// @param underlyingAsset The address of the token.
-    /// @param chainlinkHeartbeat The new heartbeat interval in seconds.
-    event ChainlinkHeartbeatSet(address indexed underlyingAsset, uint256 chainlinkHeartbeat);
 
     //
     // Errors

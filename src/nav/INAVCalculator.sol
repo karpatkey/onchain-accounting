@@ -151,17 +151,9 @@ interface INAVCalculator is IBalances {
     /// @param asset Registered asset address.
     /// @param priceFeed New price feed address (cannot be zero).
     /// @param priceType Chainlink or Custom.
-    /// @param chainlinkHeartbeat Heartbeat for Chainlink feeds (must be non-zero). For Custom feeds, set to 0 to
-    /// disable the secondary staleness check or to max(underlying Chainlink heartbeats) to enable it.
+    /// @param chainlinkHeartbeat Heartbeat for Chainlink feeds (must be non-zero); unused for Custom feeds.
     function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
-
-    /// @notice Updates the heartbeat for one or more already-registered assets without replacing the price feed.
-    /// @dev For Custom price feeds, the heartbeat controls the secondary staleness check via latestRoundData().
-    ///      Set to max(underlying Chainlink heartbeats) for custom feeds to reflect worst-case staleness.
-    /// @param tokens Asset addresses whose heartbeat should be updated.
-    /// @param heartbeats New heartbeat values in seconds (must be non-zero, same length as tokens).
-    function setChainlinkHeartbeats(address[] calldata tokens, uint256[] calldata heartbeats) external;
 
     /// @notice Registers a balance oracle in the global registry.
     /// @dev Reverts with DuplicateBalanceOracle if already registered.

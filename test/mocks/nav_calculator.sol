@@ -208,7 +208,4 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function setChainlinkHeartbeats(address[] calldata, uint256[] calldata) external pure override {
-        revert("Not implemented in mock");
-    }
 }

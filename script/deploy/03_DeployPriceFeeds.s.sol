@@ -30,9 +30,7 @@ import {rsETH_L2_PriceOracle} from "../../src/prices/protocols/rsETH_L2_Price.so
 import {ezETH_L2_PriceOracle} from "../../src/prices/protocols/ezETH_L2_Price.sol";
 import {syrupUSDC_L2_PriceOracle} from "../../src/prices/protocols/syrupUSDC_L2_Price.sol";
 
-// Note: ETHPlus_PriceOracle is intentionally NOT wired.
-// The Alpha funds use a Chainlink feed (`ethPlusToUsdChainlink`) as ETH+ price source,
-// so the Custom adapter at src/prices/protocols/ETHPlus_Price.sol is not deployed.
+import {ETHPlus_PriceOracle} from "../../src/prices/protocols/ETHPlus_Price.sol";
 
 // import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
 
@@ -148,6 +146,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy ETHx Price Oracle (Stader)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ETHx")) {
             _deployEthx();
+        }
+
+        // Deploy ETHPlus Price Oracle (Reserve Protocol RToken)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ETHPlus")) {
+            _deployEthPlus();
         }
 
         // Note: StakeWise V3 osETH does not need a dedicated price feed. The StakeWise V3
@@ -426,6 +429,23 @@ contract DeployPriceFeeds is BaseDeployScript {
         ezETH_PriceOracle ezEthAdapter = new ezETH_PriceOracle(ezEth, restakeManager, ethUsdOracle, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETH", address(ezEthAdapter));
         console2.log("ezETH_PriceOracle deployed at:", address(ezEthAdapter));
+    }
+
+    function _deployEthPlus() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "ETHPlus");
+        if (deployed != address(0)) {
+            console2.log("ETHPlus_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address ethPlus =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHPlus", "ethPlus"));
+        uint256 heartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHPlus", "reserveProtocolHeartbeat"));
+
+        ETHPlus_PriceOracle adapter = new ETHPlus_PriceOracle(ethPlus, heartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ETHPlus", address(adapter));
+        console2.log("ETHPlus_PriceOracle deployed at:", address(adapter));
     }
 
     /// @notice Helper to read deployed adapter address

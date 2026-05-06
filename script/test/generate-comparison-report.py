@@ -44,16 +44,14 @@ OUT_FILE = "comparison-report.md"
 NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
 # Adapters that read wallet token balances directly and aggregate them into a
-# single protocol-denominated PositionBalance (e.g. Cap reads balanceOf(cUsd)
-# and balanceOf(stcUsd), then returns the combined amount in USDC). For these,
-# the wallet tokens are NOT registered as standalone priceable assets, but they
-# ARE in NAV — so the report should mark them ✅ Covered and include them in
-# the filtered Debank total. Map: adapter_key (as it appears under
-# chains/<cid>.json.balanceAdapters) → list of constructor param names whose
-# values are the wallet token addresses to credit.
-WALLET_AGGREGATING_ADAPTERS = {
-    "Cap": ["cUsd", "stcUsd"],
-}
+# single protocol-denominated PositionBalance. Loaded from a JSON registry
+# shared with refresh-integration-snapshot.sh so anchor and rendered totals
+# use the same allowlist. See script/test/wallet-aggregating-adapters.json.
+WALLET_AGGREGATING_ADAPTERS_JSON = "script/test/wallet-aggregating-adapters.json"
+with open(WALLET_AGGREGATING_ADAPTERS_JSON) as _wa_f:
+    WALLET_AGGREGATING_ADAPTERS: dict[str, list[str]] = {
+        k: v for k, v in json.load(_wa_f).items() if not k.startswith("$")
+    }
 
 # Maps NAV adapter `protocol` prefixes to Debank protocol short-IDs.
 # Matching is prefix-based: e.g. "Aave V3" matches "Aave V3 Core", "Aave V3 Prime",
@@ -715,14 +713,16 @@ def main(refresh_debank: bool = False) -> None:
                 proto_net_usd(p) for p in chain_protos
                 if p["_short_id"] in supported_ids
             )
+            # No USD floor here — must mirror refresh-integration-snapshot.sh's
+            # tok_sum exactly so the stored anchor and fresh_filtered agree on
+            # cUSD-style dust positions. The $0.50 floor still applies to the
+            # rendered wallet table (significant_wallet) for readability.
             filtered_token_sum = 0.0
             for t in tok_resp:
                 tid = (t.get("id") or "").lower()
                 amt = t.get("amount", 0)
                 price = t.get("price", 0)
                 usd = amt * price
-                if usd < 0.50:
-                    continue
                 lookup = NATIVE_SENTINEL if tid == dbank_chain else tid
                 if lookup in all_covered:
                     filtered_token_sum += usd

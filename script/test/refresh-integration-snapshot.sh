@@ -44,6 +44,8 @@ cd "$ROOT"
 
 ACCOUNTS_JSON="test/integration/accounts.json"
 ASSETS_JSON="script/config/assets.json"
+CHAINS_CONFIG_DIR="script/config/chains"
+WALLET_AGGREGATING_REGISTRY="script/test/wallet-aggregating-adapters.json"
 MERKL_PROOFS_JSON="test/integration/merkl-proofs.json"
 MERKL_DISTRIBUTOR="0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
 REPORT_MD="${REPORT_MD:-refresh-report.md}"
@@ -428,10 +430,36 @@ if [[ "$debank_active" == "true" ]]; then
       supported_protos=$(jq -c ".chains.\"$chain_id\".supportedDebankProtocols // []" "$ACCOUNTS_JSON")
 
       # Build NAV-registered asset address allowlist for this chain (lowercased).
-      asset_allowlist=$(jq -c \
+      # Union of two sources, matching generate-comparison-report.py's `all_covered`:
+      #   1. assets.json.tokens[chain] — standalone priceable assets in the NAV registry.
+      #   2. wallet-aggregating-adapters.json — tokens NOT in (1) but consumed by an
+      #      enabled adapter via balanceOf (e.g. Cap reads cUsd + stcUsd via constructor
+      #      args in chains/<cid>.json). Without this, accounts holding cUsd/stcUsd would
+      #      have an anchor that disagrees with the report's rendered total.
+      chain_cfg="$CHAINS_CONFIG_DIR/${chain_id}.json"
+      asset_allowlist=$(jq -c -n \
+        --slurpfile assets "$ASSETS_JSON" \
+        --slurpfile chain "$chain_cfg" \
+        --slurpfile reg "$WALLET_AGGREGATING_REGISTRY" \
         --arg c "$chain_id" \
-        '[(.tokens[$c] // {}) | to_entries[] | .value.address | ascii_downcase]' \
-        "$ASSETS_JSON")
+        '
+          ([($assets[0].tokens[$c] // {}) | to_entries[] | .value.address | ascii_downcase])
+          +
+          [
+            $reg[0]
+            | to_entries[]
+            | select(.key | startswith("$") | not)
+            | .key as $adapter_key
+            | .value as $param_names
+            | ($chain[0].balanceAdapters[$adapter_key] // null)
+            | select(. != null and .enabled == true)
+            | .constructor as $ctor
+            | $param_names[]
+            | $ctor[.]
+            | select(. != null)
+            | ascii_downcase
+          ]
+        ')
 
       # Sum 1 — protocols in supportedDebankProtocols: full net_usd_value of every
       # portfolio_item_list entry. NAV has its own balance adapter for each, so its

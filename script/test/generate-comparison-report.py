@@ -453,7 +453,14 @@ def render_unified_table(
                 if has_adapters:
                     nav_matches = _match_nav_for_item(item, short_id)
                 elif pf_pool:
-                    idx, pos = pf_pool.pop(0)
+                    # Pick the pf_pool entry whose NAV USD is closest to item USD.
+                    # Avoids wrong matches when a protocol has multiple wallet
+                    # positions of very different sizes (e.g. wstETH vs dust stETH).
+                    best_i = min(
+                        range(len(pf_pool)),
+                        key=lambda i: abs(int(pf_pool[i][1].get("valueUsd8dp", 0)) / 1e8 - item_usd),
+                    )
+                    idx, pos = pf_pool.pop(best_i)
                     matched_nav.add(idx)
                     sym = pos.get("symbol", "?")
                     decimals = int(pos.get("decimals", 18))

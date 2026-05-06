@@ -20,4 +20,13 @@ interface IPriceFeedCustom is IERC165 {
     /// @notice Returns the address of the underlying asset supported by this price feed.
     /// @return underlyingAsset The address of the underlying asset supported by this price feed.
     function underlyingAssetSupported() external view returns (address underlyingAsset);
+
+    /// @notice Returns round data from the most stale underlying Chainlink feed.
+    /// @dev Matches the AggregatorV3Interface.latestRoundData() signature so callers can assess staleness directly.
+    /// @dev For feeds with no Chainlink dependency (e.g. ETHPlus), returns (0, 0, 0, 0, 0).
+    /// @dev For feeds backed by multiple Chainlink feeds, returns the tuple with the lowest updatedAt (worst case).
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 }

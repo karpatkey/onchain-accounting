@@ -159,6 +159,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function setChainlinkHeartbeats(address[] calldata tokens, uint256[] calldata heartbeats) external {
+        _requireManager();
+        if (tokens.length != heartbeats.length) revert InvalidPriceOracle();
+        for (uint256 i; i < tokens.length; ++i) {
+            _setChainlinkHeartbeat(tokens[i], heartbeats[i]);
+        }
+    }
+
+    /// @inheritdoc INAVCalculator
     function addBalanceOracle(address oracle) external {
         _requireManager();
         if (oracle == address(0)) {

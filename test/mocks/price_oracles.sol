@@ -34,6 +34,10 @@ contract Mock_CustomPriceFeed is IPriceFeedCustom {
         return addressSupported; // This mock does not support any underlying asset
     }
 
+    function latestRoundData() external pure virtual override returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, 0, 0, 0, 0);
+    }
+
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }

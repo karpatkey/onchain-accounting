@@ -207,4 +207,8 @@ contract Mock_NAVCalculator is INAVCalculator {
     function setChainlinkL2SequencerGracePeriod(uint256) external pure override {
         revert("Not implemented in mock");
     }
+
+    function setChainlinkHeartbeats(address[] calldata, uint256[] calldata) external pure override {
+        revert("Not implemented in mock");
+    }
 }

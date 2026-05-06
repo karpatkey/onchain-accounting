@@ -103,6 +103,18 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
         return _decimals;
     }
 
+    /// @inheritdoc IPriceFeedCustom
+    function latestRoundData()
+        external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        (roundId,, startedAt, updatedAt, answeredInRound) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        (uint256 price,) = this.getLatestPrice();
+        answer = int256(price);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;

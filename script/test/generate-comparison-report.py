@@ -491,10 +491,33 @@ def render_unified_table(
                     )
 
             if first_row:  # protocol had no items above threshold
-                lines.append(
-                    f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
-                    f"| — | — | — | — | — | — |"
-                )
+                if not has_adapters and pf_pool:
+                    # All Debank items are below the $0.01 threshold (or none exist)
+                    # but the protocol has tracked wallet positions in NAV (e.g. dust
+                    # wstETH/stETH under Lido).  Emit pf_pool matches so these don't
+                    # fall into the "without Debank counterpart" table.
+                    for j, (p_idx, p_pos) in enumerate(pf_pool):
+                        matched_nav.add(p_idx)
+                        p_sym = p_pos.get("symbol", "?")
+                        p_dec = int(p_pos.get("decimals", 18))
+                        p_amt = int(p_pos.get("amount", 0)) / 10 ** p_dec
+                        p_usd = int(p_pos.get("valueUsd8dp", 0)) / 1e8
+                        if j == 0:
+                            lines.append(
+                                f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                                f"| — | — | — "
+                                f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
+                            )
+                        else:
+                            lines.append(
+                                f"| | | | | | | "
+                                f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
+                            )
+                else:
+                    lines.append(
+                        f"| {pname} | `{short_id}` | {covered} | {fmt_usd(total)} "
+                        f"| — | — | — | — | — | — |"
+                    )
         lines.append("")
 
     # ── Wallet tokens table ───────────────────────────────────────────────────────

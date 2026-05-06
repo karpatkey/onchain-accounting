@@ -123,6 +123,16 @@
       },
       "deployed": "0xBF19e8568cbA837d3922a987f9E001787385575f"
     },
+    "MorphoVault_kpkEURC_V1": {
+      "$comment": "kpk EURC vault (MetaMorpho ERC4626). Adapter not deployed to mainnet yet — integration test uses the ephemeral fallback path. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
+      "enabled": true,
+      "constructor": {
+        "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk EURC"
+      },
+      "deployed": ""
+    },
     "MorphoMarket_wstETH_USDC": {
       "enabled": true,
       "constructor": {

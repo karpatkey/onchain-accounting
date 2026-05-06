@@ -766,7 +766,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](72);
+        names = new string[](73);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -792,6 +792,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "MorphoVault_kpkETHPrime_V2";
         names[i++] = "MorphoVault_kpkUSDCPrime_V1";
         names[i++] = "MorphoVault_kpkUSDCPrime_V2";
+        names[i++] = "MorphoVault_kpkEURC_V1";
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";

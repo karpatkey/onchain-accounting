@@ -765,7 +765,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, navAddr));
     }
 
-
     // -----------------------------------------------------------------------
     // Asset registration (uses assets.json oracle addresses verbatim — these
     // are either Chainlink feeds or fund-side Custom oracles already on chain).
@@ -1192,11 +1191,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 console2.log(
                     string.concat(
                         "SNAPSHOT|",
-                        vm.toString(_chainId), "|",
-                        vm.toString(i), "|",
-                        vm.toString(account), "|",
-                        vm.toString(n.value), "|",
-                        n.sequencerDown ? "true" : "false", "|",
+                        vm.toString(_chainId),
+                        "|",
+                        vm.toString(i),
+                        "|",
+                        vm.toString(account),
+                        "|",
+                        vm.toString(n.value),
+                        "|",
+                        n.sequencerDown ? "true" : "false",
+                        "|",
                         vm.toString(n.stalePriceAssets.length)
                     )
                 );
@@ -1211,9 +1215,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         vm.writeFile(
             string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json"),
             string.concat(
-                '{"chainId":', vm.toString(_chainId),
-                ',"forkBlock":', vm.toString(_forkBlock),
-                ',"accounts":', _buildPositionDetailsJson(), "}"
+                '{"chainId":',
+                vm.toString(_chainId),
+                ',"forkBlock":',
+                vm.toString(_forkBlock),
+                ',"accounts":',
+                _buildPositionDetailsJson(),
+                "}"
             )
         );
     }

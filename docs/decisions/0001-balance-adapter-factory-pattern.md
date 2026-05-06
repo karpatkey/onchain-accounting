@@ -1,6 +1,8 @@
 # 0001 — Balance adapter factory pattern
 
-**Status:** accepted
+**Status:** accepted (in design); **not yet implemented in the codebase as of `4def473` (2026-05-06)**.
+
+> **Reality check.** The factory framework described below — `BalanceAdapterFactoryBase`, `BalanceAdapterRegistry`, `05_DeployAdapterFactories.s.sol`, `06_MigrateExistingAdapters.s.sol` — was designed but has not yet been shipped. `src/balances/factories/` does not exist today; the directory is reserved for the future rollout. The current production deploy uses `04_DeployBalanceAdapters.s.sol` calling `_deployIfEnabled(...)` per adapter (CREATE2-deterministic addresses inherited via the canonical CREATE2 factory `0x4e59…956C`), with registration via the `06_Configure.s.sol` Safe TX bundle calling `NAVCalculator.addBalanceOracle(adapter)` directly. The aspirational design below remains the target end state; until then, treat references to it elsewhere in the docs as forward-looking.
 
 ## Context
 

@@ -12,8 +12,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 
 | Path | What lives here |
 |---|---|
-| `src/balances/` | Balance oracle interface + abstract `Balances` registry, plus per-protocol adapters under `protocols/<protocol>/`. Each protocol folder typically holds the adapter and a CREATE2 factory that inherits `BalanceAdapterFactoryBase`. |
-| `src/balances/factories/` | `BalanceAdapterFactoryBase` (CREATE2 deploy + ERC165 check + registry hookup) and `BalanceAdapterRegistry` (central registry; holds MANAGER on `NAVCalculator`). |
+| `src/balances/` | Balance oracle interface (`IBalanceOracleAdapter`) + abstract `Balances` registry + per-protocol adapter contracts. Adapters live either directly under `protocols/` (single-file) or in `protocols/<protocol>/` (multi-file). The factory pattern in [ADR 0001](docs/decisions/0001-balance-adapter-factory-pattern.md) is designed but not yet implemented; `src/balances/factories/` does not exist today. |
 | `src/prices/` | `IPrices`, `Prices` (abstract: Chainlink + custom feeds, staleness, L2 sequencer), `IPriceFeedCustom`, and per-asset custom price contracts under `protocols/`. |
 | `src/nav/` | `NAVCalculator` (extends Prices + Balances) + `INAVCalculator`. |
 | `src/bridge/` | `BridgeEscrow` + `BridgeAdapter` base + per-protocol adapters under `adapters/` (Across, CCIP, CCTP, Stargate, Superchain, Gnosis). |
@@ -43,10 +42,8 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 - **Adapters report balances, not values.** Every balance oracle returns `INAVCalculator.PositionBalance[]` with `amount` always **positive** and `isDebt` flagging debt vs. credit. NAVCalculator does the pricing and signing. See `src/balances/BALANCE_ADAPTERS.md` §2–§3.
 - **`balanceOracle` field is `address(this)`.** Always. It is the audit trail.
 - **Adapters are immutable.** No `Ownable`, no admin functions, no upgrade. Constructor pins everything. The Merkl rewards adapter is the documented exception (proof-verified mutable cache, owner-gated; see ADR 0007). Any new mutable adapter requires a fresh ADR.
-- **Factories are CREATE2.** Every per-protocol factory inherits `BalanceAdapterFactoryBase` and pins `PROTOCOL_KEY = keccak256("<ProtocolName>")` at construction. Cross-chain identical addresses for the same `(initCode, salt)`. Canonical deployer: `0x4e59b44847b379578588920cA78FbF26c0B4956C`. See `src/balances/factories/BalanceAdapterFactoryBase.sol`.
-- **Registration goes through `BalanceAdapterRegistry`.** The registry owns MANAGER on `NAVCalculator`. Factory `deploy()` ends with `REGISTRY.register(adapter)`; never call `NAVCalculator.addBalanceOracle` directly.
-- **Per-protocol folder layout.** New balance protocols go under `src/balances/protocols/<protocol>/` with a sibling factory file (`<Protocol>AdapterFactory.sol`) and matching tests under `test/balances/protocols/`.
-- **Salt versioning.** Salts for factory-deployed adapters and for the factories themselves are derived from `(name, FACTORY_SALT_VERSION)` in `script/deploy/05_DeployAdapterFactories.s.sol`. Bump the version field rather than minting ad-hoc salts.
+- **CREATE2 deterministic addresses for adapters.** The deployer EOA at the canonical CREATE2 factory `0x4e59b44847b379578588920cA78FbF26c0B4956C` is used so the same adapter constructor inputs produce the same address on every chain. The deploy script `04_DeployBalanceAdapters.s.sol` calls `_deployIfEnabled(...)` per adapter; current adapters do NOT use a per-protocol factory contract — that pattern is **designed but not yet shipped** (see [ADR 0001](docs/decisions/0001-balance-adapter-factory-pattern.md), and `src/balances/factories/` does not exist as of `4def473`). Until the factory rollout lands, registration on `NAVCalculator` is via the `06_Configure.s.sol` Safe TX bundle (`addBalanceOracle(adapter)`), not via a factory.
+- **Per-protocol folder layout.** New balance protocols go under `src/balances/protocols/<protocol>/` (or directly under `src/balances/protocols/` for single-file adapters) with matching tests under `test/balances/protocols/`. The sibling factory file pattern from ADR 0001 is aspirational — don't add one until the factory framework is shipped.
 - **Solidity pragma.** `pragma solidity ^0.8;` on every file. Compiler is set in `foundry.toml`.
 
 ## Testing expectations

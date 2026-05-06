@@ -186,7 +186,6 @@ The long template below is **deprecated** (single global dev-input is not used).
   "global": {
     "safeMultisigAddress": "",
     "admin": "",
-    "assetRecoverer": "",
     "manager": ""
   },
   "navcalculator": {
@@ -370,7 +369,6 @@ The long template below is **deprecated** (single global dev-input is not used).
 |-------|-------------|---------|
 | `safeMultisigAddress` | Your Safe multisig address (same on all chains) | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
 | `admin` | Address with DEFAULT_ADMIN_ROLE (typically the Safe) | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
-| `assetRecoverer` | Address that can recover wrongly sent funds | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
 | `manager` | Address with MANAGER role for operations | `0x1234...` or Safe |
 
 #### NAVCalculator Section
@@ -671,7 +669,6 @@ Typically assigned to: Operations team or Safe Multisig
 // During initialization
 NAVCalculator.initialize(
     admin,           // Gets DEFAULT_ADMIN_ROLE
-    assetRecoverer,
     sequencerFeed,
     nativeSymbol
 );
@@ -742,7 +739,6 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
   "global": {
     "safeMultisigAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
     "admin": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
-    "assetRecoverer": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
     "manager": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5"
   },
   "navcalculator": {

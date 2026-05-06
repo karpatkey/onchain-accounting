@@ -172,7 +172,6 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **BalancerV3** | Balancer V3 positions. | |
 | **CompoundV3Comet** | Compound V3 Comet: base borrow, collaterals, rewards. | Constructor: protocol string (e.g. "Compound v3 USDC"). Uses NAVCalculator for asset metadata. |
 | **DaiDsr** | DAI Savings Rate. | |
-| **GMX** | GMX positions. | |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. | Mutable per-(user, token) cache, `onlyOwner` writes, proofs verified against the live Distributor root. The framework's documented mutable-adapter exception. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. |
 | **MorphoMarket** | Morpho market positions. | |
 | **SkySavingsUsds** | Sky savings USDS. | |

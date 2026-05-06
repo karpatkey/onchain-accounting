@@ -32,6 +32,7 @@ import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
+import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
@@ -504,6 +505,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(name, navAddr);
         }
+        if (_startsWith(name, "StakeWiseV3Vault_")) {
+            return _deployStakeWiseV3Vault(name, navAddr);
+        }
         if (_startsWith(name, "UniswapV2_")) {
             return _deployUniswapV2(name, navAddr);
         }
@@ -706,6 +710,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
     }
 
+    function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, navAddr));
+    }
+
     function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
         address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
@@ -743,7 +758,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](71);
+        names = new string[](72);
         uint256 i = 0;
         names[i++] = "MerklRewards";
         names[i++] = "AaveV3_Core";
@@ -818,6 +833,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         names[i++] = "Fluid_Vault_sUSDe_USDC";
         names[i++] = "StaderWithdrawalQueue";
         names[i++] = "StakeWiseV3OsToken_ETH";
+        names[i++] = "StakeWiseV3Vault_Genesis";
         names[i++] = "UniswapV3_WBTC_WETH_3000";
         // COW pools omitted: COW has no price feed so the COW leg is dropped silently.
     }

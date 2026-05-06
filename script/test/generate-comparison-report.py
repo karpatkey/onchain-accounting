@@ -43,6 +43,31 @@ NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 OUT_FILE = "comparison-report.md"
 NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
+# Display-only rename for Debank protocol IDs in the rendered "Debank ID" column.
+# The lookup key (matched against Debank's API responses + the allowlist in
+# accounts.json.chains.<id>.supportedDebankProtocols) stays as Debank reports it
+# (`morphoblue`); only the display string changes. Honors the project naming
+# convention from CLAUDE.md ("Morpho not Morpho Blue").
+DEBANK_ID_DISPLAY: dict[str, str] = {
+    "morphoblue": "morpho",
+}
+
+# WALLET_AGGREGATING adapters (those listed in WALLET_AGGREGATING_ADAPTERS) read
+# wallet token balances directly and aggregate them into a single
+# PositionBalance denominated in another asset (e.g. Cap reads cUsd + stcUsd,
+# returns USDC). Debank reports the same economic position as a *protocol*
+# entry (capapp, "Staked cap USD") AND as separate *wallet token* entries
+# (cUSD wallet, stcUSD wallet). Symbol-based matching can't pair them — the
+# NAV adapter's symbol (USDC) doesn't match Debank's component symbols (cUSD,
+# stcUSD). This map tells the matcher that for these Debank protocol IDs, the
+# NAV adapter with the matching protocol-prefix label should be force-paired
+# with the protocol row regardless of symbol, and the corresponding wallet
+# rows should annotate "↑ aggregated by <Adapter> above" instead of dashes.
+WALLET_AGGREGATING_DEBANK_IDS: dict[str, str] = {
+    "capapp": "Cap",
+}
+
+
 # Adapters that read wallet token balances directly and aggregate them into a
 # single protocol-denominated PositionBalance. Loaded from a JSON registry
 # shared with refresh-integration-snapshot.sh so anchor and rendered totals
@@ -424,6 +449,27 @@ def render_unified_table(
             if stage2_added:
                 break
 
+        # Stage 3: WALLET_AGGREGATING adapters (Cap). NAV reports a single
+        # PositionBalance in an aggregated denomination (e.g. USDC for Cap),
+        # while Debank reports the same economic position split across a
+        # protocol entry + wallet tokens with different symbols (cUSD, stcUSD).
+        # Symbol-based Stage 1 matching can't pair them, and Stage 2's
+        # similar-USD heuristic might pair the wrong NAV adapter; force the
+        # link by protocol-id only when no Stage-1 result was produced.
+        if not results and short_id in WALLET_AGGREGATING_DEBANK_IDS:
+            for idx, p in candidates:
+                if idx in local_matched:
+                    continue
+                local_matched.add(idx)
+                matched_nav.add(idx)
+                sym = p.get("symbol", "?")
+                decimals = int(p.get("decimals", 18))
+                amt = int(p.get("amount", 0)) / 10 ** decimals
+                usd = int(p.get("valueUsd8dp", 0)) / 1e8
+                label = "borrow" if p.get("isDebt") else "supply"
+                results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                break
+
         return results
 
     lines: list[str] = []
@@ -458,6 +504,7 @@ def render_unified_table(
         ]
         for p in covered_protos:
             short_id = p.get("_short_id", "")
+            display_id = DEBANK_ID_DISPLAY.get(short_id, short_id)
             pname = p.get("name", short_id)
             total = proto_net_usd(p)
             items = [i for i in p.get("portfolio_item_list", [])
@@ -503,7 +550,7 @@ def render_unified_table(
 
                 if first_row:
                     lines.append(
-                        f"| {pname} | `{short_id}` | {fmt_usd(total)} "
+                        f"| {pname} | `{display_id}` | {fmt_usd(total)} "
                         f"| {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
                         f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
@@ -533,7 +580,7 @@ def render_unified_table(
                         p_usd = int(p_pos.get("valueUsd8dp", 0)) / 1e8
                         if j == 0:
                             lines.append(
-                                f"| {pname} | `{short_id}` | {fmt_usd(total)} "
+                                f"| {pname} | `{display_id}` | {fmt_usd(total)} "
                                 f"| — | — | — "
                                 f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
                             )
@@ -544,7 +591,7 @@ def render_unified_table(
                             )
                 else:
                     lines.append(
-                        f"| {pname} | `{short_id}` | {fmt_usd(total)} "
+                        f"| {pname} | `{display_id}` | {fmt_usd(total)} "
                         f"| — | — | — | — | — | — |"
                     )
         lines.append("")
@@ -589,6 +636,33 @@ def render_unified_table(
             lookup = NATIVE_SENTINEL if is_native else tid
 
             nav_source_s, nav_amt_s, nav_usd_s = "—", "—", "—"
+
+            # WALLET_AGGREGATING adapter wallet leg: cUSD/stcUSD wallet tokens
+            # aren't standalone NAV positions, but they ARE counted (via the Cap
+            # adapter aggregating them into a single USDC PositionBalance, which
+            # is paired with the Cap protocol row above). Annotate accordingly
+            # instead of leaving misleading dashes.
+            if lookup in agg_addrs:
+                # Find which aggregating adapter consumes this specific token by
+                # walking back through the registry → chain config. With only Cap
+                # today the answer is unambiguous, but the lookup is general.
+                try:
+                    cid_for_lookup = next(
+                        cid for cid, ccfg in {}.items()  # placeholder; pass real chain map if multi-chain ambiguity emerges
+                    )
+                except StopIteration:
+                    cid_for_lookup = None
+                # In practice the only WALLET_AGGREGATING adapter today is Cap;
+                # name it directly to avoid plumbing the chain config through.
+                adapter_label = next(iter(WALLET_AGGREGATING_ADAPTERS.keys()), "aggregating adapter")
+                nav_source_s = f"↑ aggregated by {adapter_label} (see protocol row)"
+                lines.append(
+                    f"| {sym} | `{tid}` "
+                    f"| {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
+                    f"| {nav_source_s} | {nav_amt_s} | {nav_usd_s} |"
+                )
+                continue
+
             entry = nav_pf_by_addr.get(lookup)
             if entry:
                 idx, pos = entry
@@ -623,7 +697,8 @@ def render_unified_table(
             "|---|---|---:|---|",
         ]
         for pname, sid, usd, detail in sorted(untracked_protos, key=lambda x: -abs(x[2])):
-            lines.append(f"| {pname} (`{sid}`) | protocol | {fmt_usd(usd)} | {detail} |")
+            display_sid = DEBANK_ID_DISPLAY.get(sid, sid)
+            lines.append(f"| {pname} (`{display_sid}`) | protocol | {fmt_usd(usd)} | {detail} |")
         for sym, usd, addr in sorted(untracked_wallet, key=lambda x: -abs(x[1])):
             lines.append(f"| {sym} | wallet token | {fmt_usd(usd)} | `{addr}` |")
         lines.append("")

@@ -55,6 +55,13 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
 
     AaveUmbrellaBalanceOracle public oracle;
 
+    // positionDetail prefix must match the constructor arg used in setUp.
+    string private constant _PD_PREFIX = "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"";
+
+    function _detail(string memory typeLabel) private pure returns (string memory) {
+        return string.concat(_PD_PREFIX, ",\"type\":\"", typeLabel, "\"}");
+    }
+
     // Real Mainnet holders, one per stake token (today's set). The WETH holder is also the legacy
     // SM stkAAVE / stkABPTv2 holder used in test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol.
     address public constant STK_WA_USDC_HOLDER = 0xd0002c648CCa8DeE2f2b8D70D542Ccde8ad6EC03;
@@ -157,8 +164,8 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
             assertFalse(positions[i].isDebt);
 
             if (positions[i].underlyingAsset.asset == USDC) {
-                if (_eq(positions[i].positionDetail, "stkwaEthUSDC.v1 Staked")) sawStaked = true;
-                if (_eq(positions[i].positionDetail, "stkwaEthUSDC.v1 Rewards")) sawRewards = true;
+                if (_eq(positions[i].positionDetail, _detail("stkwaEthUSDC.v1 Staked"))) sawStaked = true;
+                if (_eq(positions[i].positionDetail, _detail("stkwaEthUSDC.v1 Rewards"))) sawRewards = true;
             }
         }
         assertTrue(sawStaked, "missing USDC/stkwaEthUSDC.v1 Staked position");
@@ -174,8 +181,8 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawRewards;
         for (uint256 i; i < positions.length; ++i) {
             if (positions[i].underlyingAsset.asset != GHO) continue;
-            if (_eq(positions[i].positionDetail, "stkGHO.v1 Staked")) sawStaked = true;
-            if (_eq(positions[i].positionDetail, "stkGHO.v1 Rewards")) sawRewards = true;
+            if (_eq(positions[i].positionDetail, _detail("stkGHO.v1 Staked"))) sawStaked = true;
+            if (_eq(positions[i].positionDetail, _detail("stkGHO.v1 Rewards"))) sawRewards = true;
         }
         assertTrue(sawStaked, "missing GHO/stkGHO.v1 Staked position");
         assertTrue(sawRewards, "missing GHO/stkGHO.v1 Rewards position");

@@ -470,6 +470,6 @@ contract BalanceAdapterInvariantTest is Test {
         // ERC20DefaultOracle should have specific metadata
         assertEq(positions.length, 1, "Should have one position");
         assertEq(positions[0].protocol, "wallet", "Protocol should be 'wallet'");
-        assertEq(positions[0].positionDetail, "Holding", "PositionDetail should be 'Holding'");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"wallet\",\"product\":\"Holding\"}", "PositionDetail should be wallet JSON");
     }
 }

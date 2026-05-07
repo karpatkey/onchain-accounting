@@ -71,6 +71,10 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
     string public PROTOCOL;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (rewardsController address)
+    string private _positionId;
 
     //
     // Constructor
@@ -79,13 +83,23 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     /// @param rewardsController The Umbrella RewardsController address (registry root). Required to be a contract.
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
     /// @param protocol_ Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
-    constructor(address rewardsController, address navCalculator, string memory protocol_) {
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (rewardsController address).
+    constructor(
+        address rewardsController,
+        address navCalculator,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_
+    ) {
         if (rewardsController == address(0) || navCalculator == address(0)) revert InvalidArguments();
         require(rewardsController.code.length > 0, "RewardsController must be a contract");
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
         NAV_CALCULATOR = INAVCalculator(navCalculator);
         PROTOCOL = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -229,7 +243,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: stakedAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(base, " Staked")
+                    positionDetail: string.concat(
+                        _positionDetail,
+                        ",\"type\":\"",
+                        base,
+                        " Staked\"}"
+                    ),
+                    positionId: _positionId
                 });
             }
 
@@ -242,7 +262,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: rewardAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(base, " Rewards")
+                    positionDetail: string.concat(
+                        _positionDetail,
+                        ",\"type\":\"",
+                        base,
+                        " Rewards\"}"
+                    ),
+                    positionId: _positionId
                 });
             }
         }

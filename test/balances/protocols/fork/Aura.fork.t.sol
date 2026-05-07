@@ -39,7 +39,7 @@ contract AuraTest is TestEnvConfigurator, TestSetupHelpers {
         vm.rollFork(22_131_922);
         mockBalances = new MockBalances();
         balances = _deployBalancesForOracle();
-        oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, "Aura", "Some Aura Pool", address(balances));
+        oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, "Aura", "{\"protocol\":\"Aura\",\"pool\":\"Some Aura Pool\"", "0x0000000000000000000000000000000000000001", address(balances));
         assertTrue(oracle.IS_MAINNET(), "Mainnet fork should be detected as Mainnet");
         assertEq(oracle.AURA_TOKEN(), AURA, "AURA_TOKEN should match Booster.minter()");
 

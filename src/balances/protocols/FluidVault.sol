@@ -59,8 +59,10 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier (e.g. "Fluid Vault")
     string private _protocol;
-    /// @notice Position detail (e.g. "wstETH/USDC")
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (vault address)
+    string private _positionId;
 
     //
     // Constructor
@@ -70,13 +72,15 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     /// @param vaultResolver_ The Fluid VaultResolver address (used only at runtime for NFT
     ///                       enumeration and per-NFT position reads).
     /// @param protocol_ Protocol identifier (e.g. "Fluid Vault").
-    /// @param positionDetail_ Position detail label (e.g. "wstETH/USDC").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (vault address).
     /// @param navCalculator_ NAVCalculator address (asset registry source).
     constructor(
         address vault_,
         address vaultResolver_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (vault_ == address(0) || vaultResolver_ == address(0)) {
@@ -111,6 +115,7 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         DEBT_TOKEN = cv.borrowToken;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -346,11 +351,15 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         revert("Asset not found in NAVCalculator");
     }
 
-    /// @notice Returns the `positionDetail` label for a given asset/leg.
+    /// @notice Returns the `positionDetail` JSON string for a given asset/leg.
     function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
-        if (asset == COLLATERAL_TOKEN && !isDebt) return string.concat(_positionDetail, " Collateral");
-        if (asset == DEBT_TOKEN && isDebt) return string.concat(_positionDetail, " Borrow");
-        return _positionDetail;
+        if (asset == COLLATERAL_TOKEN && !isDebt) {
+            return string.concat(_positionDetail, ",\"type\":\"Collateral\"}");
+        }
+        if (asset == DEBT_TOKEN && isDebt) {
+            return string.concat(_positionDetail, ",\"type\":\"Borrow\"}");
+        }
+        return string.concat(_positionDetail, "}");
     }
 
     /// @notice Builds PositionBalance array from pre-computed asset balance data
@@ -372,7 +381,8 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
                 amount: data[i].amount,
                 isDebt: data[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetailFor(data[i].asset, data[i].isDebt)
+                positionDetail: _positionDetailFor(data[i].asset, data[i].isDebt),
+                positionId: _positionId
             });
             positionCount++;
         }

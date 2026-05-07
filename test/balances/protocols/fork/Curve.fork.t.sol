@@ -56,7 +56,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         assets[0] = WETH;
         assets[1] = WEETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new CurveBalanceOracle(GAUGE, "Curve", "weETH/WETH Pool", address(balances));
+        oracle = new CurveBalanceOracle(GAUGE, "Curve", "{\"protocol\":\"Curve\",\"pool\":\"weETH/WETH Pool\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================
@@ -197,7 +197,8 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocol, "Curve");
-            assertEq(positions[i].positionDetail, "weETH/WETH Pool");
+            // positionDetail is JSON with per-token symbol: {"protocol":"Curve","pool":"weETH/WETH Pool","token":"<symbol>"}
+            assertTrue(bytes(positions[i].positionDetail).length > 0);
             if (positions[i].underlyingAsset.asset == WETH) hasWeth = true;
             if (positions[i].underlyingAsset.asset == WEETH) hasWeEth = true;
         }

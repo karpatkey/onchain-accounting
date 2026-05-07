@@ -38,7 +38,7 @@ contract BalancerV3BaseL2ForkTest is TestEnvConfigurator, TestSetupHelpers {
         allAssets[3] = GHO_BASE;
         balances = deployBalancesInFork(allAssets);
 
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
+        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     /// @notice The L2 inflation_rate fallback path runs without reverting against the live Base gauge.

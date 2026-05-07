@@ -29,16 +29,20 @@
       "enabled": true,
       "constructor": {
         "dataProvider": "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d",
-        "protocol": "Aave V2"
+        "protocol": "Aave V2",
+        "positionDetail": "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Mainnet Market\"",
+        "positionId": "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d"
       },
       "deployed": "",
-      "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, so the V2 adapter is a thin subclass of AaveV3InstanceBalanceOracle (see src/balances/protocols/AaveV2Instance.sol). Stable-debt positions are not reported — V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
+      "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, so the V2 adapter is a thin subclass of AaveV3InstanceBalanceOracle (see src/balances/protocols/AaveV2Instance.sol). Stable-debt positions are not reported \u2014 V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
     },
     "AaveV3_Core": {
       "enabled": true,
       "constructor": {
         "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
-        "protocol": "Aave V3 Core"
+        "protocol": "Aave V3 Core",
+        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Core Instance\"",
+        "positionId": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3"
       },
       "deployed": "0x1aee401c41bAE2a02aE39d9c969De44dbD8ca449"
     },
@@ -46,7 +50,9 @@
       "enabled": true,
       "constructor": {
         "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
-        "protocol": "Aave V3 Prime"
+        "protocol": "Aave V3 Prime",
+        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Prime Instance\"",
+        "positionId": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5"
       },
       "deployed": "0x14b1E2E6577f49C6242533119452c3CA092fC9B1"
     },
@@ -54,24 +60,30 @@
       "enabled": true,
       "constructor": {
         "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
-        "protocol": "Spark"
+        "protocol": "Spark",
+        "positionDetail": "{\"protocol\":\"Spark\",\"product\":\"Lending\",\"name\":\"SparkLend\"",
+        "positionId": "0xFc21d6d146E6086B8359705C8b28512a983db0cb"
       },
       "deployed": "0x9b9e74cfd807Dfae4F9333Afbd44EFE719354c39"
     },
     "AaveV3SafetyModule": {
       "enabled": true,
       "constructor": {
-        "protocol": "Aave V3 Safety Module"
+        "protocol": "Aave V3 Safety Module",
+        "positionDetail": "{\"protocol\":\"Aave V3 Safety Module\",\"product\":\"Staking\"",
+        "positionId": "0x4da27a545c0c5B758a6BA100e3a049001de870f5"
       },
       "deployed": "",
       "legacy_deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD",
-      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceOracle(legacy_deployed) and addBalanceOracle(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source — adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
+      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceOracle(legacy_deployed) and addBalanceOracle(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source \u2014 adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
     },
     "AaveUmbrella": {
       "enabled": true,
       "constructor": {
         "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
-        "protocol": "Aave Umbrella"
+        "protocol": "Aave Umbrella",
+        "positionDetail": "{\"protocol\":\"Aave Umbrella\",\"product\":\"Staking\"",
+        "positionId": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
       },
       "deployed": "",
       "comment": "Dynamic-discovery adapter for Aave Umbrella stake tokens. The full stake-token set (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1 today) is enumerated at runtime via RewardsController.getAllAssets(); each stake token's bare reserve is resolved by walking its ERC4626 asset() chain. The only address pinned in this adapter is the RewardsController above, passed via constructor and treated as the protocol's trust anchor. New stake tokens added by Aave governance are picked up automatically as long as their bare reserve is registered with NAVCalculator. See docs/decisions/0006-aave-umbrella-balance-oracle.md."
@@ -83,7 +95,8 @@
         "stcUsd": "0x88887bE419578051FF9F4eb6C858A951921D8888",
         "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         "protocol": "Cap",
-        "positionDetail": "cUSD + stcUSD"
+        "positionDetail": "{\"protocol\":\"Cap\",\"product\":\"Lending\",\"name\":\"cUSD + stcUSD\"",
+        "positionId": "0x88887bE419578051FF9F4eb6C858A951921D8888"
       },
       "deployed": "0xb812cc304Cb417B635470681160e75CfFb0006b0"
     },
@@ -92,7 +105,8 @@
       "constructor": {
         "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
         "protocol": "Morpho Vault",
-        "positionDetail": "kpk ETH Prime V1"
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk ETH Prime V1\"",
+        "positionId": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8"
       },
       "deployed": "0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7"
     },
@@ -101,7 +115,8 @@
       "constructor": {
         "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
         "protocol": "Morpho Vault",
-        "positionDetail": "kpk ETH Prime V2"
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk ETH Prime V2\"",
+        "positionId": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9"
       },
       "deployed": "0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512"
     },
@@ -110,7 +125,8 @@
       "constructor": {
         "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
         "protocol": "Morpho Vault",
-        "positionDetail": "kpk USDC Prime V1"
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Prime V1\"",
+        "positionId": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd"
       },
       "deployed": "0x07978693C01f70373e89d196DfcfcA18a6C02d6C"
     },
@@ -119,17 +135,19 @@
       "constructor": {
         "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
         "protocol": "Morpho Vault",
-        "positionDetail": "kpk USDC Prime V2"
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Prime V2\"",
+        "positionId": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6"
       },
       "deployed": "0xBF19e8568cbA837d3922a987f9E001787385575f"
     },
     "MorphoVault_kpkEURC_V1": {
-      "$comment": "kpk EURC vault (MetaMorpho ERC4626). Adapter not deployed to mainnet yet — integration test uses the ephemeral fallback path. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
+      "$comment": "kpk EURC vault (MetaMorpho ERC4626). Adapter not deployed to mainnet yet \u2014 integration test uses the ephemeral fallback path. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
       "enabled": true,
       "constructor": {
         "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
         "protocol": "Morpho Vault",
-        "positionDetail": "kpk EURC"
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk EURC\"",
+        "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
       },
       "deployed": ""
     },
@@ -138,7 +156,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
-        "protocol": "Morpho - wstETH/USDC"
+        "protocol": "Morpho - wstETH/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstETH/USDC\"",
+        "positionId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc"
       },
       "deployed": "0x4A68C3dA533fF7527CD67390f80d87ca6a95551d"
     },
@@ -147,7 +167,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
-        "protocol": "Morpho - cbBTC/USDC"
+        "protocol": "Morpho - cbBTC/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"cbBTC/USDC\"",
+        "positionId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64"
       },
       "deployed": "0x8b0F047127D58692C869033a551872c4Fe55e758"
     },
@@ -156,7 +178,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
-        "protocol": "Morpho - wstUSR/USDC"
+        "protocol": "Morpho - wstUSR/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstUSR/USDC\"",
+        "positionId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc"
       },
       "deployed": "0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42"
     },
@@ -165,7 +189,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
-        "protocol": "Morpho - ETH+/USDC"
+        "protocol": "Morpho - ETH+/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"ETH+/USDC\"",
+        "positionId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293"
       },
       "deployed": "0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2"
     },
@@ -174,7 +200,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
-        "protocol": "Morpho - WBTC/USDC"
+        "protocol": "Morpho - WBTC/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"WBTC/USDC\"",
+        "positionId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49"
       },
       "deployed": "0xe1CE19c8C668cD3659f2AE64E2C9D078c71Ef8F6"
     },
@@ -183,7 +211,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
-        "protocol": "Morpho - RLP/USDC"
+        "protocol": "Morpho - RLP/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"RLP/USDC\"",
+        "positionId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33"
       },
       "deployed": "0x9970D0D8932051d21883C854fC42eb67a54348FF"
     },
@@ -192,7 +222,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
-        "protocol": "Morpho - syrupUSDC/USDC"
+        "protocol": "Morpho - syrupUSDC/USDC",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"syrupUSDC/USDC\"",
+        "positionId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44"
       },
       "deployed": "0x7A7e9F5562C0126fb2bCC2f29D1098b60A452431"
     },
@@ -201,7 +233,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
-        "protocol": "Morpho - sUSDS/USDT"
+        "protocol": "Morpho - sUSDS/USDT",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"sUSDS/USDT\"",
+        "positionId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b"
       },
       "deployed": "0x6837d6a2F1335fffBb6B21b51d24D34F12a02DaA"
     },
@@ -210,7 +244,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
-        "protocol": "Morpho - ETH+/WETH"
+        "protocol": "Morpho - ETH+/WETH",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"ETH+/WETH\"",
+        "positionId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86"
       },
       "deployed": "0x618207B0650cE45C241760CE0b6E560167EcC1AA"
     },
@@ -219,7 +255,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
-        "protocol": "Morpho - wstETH/WETH"
+        "protocol": "Morpho - wstETH/WETH",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstETH/WETH\"",
+        "positionId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e"
       },
       "deployed": "0xAF28F8E8E24B6B23f6BB667f868b9bAFFBEfd8B6"
     },
@@ -228,7 +266,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
-        "protocol": "Morpho - weETH/WETH"
+        "protocol": "Morpho - weETH/WETH",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"weETH/WETH\"",
+        "positionId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7"
       },
       "deployed": "0x537E83dc59b2Ee2C7bD46B2f4801c5DF3B3f8aD1"
     },
@@ -237,7 +277,9 @@
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
-        "protocol": "Morpho - rsETH/WETH"
+        "protocol": "Morpho - rsETH/WETH",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"rsETH/WETH\"",
+        "positionId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942"
       },
       "deployed": "0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b"
     },
@@ -246,7 +288,8 @@
       "constructor": {
         "market": "0x9396DCbf78fc526bb003665337C5E73b699571EF",
         "protocol": "Gearbox",
-        "positionDetail": "kpk WETH market"
+        "positionDetail": "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH market\"",
+        "positionId": "0x9396DCbf78fc526bb003665337C5E73b699571EF"
       },
       "deployed": "0x04E39d917E0D515384B3C027658a8b2f401ECEb0"
     },
@@ -255,7 +298,8 @@
       "constructor": {
         "market": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64",
         "protocol": "Gearbox",
-        "positionDetail": "kpk wstETH market"
+        "positionDetail": "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk wstETH market\"",
+        "positionId": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
       },
       "deployed": "0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941"
     },
@@ -265,7 +309,9 @@
         "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
         "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
-        "protocol": "Balancer V3 - rETH/Aave WETH"
+        "protocol": "Balancer V3 - rETH/Aave WETH",
+        "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"rETH/Aave WETH\"",
+        "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
       },
       "deployed": "0x854BC9A5445495396De4cc228A5f945C680c2d4A"
     },
@@ -275,7 +321,9 @@
         "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
         "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
-        "protocol": "Balancer V3 - Aave GHO/USDT/USDC"
+        "protocol": "Balancer V3 - Aave GHO/USDT/USDC",
+        "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
+        "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
       },
       "deployed": "0x380f9912a659D7AFd1C9b5f88f62c06b4309FA80"
     },
@@ -287,7 +335,8 @@
         "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
         "pid": "246",
         "protocol": "Aura",
-        "positionDetail": "Aave GHO/USDT/USDC"
+        "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
+        "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
       },
       "deployed": "0x76bB2C593A4b1081DA59899A579Adf815f52Bbac"
     },
@@ -299,7 +348,8 @@
         "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
         "pid": "271",
         "protocol": "Aura",
-        "positionDetail": "rETH/Aave WETH"
+        "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"rETH/Aave WETH\"",
+        "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
       },
       "deployed": "0x45006c280bF3dC44D7D370C9a801c95eC501aA3E"
     },
@@ -308,7 +358,8 @@
       "constructor": {
         "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
         "protocol": "Curve",
-        "positionDetail": "weETH/WETH"
+        "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"weETH/WETH\"",
+        "positionId": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2"
       },
       "deployed": "0xAF8A9F7b37925973615Eaa787AefA3f388D32101"
     },
@@ -317,7 +368,8 @@
       "constructor": {
         "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
         "protocol": "Curve",
-        "positionDetail": "crvUSD/USDC"
+        "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"crvUSD/USDC\"",
+        "positionId": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1"
       },
       "deployed": "0x9eFcd3aE461a4F5769365B25673053FB08cc76B9"
     },
@@ -326,7 +378,8 @@
       "constructor": {
         "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
         "protocol": "Curve",
-        "positionDetail": "crvUSD/USDT"
+        "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"crvUSD/USDT\"",
+        "positionId": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939"
       },
       "deployed": "0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc"
     },
@@ -335,7 +388,8 @@
       "constructor": {
         "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
         "protocol": "Curve",
-        "positionDetail": "RLUSD/USDC"
+        "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"RLUSD/USDC\"",
+        "positionId": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
       },
       "deployed": "0x18dddd49116deB8ed90fdD7a2236a06F83127dd5"
     },
@@ -345,7 +399,8 @@
         "rewarder": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
         "lpToken": "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
         "protocol": "Convex",
-        "positionDetail": "weETH/WETH"
+        "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"weETH/WETH\"",
+        "positionId": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58"
       },
       "deployed": "0x0c2582167fB2c636eBa3b63fff1c4b186E643956"
     },
@@ -355,7 +410,8 @@
         "rewarder": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
         "lpToken": "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
         "protocol": "Convex",
-        "positionDetail": "crvUSD/USDC"
+        "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"crvUSD/USDC\"",
+        "positionId": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA"
       },
       "deployed": "0x5F598A4B588766c41b0dE5A93B91E03f00C60A77"
     },
@@ -365,7 +421,8 @@
         "rewarder": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
         "lpToken": "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
         "protocol": "Convex",
-        "positionDetail": "crvUSD/USDT"
+        "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"crvUSD/USDT\"",
+        "positionId": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824"
       },
       "deployed": "0x69BCa825DDCd25394BBF3DA313ece4e63642898d"
     },
@@ -375,7 +432,8 @@
         "rewarder": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3",
         "lpToken": "0xD001aE433f254283FeCE51d4ACcE8c53263aa186",
         "protocol": "Convex",
-        "positionDetail": "RLUSD/USDC"
+        "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"RLUSD/USDC\"",
+        "positionId": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3"
       },
       "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
     },
@@ -384,7 +442,8 @@
       "constructor": {
         "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
         "protocol": "Fluid Lending",
-        "positionDetail": "fUSDC"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+        "positionId": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33"
       },
       "deployed": ""
     },
@@ -393,7 +452,8 @@
       "constructor": {
         "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
         "protocol": "Fluid Lending",
-        "positionDetail": "fUSDT"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDT\"",
+        "positionId": "0x5C20B550819128074FD538Edf79791733ccEdd18"
       },
       "deployed": ""
     },
@@ -402,7 +462,8 @@
       "constructor": {
         "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
         "protocol": "Fluid Lending",
-        "positionDetail": "fWETH"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fWETH\"",
+        "positionId": "0x90551c1795392094FE6D29B758EcCD233cFAa260"
       },
       "deployed": ""
     },
@@ -411,7 +472,8 @@
       "constructor": {
         "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
         "protocol": "Fluid Lending",
-        "positionDetail": "fwstETH"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fwstETH\"",
+        "positionId": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C"
       },
       "deployed": ""
     },
@@ -420,7 +482,8 @@
       "constructor": {
         "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
         "protocol": "Fluid Lending",
-        "positionDetail": "fGHO"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fGHO\"",
+        "positionId": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B"
       },
       "deployed": ""
     },
@@ -429,7 +492,8 @@
       "constructor": {
         "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
         "protocol": "Fluid Lending",
-        "positionDetail": "fsUSDe"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fsUSDe\"",
+        "positionId": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11"
       },
       "deployed": ""
     },
@@ -439,7 +503,8 @@
         "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
         "protocol": "Fluid Vault",
-        "positionDetail": "wstETH/USDC"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"wstETH/USDC\"",
+        "positionId": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE"
       },
       "deployed": ""
     },
@@ -449,7 +514,8 @@
         "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
         "protocol": "Fluid Vault",
-        "positionDetail": "weETH/wstETH"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"weETH/wstETH\"",
+        "positionId": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82"
       },
       "deployed": ""
     },
@@ -459,7 +525,8 @@
         "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
         "protocol": "Fluid Vault",
-        "positionDetail": "sUSDe/USDC"
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"sUSDe/USDC\"",
+        "positionId": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469"
       },
       "deployed": ""
     },
@@ -469,7 +536,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 USDC"
+        "protocol": "Compound v3 USDC",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
+        "positionId": "0xc3d688B66703497DAA19211EEdff47f25384cdc3"
       },
       "deployed": ""
     },
@@ -479,7 +548,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 USDS"
+        "protocol": "Compound v3 USDS",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDS\"",
+        "positionId": "0x5D409e56D886231aDAf00c8775665AD0f9897b56"
       },
       "deployed": ""
     },
@@ -489,7 +560,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 USDT"
+        "protocol": "Compound v3 USDT",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
+        "positionId": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840"
       },
       "deployed": ""
     },
@@ -499,7 +572,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 WBTC"
+        "protocol": "Compound v3 WBTC",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WBTC\"",
+        "positionId": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293"
       },
       "deployed": ""
     },
@@ -509,7 +584,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 WETH"
+        "protocol": "Compound v3 WETH",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
+        "positionId": "0xA17581A9E3356d9A858b789D68B4d866e593aE94"
       },
       "deployed": ""
     },
@@ -519,7 +596,9 @@
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",
         "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-        "protocol": "Compound v3 wstETH"
+        "protocol": "Compound v3 wstETH",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"wstETH\"",
+        "positionId": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3"
       },
       "deployed": ""
     },
@@ -530,7 +609,8 @@
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
         "protocol": "Stakewise v3",
-        "positionDetail": "osETH"
+        "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"osETH\"",
+        "positionId": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38"
       },
       "deployed": ""
     },
@@ -540,7 +620,8 @@
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
         "protocol": "Stakewise v3",
-        "positionDetail": "Genesis Vault"
+        "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Genesis Vault\"",
+        "positionId": "0xAC0F906E433d58FA868F936E8A43230473652885"
       },
       "deployed": ""
     },
@@ -550,7 +631,8 @@
         "userWithdrawalManager": "0x9F0491B32DBce587c50c4C43AB303b06478193A7",
         "underlyingToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         "protocol": "Stader",
-        "positionDetail": "ETH Withdrawal Queue"
+        "positionDetail": "{\"protocol\":\"Stader\",\"product\":\"Staking\",\"name\":\"ETH Withdrawal Queue\"",
+        "positionId": "0x9F0491B32DBce587c50c4C43AB303b06478193A7"
       },
       "deployed": ""
     },
@@ -559,10 +641,11 @@
       "constructor": {
         "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
         "protocol": "Merkl",
-        "positionDetail": "Unclaimed Rewards"
+        "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
+        "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
       },
       "deployed": "",
-      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
+      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     },
     "UniswapV3_WBTC_WETH_3000": {
       "enabled": true,
@@ -570,7 +653,8 @@
         "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         "protocol": "Uniswap V3",
-        "positionDetail": "WBTC/WETH 0.3%"
+        "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WBTC/WETH 0.3%\"",
+        "positionId": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD"
       },
       "deployed": ""
     },
@@ -580,7 +664,8 @@
         "pool": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         "protocol": "Uniswap V3",
-        "positionDetail": "WETH/COW 0.3%"
+        "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WETH/COW 0.3%\"",
+        "positionId": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af"
       },
       "deployed": "",
       "comment": "Disabled: COW has no Chainlink price feed on Mainnet, so the COW leg of any in-range position would be silently dropped, understating NAV by ~half. Re-enable once a COW price feed is registered in assets.json."
@@ -591,7 +676,8 @@
         "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         "protocol": "Uniswap V3",
-        "positionDetail": "USDC/WETH 0.05%"
+        "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"USDC/WETH 0.05%\"",
+        "positionId": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
       },
       "deployed": ""
     },
@@ -601,7 +687,8 @@
         "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
         "protocol": "Uniswap V3",
-        "positionDetail": "WETH/USDT 0.3%"
+        "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WETH/USDT 0.3%\"",
+        "positionId": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
       },
       "deployed": ""
     }

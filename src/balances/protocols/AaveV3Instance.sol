@@ -46,6 +46,10 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle (e.g., "Aave v3")
     string private _protocol;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (Aave pool address)
+    string private _positionId;
 
     //
     // Constructor
@@ -53,8 +57,16 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
 
     /// @param dataProvider_ The address of the Aave v3 Pool Data Provider contract
     /// @param protocol_ Protocol identifier (e.g., "Aave v3")
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (Aave pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(address dataProvider_, string memory protocol_, address navCalculator_) {
+    constructor(
+        address dataProvider_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         // Validate that addresses are contracts (for production safety)
         // In tests, mocks should be proper contracts, but we handle failures gracefully in view functions
         require(dataProvider_.code.length > 0, "DataProvider must be a contract");
@@ -62,6 +74,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
 
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -309,14 +323,17 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             // Build supply position (supplied assets)
             // Label as Collateral when used as collateral, otherwise Supply
             if (userReservesData[i].currentATokenBalance > 0) {
-                string memory positionDetail = userReservesData[i].usageAsCollateralEnabled ? "Collateral" : "Supply";
+                string memory supplyDetail = userReservesData[i].usageAsCollateralEnabled
+                    ? string.concat(_positionDetail, ",\"type\":\"Collateral\"}")
+                    : string.concat(_positionDetail, ",\"type\":\"Supply\"}");
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
                     amount: userReservesData[i].currentATokenBalance,
                     isDebt: false, // Deposits are credit
                     protocol: _protocol,
-                    positionDetail: positionDetail
+                    positionDetail: supplyDetail,
+                    positionId: _positionId
                 });
                 positionCount++;
             }
@@ -329,7 +346,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
                     amount: userReservesData[i].currentVariableDebt,
                     isDebt: true, // Borrows are debt
                     protocol: _protocol,
-                    positionDetail: "Borrow"
+                    positionDetail: string.concat(_positionDetail, ",\"type\":\"Borrow\"}"),
+                    positionId: _positionId
                 });
                 positionCount++;
             }

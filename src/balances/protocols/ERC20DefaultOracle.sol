@@ -28,6 +28,12 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     /// @notice Protocol identifier for this oracle
     string private constant PROTOCOL = "wallet";
 
+    /// @notice JSON metadata base (no closing `}`) for wallet positions
+    string private constant _POSITION_DETAIL = "{\"protocol\":\"wallet\",\"product\":\"Holding\"";
+
+    /// @notice Stable hex identifier for the default oracle (zero address sentinel)
+    string private constant _POSITION_ID = "0x0000000000000000000000000000000000000000";
+
     /// @param navCalculator_ NAVCalculator address (must be non-zero)
     /// @param initialAssets Optional assets to add to the inclusion list during construction (e.g. NATIVE_ADDRESS).
     ///        Used so NAVCalculator.initialize can pre-add native without calling back to the proxy during init.
@@ -220,7 +226,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
                     amount: balance,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: "Holding"
+                    positionDetail: string.concat(_POSITION_DETAIL, "}"),
+                    positionId: _POSITION_ID
                 });
 
                 positionCount++;

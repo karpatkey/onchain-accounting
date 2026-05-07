@@ -31,8 +31,20 @@ interface INAVCalculator is IBalances {
     /// @param balanceOracle Address of the oracle that reported this position.
     /// @param amount Balance magnitude (always positive); sign is implied by isDebt.
     /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV).
-    /// @param protocol Protocol or source identifier (e.g. "aave", "wallet").
-    /// @param positionDetail Optional detail string (e.g. pool id, market).
+    /// @param protocol Protocol or source identifier (e.g. "Aave V3", "wallet").
+    /// @param positionDetail Fully-closed JSON object with position metadata. Adapters construct this at
+    ///        query time by appending a closing `}` (or `,"type":"..."}`) to the JSON base stored in the
+    ///        constructor. Required keys: `protocol`, `product`. Optional keys: `type`, `token`.
+    ///        `protocol` mirrors the adapter's protocol field. `product` is the position category
+    ///        ("Lending", "Vault", "Market", "LP", "Staking", "Rewards", "Holding"). `name` (optional)
+    ///        is the specific market/instance as it appears in the protocol's own UI — e.g. "Core Instance"
+    ///        or "Prime Instance" for Aave V3, "kpk ETH Prime V1" for a Morpho vault.
+    ///        `type` disambiguates sub-positions: "Supply", "Borrow", "Collateral", "Reward", "Staked".
+    ///        `token` is added by multi-token adapters (Convex, Curve rewards).
+    ///        Full schema reference: see docs/howto/position-detail-schema.md.
+    /// @param positionId Stable hex identifier for this adapter instance (pool address, market id, etc.).
+    ///        Frontend uses this as a safe React key across blocks and deployments. Derived from the most
+    ///        specific immutable address in the adapter's constructor (vault, comet, gauge, marketId, …).
     struct PositionBalance {
         Asset underlyingAsset;
         address balanceOracle;
@@ -40,6 +52,7 @@ interface INAVCalculator is IBalances {
         bool isDebt;
         string protocol;
         string positionDetail;
+        string positionId;
     }
 
     /// @notice Enriched position including pricing and quote-currency value.
@@ -54,7 +67,8 @@ interface INAVCalculator is IBalances {
     /// @param priceDecimals Decimals of price.
     /// @param stale True if the price was stale at query time.
     /// @param protocol Protocol/source identifier.
-    /// @param positionDetail Optional detail.
+    /// @param positionDetail Fully-closed JSON object. Copied verbatim from PositionBalance.positionDetail.
+    /// @param positionId Stable hex identifier for this adapter instance. Copied from PositionBalance.
     struct Position {
         Asset underlyingAsset;
         address balanceOracle;
@@ -67,6 +81,7 @@ interface INAVCalculator is IBalances {
         bool stale;
         string protocol;
         string positionDetail;
+        string positionId;
     }
 
     /// @notice NAV snapshot for an account in a given quote currency.

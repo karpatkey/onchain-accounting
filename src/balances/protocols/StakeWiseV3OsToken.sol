@@ -43,8 +43,10 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (osTokenVaultController address)
+    string private _positionId;
     /// @notice The StakeWise vault controller contract interface
     IOsTokenVaultController public immutable OS_TOKEN_VAULT_CONTROLLER;
 
@@ -59,7 +61,8 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
     /// @param underlyingToken_ The address of the underlying asset.
     /// @param osTokenvaultController_ The address of the OsTokenVaultController.
     /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "osToken").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (osTokenVaultController address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address osToken_,
@@ -67,6 +70,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         address osTokenvaultController_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (osToken_ == address(0) || underlyingToken_ == address(0) || osTokenvaultController_ == address(0)) {
@@ -80,6 +84,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenvaultController_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -277,7 +282,8 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(_positionDetail, "}"),
+                positionId: _positionId
             });
 
             positionCount++;

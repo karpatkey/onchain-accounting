@@ -33,7 +33,7 @@ contract DaiDsrBalanceOracleForkTest is BalanceAdapterTestBase {
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(DAI);
-        oracle = new DaiDsrBalanceOracle(DAI, DSR, "Maker", "DSR", address(balances));
+        oracle = new DaiDsrBalanceOracle(DAI, DSR, "Maker", "{\"protocol\":\"Maker\",\"product\":\"DSR\"", "0x0000000000000000000000000000000000000001", address(balances));
         pot = oracle.POT();
     }
 

@@ -58,7 +58,7 @@ contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        oracle = new AaveV3InstanceBalanceOracle(address(mockDataProvider), "Aave v3", address(balances));
+        oracle = new AaveV3InstanceBalanceOracle(address(mockDataProvider), "Aave v3", "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================

@@ -60,7 +60,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = ABPT;
         assets[3] = ABPT_V2;
         balances = _deployBalancesForOracle(assets);
-        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances), "Aave V3 Safety Module");
+        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001");
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────

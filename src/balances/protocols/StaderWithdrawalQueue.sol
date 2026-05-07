@@ -45,9 +45,10 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier emitted on every PositionBalance.
     string private _protocol;
-
-    /// @notice Position detail emitted on every PositionBalance.
+    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (userWithdrawalManager address).
+    string private _positionId;
 
     //
     // Constructor
@@ -56,13 +57,15 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract.
     /// @param underlyingToken_ Address of the asset positions are denominated in (e.g. WETH).
     /// @param protocol_ Protocol identifier (e.g. "Stader").
-    /// @param positionDetail_ Position detail (e.g. "ETH Withdrawal Queue").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (userWithdrawalManager address).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
     constructor(
         address userWithdrawalManager_,
         address underlyingToken_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (userWithdrawalManager_ == address(0) || underlyingToken_ == address(0)) {
@@ -75,6 +78,7 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         UNDERLYING_TOKEN = underlyingToken_;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -226,7 +230,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
             amount: total,
             isDebt: false,
             protocol: _protocol,
-            positionDetail: _positionDetail
+            positionDetail: string.concat(_positionDetail, "}"),
+            positionId: _positionId
         });
     }
 }

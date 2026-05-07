@@ -62,7 +62,7 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
         assets[0] = WBTC;
         assets[1] = WETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new UniswapV3PoolBalanceOracle(POOL, NPM, "Uniswap V3", "WBTC/WETH 0.3%", address(balances));
+        oracle = new UniswapV3PoolBalanceOracle(POOL, NPM, "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================
@@ -145,16 +145,16 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
         // Order from adapter: t0_liq, t1_liq, t0_fees, t1_fees with zeros dropped.
         // So with t0_liq = 0: positions = [t1_liq, t0_fees, t1_fees].
         assertEq(positions[0].underlyingAsset.asset, WETH);
-        assertEq(positions[0].positionDetail, "WBTC/WETH 0.3%");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\"}");
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].protocol, "Uniswap V3");
         assertFalse(positions[0].isDebt);
 
         assertEq(positions[1].underlyingAsset.asset, WBTC);
-        assertEq(positions[1].positionDetail, "WBTC/WETH 0.3% Fees");
+        assertEq(positions[1].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\",\"type\":\"fees\"}");
 
         assertEq(positions[2].underlyingAsset.asset, WETH);
-        assertEq(positions[2].positionDetail, "WBTC/WETH 0.3% Fees");
+        assertEq(positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\",\"type\":\"fees\"}");
     }
 
     // ============================================

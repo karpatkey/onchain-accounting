@@ -47,6 +47,10 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
+    /// @notice JSON metadata base (no closing `}`) for this oracle
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (pool address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -54,7 +58,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param pool_ Address of the Balancer V3 pool
     /// @param gauge_ Address of the corresponding gauge contract
     /// @param balancerMinter_ Address of the Balancer Minter contract
-    /// @param protocol_ Protocol identifier (e.g., "Balancer v3").
+    /// @param protocol_ Protocol identifier (e.g., "Balancer V3").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     /// @dev Validates that the gauge's LP token matches the pool address
     constructor(
@@ -62,6 +68,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         address gauge_,
         address balancerMinter_,
         string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
@@ -86,6 +94,8 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         }
 
         _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     /// @notice Calculates a user's token balance in the pool
@@ -592,7 +602,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: underlyingAsset.symbol
+                positionDetail: string.concat(
+                    _positionDetail,
+                    ",\"token\":\"",
+                    underlyingAsset.symbol,
+                    "\"}"
+                ),
+                positionId: _positionId
             });
 
             positionCount++;

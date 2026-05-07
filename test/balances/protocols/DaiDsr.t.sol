@@ -61,7 +61,8 @@ contract DaiDsrBalanceOracleTest is BalanceAdapterTestBase {
             address(dai), // use test base DAI token so it's a real contract if ever queried
             address(mockDsrManager),
             "Maker",
-            "DSR",
+            "{\"protocol\":\"Maker\",\"product\":\"Savings\",\"name\":\"DSR\"",
+            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }

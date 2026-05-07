@@ -58,8 +58,11 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
     /// @notice Protocol identifier for this oracle (e.g. "Uniswap V2").
     string private _protocol;
 
-    /// @notice Position detail identifier for this oracle (e.g. "USDC/WETH LP").
+    /// @notice JSON metadata base (no closing `}`) for this oracle.
     string private _positionDetail;
+
+    /// @notice Stable hex identifier for this adapter instance (pair address).
+    string private _positionId;
 
     //
     // Constructor
@@ -67,9 +70,16 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
 
     /// @param pair_ The Uniswap V2 pair contract address.
     /// @param protocol_ Protocol identifier (e.g. "Uniswap V2").
-    /// @param positionDetail_ Position detail (e.g. "USDC/WETH LP").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (pair address).
     /// @param navCalculator_ The NAVCalculator contract address.
-    constructor(address pair_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address pair_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         if (pair_ == address(0)) revert InvalidArguments();
         require(pair_.code.length > 0, "Pair must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -83,6 +93,7 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
 
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -193,7 +204,8 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(_positionDetail, "}"),
+                positionId: _positionId
             });
             return positions;
         }
@@ -212,7 +224,8 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: _positionDetail
+                    positionDetail: string.concat(_positionDetail, "}"),
+                    positionId: _positionId
                 });
                 count++;
             }

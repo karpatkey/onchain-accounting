@@ -74,6 +74,10 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3 Safety Module").
     string public PROTOCOL;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance
+    string private _positionId;
 
     //
     // Constructor
@@ -81,11 +85,20 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
     /// @param protocol_ Protocol identifier emitted on every PositionBalance (e.g. "Aave V3 Safety Module").
-    constructor(address navCalculator, string memory protocol_) {
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance.
+    constructor(
+        address navCalculator,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_
+    ) {
         if (navCalculator == address(0)) revert InvalidArguments();
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         NAV_CALCULATOR = INAVCalculator(navCalculator);
         PROTOCOL = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -212,7 +225,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: stakedAmount,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: r.positionDetail
+                            positionDetail: string.concat(
+                                _positionDetail,
+                                ",\"type\":\"",
+                                r.positionDetail,
+                                "\"}"
+                            ),
+                            positionId: _positionId
                         });
                     }
                 }
@@ -239,7 +258,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                                 amount: rewards,
                                 isDebt: false,
                                 protocol: PROTOCOL,
-                                positionDetail: r.positionDetail
+                                positionDetail: string.concat(
+                                    _positionDetail,
+                                    ",\"type\":\"",
+                                    r.positionDetail,
+                                    "\"}"
+                                ),
+                                positionId: _positionId
                             });
                         }
                     }
@@ -255,7 +280,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: rewards,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: r.positionDetail
+                            positionDetail: string.concat(
+                                _positionDetail,
+                                ",\"type\":\"",
+                                r.positionDetail,
+                                "\"}"
+                            ),
+                            positionId: _positionId
                         });
                     }
                 }

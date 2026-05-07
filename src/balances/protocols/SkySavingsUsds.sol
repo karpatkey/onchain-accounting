@@ -50,8 +50,10 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (savingsUsds address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -62,9 +64,16 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @notice Initializes the balance oracle for Savings USDS. Reverts if savingsUsds_ is zero address
     /// @param savingsUsds_ Address of the Savings USDS (sUSDS) vault contract
     /// @param protocol_ Protocol identifier (e.g., "Sky").
-    /// @param positionDetail_ Position detail identifier (e.g., "Savings USDS").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (savingsUsds address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(address savingsUsds_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address savingsUsds_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         if (savingsUsds_ == address(0)) revert InvalidArguments();
         require(savingsUsds_.code.length > 0, "SavingsUSDS must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -73,6 +82,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
         USDS = SAVINGS_USDS.usds();
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -273,7 +283,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(_positionDetail, "}"),
+                positionId: _positionId
             });
             positionCount++;
         }

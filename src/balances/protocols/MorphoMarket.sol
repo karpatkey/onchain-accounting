@@ -65,6 +65,10 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (marketId as hex)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -74,9 +78,18 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
 
     /// @param morpho_ The Morpho contract address.
     /// @param marketId_ The market id to query.
-    /// @param protocol_ Protocol identifier including market (e.g., "Morpho - cbBTC/USDC").
+    /// @param protocol_ Protocol identifier (e.g., "Morpho").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (marketId as hex string).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(address morpho_, bytes32 marketId_, string memory protocol_, address navCalculator_) {
+    constructor(
+        address morpho_,
+        bytes32 marketId_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         require(morpho_.code.length > 0, "Morpho must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
@@ -86,14 +99,22 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         COLLATERAL_TOKEN = marketParams.collateralToken;
         LOAN_TOKEN = marketParams.loanToken;
         _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
-    /// @notice Returns the position detail for a given asset and debt flag (Supply, Borrow, or Collateral).
+    /// @notice Returns the positionDetail JSON string for a given asset and debt flag.
     function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
-        if (asset == COLLATERAL_TOKEN) return "Collateral";
-        if (asset == LOAN_TOKEN) return isDebt ? "Borrow" : "Supply";
-        return "";
+        if (asset == COLLATERAL_TOKEN) {
+            return string.concat(_positionDetail, ",\"type\":\"Collateral\"}");
+        }
+        if (asset == LOAN_TOKEN) {
+            return isDebt
+                ? string.concat(_positionDetail, ",\"type\":\"Borrow\"}")
+                : string.concat(_positionDetail, ",\"type\":\"Supply\"}");
+        }
+        return string.concat(_positionDetail, "}");
     }
 
     /// @notice Internal helper to calculate balance for a specific asset.
@@ -324,7 +345,8 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt)
+                positionDetail: _positionDetailFor(asset, assetBalanceData[i].isDebt),
+                positionId: _positionId
             });
 
             positionCount++;

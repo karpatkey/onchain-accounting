@@ -24,16 +24,17 @@ contract PancakeSwapV3PoolBalanceOracle is UniswapV3PoolBalanceOracle {
     /// @param positionManager_ The PancakeSwap V3 NonfungiblePositionManager (canonical CREATE2
     ///        address — same on every chain PancakeSwap deploys to).
     /// @param protocol_ Protocol identifier (e.g. "PancakeSwap V3").
-    /// @param positionDetail_ Position detail base (e.g. "WETH/COW 0.25%"). Liquidity entries
-    ///        use this verbatim; fee entries append `" Fees"`.
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ NAVCalculator contract address.
     constructor(
         address pool_,
         address positionManager_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
-    ) UniswapV3PoolBalanceOracle(pool_, positionManager_, protocol_, positionDetail_, navCalculator_) {}
+    ) UniswapV3PoolBalanceOracle(pool_, positionManager_, protocol_, positionDetail_, positionId_, navCalculator_) {}
 
     /// @inheritdoc UniswapV3PoolBalanceOracle
     /// @dev Overrides the parent's `slot0()` read with a local `IPancakeV3Pool` declaration so

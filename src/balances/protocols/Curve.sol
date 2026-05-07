@@ -59,8 +59,11 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     /// @notice Protocol identifier for this oracle
     string private _protocol;
 
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`) for this oracle
     string private _positionDetail;
+
+    /// @notice Stable hex identifier for this adapter instance (gauge address)
+    string private _positionId;
 
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -71,9 +74,16 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
     /// @param gauge_ The Curve gauge contract address (lp_token() is derived from it)
     /// @param protocol_ Protocol identifier (e.g., "Curve")
-    /// @param positionDetail_ Position detail (e.g., "weETH/WETH Pool")
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (gauge address).
     /// @param navCalculator_ The NAVCalculator contract address
-    constructor(address gauge_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address gauge_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         if (gauge_ == address(0)) revert InvalidArguments();
         require(gauge_.code.length > 0, "Gauge must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -84,6 +94,7 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
         LP_TOKEN = lpToken;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -180,14 +191,21 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
             uint256 balance = _calculateBalance(account, assetFilter);
             if (balance == 0) return new INAVCalculator.PositionBalance[](0);
 
+            INAVCalculator.Asset memory filteredAsset = _getAssetInfo(assetFilter);
             positions = new INAVCalculator.PositionBalance[](1);
             positions[0] = INAVCalculator.PositionBalance({
-                underlyingAsset: _getAssetInfo(assetFilter),
+                underlyingAsset: filteredAsset,
                 balanceOracle: address(this),
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(
+                    _positionDetail,
+                    ",\"token\":\"",
+                    filteredAsset.symbol,
+                    "\"}"
+                ),
+                positionId: _positionId
             });
             return positions;
         }
@@ -200,13 +218,20 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
         for (uint256 i = 0; i < eligibleAssets.length; i++) {
             uint256 balance = _calculateBalance(account, eligibleAssets[i]);
             if (balance > 0) {
+                INAVCalculator.Asset memory eligibleAsset = _getAssetInfo(eligibleAssets[i]);
                 tempPositions[count] = INAVCalculator.PositionBalance({
-                    underlyingAsset: _getAssetInfo(eligibleAssets[i]),
+                    underlyingAsset: eligibleAsset,
                     balanceOracle: address(this),
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: _positionDetail
+                    positionDetail: string.concat(
+                        _positionDetail,
+                        ",\"token\":\"",
+                        eligibleAsset.symbol,
+                        "\"}"
+                    ),
+                    positionId: _positionId
                 });
                 count++;
             }

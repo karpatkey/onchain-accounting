@@ -46,8 +46,10 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (vault address)
+    string private _positionId;
     /// @notice List of underlying assets supported by this oracle.
     address[] internal _underlyingAssetsSupported;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
@@ -60,13 +62,15 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @param underlyingToken_ The address of the underlying token for this oracle.
     /// @param vault_ The address of the vault.
     /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
-    /// @param positionDetail_ Position detail identifier (e.g., "Some vault").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (vault address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address underlyingToken_,
         address vault_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (underlyingToken_ == address(0) || vault_ == address(0)) {
@@ -79,6 +83,7 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         VAULT = IStakeWiseVault(vault_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -290,7 +295,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(_positionDetail, "}"),
+                positionId: _positionId
             });
 
             positionCount++;

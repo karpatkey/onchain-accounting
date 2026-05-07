@@ -106,7 +106,7 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         assets[0] = BASE_WETH;
         assets[1] = BASE_COW;
         balances = _deployBalancesForOracle(assets);
-        oracle = new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "WETH/COW 0.25%", address(balances));
+        oracle = new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"WETH/COW 0.25%\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================
@@ -346,7 +346,7 @@ contract PancakeSwapV3PoolBalanceOracleForkTest_Base_WETH_COW is BalanceAdapterT
         shippedAssets[0] = BASE_WETH;
         BalancesHarnessForFork shippedBalances = _deployBalancesForOracle(shippedAssets);
         PancakeSwapV3PoolBalanceOracle shippedOracle =
-            new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "WETH/COW 0.25%", address(shippedBalances));
+            new PancakeSwapV3PoolBalanceOracle(POOL, NPM, "PancakeSwap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"WETH/COW 0.25%\"", "0x0000000000000000000000000000000000000001", address(shippedBalances));
 
         INAVCalculator.PositionBalance[] memory positions = shippedOracle.getOraclePositions(synthOwner, address(0));
         // The in-range position has both legs non-zero in raw `getAccountAggregates`, but the

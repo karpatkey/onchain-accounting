@@ -62,8 +62,11 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
     /// @notice Protocol identifier for this oracle
     string private _protocol;
 
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`) for this oracle
     string private _positionDetail;
+
+    /// @notice Stable hex identifier for this adapter instance (gauge/pool address)
+    string private _positionId;
 
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -75,13 +78,15 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
     /// @param convexRewards_ The Convex BaseRewardPool contract
     /// @param lpToken_ The underlying Curve LP token (NOT the Convex deposit token from stakingToken())
     /// @param protocol_ Protocol identifier (e.g., "Convex")
-    /// @param positionDetail_ Position detail (e.g., "crvUSD/USDT Pool")
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (gauge/pool address).
     /// @param navCalculator_ The NAVCalculator contract address
     constructor(
         address convexRewards_,
         address lpToken_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (convexRewards_ == address(0) || lpToken_ == address(0)) {
@@ -95,6 +100,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
         LP_TOKEN = lpToken_;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -190,14 +196,21 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
             uint256 balance = _calculateBalance(account, assetFilter);
             if (balance == 0) return new INAVCalculator.PositionBalance[](0);
 
+            INAVCalculator.Asset memory filteredAsset = _getAssetInfo(assetFilter);
             positions = new INAVCalculator.PositionBalance[](1);
             positions[0] = INAVCalculator.PositionBalance({
-                underlyingAsset: _getAssetInfo(assetFilter),
+                underlyingAsset: filteredAsset,
                 balanceOracle: address(this),
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(
+                    _positionDetail,
+                    ",\"token\":\"",
+                    filteredAsset.symbol,
+                    "\"}"
+                ),
+                positionId: _positionId
             });
             return positions;
         }
@@ -210,13 +223,20 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
         for (uint256 i = 0; i < eligibleAssets.length; i++) {
             uint256 balance = _calculateBalance(account, eligibleAssets[i]);
             if (balance > 0) {
+                INAVCalculator.Asset memory eligibleAsset = _getAssetInfo(eligibleAssets[i]);
                 tempPositions[count] = INAVCalculator.PositionBalance({
-                    underlyingAsset: _getAssetInfo(eligibleAssets[i]),
+                    underlyingAsset: eligibleAsset,
                     balanceOracle: address(this),
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: _positionDetail
+                    positionDetail: string.concat(
+                        _positionDetail,
+                        ",\"token\":\"",
+                        eligibleAsset.symbol,
+                        "\"}"
+                    ),
+                    positionId: _positionId
                 });
                 count++;
             }

@@ -133,7 +133,12 @@ contract ConvexBalanceOracleTest is Test {
         mockLpToken = new MockCurveLPToken(address(usdt), address(crvUsd));
         mockRewarder = new MockConvexRewarder(address(crv));
         oracle = new ConvexBalanceOracle(
-            address(mockRewarder), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(mockBalances)
+            address(mockRewarder),
+            address(mockLpToken),
+            "Convex",
+            "{\"protocol\":\"Convex\",\"pool\":\"Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
@@ -143,25 +148,25 @@ contract ConvexBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroRewarder() public {
         vm.expectRevert(InvalidArguments.selector);
-        new ConvexBalanceOracle(address(0), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(mockBalances));
+        new ConvexBalanceOracle(address(0), address(mockLpToken), "Convex", "{\"protocol\":\"Convex\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
     }
 
     function test_constructor_invalidArgs_zeroLpToken() public {
         vm.expectRevert(InvalidArguments.selector);
-        new ConvexBalanceOracle(address(mockRewarder), address(0), "Convex", "crvUSD/USDT Pool", address(mockBalances));
+        new ConvexBalanceOracle(address(mockRewarder), address(0), "Convex", "{\"protocol\":\"Convex\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractRewarder() public {
         vm.expectRevert("Rewarder must be a contract");
         new ConvexBalanceOracle(
-            address(0xdead), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(mockBalances)
+            address(0xdead), address(mockLpToken), "Convex", "{\"protocol\":\"Convex\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
         new ConvexBalanceOracle(
-            address(mockRewarder), address(mockLpToken), "Convex", "crvUSD/USDT Pool", address(0xdead)
+            address(mockRewarder), address(mockLpToken), "Convex", "{\"protocol\":\"Convex\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(0xdead)
         );
     }
 

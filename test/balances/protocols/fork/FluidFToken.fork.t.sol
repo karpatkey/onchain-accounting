@@ -40,7 +40,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(USDC));
-        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), "Fluid Lending", "fUSDC", address(balances));
+        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), "Fluid Lending", "{\"protocol\":\"Fluid\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     function _depositUsdcIntoFToken(address account, uint256 assets) internal returns (uint256 sharesMinted) {
@@ -134,7 +134,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Fluid Lending");
-        assertEq(positions[0].positionDetail, "fUSDC");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Fluid\",\"product\":\"Lending\"}");
         assertEq(positions[0].balanceOracle, address(oracle));
     }
 
@@ -158,7 +158,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
         // because the registry intersection between the adapter's supported assets ([USDC]) and
         // the registry's assets ([WETH]) is empty.
         balances = _deployBalancesForOracle(MAINNET_WETH);
-        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), "Fluid Lending", "fUSDC", address(balances));
+        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), "Fluid Lending", "{\"protocol\":\"Fluid\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 0);

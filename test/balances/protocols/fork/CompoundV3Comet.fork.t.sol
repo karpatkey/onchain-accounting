@@ -47,7 +47,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_collectSupportedAssets());
         oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
         comet = CometExtInterface(USDCV3_COMET);
     }
 
@@ -57,7 +57,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     function _collectSupportedAssets() internal returns (address[] memory) {
         BalancesHarnessForFork tmpBalances = new BalancesHarnessForFork();
         CompoundV3Comet tmp =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(tmpBalances));
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(tmpBalances));
         return tmp.underlyingAssetsSupported();
     }
 
@@ -135,7 +135,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
         oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
 
         INAVCalculator.PositionBalance[] memory positions =
             oracle.getOraclePositions(MULTI_COLLATERAL_USER, REWARD_TOKEN);
@@ -201,7 +201,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
         oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(BORROW_USER, address(0));
         assertGt(positions.length, 0);

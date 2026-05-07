@@ -202,7 +202,8 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                     amount: amount,
                     isDebt: debt,
                     protocol: _protocol,
-                    positionDetail: _positionDetail
+                    positionDetail: _positionDetail,
+                    positionId: "0x0000000000000000000000000000000000000001"
                 });
 
                 positionCount++;

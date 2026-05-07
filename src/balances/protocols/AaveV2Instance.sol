@@ -23,8 +23,14 @@ import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance
 contract AaveV2InstanceBalanceOracle is AaveV3InstanceBalanceOracle {
     /// @param dataProvider_ The address of the Aave V2 Protocol Data Provider contract.
     /// @param protocol_ Protocol identifier (e.g., "Aave V2").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (Aave pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
-    constructor(address dataProvider_, string memory protocol_, address navCalculator_)
-        AaveV3InstanceBalanceOracle(dataProvider_, protocol_, navCalculator_)
-    {}
+    constructor(
+        address dataProvider_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) AaveV3InstanceBalanceOracle(dataProvider_, protocol_, positionDetail_, positionId_, navCalculator_) {}
 }

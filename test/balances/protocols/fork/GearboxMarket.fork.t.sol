@@ -42,7 +42,7 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WETH));
-        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "kpk WETH Market", address(balances));
+        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "{\"protocol\":\"Gearbox\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================
@@ -114,7 +114,7 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0, "Position amount should be positive");
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "kpk WETH Market");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\"}");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
@@ -163,7 +163,7 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WSTETH));
-        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "kpk wstETH Market", address(balances));
+        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "{\"protocol\":\"Gearbox\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(balances));
     }
 
     // ============================================
@@ -190,7 +190,7 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "kpk wstETH Market");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\"}");
     }
 
     function test_underlyingAssetsSupported() public view {

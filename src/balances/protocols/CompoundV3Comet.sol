@@ -54,17 +54,25 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier reported on every position (e.g. "Compound v3 USDC").
     string private _protocol;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (comet address)
+    string private _positionId;
 
     /// @param compoundRewards_ The chain's CometRewards contract.
     /// @param comet_           The specific Comet (one per market).
     /// @param rewardToken_     COMP (or the chain-specific bridged COMP).
     /// @param protocol_        Per-market label, e.g. "Compound v3 USDC".
+    /// @param positionDetail_  JSON metadata base without closing `}`.
+    /// @param positionId_      Stable hex identifier for this adapter instance (comet address).
     /// @param navCalculator_   NAVCalculator used as the asset registry.
     constructor(
         address compoundRewards_,
         address comet_,
         address rewardToken_,
         string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (compoundRewards_ == address(0) || comet_ == address(0) || rewardToken_ == address(0)) {
@@ -82,6 +90,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         ACCRUAL_DESCALE_FACTOR = COMET_EXT_INTERFACE.baseScale() / BASE_ACCRUAL_SCALE;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocol = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
 
         uint8 assetCount = COMET_EXT_INTERFACE.numAssets();
         for (uint8 i = 0; i < assetCount; i++) {
@@ -259,7 +269,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         return (sum, false);
     }
 
-    function _makePosition(INAVCalculator.Asset memory meta, uint256 amount, bool isDebt, string memory detail)
+    function _makePosition(INAVCalculator.Asset memory meta, uint256 amount, bool isDebt, string memory typeLabel)
         internal
         view
         returns (INAVCalculator.PositionBalance memory)
@@ -270,7 +280,8 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             amount: amount,
             isDebt: isDebt,
             protocol: _protocol,
-            positionDetail: detail
+            positionDetail: string.concat(_positionDetail, ",\"type\":\"", typeLabel, "\"}"),
+            positionId: _positionId
         });
     }
 

@@ -50,8 +50,10 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (dsrManager address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -62,13 +64,15 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     /// @param dai_ The address of the DAI token
     /// @param dsrManager_ The address of the DSR Manager contract
     /// @param protocol_ Protocol identifier (e.g., "Maker").
-    /// @param positionDetail_ Position detail identifier (e.g., "DSR").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (dsrManager address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address dai_,
         address dsrManager_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (dai_ == address(0) || dsrManager_ == address(0)) revert InvalidArguments();
@@ -80,6 +84,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
         POT = DSR_MANAGER.pot();
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -356,7 +361,8 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: string.concat(_positionDetail, "}"),
+                positionId: _positionId
             });
 
             positionCount++;

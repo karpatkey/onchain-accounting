@@ -17,6 +17,6 @@ contract SkySavingsUSDSTest is Test {
 
     function test_constructorRevertsOnZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
-        new SkySavingsUsdsBalanceOracle(address(0), "Sky", "SavingsUSDS", address(mockBalances));
+        new SkySavingsUsdsBalanceOracle(address(0), "Sky", "{\"protocol\":\"Sky\",\"product\":\"Savings\",\"name\":\"sUSDS\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
     }
 }

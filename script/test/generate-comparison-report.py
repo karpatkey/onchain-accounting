@@ -671,7 +671,9 @@ def render_unified_table(
                     decimals = int(pos.get("decimals", 18))
                     nav_amt_val = int(pos.get("amount", 0)) / 10 ** decimals
                     nav_usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
-                    nav_source_s = f"price feed ({pos.get('protocol', '')}/{pos.get('positionDetail', '')})"
+                    det = pos.get("positionDetail", {})
+                    det_s = det.get("product", "") if isinstance(det, dict) else str(det)
+                    nav_source_s = f"price feed ({pos.get('protocol', '')}/{det_s})"
                     nav_amt_s = fmt_amt(nav_amt_val)
                     nav_usd_s = fmt_usd(nav_usd_val)
 
@@ -741,9 +743,10 @@ def render_unified_table(
             is_debt = pos.get("isDebt", False)
             sign = "−" if is_debt else ""
             proto = pos.get("protocol", "")
-            det = pos.get("positionDetail", "")
+            det = pos.get("positionDetail", {})
+            det_s = det.get("product", "") if isinstance(det, dict) else str(det)
             nav_type_s = "price feed" if proto == "wallet" else "adapter"
-            nav_detail_s = f"{proto} / {det}" if det else proto
+            nav_detail_s = f"{proto} / {det_s}" if det_s else proto
             lines.append(
                 f"| {nav_type_s} | {nav_detail_s} | {sym} | {fmt_amt(amount)} "
                 f"| {sign}{fmt_usd(abs(usd))} |"

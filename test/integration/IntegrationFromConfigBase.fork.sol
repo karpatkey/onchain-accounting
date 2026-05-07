@@ -1114,7 +1114,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             '","priceDecimals":',
             vm.toString(uint256(pos.priceDecimals))
         );
-        out = string.concat(out, ',"protocol":"', pos.protocol, '","positionDetail":"', pos.positionDetail, '"}');
+        // positionDetail is a JSON object — embed unquoted so inner keys aren't double-encoded.
+        out = string.concat(
+            out,
+            ',"protocol":"',
+            pos.protocol,
+            '","positionDetail":',
+            pos.positionDetail,
+            ',"positionId":"',
+            pos.positionId,
+            '"}'
+        );
     }
 
     /// @notice Calls getAccountPositions for every enabled account on _chainId and returns

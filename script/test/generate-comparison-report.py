@@ -67,6 +67,19 @@ WALLET_AGGREGATING_DEBANK_IDS: dict[str, str] = {
     "capapp": "Cap",
 }
 
+# NET_POSITION adapters: NAV reports a SINGLE net PositionBalance for what
+# Debank presents as a split supply+borrow row. StakeWise V3 vaults that mint
+# osETH against an ETH deposit are the canonical case — Debank shows
+# `supply ETH X + borrow osETH Y` (gross), our adapter reports
+# `supply ETH (X − Y_in_ETH)` (net). Symbol- and amount-based Stage 1 fails
+# because gross-supply ≠ net-supply; Stage 2 needs ≥2 NAV positions per group.
+# When the Debank row carries BOTH supply AND borrow legs, no Stage 1/2 result
+# was produced, and the protocol-id matches an entry below, force-pair the
+# first unmatched NAV candidate by protocol-id.
+NET_POSITION_DEBANK_IDS: dict[str, str] = {
+    "stakewise": "Stakewise v3",
+}
+
 
 # Adapters that read wallet token balances directly and aggregate them into a
 # single protocol-denominated PositionBalance. Loaded from a JSON registry
@@ -498,6 +511,34 @@ def render_unified_table(
                 label = "borrow" if p.get("isDebt") else "supply"
                 results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 break
+
+        # Stage 3b: NET_POSITION adapters (StakeWise V3 vaults). NAV reports a
+        # single net PositionBalance (`supply X − borrow Y`) while Debank shows
+        # the gross split (`supply X + borrow Y`). Stage 1 fails because the
+        # gross-supply Debank amount differs from the net-supply NAV amount;
+        # Stage 2 needs a multi-position group. Fire only when the Debank row
+        # has BOTH supply AND borrow legs and no earlier stage matched —
+        # `has_supply + has_borrow` keeps single-leg rows (e.g. legacy V2
+        # `Rewards` / `Staked` items) from accidentally pairing with the
+        # active V3 vault adapter.
+        if not results and short_id in NET_POSITION_DEBANK_IDS:
+            has_supply = any(not is_borrow for tok, is_borrow in tokens
+                             if float(tok.get("amount", 0)) > 0)
+            has_borrow = any(is_borrow for tok, is_borrow in tokens
+                             if float(tok.get("amount", 0)) > 0)
+            if has_supply and has_borrow:
+                for idx, p in candidates:
+                    if idx in local_matched:
+                        continue
+                    local_matched.add(idx)
+                    matched_nav.add(idx)
+                    sym = p.get("symbol", "?")
+                    decimals = int(p.get("decimals", 18))
+                    amt = int(p.get("amount", 0)) / 10 ** decimals
+                    usd = int(p.get("valueUsd8dp", 0)) / 1e8
+                    label = "borrow" if p.get("isDebt") else "supply"
+                    results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                    break
 
         return results
 

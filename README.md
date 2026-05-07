@@ -25,13 +25,7 @@ src/
 │   ├── Balances.sol    # Abstract registry (oracles, assets, getBalance)
 │   ├── IBalances.sol
 │   ├── IBalanceOracleAdapter.sol
-│   └── protocols/      # Per-protocol balance adapters — full list in src/balances/BALANCE_ADAPTERS.md.
-│                       # Highlights: ERC20DefaultOracle (wallet ERC20 + native, auto-registered);
-│                       # Aave V3 + V3 Safety Module + V2 + Umbrella; Compound V3 (Comet);
-│                       # Morpho (markets + MetaMorpho vaults); Spark; Balancer V3 + Aura;
-│                       # Curve + Convex; Fluid (fToken + Vault); Gearbox; Sky savings; Cap;
-│                       # Uniswap V2/V3; PancakeSwap V2/V3; StakeWise V3 (osToken + Vault);
-│                       # Stader withdrawal queue; Merkl rewards (mutable cache, ADR 0007).
+│   └── protocols/      # Per-protocol balance adapters. Full inventory in src/balances/BALANCE_ADAPTERS.md.
 ├── prices/             # Price feeds
 │   ├── Prices.sol      # Abstract: Chainlink + custom, staleness, L2 sequencer
 │   ├── IPrices.sol

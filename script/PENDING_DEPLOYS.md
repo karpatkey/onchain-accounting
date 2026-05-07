@@ -10,16 +10,16 @@ Operational checklist for the deploy + Safe TX work that follows PR #35's merge.
 
 ## 1. Inventory — what's pending across all chains
 
-Audit run 2026-05-06 PM against branch `feat/integration-test-add-accounts-616-4f20` (PR #35).
+Audit run 2026-05-07 PM against branch `feat/integration-test-add-accounts-616-4f20` (PR #35, tip `a115af5`).
 
 | Chain | Pending price feeds | Pending balance adapters | Total |
 |---|---:|---:|---:|
-| Mainnet (1) | 1 | 23 | **24** |
+| Mainnet (1) | 1 | 24 | **25** |
 | Optimism (10) | 0 | 3 | 3 |
 | Gnosis (100) | 0 | 0 | **0 ✓** |
 | Base (8453) | 0 | 9 | 9 |
 | Arbitrum (42161) | 0 | 9 | 9 |
-| **Total** | **1** | **44** | **45** |
+| **Total** | **1** | **45** | **46** |
 
 ### 1.1 Pending price feeds
 
@@ -60,16 +60,17 @@ Sorted by family.
 
 | Key | Notes |
 |---|---|
-| `AaveV3SafetyModule` | stkGHO. ⚠ different from the existing production-deployed `AaveV3SafetyModule_stkGHO` recorded in DEPLOYED_ADDRESSES.md — verify whether this entry is a redeploy under the renamed key or an additional one before broadcasting. |
+| `AaveV3SafetyModule` | stkGHO. ⚠ different from the existing production-deployed `AaveV3SafetyModule_stkGHO` recorded in DEPLOYED_ADDRESSES.md — verify whether this entry is a redeploy under the renamed key or an additional one before broadcasting. ⚠ **Constructor signature changed in PR #35**: every balance adapter now takes `(protocol_, positionDetail_, positionId_)` strings (see `docs/howto/position-detail-schema.md`). The existing production bytecode predates this and lacks the three params — the new adapter will have a different bytecode and CREATE2 address. Either rename the production entry to `AaveV3SafetyModule_stkGHO_legacy` and add the new one as `AaveV3SafetyModule`, or migrate cleanly via Safe TX bundle: `addBalanceOracle(<new>)` + `removeBalanceOracle(<old>)` in one transaction. Don't double-register both. |
 | `AaveUmbrella` | Aave V4 Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) |
 | `AaveV2_Mainnet` | aTokens only — V2 lending. Note: `aave2` is in `chains.1.$untracked_by_design` for filtered Debank purposes; deploying this adapter still makes sense for any account that holds Aave V2 aTokens (the comparison-report drift won't credit it, but NAV will count it correctly). |
 
-**StakeWise V3 (2)**
+**StakeWise V3 (3)**
 
 | Key | Notes |
 |---|---|
 | `StakeWiseV3OsToken_ETH` | osETH wallet positions |
 | `StakeWiseV3Vault_Genesis` | Genesis Vault `0xAC0F906E433d58FA868F936E8A43230473652885` — closes ACCOUNT_10's $24.6M coverage gap |
+| `StakeWiseV3Vault_MetaVault` | Meta Vault `0x15639e82d2072fa510e5d2b5f0db361c823bcad3` — adapter shipped in PR #35 (`fddcd46`); production deploy still pending |
 
 **Morpho (1 vault, plus markets-per-vault TBD — see §5)**
 
@@ -267,7 +268,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
 
 After Phase A, every chain's JSON has new `deployed:` fields populated. Open a PR with:
 
-- `chains/1.json` — 23 adapter addresses + ETHx feed address (the latter also copies into `assets.json.tokens.1.ETHx.pricefeed`)
+- `chains/1.json` — 24 adapter addresses + ETHx feed address (the latter also copies into `assets.json.tokens.1.ETHx.pricefeed`)
 - `chains/10.json`, `chains/8453.json`, `chains/42161.json` — per-chain adapter addresses
 
 This PR is config-only, doesn't change behaviour.
@@ -287,7 +288,7 @@ forge script script/manage/RegisterAssets.s.sol --rpc-url $ARBITRUM_URL --sig 'r
 Mainnet bundle includes:
 - `registerAsset(EURC, 0x04F84020…, Chainlink, 86400)` — register EURC token
 - `setPriceFeed(ETHx, <ethxOracle>, Custom, 0)` — point ETHx at the freshly-deployed feed
-- `addBalanceOracle(<adapter>)` × 23 — register every new balance adapter
+- `addBalanceOracle(<adapter>)` × 24 — register every new balance adapter
 
 Other chains: `addBalanceOracle(...)` × 3 (op), 9 (base), 9 (arb).
 
@@ -306,7 +307,7 @@ cast call $NAV_PROXY "latestPrice(address)(int256,uint8,bool)" \
     0xA35b1B31Ce002FBF2058D22F30f95D405200A15b --rpc-url $MAINNET_URL  # ETHx
 
 cast call $NAV_PROXY "getAllOracles()(address[])" --rpc-url $MAINNET_URL | wc -w
-# Should equal: prior count + 23 + 1 (ERC20Default exists already)
+# Should equal: prior count + 24 + 1 (ERC20Default exists already)
 
 # Re-run integration snapshot — production state should now match the harness
 . ./.env

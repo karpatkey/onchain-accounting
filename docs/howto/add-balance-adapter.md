@@ -48,12 +48,23 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
     /// @notice NAVCalculator (asset registry source).
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance.
+    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3", "Morpho").
     string private _protocol;
-    /// @notice Position detail (e.g. "Supply", "Borrow", "Rewards", or a market label).
+    /// @notice JSON metadata BASE for the PositionBalance.positionDetail field — no closing `}`.
+    /// @dev Single-type adapters emit `string.concat(_positionDetail, "}")`. Multi-leg adapters
+    ///      append `,"type":"<leg>"}` at query time. See docs/howto/position-detail-schema.md.
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (most-specific immutable address —
+    ///         vault, comet, gauge, marketId, …). Used by frontends as a cross-block React key.
+    string private _positionId;
 
-    constructor(address protocolContract_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address protocolContract_,
+        address navCalculator_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_
+    ) {
         if (protocolContract_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
         require(protocolContract_.code.length > 0, "Protocol contract must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -62,6 +73,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
@@ -102,9 +114,11 @@ Reuse patterns from existing adapters:
 Conventions:
 
 - All addresses set in the constructor are **immutable**. No setters.
+- The three identity strings (`_protocol`, `_positionDetail`, `_positionId`) are **mandatory constructor params** as of PR #35 — they pin user-facing metadata into immutable storage and flow through every emitted `PositionBalance`. Schema reference: [`docs/howto/position-detail-schema.md`](position-detail-schema.md).
 - For each external call to the protocol, use a **minimal interface** declared at the bottom of the file (or in a sibling `I<Protocol>.sol`) — do not import the protocol's full library.
 - For asset metadata (symbol/decimals on the `PositionBalance.underlyingAsset` field), call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list. This is what `ERC20DefaultOracle` does.
 - `amount` in `PositionBalance` is **always positive**. Use `isDebt` to mark debt.
+- When emitting a `PositionBalance`, set `protocol = _protocol`, `positionId = _positionId`, and `positionDetail = string.concat(_positionDetail, "}")` for single-type adapters or `string.concat(_positionDetail, ",\"type\":\"<leg>\"}")` for multi-leg adapters.
 
 ---
 
@@ -225,7 +239,8 @@ Add an entry under `balanceAdapters`:
   "constructor": {
     "protocolContract": "0x...",
     "protocol": "My Protocol",
-    "positionDetail": "Supply"
+    "positionDetail": "{\"protocol\":\"My Protocol\",\"product\":\"Lending\",\"name\":\"<instance>\"",
+    "positionId": "0x..."
   },
   "deployed": ""
 }
@@ -254,9 +269,11 @@ function _deployMyProtocol(string memory adapterName, address navCalculator) int
         ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
     string memory positionDetail =
         ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+    string memory positionId =
+        ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
     MyProtocolBalanceOracle adapter =
-        new MyProtocolBalanceOracle(protocolContract, protocol, positionDetail, navCalculator);
+        new MyProtocolBalanceOracle(protocolContract, navCalculator, protocol, positionDetail, positionId);
     return address(adapter);
 }
 ```

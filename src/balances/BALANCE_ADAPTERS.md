@@ -81,8 +81,9 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `balanceOracle`  | `address` | The adapter that reported this position. |
 | `amount`         | `uint256` | **Always positive.** Nominal amount in asset decimals. |
 | `isDebt`         | `bool` | `true` = debt (subtract from NAV), `false` = credit (add to NAV). |
-| `protocol`       | `string` | Protocol name (e.g. `"wallet"`, `"Compound v3 USDC"`). |
-| `positionDetail` | `string` | Short label (e.g. `"Holding"`, `"Collateral"`, `"Borrow"`). |
+| `protocol`       | `string` | Stable top-level protocol name (e.g. `"wallet"`, `"Aave V3"`, `"Morpho"`). Pinned in the adapter's constructor as `_protocol`. |
+| `positionDetail` | `string` | Fully-closed JSON object — required keys `protocol`, `product`; optional `type`, `token`. Adapters store a base string (no closing `}`) in `_positionDetail` and append the closing fragment at query time. Schema: [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md). |
+| `positionId`     | `string` | Stable hex identifier for this adapter instance — derived from the most-specific immutable address pinned by the constructor (vault, comet, gauge, marketId, …). Frontend uses it as a cross-block React key. |
 
 **Credits-only oracles** (e.g. ERC20DefaultOracle, DaiDsr, AaveV3SafetyModule, StakeWiseV3OsToken, SkySavingsUsds) use `uint256` internally for balances and always report `isDebt: false`; they cast to `int256` only at the adapter interface boundary.
 
@@ -199,8 +200,9 @@ Protocol adapters typically take a **NAVCalculator** (or equivalent) in the cons
      - `balanceOracle`: `address(this)`.
      - `amount`: positive `uint256` in asset decimals.
      - `isDebt`: `true` for borrows/debts, `false` for collateral/supply/claims.
-     - `protocol`: e.g. `"YourProtocol Name"`.
-     - `positionDetail`: e.g. `"Collateral"`, `"Borrow"`, `"Rewards"`.
+     - `protocol`: emit `_protocol` from the constructor-pinned field (e.g. `"Aave V3"`, `"Morpho"`).
+     - `positionDetail`: emit `string.concat(_positionDetail, "}")` for single-type adapters, or `string.concat(_positionDetail, ",\"type\":\"<leg>\"}")` for multi-leg adapters. Multi-token-leg adapters (Convex/Curve rewards) can also append `,\"token\":\"<sym>\"`. Per-adapter examples in [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md) §4.
+     - `positionId`: emit `_positionId` from the constructor-pinned field (hex string of the adapter's most-specific anchor address).
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
    - You may return only assets that are registered in NAVCalculator (like ERC20DefaultOracle) to avoid unnecessary work; unregistered positions are dropped by NAVCalculator anyway.
 4. Implement **`getOracleBalances`** and **`getOracleBalanceForAsset`** (per-asset amounts and debt flags). Return `(assets[], amounts[], isDebt[])` from `getOracleBalances` and `(amount, isDebt)` from `getOracleBalanceForAsset`. Iterate over all `underlyingAssetsSupported()` and include only non-zero amounts. These can derive from the same data as `getOraclePositions` or be implemented with a simpler path.

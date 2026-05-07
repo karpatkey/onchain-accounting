@@ -26,6 +26,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     CompoundV3Comet public oracle;
     CometExtInterface public comet;
 
+    string internal constant DETAIL_SUPPLY =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Supply\"}";
+    string internal constant DETAIL_BORROW =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Borrow\"}";
+    string internal constant DETAIL_COLLATERAL =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}";
+    string internal constant DETAIL_REWARD =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Reward\"}";
+
     // Real users with known positions at FORK_BLOCK.
     address public constant LEND_USER = 0x2b2E894f08F1BF8C93a82297c347EbdC8717d99a;
     address public constant BORROW_USER = 0xe84A061897afc2e7fF5FB7e3686717C528617487;
@@ -151,10 +160,10 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "Compound v3 USDC");
             assertFalse(positions[i].isDebt);
-            if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Collateral")) {
+            if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_COLLATERAL))) {
                 sawCollateral = true;
                 collateralAmount = positions[i].amount;
-            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Reward")) {
+            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_REWARD))) {
                 sawReward = true;
                 rewardAmount = positions[i].amount;
             }
@@ -213,11 +222,14 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
             assertGt(positions[i].amount, 0);
             string memory d = positions[i].positionDetail;
             // Every position must carry one of the expected role labels.
-            bool isKnown =
-                (keccak256(bytes(d)) == keccak256("Supply") || keccak256(bytes(d)) == keccak256("Borrow")
-                    || keccak256(bytes(d)) == keccak256("Collateral") || keccak256(bytes(d)) == keccak256("Reward"));
+            bool isKnown = (
+                keccak256(bytes(d)) == keccak256(bytes(DETAIL_SUPPLY))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_COLLATERAL))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_REWARD))
+            );
             assertTrue(isKnown, "unexpected positionDetail");
-            if (keccak256(bytes(d)) == keccak256("Borrow")) {
+            if (keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))) {
                 sawBorrow = true;
                 assertTrue(positions[i].isDebt);
                 assertEq(positions[i].underlyingAsset.asset, address(USDC));

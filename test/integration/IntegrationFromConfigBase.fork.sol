@@ -102,12 +102,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
-    /// @notice Maps token symbol → ephemerally-deployed price feed address. Populated by
-    ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Used by _registerAssetIfPossible
-    ///         as a fallback when assets.json.tokens[chain][symbol].pricefeed is empty (i.e. the
-    ///         feed exists in code but isn't yet deployed to production). Lets the integration
-    ///         test exercise feeds before their mainnet deploy lands. Production registration via
-    ///         RegisterAssets.s.sol still reads pricefeed from assets.json — this mapping is fork-only.
+    /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
+    ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
+    ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
+    ///         exists in code but not yet deployed to production); (2) override when a prod
+    ///         address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
+    ///         to IPriceFeedCustom). Key is the feed deploy name, not the token symbol — use
+    ///         _priceFeedNameForSymbol to convert. Fork-only; production registration via
+    ///         RegisterAssets.s.sol reads pricefeed from assets.json.
     mapping(string => address) internal _ephemeralPriceFeeds;
 
     function _setupAndDeploy() internal {
@@ -207,6 +209,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address addr = deployer();
         _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
+    }
+
+    /// @notice Returns the price feed name (as used in _deployAllPriceFeeds) for a given token symbol.
+    function _priceFeedNameForSymbol(string memory symbol) internal view returns (string memory) {
+        if (_chainId == 1) {
+            return symbol;
+        }
+        if (_chainId == 100 && _equals(symbol, "sDAI")) {
+            return "sXDAI";
+        }
+        return string(abi.encodePacked(symbol, "_L2"));
     }
 
     function _deploySdai() internal returns (address) {
@@ -868,8 +881,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address oracle;
         if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
             oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
-        } else if (_ephemeralPriceFeeds[symbol] != address(0)) {
-            oracle = _ephemeralPriceFeeds[symbol];
+        } else if (_ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)] != address(0)) {
+            oracle = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
             console2.log("[asset/ephemeral]", symbol, oracle);
         } else {
             return;
@@ -877,6 +890,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
 
         IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
+
+        // For Custom feeds: prefer the ephemerally-deployed feed over any prod address in assets.json.
+        // Reason: adding latestRoundData() to IPriceFeedCustom changed the ERC165 interface ID —
+        // old deployed addresses fail checkPriceOracleSupport(). The ephemeral feed (new code)
+        // passes the check and is functionally equivalent for fork tests.
+        if (pt == IPrices.PriceType.Custom) {
+            address fresh = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
+            if (fresh != address(0)) oracle = fresh;
+        }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
         // pre-registered asset) use setPriceFeed instead of registerAsset.

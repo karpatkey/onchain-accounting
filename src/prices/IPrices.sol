@@ -14,8 +14,9 @@ interface IPrices {
     /// @notice Struct representing a price feed configuration (stored price feed configuration).
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This is relevant only for Chainlink
-    /// price feeds.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds. Staleness is
+    /// determined as block.timestamp - latestRoundData().updatedAt > chainlinkHeartbeat for both Chainlink and Custom
+    /// feeds. For Custom feeds, updatedAt is sourced from IPriceFeedCustom.latestRoundData().
     /// @param priceType The type of the price feed (Chainlink or Custom).
     struct PriceFeedConfig {
         address priceFeed;
@@ -27,8 +28,7 @@ interface IPrices {
     /// @notice Emitted when a price feed is set for a token.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This is relevant only for Chainlink
-    /// price feeds.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feed types.
     /// @param priceType The type of the price feed.
     event PriceFeedSet(
         address indexed underlyingAsset, address indexed priceFeed, uint256 chainlinkHeartbeat, PriceType priceType

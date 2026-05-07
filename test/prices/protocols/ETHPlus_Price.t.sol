@@ -6,8 +6,13 @@ import {ETHPlus_PriceOracle} from "src/prices/protocols/ETHPlus_Price.sol";
 
 /// @title ETHPlus_PriceOracle unit tests (no fork)
 contract ETHPlus_PriceOracleTest is Test {
-    function test_invalidConstructorArgs() public {
+    function test_invalidConstructorArgs_zeroAddress() public {
         vm.expectRevert();
-        new ETHPlus_PriceOracle(address(0));
+        new ETHPlus_PriceOracle(address(0), 86400);
+    }
+
+    function test_invalidConstructorArgs_zeroHeartbeat() public {
+        vm.expectRevert();
+        new ETHPlus_PriceOracle(address(0x1), 0);
     }
 }

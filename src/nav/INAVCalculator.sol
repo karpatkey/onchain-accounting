@@ -166,7 +166,7 @@ interface INAVCalculator is IBalances {
     /// @param asset Registered asset address.
     /// @param priceFeed New price feed address (cannot be zero).
     /// @param priceType Chainlink or Custom.
-    /// @param chainlinkHeartbeat Heartbeat for Chainlink (ignored for Custom).
+    /// @param chainlinkHeartbeat Heartbeat for Chainlink feeds (must be non-zero); unused for Custom feeds.
     function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 

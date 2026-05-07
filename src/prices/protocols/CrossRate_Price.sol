@@ -79,6 +79,24 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
         return UNDERLYING_ASSET;
     }
 
+    /// @inheritdoc IPriceFeedCustom
+    function latestRoundData()
+        external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = X_TO_USD_FEED.latestRoundData();
+        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = Y_TO_X_FEED.latestRoundData();
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
+        }
+        (uint256 price,) = this.getLatestPrice();
+        answer = int256(price);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;

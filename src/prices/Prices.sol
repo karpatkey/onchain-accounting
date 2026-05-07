@@ -53,7 +53,7 @@ abstract contract Prices is IPrices, Initializable {
     /// @param token The address of the token.
     /// @return price The latest price of the token (int256; Chainlink returned as-is, custom cast from uint256).
     /// @return decimals The amount of decimal places the price is represented with
-    /// @return stale COMPLETE ME
+    /// @return stale Whether the price is considered stale.
     function _latestPrice(address token) internal view returns (int256 price, uint8 decimals, bool stale) {
         PriceFeedConfig storage config = priceOracles[token];
 
@@ -76,6 +76,9 @@ abstract contract Prices is IPrices, Initializable {
         } else {
             uint256 customPrice;
             (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
+
+            if (customPrice == 0) return (0, decimals, true);
+
             price = customPrice.toInt256();
         }
     }
@@ -105,6 +108,10 @@ abstract contract Prices is IPrices, Initializable {
         if (priceType == PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
         } else if (priceType == PriceType.Chainlink) {
+            // Reject contracts that explicitly identify as IPriceFeedCustom — Chainlink and Custom are mutually exclusive.
+            // ERC165Checker.supportsInterface() returns false (not revert) when the feed doesn't implement ERC165,
+            // so this is safe to call on real Chainlink oracles.
+            if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
             AggregatorV3Interface(priceFeed).latestRoundData();
         } else {
             revert InvalidPriceOracleType();
@@ -114,15 +121,15 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Sets the price feed for a given token.
     /// @param token The address of the token.
     /// @param priceFeed The address of the price feed.
-    /// @param chainlinkHeartbeat The heartbeat interval for the Chainlink feed. This parameter is ignored for
-    /// non-Chainlink price feeds.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds.
     /// @param priceType The type of the price feed.
     function _setPriceFeed(address token, address priceFeed, uint256 chainlinkHeartbeat, PriceType priceType) internal {
         checkPriceOracleSupport(token, priceFeed, priceType);
 
+        if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
+
         uint8 decimals;
         if (priceType == PriceType.Chainlink) {
-            if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
             decimals = AggregatorV3Interface(priceFeed).decimals();
         } else {
             decimals = IPriceFeedCustom(priceFeed).decimals();

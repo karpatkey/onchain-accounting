@@ -1,6 +1,15 @@
 {
   "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom pricefeed per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
   "priceFeeds": {
+    "ETHPlus": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "ethPlus": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+          "reserveProtocolHeartbeat": "86400"
+        }
+      }
+    },
     "wstETH": {
       "1": {
         "enabled": true,
@@ -95,7 +104,7 @@
         "constructor": {
           "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
           "usdsToUsdChainlinkAddress": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
-          "usdsToUsdChainlinkHeartbeat": "86400"
+          "usdsToUsdChainlinkHeartbeat": "82800"
         }
       }
     },
@@ -239,25 +248,25 @@
         "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
         "type": "Custom",
         "pricefeed": "0xAc8ef2dc1Ee81f30A3249fcAb6789ed85Fd189Cd",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 3600
       },
       "eETH": {
         "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
         "type": "Custom",
         "pricefeed": "0xf133b541b96D69B77be66ba926Cd11d14aB28DaF",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "weETH": {
         "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
         "type": "Custom",
         "pricefeed": "0xE8455f4f027F86dD0E0cCCeA0769D7B008c57f90",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "rETH": {
         "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
         "type": "Custom",
         "pricefeed": "0x7E6366A015e7C72d238E0E289e1652eaa06f962E",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 3600
       },
       "ETH+": {
         "address": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
@@ -269,19 +278,19 @@
         "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
         "type": "Custom",
         "pricefeed": "0x8AB8F6CAb2bdB7b602B7258dfD3cD028A9b921B0",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 3600
       },
       "rsETH": {
         "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
         "type": "Custom",
         "pricefeed": "0x0f580E84d92e89150bE94fCAA4D03C6B855D2FD8",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 3600
       },
       "ETHx": {
         "address": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
         "type": "Custom",
         "pricefeed": "",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935,
+        "heartbeat": 3600,
         "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_PriceOracle address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
       },
       "osETH": {
@@ -385,7 +394,7 @@
         "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
         "type": "Custom",
         "pricefeed": "0x48cD58b9c5BadA3a63FA74E0Ae9DD2200C8bB798",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 82800
       },
       "RLUSD": {
         "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
@@ -403,13 +412,13 @@
         "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
         "type": "Custom",
         "pricefeed": "0x9663f52B36e53ed0b8B4308d2bC02b3B0520645F",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 82800
       },
       "syrupUSDC": {
         "address": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
         "type": "Custom",
         "pricefeed": "0x4921531b6Ad2B969AACfF2b66583f893aBBDa310",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 82800
       },
       "AAVE": {
         "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
@@ -441,25 +450,25 @@
         "address": "0x5979d7b546e38e414f7e9822514be443a4800529",
         "type": "Custom",
         "pricefeed": "0x822FfE6998f14235e954989e063D12B2687976d6",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "weETH": {
         "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
         "type": "Custom",
         "pricefeed": "0x2BfBA69E9Cd423BF2a9473a88B32d79a04000F4A",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "ezETH": {
         "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
         "type": "Custom",
         "pricefeed": "0x7D18060Be6927A501fceBe1309a3DE24C5E6072B",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "rsETH": {
         "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
         "type": "Custom",
         "pricefeed": "0x599dfB44624ce88F3e4A559Ad3ED5EB725DcE04D",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "MORPHO": {
         "address": "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48",
@@ -489,7 +498,7 @@
         "address": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
         "type": "Custom",
         "pricefeed": "0xc65227D1aF82A4BcaaC3d77C42F52D557d59D63A",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "COMP": {
         "address": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
@@ -521,7 +530,7 @@
         "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
         "type": "Custom",
         "pricefeed": "0xbe47eDCc920C0615De3041988476673127b17f81",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "USDCe": {
         "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
@@ -534,7 +543,7 @@
         "address": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
         "type": "Custom",
         "pricefeed": "0x400F196673b8C796aC0Fd7761D21505248d89b62",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "GHO": {
         "address": "0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73",
@@ -560,19 +569,19 @@
         "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
         "type": "Custom",
         "pricefeed": "0x6545E2c9d9f9587bEb06Ed2b19f229a3580e583B",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "weETH": {
         "address": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
         "type": "Custom",
         "pricefeed": "0xC36B7f605c8A422772893aA6a86cC1e74D763F63",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "cbETH": {
         "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
         "type": "Custom",
         "pricefeed": "0x70F4AF4CC12f1f2752635ef4470e22020677Ea93",
-        "heartbeat": 115792089237316195423570985008687907853269984665640564039457584007913129639935
+        "heartbeat": 86400
       },
       "MORPHO": {
         "address": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",

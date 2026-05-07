@@ -36,7 +36,7 @@
         "uniswap2",
         "uniswap3"
       ],
-      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS \u2014 full exclusion from the supportedDebankProtocols allowlist: aave2 (deprecated by Aave \u2014 stkAAVE Safety Module lives here, no new deposits expected); balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP \u2014 not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 \u2014 only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE \u2014 protocol IS in the allowlist but only some pools/markets are wired: stakewise (V3 osToken + Genesis Vault are covered; the StakeWise Lending market is not, accounting for ~$555 ACCOUNT_9 + ~$885K ACCOUNT_11 drift); convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
+      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS \u2014 full exclusion from the supportedDebankProtocols allowlist: aave2 (deprecated by Aave \u2014 stkAAVE Safety Module lives here, no new deposits expected); balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP \u2014 not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 \u2014 only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE \u2014 protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
@@ -277,7 +277,7 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1764220587401962",
+          "navUsd8dp": "1764277173443617",
           "debankUsd": "18165197.575901"
         }
       }

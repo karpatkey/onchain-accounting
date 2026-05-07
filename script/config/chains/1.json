@@ -625,6 +625,17 @@
       },
       "deployed": ""
     },
+    "StakeWiseV3Vault_MetaVault": {
+      "enabled": true,
+      "constructor": {
+        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "vault": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3",
+        "protocol": "Stakewise v3",
+        "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Meta Vault\",\"type\":\"Staking\"",
+        "positionId": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
+      },
+      "deployed": ""
+    },
     "StaderWithdrawalQueue": {
       "enabled": true,
       "constructor": {

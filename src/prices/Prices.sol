@@ -92,6 +92,9 @@ abstract contract Prices is IPrices, Initializable {
 
             if (answer != 0) {
                 stale = true;
+            } else if (startedAt == 0) {
+                // Arbitrum uptime feeds can return startedAt == 0 before initialization.
+                stale = true;
             } else {
                 // Make sure the grace period has passed after the
                 // sequencer is back up.

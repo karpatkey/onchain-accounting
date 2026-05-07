@@ -37,7 +37,7 @@ Steps in code (`src/prices/Prices.sol`):
 1. **Lookup** — `priceOracles[asset]` returns `PriceFeedConfig { priceFeed, decimals, chainlinkHeartbeat, priceType }`. Reverts if unset.
 2. **Fetch** — Chainlink branch reads `latestRoundData()` for both price and `updatedAt`. Custom branch calls `getLatestPrice()` for both price and the stale flag.
 3. **Freshness** — Chainlink: `stale = block.timestamp - updatedAt > chainlinkHeartbeat`. Custom: `stale` is the bool returned directly by `getLatestPrice()` — each adapter encodes its own per-feed heartbeat logic (see §5.1). A non-positive or zero price short-circuits to `(0, stale=true)` in both branches.
-4. **L2 sequencer** — Top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down or within `chainlinkL2SequencerGracePeriod` (default 1 hour) of recovery. On L1, the sequencer feed is the zero address and this check is a no-op.
+4. **L2 sequencer** — Top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down, within `chainlinkL2SequencerGracePeriod` (default 1 hour) of recovery, or the uptime feed reports `startedAt == 0` (Chainlink documents this as an Arbitrum pre-initialization edge case). On L1, the sequencer feed is the zero address and this check is a no-op.
 5. **Return** — `(int256 price, uint8 decimals, bool stale)`. Sign is positive in practice (Chainlink prices are positive; custom feeds cast from `uint256`).
 
 ---

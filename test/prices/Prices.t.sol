@@ -6,6 +6,8 @@ import {Test} from "forge-std/Test.sol";
 import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {
+    Mock_ChainlinkL2SequencerUptimeFeed,
+    Mock_ChainlinkL2SequencerUptimeFeedUninitialized,
     Mock_CustomPriceFeed,
     Mock_PriceOracleChainlink,
     Mock_CustomPriceFeedStaled
@@ -40,6 +42,8 @@ contract PricesTest is Test {
     Mock_CustomPriceFeed public oracleusdc;
     Mock_PriceOracleChainlink public oracleaBuidl;
     Mock_PriceOracleChainlink public disabledUptimeFeed;
+    Mock_ChainlinkL2SequencerUptimeFeed public enabledUptimeFeed;
+    Mock_ChainlinkL2SequencerUptimeFeedUninitialized public uninitializedUptimeFeed;
     Mock_CustomPriceFeedStaled public customStaled;
 
     address alice = makeAddr("alice");
@@ -51,6 +55,8 @@ contract PricesTest is Test {
         oracleusdc = new Mock_CustomPriceFeed("usdc", address(usdc), 100_000_000, 8);
         oracleaBuidl = new Mock_PriceOracleChainlink("buidl", 1000, 8);
         disabledUptimeFeed = new Mock_PriceOracleChainlink("UptimeFeed", 1, 8);
+        enabledUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeed();
+        uninitializedUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeedUninitialized();
         manager = new PricesHarness(address(0));
         managerL2 = new PricesHarness(address(chainlinkUptimeFeed));
         customStaled = new Mock_CustomPriceFeedStaled("usdc", address(usdc), 100_000_000, 8);
@@ -256,6 +262,21 @@ contract PricesTest is Test {
         managerL2 = new PricesHarness(address(disabledUptimeFeed));
 
         // The uptime feed is disabled (answer = 1), so sequencer is down
+        bool stale = managerL2.checkL2SequencerUptime();
+        assertTrue(stale);
+    }
+
+    function test_checkL2SequencerUptime_initializedUpAfterGracePeriod() public {
+        managerL2 = new PricesHarness(address(enabledUptimeFeed));
+        vm.warp(block.timestamp + 2 hours + 1);
+
+        bool stale = managerL2.checkL2SequencerUptime();
+        assertFalse(stale);
+    }
+
+    function test_checkL2SequencerUptime_uninitializedStartedAtZero() public {
+        managerL2 = new PricesHarness(address(uninitializedUptimeFeed));
+
         bool stale = managerL2.checkL2SequencerUptime();
         assertTrue(stale);
     }

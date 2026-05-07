@@ -98,6 +98,20 @@ contract Mock_ChainlinkL2SequencerUptimeFeed is Mock_PriceOracleChainlink {
 
     function latestRoundData()
         external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        uint256 statusStartedAt = block.timestamp > 1 hours ? block.timestamp - 1 hours - 1 : 1;
+        return (0, 0, statusStartedAt, statusStartedAt, 0);
+    }
+}
+
+contract Mock_ChainlinkL2SequencerUptimeFeedUninitialized is Mock_PriceOracleChainlink {
+    constructor() Mock_PriceOracleChainlink("L2 sequencer uninitialized", 0, 0) {}
+
+    function latestRoundData()
+        external
         pure
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)

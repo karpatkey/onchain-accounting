@@ -77,13 +77,32 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(
+            aaveV3DataProvider,
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(nav));
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract,
+            cUsdCv3,
+            compound,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        morphoBlueOracle =
-            new MorphoMarketBalanceOracle(morphoBlue, marketIdCbbtcUsdc, "Morpho - cbBTC/USDC", "{\"protocol\":\"Morpho\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(nav));
+        morphoBlueOracle = new MorphoMarketBalanceOracle(
+            morphoBlue,
+            marketIdCbbtcUsdc,
+            "Morpho - cbBTC/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(compoundV3Comet));

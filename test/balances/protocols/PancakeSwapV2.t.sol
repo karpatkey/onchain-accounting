@@ -60,7 +60,11 @@ contract PancakeSwapV2BalanceOracleTest is Test {
     function test_constructor_invalidArgs_zeroPair() public {
         vm.expectRevert(InvalidArguments.selector);
         new PancakeSwapV2BalanceOracle(
-            address(0), "PancakeSwap V2", "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"", "0x0000000000000000000000000000000000000001", address(mockBalances)
+            address(0),
+            "PancakeSwap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 

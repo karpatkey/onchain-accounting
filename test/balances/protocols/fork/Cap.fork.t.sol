@@ -47,7 +47,9 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(USDC);
-        oracle = new CapBalanceOracle(CUSD, STCUSD, USDC, "Cap", "cUSD + stcUSD", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new CapBalanceOracle(
+            CUSD, STCUSD, USDC, "Cap", "cUSD + stcUSD", "0x0000000000000000000000000000000000000001", address(balances)
+        );
     }
 
     // ============================================

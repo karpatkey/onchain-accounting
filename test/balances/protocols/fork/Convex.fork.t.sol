@@ -62,7 +62,14 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         assets[3] = CVX;
         balances = _deployBalancesForOracle(assets);
         // LP_TOKEN must be provided explicitly — rewarder.stakingToken() returns the cvxLP wrapper, not the Curve LP
-        oracle = new ConvexBalanceOracle(REWARDER, LP_TOKEN, "Convex", "{\"protocol\":\"Convex\",\"pool\":\"crvUSD/USDT Pool\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new ConvexBalanceOracle(
+            REWARDER,
+            LP_TOKEN,
+            "Convex",
+            "{\"protocol\":\"Convex\",\"pool\":\"crvUSD/USDT Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================

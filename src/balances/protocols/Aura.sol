@@ -727,12 +727,7 @@ contract Aura is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(
-                    _positionDetail,
-                    ",\"token\":\"",
-                    underlyingAsset.symbol,
-                    "\"}"
-                ),
+                positionDetail: string.concat(_positionDetail, ",\"token\":\"", underlyingAsset.symbol, "\"}"),
                 positionId: _positionId
             });
 

@@ -92,7 +92,9 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
         string memory positionDetail_,
         string memory positionId_
     ) {
-        if (rewardsController == address(0) || navCalculator == address(0)) revert InvalidArguments();
+        if (rewardsController == address(0) || navCalculator == address(0)) {
+            revert InvalidArguments();
+        }
         require(rewardsController.code.length > 0, "RewardsController must be a contract");
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
@@ -243,12 +245,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: stakedAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(
-                        _positionDetail,
-                        ",\"type\":\"",
-                        base,
-                        " Staked\"}"
-                    ),
+                    positionDetail: string.concat(_positionDetail, ",\"type\":\"", base, " Staked\"}"),
                     positionId: _positionId
                 });
             }
@@ -262,12 +259,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: rewardAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(
-                        _positionDetail,
-                        ",\"type\":\"",
-                        base,
-                        " Rewards\"}"
-                    ),
+                    positionDetail: string.concat(_positionDetail, ",\"type\":\"", base, " Rewards\"}"),
                     positionId: _positionId
                 });
             }

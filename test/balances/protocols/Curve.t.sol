@@ -129,17 +129,35 @@ contract CurveBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CurveBalanceOracle(address(0), "Curve", "{\"protocol\":\"Curve\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
+        new CurveBalanceOracle(
+            address(0),
+            "Curve",
+            "{\"protocol\":\"Curve\",\"pool\":\"Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractGauge() public {
         vm.expectRevert("Gauge must be a contract");
-        new CurveBalanceOracle(address(0xdead), "Curve", "{\"protocol\":\"Curve\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
+        new CurveBalanceOracle(
+            address(0xdead),
+            "Curve",
+            "{\"protocol\":\"Curve\",\"pool\":\"Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new CurveBalanceOracle(address(mockGauge), "Curve", "{\"protocol\":\"Curve\",\"pool\":\"Pool\"", "0x0000000000000000000000000000000000000001", address(0xdead));
+        new CurveBalanceOracle(
+            address(mockGauge),
+            "Curve",
+            "{\"protocol\":\"Curve\",\"pool\":\"Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0xdead)
+        );
     }
 
     function test_constructor_stores_immutables() public view {

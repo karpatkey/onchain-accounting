@@ -56,7 +56,13 @@ contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function _deployOracle() internal {
         balances = _deployBalancesForOracle(_v2Assets());
-        oracle = new AaveV2InstanceBalanceOracle(AAVE_V2_DATA_PROVIDER, "Aave V2", "{\"protocol\":\"Aave V2\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new AaveV2InstanceBalanceOracle(
+            AAVE_V2_DATA_PROVIDER,
+            "Aave V2",
+            "{\"protocol\":\"Aave V2\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================

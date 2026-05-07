@@ -38,7 +38,13 @@ contract MorphoVaultBalanceOracleForkTest_V1 is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(USDC));
-        oracle = new MorphoVaultBalanceOracle(address(VAULT), "Morpho", "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new MorphoVaultBalanceOracle(
+            address(VAULT),
+            "Morpho",
+            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================
@@ -113,7 +119,9 @@ contract MorphoVaultBalanceOracleForkTest_V1 is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0, "Position amount should be positive");
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Morpho");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\"}");
+        assertEq(
+            positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\"}"
+        );
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
@@ -162,7 +170,13 @@ contract MorphoVaultBalanceOracleForkTest_V2 is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(USDC));
-        oracle = new MorphoVaultBalanceOracle(address(VAULT), "Morpho", "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new MorphoVaultBalanceOracle(
+            address(VAULT),
+            "Morpho",
+            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================
@@ -192,6 +206,8 @@ contract MorphoVaultBalanceOracleForkTest_V2 is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Morpho");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\"}");
+        assertEq(
+            positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\"}"
+        );
     }
 }

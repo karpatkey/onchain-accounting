@@ -414,8 +414,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory positionId =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        CompoundV3Comet adapter =
-            new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navCalculator);
+        CompoundV3Comet adapter = new CompoundV3Comet(
+            compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navCalculator
+        );
         return address(adapter);
     }
 
@@ -634,8 +635,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory positionId =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        BalancerV3PoolBalanceOracle adapter =
-            new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, positionDetail, positionId, navCalculator);
+        BalancerV3PoolBalanceOracle adapter = new BalancerV3PoolBalanceOracle(
+            pool, gauge, balancerMinter, protocol, positionDetail, positionId, navCalculator
+        );
         return address(adapter);
     }
 

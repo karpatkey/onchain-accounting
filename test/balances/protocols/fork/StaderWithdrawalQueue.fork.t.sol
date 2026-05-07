@@ -26,7 +26,12 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         _setupFork();
         balances = _deployBalancesForOracle(MAINNET_WETH);
         oracle = new StaderWithdrawalQueueBalanceOracle(
-            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, "Stader", "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\"", "0x0000000000000000000000000000000000000001", address(balances)
+            USER_WITHDRAWAL_MANAGER,
+            MAINNET_WETH,
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 

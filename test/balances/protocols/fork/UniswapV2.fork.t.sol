@@ -62,7 +62,13 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         assets[0] = USDC;
         assets[1] = WETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new UniswapV2BalanceOracle(PAIR, "Uniswap V2", "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new UniswapV2BalanceOracle(
+            PAIR,
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================

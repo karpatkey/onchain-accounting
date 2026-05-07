@@ -142,19 +142,41 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"", "0x0000000000000000000000000000000000000001", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(
+            aaveV3DataProvider,
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
         // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav, protocol).
-        AaveV3SafetyModuleBalanceOracle smOracle =
-            new AaveV3SafetyModuleBalanceOracle(address(nav), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001");
+        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(
+            address(nav), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
+        );
 
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav));
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract,
+            cUsdCv3,
+            compound,
+            "Compound v3 USDC",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        morphoBlueOracle =
-            new MorphoMarketBalanceOracle(morphoBlue, marketIdSusdsUsdt, "Morpho - sUSDS/USDT", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav));
+        morphoBlueOracle = new MorphoMarketBalanceOracle(
+            morphoBlue,
+            marketIdSusdsUsdt,
+            "Morpho - sUSDS/USDT",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        daiDsr = new DaiDsrBalanceOracle(dai, dsr, "Maker", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav));
+        daiDsr = new DaiDsrBalanceOracle(
+            dai, dsr, "Maker", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav)
+        );
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(smOracle));

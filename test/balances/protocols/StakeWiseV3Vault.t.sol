@@ -23,7 +23,12 @@ contract StakeWiseV3VaultBalanceOracleTest is BalanceAdapterTestBase {
         mockUnderlying = new MockContract();
         mockVault = new MockContract();
         oracle = new StakeWiseV3VaultBalanceOracle(
-            address(mockUnderlying), address(mockVault), "Stakewise v3", "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Vault\"", "0x0000000000000000000000000000000000000001", address(balances)
+            address(mockUnderlying),
+            address(mockVault),
+            "Stakewise v3",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Vault\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -33,7 +38,14 @@ contract StakeWiseV3VaultBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_reverts_on_zero_address() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3VaultBalanceOracle(address(0), address(0), "Stakewise v3", "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Vault\"", "0x0000000000000000000000000000000000000001", address(mockBalances));
+        new StakeWiseV3VaultBalanceOracle(
+            address(0),
+            address(0),
+            "Stakewise v3",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Vault\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     // ============================================

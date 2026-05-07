@@ -56,7 +56,13 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         assets[0] = WETH;
         assets[1] = WEETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new CurveBalanceOracle(GAUGE, "Curve", "{\"protocol\":\"Curve\",\"pool\":\"weETH/WETH Pool\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new CurveBalanceOracle(
+            GAUGE,
+            "Curve",
+            "{\"protocol\":\"Curve\",\"pool\":\"weETH/WETH Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================

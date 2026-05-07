@@ -58,7 +58,14 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         });
         marketId = Id.unwrap(MarketParamsLib.id(params));
         mockMorpho = new MockMorpho(params);
-        oracle = new MorphoMarketBalanceOracle(address(mockMorpho), marketId, "Morpho - Mock", "{\"protocol\":\"Morpho\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new MorphoMarketBalanceOracle(
+            address(mockMorpho),
+            marketId,
+            "Morpho - Mock",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {

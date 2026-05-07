@@ -225,12 +225,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: stakedAmount,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: string.concat(
-                                _positionDetail,
-                                ",\"type\":\"",
-                                r.positionDetail,
-                                "\"}"
-                            ),
+                            positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
                             positionId: _positionId
                         });
                     }
@@ -258,12 +253,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                                 amount: rewards,
                                 isDebt: false,
                                 protocol: PROTOCOL,
-                                positionDetail: string.concat(
-                                    _positionDetail,
-                                    ",\"type\":\"",
-                                    r.positionDetail,
-                                    "\"}"
-                                ),
+                                positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
                                 positionId: _positionId
                             });
                         }
@@ -280,12 +270,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: rewards,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: string.concat(
-                                _positionDetail,
-                                ",\"type\":\"",
-                                r.positionDetail,
-                                "\"}"
-                            ),
+                            positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
                             positionId: _positionId
                         });
                     }

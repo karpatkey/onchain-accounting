@@ -204,12 +204,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: string.concat(
-                    _positionDetail,
-                    ",\"token\":\"",
-                    filteredAsset.symbol,
-                    "\"}"
-                ),
+                positionDetail: string.concat(_positionDetail, ",\"token\":\"", filteredAsset.symbol, "\"}"),
                 positionId: _positionId
             });
             return positions;
@@ -230,12 +225,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: string.concat(
-                        _positionDetail,
-                        ",\"token\":\"",
-                        eligibleAsset.symbol,
-                        "\"}"
-                    ),
+                    positionDetail: string.concat(_positionDetail, ",\"token\":\"", eligibleAsset.symbol, "\"}"),
                     positionId: _positionId
                 });
                 count++;

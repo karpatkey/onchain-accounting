@@ -42,7 +42,13 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WETH));
-        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "{\"protocol\":\"Gearbox\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new GearboxMarketBalanceOracle(
+            address(MARKET),
+            "Gearbox",
+            "{\"protocol\":\"Gearbox\",\"product\":\"Market\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================
@@ -163,7 +169,13 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WSTETH));
-        oracle = new GearboxMarketBalanceOracle(address(MARKET), "Gearbox", "{\"protocol\":\"Gearbox\",\"product\":\"Market\"", "0x0000000000000000000000000000000000000001", address(balances));
+        oracle = new GearboxMarketBalanceOracle(
+            address(MARKET),
+            "Gearbox",
+            "{\"protocol\":\"Gearbox\",\"product\":\"Market\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================

@@ -253,42 +253,72 @@ contract UniswapV3PoolBalanceOracleTest is Test {
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
         new UniswapV3PoolBalanceOracle(
-            address(0), address(npm), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(nav)
+            address(0),
+            address(npm),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
         );
     }
 
     function test_constructor_reverts_zeroPositionManager() public {
         vm.expectRevert(InvalidArguments.selector);
         new UniswapV3PoolBalanceOracle(
-            address(pool), address(0), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(nav)
+            address(pool),
+            address(0),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
         );
     }
 
     function test_constructor_reverts_zeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
         new UniswapV3PoolBalanceOracle(
-            address(pool), address(npm), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(0)
+            address(pool),
+            address(npm),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0)
         );
     }
 
     function test_constructor_reverts_eoaPool() public {
         vm.expectRevert("Pool must be a contract");
         new UniswapV3PoolBalanceOracle(
-            address(0xdead), address(npm), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(nav)
+            address(0xdead),
+            address(npm),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
         );
     }
 
     function test_constructor_reverts_eoaPositionManager() public {
         vm.expectRevert("PositionManager must be a contract");
         new UniswapV3PoolBalanceOracle(
-            address(pool), address(0xdead), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(nav)
+            address(pool),
+            address(0xdead),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
         );
     }
 
     function test_constructor_reverts_eoaNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
         new UniswapV3PoolBalanceOracle(
-            address(pool), address(npm), "Uniswap V3", "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"", "0x0000000000000000000000000000000000000001", address(0xdead)
+            address(pool),
+            address(npm),
+            "Uniswap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0xdead)
         );
     }
 
@@ -461,11 +491,15 @@ contract UniswapV3PoolBalanceOracleTest is Test {
         assertGt(positions[1].amount, 0);
 
         assertEq(positions[2].underlyingAsset.asset, address(token0));
-        assertEq(positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}");
+        assertEq(
+            positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}"
+        );
         assertEq(positions[2].amount, 4444);
 
         assertEq(positions[3].underlyingAsset.asset, address(token1));
-        assertEq(positions[3].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}");
+        assertEq(
+            positions[3].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}"
+        );
         assertEq(positions[3].amount, 7777);
     }
 

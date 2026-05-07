@@ -173,6 +173,28 @@ def adapter_aggregated_addrs(cid: str) -> set[str]:
     return addrs
 
 
+def disabled_lp_pool_addrs(cid: str) -> set[str]:
+    """Return lowercase pool/pair addresses of disabled LP adapters (Uniswap V3,
+    PancakeSwap V3/V2, etc.) on chain `cid`. These are adapters that are explicitly
+    disabled because one or more of their tokens lacks a registered price feed.
+    Debank items whose pool.controller matches one of these addresses are routed to
+    the 'untracked by design' footer instead of the main comparison table."""
+    try:
+        with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
+            adapters = json.load(f).get("balanceAdapters", {})
+    except FileNotFoundError:
+        return set()
+    addrs: set[str] = set()
+    for _key, params in adapters.items():
+        if params.get("enabled", True):
+            continue
+        ctor = params.get("constructor", {})
+        pool = ctor.get("pool") or ctor.get("pair")
+        if pool:
+            addrs.add(pool.lower())
+    return addrs
+
+
 def debank_get(path, params=""):
     url = f"{DEBANK_BASE}{path}{'?' + params if params else ''}"
     r = subprocess.run(
@@ -305,6 +327,7 @@ def render_unified_table(
     reg_addrs: set[str],
     agg_addrs: set[str],
     dbank_chain: str,
+    disabled_pools: set[str] | None = None,
 ) -> list[str]:
     """
     Render two Debank-first tables (protocol positions + wallet tokens), each
@@ -314,7 +337,13 @@ def render_unified_table(
       Protocol | Debank ID | Covered | Debank USD | Debank detail | NAV type | NAV USD
     Wallet table columns:
       Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD
+
+    `disabled_pools`: lowercase pool/pair addresses of LP adapters that are disabled
+    because one or more pool tokens lack a registered price feed. Debank items whose
+    pool.controller matches are silently moved to the 'untracked by design' footer.
     """
+    if disabled_pools is None:
+        disabled_pools = set()
     if not nav_positions and not chain_protos and not wallet_tokens:
         return ["_No positions on this chain._", ""]
 
@@ -506,9 +535,23 @@ def render_unified_table(
             short_id = p.get("_short_id", "")
             display_id = DEBANK_ID_DISPLAY.get(short_id, short_id)
             pname = p.get("name", short_id)
-            total = proto_net_usd(p)
-            items = [i for i in p.get("portfolio_item_list", [])
-                     if abs(i.get("stats", {}).get("net_usd_value", 0)) >= 0.01]
+            all_items = [i for i in p.get("portfolio_item_list", [])
+                         if abs(i.get("stats", {}).get("net_usd_value", 0)) >= 0.01]
+
+            # LP items from disabled adapters (unregistered token) go to the footer.
+            items = []
+            for item in all_items:
+                ctrl = (item.get("pool") or {}).get("controller", "").lower()
+                if ctrl and ctrl in disabled_pools:
+                    item_usd = item.get("stats", {}).get("net_usd_value", 0)
+                    untracked_protos.append((pname, short_id, item_usd, build_item_tokens(item)))
+                else:
+                    items.append(item)
+
+            if not items:
+                continue
+
+            total = sum(i.get("stats", {}).get("net_usd_value", 0) for i in items)
 
             has_adapters = bool(nav_adapters_by_debank.get(short_id))
             pf_syms = debank_to_pf_symbols.get(short_id, set())
@@ -865,13 +908,19 @@ def main(refresh_debank: bool = False) -> None:
             reg_addrs = registered.get(cid, set())
             agg_addrs = adapter_aggregated_addrs(cid)
             all_covered = reg_addrs | agg_addrs
+            disabled_pools = disabled_lp_pool_addrs(cid)
 
             # Compute Debank filtered total for write-back:
-            # protocol sum (supported IDs) + wallet token sum (registered or aggregated)
-            filtered_proto_sum = sum(
-                proto_net_usd(p) for p in chain_protos
-                if p["_short_id"] in supported_ids
-            )
+            # protocol sum (supported IDs, excluding disabled-pool LP items) + wallet token sum
+            filtered_proto_sum = 0.0
+            for p in chain_protos:
+                if p["_short_id"] not in supported_ids:
+                    continue
+                for item in p.get("portfolio_item_list", []):
+                    ctrl = (item.get("pool") or {}).get("controller", "").lower()
+                    if ctrl and ctrl in disabled_pools:
+                        continue
+                    filtered_proto_sum += item.get("stats", {}).get("net_usd_value", 0)
             # No USD floor here — must mirror refresh-integration-snapshot.sh's
             # tok_sum exactly so the stored anchor and fresh_filtered agree on
             # cUSD-style dust positions. The $0.50 floor still applies to the
@@ -963,6 +1012,7 @@ def main(refresh_debank: bool = False) -> None:
                     reg_addrs,
                     agg_addrs,
                     dbank_chain,
+                    disabled_pools,
                 )
 
     # Splice the drift summary into the SUMMARY_SENTINEL slot.

@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Uniswap V2 Balance Oracle
 /// @author kpk
@@ -204,7 +205,7 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                 positionId: _positionId
             });
             return positions;
@@ -224,7 +225,7 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: string.concat(_positionDetail, "}"),
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                     positionId: _positionId
                 });
                 count++;

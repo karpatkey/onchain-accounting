@@ -8,6 +8,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title StakeWise osToken Balance Oracle
 /// @author kpk
@@ -282,7 +283,7 @@ contract StakeWiseV3OsTokenBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
                 positionId: _positionId
             });
 

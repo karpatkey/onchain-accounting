@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Cap Protocol cUSD Interface
 /// @notice Minimal interface for interacting with Cap protocol's cUSD token
@@ -187,7 +188,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
             amount: balance,
             isDebt: false,
             protocol: _protocol,
-            positionDetail: string.concat(_positionDetail, "}"),
+            positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
             positionId: _positionId
         });
     }

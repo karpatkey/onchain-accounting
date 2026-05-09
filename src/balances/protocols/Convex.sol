@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Convex Balance Oracle
 /// @author kpk
@@ -204,7 +205,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
                 amount: balance,
                 isDebt: false,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, ",\"token\":\"", filteredAsset.symbol, "\"}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
                 positionId: _positionId
             });
             return positions;
@@ -225,7 +226,7 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
                     amount: balance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: string.concat(_positionDetail, ",\"token\":\"", eligibleAsset.symbol, "\"}"),
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
                     positionId: _positionId
                 });
                 count++;

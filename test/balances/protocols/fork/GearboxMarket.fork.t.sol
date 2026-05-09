@@ -120,7 +120,7 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0, "Position amount should be positive");
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\"}");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"type\":\"Supply\"}");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
@@ -202,7 +202,7 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\"}");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"type\":\"Supply\"}");
     }
 
     function test_underlyingAssetsSupported() public view {

@@ -10,6 +10,7 @@ import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 // solhint-disable func-name-mixedcase
 
@@ -565,6 +566,16 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         return (0, false);
     }
 
+    /// @notice Returns the unstaked (wallet LP) pool token contribution for a given asset.
+    /// @dev Returns 0 for reward-only assets (BAL, extra rewards) since they don't appear in pool balances.
+    function _getUnstakedPoolTokenAmount(address account, address asset) internal view returns (uint256) {
+        uint256 userBalance = POOL.balanceOf(account);
+        if (userBalance == 0) return 0;
+        int256 balance = poolBalanceOf(userBalance, asset);
+        if (balance <= 0) return 0;
+        return SafeCast.toUint256(balance);
+    }
+
     //
     // Internal Functions - Position Building
     //
@@ -602,7 +613,7 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, ",\"token\":\"", underlyingAsset.symbol, "\"}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                 positionId: _positionId
             });
 
@@ -640,42 +651,55 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
         // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
-        AssetBalanceData[] memory assetBalanceData;
         if (registeredSupportedAssets.length == 0) {
-            assetBalanceData = new AssetBalanceData[](0);
-        } else if (assetFilter != address(0)) {
-            assetBalanceData = new AssetBalanceData[](0);
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                if (registeredSupportedAssets[i] == assetFilter) {
-                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
-                    if (amount != 0) {
-                        assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
-                    }
-                    break;
-                }
-            }
-        } else {
-            // Pre-allocate temporary array (max size)
-            AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length);
-            uint256 count = 0;
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
-                if (amount != 0) {
-                    tempData[count] =
-                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
-                    count++;
-                }
-            }
+        // Up to 2 legs per asset (Supply=unstaked wallet LP, Staking=gauge-staked LP + gauge rewards).
+        INAVCalculator.PositionBalance[] memory tempPositions =
+            new INAVCalculator.PositionBalance[](registeredSupportedAssets.length * 2);
+        uint256 count = 0;
 
-            // Resize to actual count
-            assetBalanceData = new AssetBalanceData[](count);
-            for (uint256 i = 0; i < count; i++) {
-                assetBalanceData[i] = tempData[i];
+        for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+            address asset = registeredSupportedAssets[i];
+            if (assetFilter != address(0) && asset != assetFilter) continue;
+
+            (uint256 totalAmount,) = _calculateBalance(asset, account);
+            if (totalAmount == 0) continue;
+
+            uint256 unstakedAmount = _getUnstakedPoolTokenAmount(account, asset);
+            uint256 stakedAndRewardAmount = totalAmount > unstakedAmount ? totalAmount - unstakedAmount : 0;
+
+            INAVCalculator.Asset memory assetInfo = _getAssetInfo(asset);
+
+            if (unstakedAmount > 0) {
+                tempPositions[count++] = INAVCalculator.PositionBalance({
+                    underlyingAsset: assetInfo,
+                    balanceOracle: address(this),
+                    amount: unstakedAmount,
+                    isDebt: false,
+                    protocol: _protocol,
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
+                    positionId: _positionId
+                });
+            }
+            if (stakedAndRewardAmount > 0) {
+                tempPositions[count++] = INAVCalculator.PositionBalance({
+                    underlyingAsset: assetInfo,
+                    balanceOracle: address(this),
+                    amount: stakedAndRewardAmount,
+                    isDebt: false,
+                    protocol: _protocol,
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
+                    positionId: _positionId
+                });
             }
         }
-        positions = _buildPositions(assetBalanceData);
+
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i = 0; i < count; i++) {
+            positions[i] = tempPositions[i];
+        }
     }
 }
 

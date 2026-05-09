@@ -465,7 +465,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
                 sawCollateral = true;
             } else if (
                 keccak256(bytes(positions[i].positionDetail))
-                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Reward\"}")
+                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Rewards\"}")
             ) {
                 assertEq(positions[i].amount, 25);
                 sawReward = true;

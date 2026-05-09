@@ -137,7 +137,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawGhoStakedFromGho;
         for (uint256 i; i < positions.length; ++i) {
             address asset = positions[i].underlyingAsset.asset;
-            if (asset == GHO && _eq(positions[i].positionDetail, _detail("stkGHO"))) sawGhoStakedFromGho = true;
+            if (asset == GHO && _eq(positions[i].positionDetail, _detail("Staking"))) sawGhoStakedFromGho = true;
             assertGt(positions[i].amount, 0);
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "Aave V3 Safety Module");
@@ -150,7 +150,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, GHO);
-        assertEq(positions[0].positionDetail, _detail("stkGHO"));
+        assertEq(positions[0].positionDetail, _detail("Staking"));
     }
 
     // ─── Reward freeze behaviour (only when distributionEnd is in the future) ─

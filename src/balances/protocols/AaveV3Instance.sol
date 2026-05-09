@@ -6,6 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Aave V3 Instance Balance Oracle
 /// @author kpk
@@ -324,8 +325,8 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             // Label as Collateral when used as collateral, otherwise Supply
             if (userReservesData[i].currentATokenBalance > 0) {
                 string memory supplyDetail = userReservesData[i].usageAsCollateralEnabled
-                    ? string.concat(_positionDetail, ",\"type\":\"Collateral\"}")
-                    : string.concat(_positionDetail, ",\"type\":\"Supply\"}");
+                    ? PositionType.withType(_positionDetail, PositionType.COLLATERAL)
+                    : PositionType.withType(_positionDetail, PositionType.SUPPLY);
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     underlyingAsset: underlyingAsset,
                     balanceOracle: address(this),
@@ -346,7 +347,7 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
                     amount: userReservesData[i].currentVariableDebt,
                     isDebt: true, // Borrows are debt
                     protocol: _protocol,
-                    positionDetail: string.concat(_positionDetail, ",\"type\":\"Borrow\"}"),
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.BORROW),
                     positionId: _positionId
                 });
                 positionCount++;

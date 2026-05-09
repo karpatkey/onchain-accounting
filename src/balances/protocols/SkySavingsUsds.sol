@@ -9,6 +9,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title ISavingsUSDS Interface
 /// @notice Interface for interacting with the Savings USDS (sUSDS) vault
@@ -283,7 +284,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                 positionId: _positionId
             });
             positionCount++;

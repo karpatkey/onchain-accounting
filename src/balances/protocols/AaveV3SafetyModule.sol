@@ -7,6 +7,7 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Aave v3 Safety Module Balance Oracle (multi-token, hardcoded)
 /// @author kpk
@@ -190,10 +191,9 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns one PositionBalance per `(stakeToken, role)` pair, where role ∈ {staked, reward}.
-    /// @dev Multi-stake-token attribution is preserved via `positionDetail`. A user holding both stkGHO and stkAAVE
-    ///      sees three positions: GHO/"stkGHO", AAVE/"stkGHO" (rewards), AAVE/"stkAAVE" (stake+rewards merged because
-    ///      stkAAVE's staked and reward tokens are both AAVE).
+    /// @notice Returns up to two PositionBalances per stake token: one for the staked leg (type "Staking") and one
+    ///         for the reward leg (type "Reward"). The underlyingAsset field disambiguates the stake token involved.
+    /// @dev For stkAAVE both legs share the same asset (AAVE); they are told apart solely by their type label.
     function getOraclePositions(address account, address assetFilter)
         external
         view
@@ -225,41 +225,15 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: stakedAmount,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
+                            positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
                             positionId: _positionId
                         });
                     }
                 }
             }
 
-            // Reward-token leg. When stakedToken == rewardToken (stkAAVE), merge rewards into the staked
-            // position we just emitted so the user sees ONE position for that stake token, not two.
-            if (r.stakedToken == r.rewardToken) {
-                if (
-                    count > 0 && tmp[count - 1].underlyingAsset.asset == r.stakedToken
-                        && _stringEq(tmp[count - 1].positionDetail, r.positionDetail)
-                ) {
-                    uint256 rewards = IStakeToken(r.stakeToken).getTotalRewardsBalance(account);
-                    tmp[count - 1].amount += rewards;
-                } else if (_passesFilter(r.rewardToken, assetFilter)) {
-                    // Staked leg was zero; emit rewards-only position if non-zero.
-                    INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, r.rewardToken);
-                    if (assetMeta.asset != address(0)) {
-                        uint256 rewards = IStakeToken(r.stakeToken).getTotalRewardsBalance(account);
-                        if (rewards != 0) {
-                            tmp[count++] = INAVCalculator.PositionBalance({
-                                underlyingAsset: assetMeta,
-                                balanceOracle: address(this),
-                                amount: rewards,
-                                isDebt: false,
-                                protocol: PROTOCOL,
-                                positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
-                                positionId: _positionId
-                            });
-                        }
-                    }
-                }
-            } else if (_passesFilter(r.rewardToken, assetFilter)) {
+            // Reward-token leg.
+            if (_passesFilter(r.rewardToken, assetFilter)) {
                 INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, r.rewardToken);
                 if (assetMeta.asset != address(0)) {
                     uint256 rewards = IStakeToken(r.stakeToken).getTotalRewardsBalance(account);
@@ -270,7 +244,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             amount: rewards,
                             isDebt: false,
                             protocol: PROTOCOL,
-                            positionDetail: string.concat(_positionDetail, ",\"type\":\"", r.positionDetail, "\"}"),
+                            positionDetail: PositionType.withType(_positionDetail, PositionType.REWARDS),
                             positionId: _positionId
                         });
                     }
@@ -323,10 +297,6 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
             if (registered[i].asset == asset) return registered[i];
         }
         return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
-    }
-
-    function _stringEq(string memory a, string memory b) internal pure returns (bool) {
-        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 }
 

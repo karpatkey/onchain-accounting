@@ -140,7 +140,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Fluid Lending");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Fluid\",\"product\":\"Lending\"}");
+        assertEq(positions[0].positionDetail, "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"type\":\"Supply\"}");
         assertEq(positions[0].balanceOracle, address(oracle));
     }
 

@@ -173,7 +173,7 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocol, "Convex");
-            // positionDetail is JSON with per-token symbol: {"protocol":"Convex","pool":"crvUSD/USDT Pool","token":"<symbol>"}
+            // positionDetail is JSON: {"protocol":"Convex","pool":"crvUSD/USDT Pool","type":"Staking"}
             assertTrue(bytes(positions[i].positionDetail).length > 0);
         }
     }

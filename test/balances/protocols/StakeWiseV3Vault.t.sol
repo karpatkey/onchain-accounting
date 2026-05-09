@@ -26,7 +26,7 @@ contract StakeWiseV3VaultBalanceOracleTest is BalanceAdapterTestBase {
             address(mockUnderlying),
             address(mockVault),
             "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Vault\",\"type\":\"Staking\"",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Vault\"",
             "0x0000000000000000000000000000000000000001",
             address(balances)
         );
@@ -42,7 +42,7 @@ contract StakeWiseV3VaultBalanceOracleTest is BalanceAdapterTestBase {
             address(0),
             address(0),
             "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Vault\",\"type\":\"Staking\"",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Vault\"",
             "0x0000000000000000000000000000000000000001",
             address(mockBalances)
         );

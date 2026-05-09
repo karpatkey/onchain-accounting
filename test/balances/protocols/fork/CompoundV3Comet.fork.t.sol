@@ -33,7 +33,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     string internal constant DETAIL_COLLATERAL =
         "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}";
     string internal constant DETAIL_REWARD =
-        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Reward\"}";
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Rewards\"}";
 
     // Real users with known positions at FORK_BLOCK.
     address public constant LEND_USER = 0x2b2E894f08F1BF8C93a82297c347EbdC8717d99a;

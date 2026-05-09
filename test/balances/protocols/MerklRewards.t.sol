@@ -668,7 +668,8 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(arbOnly[0].balanceOracle, address(oracle));
         assertEq(arbOnly[0].protocol, "Merkl");
         assertEq(
-            arbOnly[0].positionDetail, "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"}"
+            arbOnly[0].positionDetail,
+            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\",\"type\":\"Rewards\"}"
         );
     }
 

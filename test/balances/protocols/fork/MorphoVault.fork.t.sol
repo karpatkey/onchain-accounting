@@ -120,7 +120,8 @@ contract MorphoVaultBalanceOracleForkTest_V1 is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Morpho");
         assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\"}"
+            positions[0].positionDetail,
+            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V1 Vault\",\"type\":\"Supply\"}"
         );
     }
 
@@ -207,7 +208,8 @@ contract MorphoVaultBalanceOracleForkTest_V2 is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Morpho");
         assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\"}"
+            positions[0].positionDetail,
+            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC V2 Vault\",\"type\":\"Supply\"}"
         );
     }
 }

@@ -100,7 +100,6 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
             marketIdCbbtcUsdc,
             "Morpho - cbBTC/USDC",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(nav)
         );
 

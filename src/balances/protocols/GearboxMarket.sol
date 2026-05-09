@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Gearbox Market Balance Oracle
 /// @author kpk
@@ -222,7 +223,7 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                 positionId: _positionId
             });
             positionCount++;

@@ -164,11 +164,11 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
             assertFalse(positions[i].isDebt);
 
             if (positions[i].underlyingAsset.asset == USDC) {
-                if (_eq(positions[i].positionDetail, _detail("stkwaEthUSDC.v1 Staked"))) sawStaked = true;
-                if (_eq(positions[i].positionDetail, _detail("stkwaEthUSDC.v1 Rewards"))) sawRewards = true;
+                if (_eq(positions[i].positionDetail, _detail("Staking"))) sawStaked = true;
+                if (_eq(positions[i].positionDetail, _detail("Rewards"))) sawRewards = true;
             }
         }
-        assertTrue(sawStaked, "missing USDC/stkwaEthUSDC.v1 Staked position");
+        assertTrue(sawStaked, "missing USDC/stkwaEthUSDC.v1 Staking position");
         assertTrue(sawRewards, "missing USDC/stkwaEthUSDC.v1 Rewards position");
     }
 
@@ -181,10 +181,10 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawRewards;
         for (uint256 i; i < positions.length; ++i) {
             if (positions[i].underlyingAsset.asset != GHO) continue;
-            if (_eq(positions[i].positionDetail, _detail("stkGHO.v1 Staked"))) sawStaked = true;
-            if (_eq(positions[i].positionDetail, _detail("stkGHO.v1 Rewards"))) sawRewards = true;
+            if (_eq(positions[i].positionDetail, _detail("Staking"))) sawStaked = true;
+            if (_eq(positions[i].positionDetail, _detail("Rewards"))) sawRewards = true;
         }
-        assertTrue(sawStaked, "missing GHO/stkGHO.v1 Staked position");
+        assertTrue(sawStaked, "missing GHO/stkGHO.v1 Staking position");
         assertTrue(sawRewards, "missing GHO/stkGHO.v1 Rewards position");
     }
 

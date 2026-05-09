@@ -8,6 +8,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @notice A balance oracle for the DAI token that uses the DSRManager contract to calculate the balance.
 contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
@@ -361,7 +362,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                 positionId: _positionId
             });
 

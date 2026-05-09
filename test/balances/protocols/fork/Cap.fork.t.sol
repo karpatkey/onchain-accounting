@@ -124,7 +124,7 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, EXPECTED_USDC_AMOUNT, "Position amount should match expected");
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Cap");
-        assertEq(positions[0].positionDetail, "cUSD + stcUSD}");
+        assertEq(positions[0].positionDetail, "cUSD + stcUSD,\"type\":\"Supply\"}");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {

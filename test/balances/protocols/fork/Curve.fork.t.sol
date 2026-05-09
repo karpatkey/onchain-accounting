@@ -203,7 +203,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocol, "Curve");
-            // positionDetail is JSON with per-token symbol: {"protocol":"Curve","pool":"weETH/WETH Pool","token":"<symbol>"}
+            // positionDetail is JSON: {"protocol":"Curve","pool":"weETH/WETH Pool","type":"Supply"}
             assertTrue(bytes(positions[i].positionDetail).length > 0);
             if (positions[i].underlyingAsset.asset == WETH) hasWeth = true;
             if (positions[i].underlyingAsset.asset == WEETH) hasWeEth = true;

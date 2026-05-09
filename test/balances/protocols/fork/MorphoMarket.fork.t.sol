@@ -80,7 +80,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho - wstETH/USDC",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -107,7 +106,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho - USDC/DAI/MKR",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -130,7 +128,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho - USDC/DAI/MKR",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -156,7 +153,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho - wstETH/USDC",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -183,7 +179,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho - wstETH/USDC",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -209,7 +204,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_USDC_DAI_MKR),
             "Morpho - USDC/DAI/MKR",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -233,7 +227,6 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
             Id.unwrap(MARKET_ID_WSTETH_USDC),
             "Morpho - wstETH/USDC",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 

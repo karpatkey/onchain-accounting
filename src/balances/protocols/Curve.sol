@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Curve Balance Oracle
 /// @author kpk
@@ -177,53 +178,45 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Apply asset filter
-        if (assetFilter != address(0)) {
-            bool filterFound = false;
-            for (uint256 i = 0; i < eligibleAssets.length; i++) {
-                if (eligibleAssets[i] == assetFilter) {
-                    filterFound = true;
-                    break;
-                }
-            }
-            if (!filterFound) return new INAVCalculator.PositionBalance[](0);
-
-            uint256 balance = _calculateBalance(account, assetFilter);
-            if (balance == 0) return new INAVCalculator.PositionBalance[](0);
-
-            INAVCalculator.Asset memory filteredAsset = _getAssetInfo(assetFilter);
-            positions = new INAVCalculator.PositionBalance[](1);
-            positions[0] = INAVCalculator.PositionBalance({
-                underlyingAsset: filteredAsset,
-                balanceOracle: address(this),
-                amount: balance,
-                isDebt: false,
-                protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, ",\"token\":\"", filteredAsset.symbol, "\"}"),
-                positionId: _positionId
-            });
-            return positions;
-        }
-
-        // No filter — return all eligible assets with non-zero balance
+        // Up to 2 legs per asset (Supply=unstaked, Staking=gauge-staked+rewards).
+        // Pre-allocate 2× eligible assets; trim at end.
         INAVCalculator.PositionBalance[] memory tempPositions =
-            new INAVCalculator.PositionBalance[](eligibleAssets.length);
+            new INAVCalculator.PositionBalance[](eligibleAssets.length * 2);
         uint256 count = 0;
 
         for (uint256 i = 0; i < eligibleAssets.length; i++) {
-            uint256 balance = _calculateBalance(account, eligibleAssets[i]);
-            if (balance > 0) {
-                INAVCalculator.Asset memory eligibleAsset = _getAssetInfo(eligibleAssets[i]);
-                tempPositions[count] = INAVCalculator.PositionBalance({
-                    underlyingAsset: eligibleAsset,
+            address asset = eligibleAssets[i];
+            if (assetFilter != address(0) && asset != assetFilter) continue;
+
+            uint256 totalBalance = _calculateBalance(account, asset);
+            if (totalBalance == 0) continue;
+
+            (uint256 unstakedBalance,) = _getGrossPoolTokenBalances(account, asset);
+            uint256 stakedAndRewardBalance = totalBalance > unstakedBalance ? totalBalance - unstakedBalance : 0;
+
+            INAVCalculator.Asset memory assetInfo = _getAssetInfo(asset);
+
+            if (unstakedBalance > 0) {
+                tempPositions[count++] = INAVCalculator.PositionBalance({
+                    underlyingAsset: assetInfo,
                     balanceOracle: address(this),
-                    amount: balance,
+                    amount: unstakedBalance,
                     isDebt: false,
                     protocol: _protocol,
-                    positionDetail: string.concat(_positionDetail, ",\"token\":\"", eligibleAsset.symbol, "\"}"),
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
                     positionId: _positionId
                 });
-                count++;
+            }
+            if (stakedAndRewardBalance > 0) {
+                tempPositions[count++] = INAVCalculator.PositionBalance({
+                    underlyingAsset: assetInfo,
+                    balanceOracle: address(this),
+                    amount: stakedAndRewardBalance,
+                    isDebt: false,
+                    protocol: _protocol,
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
+                    positionId: _positionId
+                });
             }
         }
 
@@ -280,18 +273,29 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Gets the account's proportional pool-token balance (unstaked LP + staked LP).
     function _getPoolTokenBalance(address account, address token) internal view returns (uint256) {
+        (uint256 unstaked, uint256 staked) = _getGrossPoolTokenBalances(account, token);
+        return unstaked + staked;
+    }
+
+    /// @notice Returns the unstaked and gauge-staked LP contributions separately for a pool token.
+    /// @return unstaked Proportional pool-token amount from LP held in wallet.
+    /// @return staked   Proportional pool-token amount from LP staked in gauge.
+    function _getGrossPoolTokenBalances(address account, address token)
+        internal
+        view
+        returns (uint256 unstaked, uint256 staked)
+    {
         (bool supplySuccess, uint256 totalSupply) =
             _safeCallUint(LP_TOKEN, abi.encodeCall(ICurveLPToken.totalSupply, ()));
-        if (!supplySuccess || totalSupply == 0) return 0;
+        if (!supplySuccess || totalSupply == 0) return (0, 0);
 
         (bool unstakedSuccess, uint256 unstakedLp) =
             _safeCallUint(LP_TOKEN, abi.encodeCall(ICurveLPToken.balanceOf, (account)));
         (bool stakedSuccess, uint256 stakedLp) = _safeCallUint(GAUGE, abi.encodeCall(ICurveGauge.balanceOf, (account)));
 
         uint256 totalLp = (unstakedSuccess ? unstakedLp : 0) + (stakedSuccess ? stakedLp : 0);
-        if (totalLp == 0) return 0;
+        if (totalLp == 0) return (0, 0);
 
-        // Find token in pool and compute proportional share
         for (uint256 i = 0; i < _MAX_ITERATIONS; i++) {
             (bool coinSuccess, address poolToken) = _safeCallAddress(LP_TOKEN, abi.encodeCall(ICurveLPToken.coins, (i)));
             if (!coinSuccess) break;
@@ -299,11 +303,13 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
             if (poolToken == token) {
                 (bool balSuccess, uint256 poolBalance) =
                     _safeCallUint(LP_TOKEN, abi.encodeCall(ICurveLPToken.balances, (i)));
-                if (!balSuccess) return 0;
-                return (poolBalance * totalLp) / totalSupply;
+                if (!balSuccess) return (0, 0);
+                unstaked = unstakedSuccess ? (poolBalance * unstakedLp) / totalSupply : 0;
+                staked = stakedSuccess ? (poolBalance * stakedLp) / totalSupply : 0;
+                return (unstaked, staked);
             }
         }
-        return 0;
+        return (0, 0);
     }
 
     /// @notice Computes the CRV lower-bound: integrate_fraction(account) - minter.minted(account, gauge).

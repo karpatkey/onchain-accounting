@@ -57,7 +57,10 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Stader");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\"}");
+        assertEq(
+            positions[0].positionDetail,
+            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\",\"type\":\"Staking\"}"
+        );
     }
 
     function test_getOracleBalances_realHolder() public view {

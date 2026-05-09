@@ -11,6 +11,7 @@ import {InvalidArguments} from "src/errors.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Uniswap V3 Pool Balance Oracle
 /// @author kpk
@@ -246,8 +247,8 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](4);
         uint256 count;
 
-        string memory liquidityDetail = string.concat(_positionDetail, "}");
-        string memory feesDetail = string.concat(_positionDetail, ",\"type\":\"fees\"}");
+        string memory liquidityDetail = PositionType.withType(_positionDetail, PositionType.SUPPLY);
+        string memory feesDetail = PositionType.withType(_positionDetail, PositionType.FEES);
 
         if (token0Eligible && liq0 > 0) {
             temp[count++] = _makePosition(TOKEN0, liq0, liquidityDetail);

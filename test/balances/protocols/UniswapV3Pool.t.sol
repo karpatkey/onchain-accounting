@@ -480,25 +480,29 @@ contract UniswapV3PoolBalanceOracleTest is Test {
 
         // Order: token0 liq, token1 liq, token0 fees, token1 fees
         assertEq(positions[0].underlyingAsset.asset, address(token0));
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"}");
+        assertEq(
+            positions[0].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"Supply\"}"
+        );
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].protocol, "Uniswap V3");
 
         assertEq(positions[1].underlyingAsset.asset, address(token1));
-        assertEq(positions[1].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"}");
+        assertEq(
+            positions[1].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"Supply\"}"
+        );
         assertGt(positions[1].amount, 0);
 
         assertEq(positions[2].underlyingAsset.asset, address(token0));
         assertEq(
-            positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}"
+            positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"Fees\"}"
         );
         assertEq(positions[2].amount, 4444);
 
         assertEq(positions[3].underlyingAsset.asset, address(token1));
         assertEq(
-            positions[3].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"fees\"}"
+            positions[3].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\",\"type\":\"Fees\"}"
         );
         assertEq(positions[3].amount, 7777);
     }

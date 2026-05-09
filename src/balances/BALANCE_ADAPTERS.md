@@ -167,21 +167,30 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | Adapter | Description | Protocol string / notes |
 |---------|-------------|-------------------------|
 | **ERC20DefaultOracle** | Wallet ERC20 and native balances for all registered assets. | `"wallet"`, positionDetail `"Holding"`. Auto-registered at init. |
-| **AaveV3Instance** | Aave v3 positions (supply/borrow) for one market. | Configurable protocol name. |
-| **AaveV3SafetyModule** | Aave safety module (e.g. staked AAVE). | |
-| **Aura** | Aura vault/lp positions. | |
-| **BalancerV3** | Balancer V3 positions. | |
-| **CompoundV3Comet** | Compound V3 Comet: base borrow, collaterals, rewards. | Constructor: protocol string (e.g. "Compound v3 USDC"). Uses NAVCalculator for asset metadata. |
+| **AaveV2Instance** | Aave V2 lending positions (supply/collateral/borrow) for one market via V2 ProtocolDataProvider. Thin subclass of `AaveV3InstanceBalanceOracle`. | Protocol `"Aave V2"`, product `"Lending"`. Stable-debt positions not reported (governance-disabled). Mainnet only. |
+| **AaveV3Instance** | Aave V3 lending positions (supply/collateral/borrow) for one market via V3 ProtocolDataProvider. Discovers all reserves dynamically; emits two legs per reserve (supply/collateral + borrow). | Protocol `"Aave V3"`, product `"Lending"`. `positionId` = Pool address. |
+| **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction; two legs per token (Staking + Rewards). | Protocol `"Aave V3"`, product `"Safety Module"`. DeBank reports stkAAVE under `aave2`, not `aave3`. |
+| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token (Staking + Rewards) denominated in the bare reserve. | Protocol `"Aave V3"`, product `"Umbrella"`. Picks up new stake tokens via governance without redeploy. See `docs/decisions/0006-aave-umbrella-balance-oracle.md`. |
+| **Aura** | Aura gauge staked LP + claimable BAL/AURA rewards. | |
+| **BalancerV3** | Balancer V3 pool LP. Emits two legs per asset: `Supply` (unstaked wallet LP) and `Staking` (gauge-staked LP + gauge rewards). | |
+| **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. | |
+| **CompoundV3Comet** | Compound V3 Comet: base supply/borrow, collaterals, COMP rewards. | Constructor: protocol string (e.g. `"Compound v3 USDC"`). Uses NAVCalculator for asset metadata. |
+| **Convex** | Convex staking rewards (CRV, CVX, extras) for one gauge. | |
+| **Curve** | Curve gauge LP. Emits two legs per asset: `Supply` (unstaked wallet LP) and `Staking` (gauge-staked LP + gauge rewards). | |
 | **DaiDsr** | DAI Savings Rate. | |
+| **FluidFToken** | Fluid fToken (ERC4626 lending vault) — converts shares to underlying via `convertToAssets`. | |
+| **FluidVault** | Fluid Smart Vault — reports collateral and debt legs per vault. | |
+| **GearboxMarket** | Gearbox passive lending pool dToken balance. | |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. | Mutable per-(user, token) cache, `onlyOwner` writes, proofs verified against the live Distributor root. The framework's documented mutable-adapter exception. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. |
-| **MorphoMarket** | Morpho market positions. | |
+| **MorphoMarket** | Morpho market positions (collateral supply, loan supply, borrow). `positionId` derived automatically from `marketId` via `Strings.toHexString` — no separate constructor param needed. | |
+| **MorphoVault** | Morpho ERC4626 vault (MetaMorpho) share balance converted to underlying. | |
 | **SkySavingsUsds** | Sky savings USDS. | |
-| **SparkLend** | Spark lending positions. | |
-| **StakeWiseV3OsToken** | StakeWise V3 osToken wallet balance, returned as the underlying token via `OsTokenVaultController.convertToAssets(shares)`. Constructor is parameterized (`osToken`, `underlyingToken`, `osTokenVaultController`) so the same contract serves osETH on Mainnet and osGNO on Gnosis identically. | Mainnet: `StakeWiseV3OsToken_ETH` (osETH → ETH-sentinel). |
-| **StakeWiseV3Vault** | StakeWise V3 vault deposit net of minted-osToken debt: `vaultAssets - mintedOs`. One adapter instance per vault (each StakeWise V3 vault is independent). Underlying-agnostic via the same parameterization as the osToken adapter. | Mainnet: `StakeWiseV3Vault_Genesis` (`0xAC0F906E433d58FA868F936E8A43230473652885`). |
+| **SparkLend** | Spark lending positions (subclass of AaveV3Instance). | |
+| **StakeWiseV3OsToken** | StakeWise V3 osToken wallet balance converted to underlying via `OsTokenVaultController.convertToAssets`. Same contract serves osETH (Mainnet) and osGNO (Gnosis). | Mainnet: `StakeWiseV3OsToken_ETH` (osETH → ETH-sentinel). |
+| **StakeWiseV3Vault** | StakeWise V3 vault. `getOraclePositions` emits two legs: `Staking` (vault shares → assets) and `Borrow` (osToken debt → assets). `getOracleBalances`/`getOracleBalanceForAsset` return the signed net for backward compat. | One adapter per vault. |
 | **StaderWithdrawalQueue** | Stader UserWithdrawalManager pending unstake requests; reports the sum of `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. | Mainnet only; underlying configured to WETH. |
-| **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. One adapter instance per pair; no rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
-| **UniswapV3Pool** | Uniswap V3 concentrated-liquidity LP — principal amounts derivable from `liquidity` at the current pool price, plus unclaimed fees, across all of the account's NFTs in this pool. One adapter instance per pool. **Token registration requirement:** the adapter intersects the pool's `(token0, token1)` pair against NAVCalculator's registered asset list at query time. Only legs whose token is registered are reported; if *neither* pool token is registered, the adapter returns nothing. **Consequence:** a pool adapter where one token lacks a price feed produces partial output (only the registered token's leg). To avoid this, mark the adapter `"enabled": false` in the chain config until all pool tokens have price feeds registered. | Constructor: `(pool, positionManager, protocol, positionDetail, positionId, navCalculator)`. Chain config key prefix: `UniswapV3_`. |
+| **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. No rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
+| **UniswapV3Pool** | Uniswap V3 concentrated-liquidity LP — principal amounts derivable from `liquidity` at the current pool price, plus unclaimed fees, across all of the account's NFTs in this pool. One adapter per pool. Only legs whose token is registered with NAVCalculator are reported; mark `"enabled": false` in chain config until all pool tokens have price feeds. | Constructor: `(pool, positionManager, protocol, positionDetail, positionId, navCalculator)`. Chain config key prefix: `UniswapV3_`. |
 
 Protocol adapters typically take a **NAVCalculator** (or equivalent) in the constructor to read the asset registry (and sometimes symbols/decimals) so they can build correct `Asset` and only report registered assets if desired.
 
@@ -201,7 +210,7 @@ Protocol adapters typically take a **NAVCalculator** (or equivalent) in the cons
      - `amount`: positive `uint256` in asset decimals.
      - `isDebt`: `true` for borrows/debts, `false` for collateral/supply/claims.
      - `protocol`: emit `_protocol` from the constructor-pinned field (e.g. `"Aave V3"`, `"Morpho"`).
-     - `positionDetail`: emit `string.concat(_positionDetail, "}")` for single-type adapters, or `string.concat(_positionDetail, ",\"type\":\"<leg>\"}")` for multi-leg adapters. Multi-token-leg adapters (Convex/Curve rewards) can also append `,\"token\":\"<sym>\"`. Per-adapter examples in [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md) §4.
+     - `positionDetail`: emit `string.concat(_positionDetail, "}")` for single-type adapters, or `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from `src/utils/PositionType.sol`) for multi-leg adapters. Per-adapter examples in [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md) §4.
      - `positionId`: emit `_positionId` from the constructor-pinned field (hex string of the adapter's most-specific anchor address).
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
    - You may return only assets that are registered in NAVCalculator (like ERC20DefaultOracle) to avoid unnecessary work; unregistered positions are dropped by NAVCalculator anyway.

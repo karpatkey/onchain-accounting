@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Fluid Vault Balance Oracle (T1)
 /// @author kpk
@@ -354,10 +355,10 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice Returns the `positionDetail` JSON string for a given asset/leg.
     function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
         if (asset == COLLATERAL_TOKEN && !isDebt) {
-            return string.concat(_positionDetail, ",\"type\":\"Collateral\"}");
+            return PositionType.withType(_positionDetail, PositionType.COLLATERAL);
         }
         if (asset == DEBT_TOKEN && isDebt) {
-            return string.concat(_positionDetail, ",\"type\":\"Borrow\"}");
+            return PositionType.withType(_positionDetail, PositionType.BORROW);
         }
         return string.concat(_positionDetail, "}");
     }

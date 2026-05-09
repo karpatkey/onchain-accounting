@@ -8,15 +8,16 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title StakeWise Vault Balance Oracle
 /// @author kpk
-/// @notice This contract tracks user positions in StakeWise vaults, calculating their net balance
-/// by considering both their direct vault shares and any osToken debt positions.
-/// The balance calculation works as follows:
-/// 1. Gets the user's direct vault shares and converts them to underlying asset value
-/// 2. Gets the user's osToken minted debt position (if any) and converts it to underlying asset value
-/// 3. Returns the net balance as: vaultAssets - osTokenDebt
+/// @notice Tracks user positions in StakeWise V3 vaults.
+/// @dev `getOraclePositions` emits two legs per asset when both are present:
+///        - type "Staking" (isDebt=false): direct vault shares converted to underlying assets
+///        - type "Borrow"  (isDebt=true):  osToken debt position converted to underlying assets
+///      `getOracleBalanceForAsset` and `getOracleBalances` return the signed net (staking − debt)
+///      for simple balance queries and backward compatibility.
 contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
@@ -87,31 +88,33 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
-    /// @notice Internal helper to calculate balance for a specific asset
-    /// @param underlyingAsset The asset address
-    /// @param account The account address
-    /// @return amount Balance magnitude (non-negative)
-    /// @return isDebt True if debt, false if credit
+    /// @notice Returns the gross staking and borrow amounts separately.
+    function _getGrossBalances(address underlyingAsset, address account)
+        internal
+        view
+        returns (uint256 vaultAssets, uint256 mintedOs)
+    {
+        if (underlyingAsset != address(UNDERLYING_TOKEN)) revert InvalidArguments();
+        vaultAssets = VAULT.convertToAssets(VAULT.getShares(account));
+        mintedOs = VAULT.convertToAssets(VAULT.osTokenPositions(account));
+    }
+
+    /// @notice Returns the signed net balance (staking − debt) for simple balance queries.
     function _calculateBalance(address underlyingAsset, address account)
         internal
         view
         returns (uint256 amount, bool isDebt)
     {
-        if (underlyingAsset != address(UNDERLYING_TOKEN)) {
-            revert InvalidArguments();
-        }
-
-        uint256 directBalance = VAULT.getShares(account);
-        uint256 osTokenPosition = VAULT.osTokenPositions(account);
-
-        uint256 vaultAssets = VAULT.convertToAssets(directBalance);
-        uint256 mintedOs = VAULT.convertToAssets(osTokenPosition);
-
-        // Net: vaultAssets - mintedOs (can be negative)
-        if (vaultAssets >= mintedOs) {
-            return (vaultAssets - mintedOs, false);
-        }
+        (uint256 vaultAssets, uint256 mintedOs) = _getGrossBalances(underlyingAsset, account);
+        if (vaultAssets >= mintedOs) return (vaultAssets - mintedOs, false);
         return (mintedOs - vaultAssets, true);
+    }
+
+    /// @notice Returns the positionDetail JSON for a given leg.
+    function _positionDetailFor(bool isDebt_) internal view returns (string memory) {
+        return isDebt_
+            ? PositionType.withType(_positionDetail, PositionType.BORROW)
+            : PositionType.withType(_positionDetail, PositionType.STAKING);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -191,6 +194,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
+
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         address[] memory registeredAssets = new address[](reg.length);
@@ -198,45 +203,27 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
             registeredAssets[i] = reg[i].asset;
         }
 
-        // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
-        AssetBalanceData[] memory assetBalanceData;
-        if (registeredSupportedAssets.length == 0) {
-            assetBalanceData = new AssetBalanceData[](0);
-        } else if (assetFilter != address(0)) {
-            // Check if assetFilter is in the registered supported assets
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                if (registeredSupportedAssets[i] == assetFilter) {
-                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
-                    if (amount != 0) {
-                        assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
-                    } else {
-                        assetBalanceData = new AssetBalanceData[](0);
-                    }
-                    break;
-                }
-            }
-        } else {
-            // Pre-allocate temporary array (max size)
-            AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length);
-            uint256 count = 0;
+        // Up to 2 legs per asset (Staking + Borrow).
+        AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length * 2);
+        uint256 count = 0;
 
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
-                if (amount != 0) {
-                    tempData[count] =
-                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
-                    count++;
-                }
+        for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+            address asset = registeredSupportedAssets[i];
+            if (assetFilter != address(0) && asset != assetFilter) continue;
+            (uint256 vaultAssets, uint256 mintedOs) = _getGrossBalances(asset, account);
+            if (vaultAssets > 0) {
+                tempData[count++] = AssetBalanceData({asset: asset, amount: vaultAssets, isDebt: false});
             }
+            if (mintedOs > 0) {
+                tempData[count++] = AssetBalanceData({asset: asset, amount: mintedOs, isDebt: true});
+            }
+        }
 
-            // Resize to actual count
-            assetBalanceData = new AssetBalanceData[](count);
-            for (uint256 i = 0; i < count; i++) {
-                assetBalanceData[i] = tempData[i];
-            }
+        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assetBalanceData[i] = tempData[i];
         }
         positions = _buildPositions(assetBalanceData);
     }
@@ -295,7 +282,7 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, "}"),
+                positionDetail: _positionDetailFor(assetBalanceData[i].isDebt),
                 positionId: _positionId
             });
 

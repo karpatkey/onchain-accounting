@@ -9,6 +9,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
@@ -727,7 +728,7 @@ contract Aura is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: string.concat(_positionDetail, ",\"token\":\"", underlyingAsset.symbol, "\"}"),
+                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
                 positionId: _positionId
             });
 

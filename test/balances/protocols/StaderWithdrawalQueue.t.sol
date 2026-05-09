@@ -310,7 +310,8 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Stader");
         assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"}"
+            positions[0].positionDetail,
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\",\"type\":\"Staking\"}"
         );
     }
 

@@ -166,12 +166,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         );
 
         morphoBlueOracle = new MorphoMarketBalanceOracle(
-            morphoBlue,
-            marketIdSusdsUsdt,
-            "Morpho - sUSDS/USDT",
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
+            morphoBlue, marketIdSusdsUsdt, "Morpho - sUSDS/USDT", "{\"p\":\"t\"", address(nav)
         );
 
         daiDsr = new DaiDsrBalanceOracle(

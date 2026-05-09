@@ -163,7 +163,10 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "Uniswap V2");
-            assertEq(positions[i].positionDetail, "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"}");
+            assertEq(
+                positions[i].positionDetail,
+                "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\",\"type\":\"Supply\"}"
+            );
             assertFalse(positions[i].isDebt);
             assertGt(positions[i].amount, 0);
             if (positions[i].underlyingAsset.asset == USDC) sawUsdc = true;

@@ -8,6 +8,7 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Merkl Rewards Balance Oracle (proof-cached)
 /// @author kpk
@@ -258,7 +259,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
                 amount: bal,
                 isDebt: false,
                 protocol: PROTOCOL,
-                positionDetail: string.concat(POSITION_DETAIL, "}"),
+                positionDetail: PositionType.withType(POSITION_DETAIL, PositionType.REWARDS),
                 positionId: _positionId
             });
         }

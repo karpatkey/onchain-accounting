@@ -39,8 +39,8 @@ interface INAVCalculator is IBalances {
     ///        ("Lending", "Vault", "Market", "LP", "Staking", "Rewards", "Holding"). `name` (optional)
     ///        is the specific market/instance as it appears in the protocol's own UI — e.g. "Core Instance"
     ///        or "Prime Instance" for Aave V3, "kpk ETH Prime V1" for a Morpho vault.
-    ///        `type` disambiguates sub-positions: "Supply", "Borrow", "Collateral", "Reward", "Staked".
-    ///        `token` is added by multi-token adapters (Convex, Curve rewards).
+    ///        `type` disambiguates sub-positions: "Supply", "Borrow", "Collateral", "Staking", "Rewards", "Fees".
+    ///        Constants are defined in `src/utils/PositionType.sol`.
     ///        Full schema reference: see docs/howto/position-detail-schema.md.
     /// @param positionId Stable hex identifier for this adapter instance (pool address, market id, etc.).
     ///        Frontend uses this as a safe React key across blocks and deployments. Derived from the most

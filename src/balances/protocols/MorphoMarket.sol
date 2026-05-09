@@ -12,6 +12,8 @@ import "src/errors.sol";
 
 import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
+import {PositionType} from "src/utils/PositionType.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Morpho Market Balance Oracle
 /// @author kpk
@@ -77,17 +79,15 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @param morpho_ The Morpho contract address.
-    /// @param marketId_ The market id to query.
+    /// @param marketId_ The market id to query. Also used as the positionId (hex-encoded).
     /// @param protocol_ Protocol identifier (e.g., "Morpho").
     /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (marketId as hex string).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(
         address morpho_,
         bytes32 marketId_,
         string memory protocol_,
         string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         require(morpho_.code.length > 0, "Morpho must be a contract");
@@ -100,19 +100,19 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         LOAN_TOKEN = marketParams.loanToken;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
-        _positionId = positionId_;
+        _positionId = Strings.toHexString(uint256(marketId_), 32);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
     /// @notice Returns the positionDetail JSON string for a given asset and debt flag.
     function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
         if (asset == COLLATERAL_TOKEN) {
-            return string.concat(_positionDetail, ",\"type\":\"Collateral\"}");
+            return PositionType.withType(_positionDetail, PositionType.COLLATERAL);
         }
         if (asset == LOAN_TOKEN) {
             return isDebt
-                ? string.concat(_positionDetail, ",\"type\":\"Borrow\"}")
-                : string.concat(_positionDetail, ",\"type\":\"Supply\"}");
+                ? PositionType.withType(_positionDetail, PositionType.BORROW)
+                : PositionType.withType(_positionDetail, PositionType.SUPPLY);
         }
         return string.concat(_positionDetail, "}");
     }

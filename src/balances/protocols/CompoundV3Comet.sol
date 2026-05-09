@@ -8,6 +8,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title CompoundV3Comet balance oracle
 /// @notice One adapter wraps a single Compound V3 (Comet) market. Reports the user's
@@ -228,18 +229,19 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
                 if (net != 0) {
                     bool isDebt_ = net < 0;
                     uint256 amount = isDebt_ ? SafeCast.toUint256(-net) : SafeCast.toUint256(net);
-                    tmp[count++] = _makePosition(meta, amount, isDebt_, isDebt_ ? "Borrow" : "Supply");
+                    tmp[count++] =
+                        _makePosition(meta, amount, isDebt_, isDebt_ ? PositionType.BORROW : PositionType.SUPPLY);
                 }
             }
             // Collateral leg (separate from base; base is never also a collateral in Comet).
             if (isCollateral[asset]) {
                 uint256 c = COMET_EXT_INTERFACE.collateralBalanceOf(account, asset);
-                if (c > 0) tmp[count++] = _makePosition(meta, c, false, "Collateral");
+                if (c > 0) tmp[count++] = _makePosition(meta, c, false, PositionType.COLLATERAL);
             }
             // Reward leg
             if (asset == address(REWARD_TOKEN)) {
                 uint256 r = _rewardOwed(account);
-                if (r > 0) tmp[count++] = _makePosition(meta, r, false, "Reward");
+                if (r > 0) tmp[count++] = _makePosition(meta, r, false, PositionType.REWARDS);
             }
         }
 
@@ -280,7 +282,7 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             amount: amount,
             isDebt: isDebt,
             protocol: _protocol,
-            positionDetail: string.concat(_positionDetail, ",\"type\":\"", typeLabel, "\"}"),
+            positionDetail: PositionType.withType(_positionDetail, typeLabel),
             positionId: _positionId
         });
     }

@@ -5,6 +5,7 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Stader Withdrawal Queue Balance Oracle
 /// @author kpk
@@ -230,7 +231,7 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
             amount: total,
             isDebt: false,
             protocol: _protocol,
-            positionDetail: string.concat(_positionDetail, "}"),
+            positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
             positionId: _positionId
         });
     }

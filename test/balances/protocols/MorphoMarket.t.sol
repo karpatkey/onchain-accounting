@@ -63,7 +63,6 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
             marketId,
             "Morpho - Mock",
             "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }

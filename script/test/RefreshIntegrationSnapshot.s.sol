@@ -109,7 +109,7 @@ contract RefreshIntegrationSnapshot is Script, IntegrationFromConfigBase {
 
     /// @notice Writes per-account position details to test/integration/nav-positions-<chainId>.json.
     ///         The Python comparison report reads this file to show real NAV position breakdowns
-    ///         alongside the Debank data.
+    ///         alongside the DeBank data.
     function _writeNavPositionsForCurrentChain() internal {
         string memory outPath = string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json");
         string memory payload = string.concat(

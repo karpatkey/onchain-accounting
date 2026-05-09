@@ -29,9 +29,9 @@
       "enabled": true,
       "constructor": {
         "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
-        "protocol": "Aave V3 Gnosis",
+        "protocol": "Aave V3",
         "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Gnosis Market\"",
-        "positionId": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717"
+        "positionId": "0xb50201558B00496A145fE76f7424749556E326D8"
       },
       "deployed": "0xcFdAC8a9EA51f8dd598FbeaBFe3D4fCBAf61DBAa"
     },

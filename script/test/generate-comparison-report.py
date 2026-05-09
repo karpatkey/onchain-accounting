@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
 """
-Generate a detailed NAV vs Debank comparison report in Markdown.
+Generate a detailed NAV vs DeBank comparison report in Markdown.
 
-For each account × chain: one unified table that pairs each NAV position
-with its Debank counterpart, making the NAV-type distinction explicit:
-  - "adapter"    : balance adapter (Aave V3, Morpho, …)
-  - "price feed" : ERC20 wallet balance priced via a custom feed
-                   (sUSDS, sXDAI, rETH, wstETH, …)
+The report has six sections:
 
-The same economic exposure may appear as a Debank *protocol* position while
-NAV sees it as a price-feed wallet balance (e.g. sUSDS → Sky protocol;
-sXDAI → Gnosis protocol).  The unified table shows both sides on the same row.
+  Section 1 — Account-level drift summary
+  Section 2 — Protocol-level pairing (per account × chain)
+  Section 3 — Per-adapter granular detail: one table per adapter instance, per account,
+               showing NAV vs DeBank amounts AND unit prices so amount drift (balance-adapter
+               signal) and price drift (price-feed signal) can be graded independently.
+  Section 4 — Coverage gaps: DeBank protocols with value not in supportedDeBankProtocols
+               (4.1) and supported protocol items with no NAV match (4.2).
+  Section 5 — Untracked-by-design footer (rationale in accounts.json.$untracked_by_design)
+  Section 6 — Stale price / sequencer flags per account × chain
 
 NAV position detail is read from test/integration/nav-positions-<chainId>.json,
-written by RefreshIntegrationSnapshot during the refresh run.
+written by IntegrationFromConfigBase during the refresh run.
+
+DeBank data is loaded from test/integration/debank-cache/ by default when that directory
+exists; otherwise a live DeBank API fetch is performed (requires DEBANK_API_KEY).
 
 Usage:
+    # Default: use cache if available, else call live API
     . ./.env && python3 script/test/generate-comparison-report.py
+
+    # Force live API call + update cache + overwrite debankUsd in accounts.json
     . ./.env && python3 script/test/generate-comparison-report.py --refresh-debank
 
-By default writes back debankUsd only to empty slots (preserves forge-time
-captures). Pass --refresh-debank to recapture every slot against current chain
-state — pairs anchor with regenerated NAV but introduces a small temporal gap
-between fork-block-pinned NAV and now-pinned Debank for volatile assets.
+    # Regenerate report from cache only (no API key required)
+    python3 script/test/generate-comparison-report.py --from-cache
 
 Output: comparison-report.md
 """
@@ -32,7 +38,9 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Optional
 
 DEBANK_API_KEY = os.environ.get("DEBANK_API_KEY", "")
 DEBANK_BASE = "https://pro-openapi.debank.com"
@@ -40,65 +48,53 @@ ACCOUNTS_JSON = "test/integration/accounts.json"
 ASSETS_JSON = "script/config/assets.json"
 CHAINS_CONFIG_DIR = "script/config/chains"
 NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
+DEBANK_CACHE_DIR = "test/integration/debank-cache"
 OUT_FILE = "comparison-report.md"
 NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
-# Display-only rename for Debank protocol IDs in the rendered "Debank ID" column.
-# The lookup key (matched against Debank's API responses + the allowlist in
-# accounts.json.chains.<id>.supportedDebankProtocols) stays as Debank reports it
-# (`morphoblue`); only the display string changes. Honors the project naming
-# convention from CLAUDE.md ("Morpho not Morpho Blue").
+# Display-only rename for DeBank protocol IDs in the rendered "DeBank ID" column.
+# Honors the project naming convention from CLAUDE.md ("Morpho not Morpho Blue").
 DEBANK_ID_DISPLAY: dict[str, str] = {
     "morphoblue": "morpho",
 }
 
-# WALLET_AGGREGATING adapters (those listed in WALLET_AGGREGATING_ADAPTERS) read
-# wallet token balances directly and aggregate them into a single
-# PositionBalance denominated in another asset (e.g. Cap reads cUsd + stcUsd,
-# returns USDC). Debank reports the same economic position as a *protocol*
-# entry (capapp, "Staked cap USD") AND as separate *wallet token* entries
-# (cUSD wallet, stcUSD wallet). Symbol-based matching can't pair them — the
-# NAV adapter's symbol (USDC) doesn't match Debank's component symbols (cUSD,
-# stcUSD). This map tells the matcher that for these Debank protocol IDs, the
-# NAV adapter with the matching protocol-prefix label should be force-paired
-# with the protocol row regardless of symbol, and the corresponding wallet
-# rows should annotate "↑ aggregated by <Adapter> above" instead of dashes.
+# WALLET_AGGREGATING adapters aggregate wallet token balances into a single
+# PositionBalance denominated in another asset (e.g. Cap reads cUsd + stcUsd → USDC).
 WALLET_AGGREGATING_DEBANK_IDS: dict[str, str] = {
     "capapp": "Cap",
 }
 
-# NET_POSITION adapters: NAV reports a SINGLE net PositionBalance for what
-# Debank presents as a split supply+borrow row. StakeWise V3 vaults that mint
-# osETH against an ETH deposit are the canonical case — Debank shows
-# `supply ETH X + borrow osETH Y` (gross), our adapter reports
-# `supply ETH (X − Y_in_ETH)` (net). Symbol- and amount-based Stage 1 fails
-# because gross-supply ≠ net-supply; Stage 2 needs ≥2 NAV positions per group.
-# When the Debank row carries BOTH supply AND borrow legs, no Stage 1/2 result
-# was produced, and the protocol-id matches an entry below, force-pair the
-# first unmatched NAV candidate by protocol-id.
+# NET_POSITION adapters report a single net PositionBalance for what DeBank shows as
+# a split supply+borrow row (e.g. StakeWise V3 vaults).
 NET_POSITION_DEBANK_IDS: dict[str, str] = {
-    "stakewise": "Stakewise v3",
+    "stakewise": "StakeWise V3",
 }
 
+# CONTROLLER_MERGE_DEBANK_IDS: DeBank protocols where the same position is split across
+# multiple portfolio_item_list entries sharing the same pool.controller address (e.g.
+# Compound V3 splits supply into a "Yield" item and rewards into a "Lending" item for the
+# same Comet market). Items sharing a controller are merged before matching so that all
+# NAV positions for that market are matched together against the combined token list.
+CONTROLLER_MERGE_DEBANK_IDS: set[str] = {"compound3"}
 
-# Adapters that read wallet token balances directly and aggregate them into a
-# single protocol-denominated PositionBalance. Loaded from a JSON registry
-# shared with refresh-integration-snapshot.sh so anchor and rendered totals
-# use the same allowlist. See script/test/wallet-aggregating-adapters.json.
 WALLET_AGGREGATING_ADAPTERS_JSON = "script/test/wallet-aggregating-adapters.json"
 with open(WALLET_AGGREGATING_ADAPTERS_JSON) as _wa_f:
     WALLET_AGGREGATING_ADAPTERS: dict[str, list[str]] = {
         k: v for k, v in json.load(_wa_f).items() if not k.startswith("$")
     }
 
-# Maps NAV adapter `protocol` prefixes to Debank protocol short-IDs.
-# Matching is prefix-based: e.g. "Aave V3" matches "Aave V3 Core", "Aave V3 Prime",
-# "Aave V3 Safety Module", etc.  "Morpho" matches "Morpho Vault", "Morpho - *".
+# Maps NAV adapter `protocol` prefixes to DeBank protocol short-IDs.
 # Longer prefixes take priority over shorter ones.
 NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
-    "Aave V3": ["aave3"],
     "Aave V2": ["aave2"],
+    # Old protocol strings (deployed adapters; kept for backward compat until redeployed)
     "Aave Umbrella": ["aave3"],
+    # DeBank reports stkAAVE (Safety Module) under aave2, not aave3 — include aave2 so
+    # those positions are candidates when matching the aave2 staked row.
+    "Aave V3 Safety Module": ["aave3", "aave2"],
+    # New canonical strings (post-redeploy adapters). aave2 included for the same reason
+    # as Aave V3 Safety Module above (stkAAVE classified under aave2 by DeBank).
+    "Aave V3": ["aave3", "aave2"],
     "Morpho": ["morphoblue"],
     "Compound v3": ["compound3"],
     "Balancer V3": ["balancer3", "balancer2"],
@@ -114,7 +110,8 @@ NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "Lido": ["lido"],
     "Ethena": ["ethena"],
     "ether.fi": ["etherfi"],
-    "Stakewise v3": ["stakewise"],
+    "Stakewise v3": ["stakewise"],   # old casing — keep until redeployed
+    "StakeWise V3": ["stakewise"],   # canonical
     "Stader": ["stader"],
     "Uniswap V3": ["uniswap3"],
     "Uniswap V2": ["uniswap2"],
@@ -125,21 +122,16 @@ NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "PancakeSwap V2": ["pancakeswap"],
 }
 
-# For price-feed (wallet) positions: maps asset symbol to the Debank protocol IDs
-# that represent the same economic exposure.  NAV prices these via a custom feed
-# and counts them as wallet balances; Debank categorises them as protocol positions.
-#
-# This is the ONLY way wallet positions are matched to Debank protocols — the
-# old generic supply-list symbol search caused too many false positives (e.g. a
-# tiny USDT dust balance matching a $100K Aave position just because USDT is Aave
-# collateral).
+# Reverse map: debank_id → NAV protocol prefixes that cover it (for gap annotation).
+_DEBANK_ID_TO_NAV_PROTOCOLS: dict[str, list[str]] = {}
+for _proto, _ids in NAV_PROTOCOL_TO_DEBANK_IDS.items():
+    for _did in _ids:
+        _DEBANK_ID_TO_NAV_PROTOCOLS.setdefault(_did, []).append(_proto)
+
 WALLET_SYMBOL_TO_DEBANK_IDS: dict[str, list[str]] = {
-    # Savings / yield-bearing stablecoins
     "sUSDS": ["sky"],
     "sXDAI": ["gnosis"],
     "sDAI": ["gnosis", "spark"],
-    # Liquid staking / restaking tokens — NAV uses a price feed, Debank sees the
-    # underlying staking protocol.
     "stETH": ["lido"],
     "wstETH": ["lido"],
     "rETH": ["rocketpool"],
@@ -150,11 +142,71 @@ WALLET_SYMBOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "ezETH": ["renzo"],
     "cbETH": ["coinbase_wrapped_staked_eth"],
     "mETH": ["mantle_staking"],
+    # Stader: ETHx wallet balance + withdrawal-queue adapter both map to "stader".
+    # DeBank groups the LST holding under the stader protocol; NAV values it via
+    # the ETHx custom price feed as a plain wallet token.
+    "ETHx": ["stader"],
 }
 
 
+# ── LegMatch dataclass ────────────────────────────────────────────────────────
+
+@dataclass
+class LegMatch:
+    """One matched (or unmatched) leg: a single NAV position paired with the
+    corresponding DeBank token entry, with drift fields computed on access."""
+    account: str
+    chain_id: str
+    account_label: str
+    protocol: str           # NAV protocol string (e.g. "Compound v3 USDC")
+    debank_id: str          # DeBank short id (e.g. "compound3"); "" for nav_only
+    position_id: str        # NAV positionId (hex adapter-instance identifier)
+    position_detail: dict   # NAV positionDetail JSON object
+    leg_kind: str           # e.g. "supply", "borrow", "reward", "fees", "staking"
+    symbol: str
+    is_debt: bool
+    nav_amount: Optional[float]           # token units
+    nav_unit_price_usd: Optional[float]   # USD per token
+    nav_usd: Optional[float]             # valueUsd8dp / 1e8
+    debank_amount: Optional[float]
+    debank_unit_price_usd: Optional[float]
+    debank_usd: Optional[float]
+    match_stage: str   # "1", "2", "3", "3b", "pf", "nav_only"
+    item_label: str = ""
+
+
+# ── Drift helpers ─────────────────────────────────────────────────────────────
+
+def _drift_pct(nav: Optional[float], ref: Optional[float]) -> Optional[float]:
+    """Return (nav - ref) / ref * 100, or None if either side is missing/zero."""
+    if nav is None or ref is None or ref == 0:
+        return None
+    return (nav - ref) / ref * 100.0
+
+
+def _drift_severity(v: Optional[float]) -> str:
+    if v is None:
+        return ""
+    av = abs(v)
+    if av <= 1.0:
+        return "OK"
+    if av <= 5.0:
+        return "WARN"
+    return "FAIL"
+
+
+def fmt_drift_cell(v: Optional[float]) -> str:
+    """Return e.g. 'OK +0.12%' or 'WARN -2.34%' or 'FAIL +8.90%' or '—'."""
+    if v is None:
+        return "—"
+    sev = _drift_severity(v)
+    sign = "+" if v >= 0 else ""
+    return f"{sev} {sign}{v:.2f}%"
+
+
+# ── Utility helpers (unchanged) ───────────────────────────────────────────────
+
 def debank_ids_for_nav_protocol(protocol: str) -> list[str]:
-    """Return Debank IDs for a NAV protocol string using longest-prefix matching."""
     best_prefix = ""
     best_ids: list[str] = []
     for prefix, ids in NAV_PROTOCOL_TO_DEBANK_IDS.items():
@@ -165,9 +217,6 @@ def debank_ids_for_nav_protocol(protocol: str) -> list[str]:
 
 
 def adapter_aggregated_addrs(cid: str) -> set[str]:
-    """Return lowercase token addresses that wallet-aggregating adapters consume
-    on chain `cid`. Reads from script/config/chains/<cid>.json so addresses are
-    sourced from the canonical chain config (no duplication)."""
     try:
         with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
             adapters = json.load(f).get("balanceAdapters", {})
@@ -187,11 +236,6 @@ def adapter_aggregated_addrs(cid: str) -> set[str]:
 
 
 def disabled_lp_pool_addrs(cid: str) -> set[str]:
-    """Return lowercase pool/pair addresses of disabled LP adapters (Uniswap V3,
-    PancakeSwap V3/V2, etc.) on chain `cid`. These are adapters that are explicitly
-    disabled because one or more of their tokens lacks a registered price feed.
-    Debank items whose pool.controller matches one of these addresses are routed to
-    the 'untracked by design' footer instead of the main comparison table."""
     try:
         with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
             adapters = json.load(f).get("balanceAdapters", {})
@@ -248,13 +292,11 @@ def token_inline(t):
 
 
 def load_nav_positions(chain_id: str) -> dict[str, list]:
-    """Load nav-positions-<chainId>.json; returns {} if missing."""
     path = NAV_POSITIONS_PATTERN.format(chain_id=chain_id)
     if not os.path.exists(path):
         return {}
     with open(path) as f:
         data = json.load(f)
-    # Keys are checksummed addresses; normalise to lowercase for lookup.
     return {k.lower(): v for k, v in data.get("accounts", {}).items()}
 
 
@@ -271,16 +313,10 @@ def normalise_pid(pid: str, dbank_chain: str) -> str:
 
 
 def find_debank_proto(chain_protos: list, short_ids: list[str]) -> list:
-    """Return all Debank protocol entries matching any of the given short IDs."""
-    return [p for p in chain_protos
-            if p.get("_short_id", "") in short_ids]
+    return [p for p in chain_protos if p.get("_short_id", "") in short_ids]
 
 
 def find_debank_proto_by_symbol(chain_protos: list, symbol: str) -> tuple[str, float] | None:
-    """
-    Search all Debank protocol entries for a supply/reward token matching `symbol`.
-    Returns (debank_id, net_usd) of the first match, or None.
-    """
     for p in chain_protos:
         short_id = p.get("_short_id", "")
         for item in p.get("portfolio_item_list", []):
@@ -292,7 +328,6 @@ def find_debank_proto_by_symbol(chain_protos: list, symbol: str) -> tuple[str, f
 
 
 def build_debank_proto_detail(p: dict) -> str:
-    """Build a compact inline description of a Debank protocol entry."""
     cells = []
     for item in p.get("portfolio_item_list", []):
         detail = item.get("detail", {})
@@ -309,7 +344,6 @@ def build_debank_proto_detail(p: dict) -> str:
 
 
 def build_item_label(item: dict) -> str:
-    """Short label for one Debank portfolio item: description or name + pool controller."""
     desc = item.get("detail", {}).get("description", "")
     name = item.get("name", "")
     ctrl = (item.get("pool") or {}).get("controller", "")
@@ -319,8 +353,47 @@ def build_item_label(item: dict) -> str:
     return label
 
 
+def merge_items_by_controller(items: list[dict]) -> list[dict]:
+    """Merge portfolio items that share the same pool.controller into a single logical item.
+    The merged item has combined supply/borrow/reward token lists and summed net_usd_value.
+    Items without a controller are left as-is."""
+    from collections import defaultdict, OrderedDict
+    by_ctrl: dict[str, list[dict]] = OrderedDict()
+    no_ctrl: list[dict] = []
+    for item in items:
+        ctrl = (item.get("pool") or {}).get("controller", "").lower()
+        if ctrl:
+            by_ctrl.setdefault(ctrl, []).append(item)
+        else:
+            no_ctrl.append(item)
+    merged: list[dict] = []
+    for ctrl, group in by_ctrl.items():
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+        combined_detail: dict = {"supply_token_list": [], "borrow_token_list": [], "reward_token_list": []}
+        combined_usd = 0.0
+        names = []
+        for g in group:
+            d = g.get("detail", {})
+            combined_detail["supply_token_list"] += d.get("supply_token_list", [])
+            combined_detail["borrow_token_list"] += d.get("borrow_token_list", [])
+            combined_detail["reward_token_list"] += d.get("reward_token_list", [])
+            combined_usd += g.get("stats", {}).get("net_usd_value", 0)
+            n = g.get("name", "") or g.get("detail", {}).get("description", "")
+            if n and n not in names:
+                names.append(n)
+        first = group[0]
+        merged.append({
+            **first,
+            "name": " + ".join(names) if names else first.get("name", ""),
+            "detail": {**first.get("detail", {}), **combined_detail},
+            "stats": {"net_usd_value": combined_usd},
+        })
+    return merged + no_ctrl
+
+
 def build_item_tokens(item: dict) -> str:
-    """Compact token summary for a single Debank portfolio item."""
     detail = item.get("detail", {})
     parts = []
     for tok in detail.get("supply_token_list", []):
@@ -332,28 +405,87 @@ def build_item_tokens(item: dict) -> str:
     return " + ".join(parts) if parts else "—"
 
 
+def _leg_kind(pos: dict) -> str:
+    """Derive human-readable leg kind from positionDetail.type or isDebt.
+    Returns the canonical PositionType constant value (Supply/Borrow/Collateral/Staking/Rewards/Fees)."""
+    det = pos.get("positionDetail", {})
+    if isinstance(det, dict):
+        t = det.get("type", "").strip()
+        if t:
+            return t
+    return "Borrow" if pos.get("isDebt") else "Supply"
+
+
+# ── DeBank cache I/O ──────────────────────────────────────────────────────────
+
+def _cache_proto_path(addr: str) -> str:
+    return os.path.join(DEBANK_CACHE_DIR, f"{addr.lower()}-protocols.json")
+
+
+def _cache_tok_path(addr: str, cid: str) -> str:
+    return os.path.join(DEBANK_CACHE_DIR, f"{addr.lower()}-tokens-{cid}.json")
+
+
+def load_protocols_from_cache(addr: str) -> list | None:
+    path = _cache_proto_path(addr)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def load_tokens_from_cache(addr: str, cid: str) -> list | None:
+    path = _cache_tok_path(addr, cid)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def save_protocols_to_cache(addr: str, proto_resp: list) -> None:
+    os.makedirs(DEBANK_CACHE_DIR, exist_ok=True)
+    with open(_cache_proto_path(addr), "w") as f:
+        json.dump(proto_resp, f, indent=2)
+        f.write("\n")
+
+
+def save_tokens_to_cache(addr: str, cid: str, tok_resp: list) -> None:
+    os.makedirs(DEBANK_CACHE_DIR, exist_ok=True)
+    with open(_cache_tok_path(addr, cid), "w") as f:
+        json.dump(tok_resp, f, indent=2)
+        f.write("\n")
+
+
+# ── render_unified_table ──────────────────────────────────────────────────────
+
 def render_unified_table(
     nav_positions: list,
     chain_protos: list,
     wallet_tokens: list,
     supported_ids: set[str],
     reg_addrs: set[str],
+    priced_addrs: set[str],
     agg_addrs: set[str],
     dbank_chain: str,
     disabled_pools: set[str] | None = None,
+    # Extended parameters for cross-section data collection:
+    leg_matches_out: list | None = None,
+    coverage_gaps_out: list | None = None,
+    global_untracked_out: list | None = None,
+    account: str = "",
+    chain_id: str = "",
+    chain_name: str = "",
+    account_label: str = "",
 ) -> list[str]:
     """
-    Render two Debank-first tables (protocol positions + wallet tokens), each
+    Render two DeBank-first tables (protocol positions + wallet tokens), each
     extended with NAV match columns on the right.
 
-    Protocol table columns:
-      Protocol | Debank ID | Covered | Debank USD | Debank detail | NAV type | NAV USD
-    Wallet table columns:
-      Symbol | Amount | Price | Covered | Debank USD | Address | NAV type | NAV detail | NAV amount | NAV USD
-
-    `disabled_pools`: lowercase pool/pair addresses of LP adapters that are disabled
-    because one or more pool tokens lack a registered price feed. Debank items whose
-    pool.controller matches are silently moved to the 'untracked by design' footer.
+    Extended parameters (all optional, default None/empty):
+    - leg_matches_out: accumulator for LegMatch records (used for Section 3)
+    - coverage_gaps_out: accumulator for unmatched supported-protocol items (Section 4.2)
+    - global_untracked_out: accumulator for untracked protocol entries (Section 4.1)
+    - account/chain_id/chain_name/account_label: context for the above records
     """
     if disabled_pools is None:
         disabled_pools = set()
@@ -363,7 +495,6 @@ def render_unified_table(
     all_covered = reg_addrs | agg_addrs
 
     # ── Pre-index NAV positions ─────────────────────────────────────────────────
-    # Reverse map: debank_id → symbols NAV tracks as price feeds for that protocol
     debank_to_pf_symbols: dict[str, set[str]] = {}
     for sym, dids in WALLET_SYMBOL_TO_DEBANK_IDS.items():
         for did in dids:
@@ -371,9 +502,7 @@ def render_unified_table(
 
     matched_nav: set[int] = set()
 
-    # Adapter positions grouped by debank_id
     nav_adapters_by_debank: dict[str, list[tuple[int, dict]]] = {}
-    # Price-feed positions by address and by symbol
     nav_pf_by_addr: dict[str, tuple[int, dict]] = {}
     nav_pf_by_symbol: dict[str, tuple[int, dict]] = {}
 
@@ -387,11 +516,21 @@ def render_unified_table(
             for did in debank_ids_for_nav_protocol(pos.get("protocol", "")):
                 nav_adapters_by_debank.setdefault(did, []).append((idx, pos))
 
+    def _nav_unit_price(pos: dict) -> Optional[float]:
+        p = int(pos.get("price", 0))
+        pd = int(pos.get("priceDecimals", 8))
+        return p / 10 ** pd if p > 0 else None
+
+    def _nav_amount_float(pos: dict) -> float:
+        decimals = int(pos.get("decimals", 18))
+        return int(pos.get("amount", 0)) / 10 ** decimals
+
+    def _nav_usd(pos: dict) -> float:
+        return int(pos.get("valueUsd8dp", 0)) / 1e8
+
     def _match_nav_for_item(item: dict, short_id: str) -> list[tuple[str, str, str]]:
-        """Match one Debank portfolio item to ALL matching NAV adapter positions.
-        For each supply/borrow token, finds the closest unmatched NAV position by
-        (symbol, isDebt, amount within 10%). Returns a list of
-        (nav_market, nav_position, nav_usd_str), one entry per matched token."""
+        """Match one DeBank portfolio item to all matching NAV adapter positions.
+        As a side effect appends LegMatch records to leg_matches_out (if provided)."""
         detail = item.get("detail", {})
         tokens = (
             [(t, False) for t in detail.get("supply_token_list", [])]
@@ -406,44 +545,85 @@ def render_unified_table(
         results: list[tuple[str, str, str]] = []
         local_matched: set[int] = set()
 
-        for tok, is_borrow in tokens:
-            s_sym = tok.get("symbol", "").lower()
-            s_amt = float(tok.get("amount", 0))
-            if s_amt <= 0:
-                continue
-            best_idx, best_pos, best_score = None, None, float("inf")
-            for idx, p in candidates:
-                if idx in local_matched:
+        # Stage 1: two-pass symbol+debt match.
+        # Pass A (strict): match tokens within 10% amount tolerance.
+        # Pass B (relaxed): for tokens still unmatched after pass A, pick the closest
+        #   remaining candidate regardless of distance (stage "1b").  This handles large
+        #   interest-accrual gaps between the fork block and the DeBank query time (e.g.
+        #   a Morpho market that grew from 16.18 → 18.36 USDC between snapshots).
+        def _do_stage1_pass(token_list, strict: bool):
+            for tok, is_borrow in token_list:
+                s_sym = tok.get("symbol", "").lower()
+                s_amt = float(tok.get("amount", 0))
+                if s_amt <= 0:
                     continue
-                if p.get("symbol", "").lower() != s_sym:
+                best_idx, best_pos, best_score = None, None, float("inf")
+                for idx, p in candidates:
+                    if idx in local_matched:
+                        continue
+                    if p.get("symbol", "").lower() != s_sym:
+                        continue
+                    if bool(p.get("isDebt", False)) != is_borrow:
+                        continue
+                    p_amt = _nav_amount_float(p)
+                    if p_amt <= 0:
+                        continue
+                    score = abs(p_amt - s_amt) / s_amt
+                    if score < best_score:
+                        best_score, best_idx, best_pos = score, idx, p
+                if best_idx is None:
                     continue
-                if bool(p.get("isDebt", False)) != is_borrow:
+                if strict and best_score > 0.10:
                     continue
-                decimals = int(p.get("decimals", 18))
-                p_amt = int(p.get("amount", 0)) / 10 ** decimals
-                if p_amt <= 0:
-                    continue
-                score = abs(p_amt - s_amt) / s_amt
-                if score < best_score:
-                    best_score, best_idx, best_pos = score, idx, p
-            if best_idx is None or best_score > 0.10:
-                continue
-            local_matched.add(best_idx)
-            matched_nav.add(best_idx)
-            sym = best_pos.get("symbol", "?")
-            decimals = int(best_pos.get("decimals", 18))
-            amt = int(best_pos.get("amount", 0)) / 10 ** decimals
-            usd = int(best_pos.get("valueUsd8dp", 0)) / 1e8
-            label = "borrow" if best_pos.get("isDebt") else "supply"
-            results.append((best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                local_matched.add(best_idx)
+                matched_nav.add(best_idx)
+                sym = best_pos.get("symbol", "?")
+                amt = _nav_amount_float(best_pos)
+                usd = _nav_usd(best_pos)
+                label = _leg_kind(best_pos)
+                results.append((best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                if leg_matches_out is not None:
+                    db_amt = float(tok.get("amount", 0))
+                    db_price = float(tok.get("price", 0))
+                    leg_matches_out.append(LegMatch(
+                        account=account, chain_id=chain_id, account_label=account_label,
+                        protocol=best_pos.get("protocol", ""),
+                        debank_id=short_id,
+                        position_id=best_pos.get("positionId", ""),
+                        position_detail=best_pos.get("positionDetail", {}),
+                        leg_kind=_leg_kind(best_pos),
+                        symbol=best_pos.get("symbol", "?"),
+                        is_debt=bool(best_pos.get("isDebt", False)),
+                        nav_amount=amt,
+                        nav_unit_price_usd=_nav_unit_price(best_pos),
+                        nav_usd=usd,
+                        debank_amount=db_amt,
+                        debank_unit_price_usd=db_price if db_price > 0 else None,
+                        debank_usd=db_amt * db_price,
+                        match_stage="1" if strict else "1b",
+                        item_label=build_item_label(item),
+                    ))
 
-        # Stage 2: LP-pool / reward fallback — handles cases where per-token amounts
-        # diverge (e.g. Balancer pool rebalancing), symbols differ between NAV and
-        # Debank (e.g. weETH vs ETH), or rewards sit in reward_token_list rather
-        # than supply_token_list (e.g. Convex CRV/CVX).
-        # Uses the full candidates snapshot (includes stage-1-matched entries) for
-        # group USD calculation so partial stage-1 matches don't skew the total.
-        # Only emits positions not already claimed by stage 1 (local_matched).
+        _do_stage1_pass(tokens, strict=True)
+        # Identify tokens still unmatched after strict pass (by symbol+debt+amount tuple)
+        strict_matched_keys = {
+            (p.get("symbol", "").lower(), bool(p.get("isDebt", False)),
+             round(_nav_amount_float(p), 6))
+            for idx, p in candidates if idx in local_matched
+        }
+        unmatched_tokens = [
+            (tok, is_borrow) for tok, is_borrow in tokens
+            if float(tok.get("amount", 0)) > 0
+            and not any(
+                sym == tok.get("symbol", "").lower()
+                and debt == is_borrow
+                and abs(nav_a - float(tok.get("amount", 0))) / max(float(tok.get("amount", 0)), 1e-9) <= 0.10
+                for sym, debt, nav_a in strict_matched_keys
+            )
+        ]
+        _do_stage1_pass(unmatched_tokens, strict=False)
+
+        # Stage 2: LP-pool / multi-leg fallback
         all_debank_syms = {
             tok.get("symbol", "").lower()
             for tok_list in [detail.get("supply_token_list", []),
@@ -457,47 +637,66 @@ def render_unified_table(
 
         groups: dict[str, list[tuple[int, dict]]] = {}
         for idx, p in candidates:
-            groups.setdefault(p.get("protocol", ""), []).append((idx, p))
+            # Group by (protocol, positionId) so different adapter instances (e.g. different
+            # Comet markets, different Curve pools) are never merged into the same LP group.
+            key = (p.get("protocol", ""), p.get("positionId", ""))
+            groups.setdefault(key, []).append((idx, p))
 
         for group in groups.values():
-            # Stage 2 is the LP-pool / multi-leg fallback. A single-position group
-            # is just a 1:1 match — Stage 1 already had a chance and chose not to
-            # take it (or already took it). Re-claiming a 1:1 candidate here
-            # would steal it from a *later* item that legitimately needs the
-            # 1:1 match (observed on ACCOUNT_1 Morpho: each `Morpho *` is
-            # its own protocol group with 1 position; Stage 2 was attaching them
-            # all to the first item and starving items 5-6 of their natural
-            # matches). Restrict to multi-position groups.
             if len(group) < 2:
                 continue
             group_syms = {p.get("symbol", "").lower() for _, p in group}
             if not group_syms.intersection(all_debank_syms):
                 continue
-            group_usd = sum(int(p.get("valueUsd8dp", 0)) / 1e8 for _, p in group)
+            group_usd = sum(_nav_usd(p) for _, p in group)
             if item_usd > 0 and abs(group_usd - item_usd) / item_usd > 0.10:
                 continue
+            # All supply/borrow/reward tokens indexed by symbol for pairing
+            all_item_toks_by_sym = {
+                t.get("symbol", "").lower(): t
+                for tok_list in [detail.get("supply_token_list", []),
+                                 detail.get("borrow_token_list", []),
+                                 detail.get("reward_token_list", [])]
+                for t in tok_list if t.get("amount", 0) > 0
+            }
             stage2_added = False
             for idx, p in group:
                 if idx in local_matched:
                     continue
                 matched_nav.add(idx)
                 sym = p.get("symbol", "?")
-                decimals = int(p.get("decimals", 18))
-                amt = int(p.get("amount", 0)) / 10 ** decimals
-                usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                label = "borrow" if p.get("isDebt") else "supply"
+                amt = _nav_amount_float(p)
+                usd = _nav_usd(p)
+                label = _leg_kind(p)
                 results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 stage2_added = True
+                if leg_matches_out is not None:
+                    matched_db_tok = all_item_toks_by_sym.get(sym.lower())
+                    db_amt = float(matched_db_tok.get("amount", 0)) if matched_db_tok else None
+                    db_price = float(matched_db_tok.get("price", 0)) if matched_db_tok else None
+                    db_usd = (db_amt * db_price) if (db_amt is not None and db_price is not None) else None
+                    leg_matches_out.append(LegMatch(
+                        account=account, chain_id=chain_id, account_label=account_label,
+                        protocol=p.get("protocol", ""),
+                        debank_id=short_id,
+                        position_id=p.get("positionId", ""),
+                        position_detail=p.get("positionDetail", {}),
+                        leg_kind=_leg_kind(p),
+                        symbol=p.get("symbol", "?"),
+                        is_debt=bool(p.get("isDebt", False)),
+                        nav_amount=amt,
+                        nav_unit_price_usd=_nav_unit_price(p),
+                        nav_usd=usd,
+                        debank_amount=db_amt,
+                        debank_unit_price_usd=db_price if (db_price is not None and db_price > 0) else None,
+                        debank_usd=db_usd,
+                        match_stage="2",
+                        item_label=build_item_label(item),
+                    ))
             if stage2_added:
                 break
 
-        # Stage 3: WALLET_AGGREGATING adapters (Cap). NAV reports a single
-        # PositionBalance in an aggregated denomination (e.g. USDC for Cap),
-        # while Debank reports the same economic position split across a
-        # protocol entry + wallet tokens with different symbols (cUSD, stcUSD).
-        # Symbol-based Stage 1 matching can't pair them, and Stage 2's
-        # similar-USD heuristic might pair the wrong NAV adapter; force the
-        # link by protocol-id only when no Stage-1 result was produced.
+        # Stage 3: WALLET_AGGREGATING adapters
         if not results and short_id in WALLET_AGGREGATING_DEBANK_IDS:
             for idx, p in candidates:
                 if idx in local_matched:
@@ -505,22 +704,32 @@ def render_unified_table(
                 local_matched.add(idx)
                 matched_nav.add(idx)
                 sym = p.get("symbol", "?")
-                decimals = int(p.get("decimals", 18))
-                amt = int(p.get("amount", 0)) / 10 ** decimals
-                usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                label = "borrow" if p.get("isDebt") else "supply"
+                amt = _nav_amount_float(p)
+                usd = _nav_usd(p)
+                label = _leg_kind(p)
                 results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                if leg_matches_out is not None:
+                    leg_matches_out.append(LegMatch(
+                        account=account, chain_id=chain_id, account_label=account_label,
+                        protocol=p.get("protocol", ""),
+                        debank_id=short_id,
+                        position_id=p.get("positionId", ""),
+                        position_detail=p.get("positionDetail", {}),
+                        leg_kind=_leg_kind(p),
+                        symbol=p.get("symbol", "?"),
+                        is_debt=bool(p.get("isDebt", False)),
+                        nav_amount=amt,
+                        nav_unit_price_usd=_nav_unit_price(p),
+                        nav_usd=usd,
+                        debank_amount=None,
+                        debank_unit_price_usd=None,
+                        debank_usd=item_usd,  # item-level only
+                        match_stage="3",
+                        item_label=build_item_label(item),
+                    ))
                 break
 
-        # Stage 3b: NET_POSITION adapters (StakeWise V3 vaults). NAV reports a
-        # single net PositionBalance (`supply X − borrow Y`) while Debank shows
-        # the gross split (`supply X + borrow Y`). Stage 1 fails because the
-        # gross-supply Debank amount differs from the net-supply NAV amount;
-        # Stage 2 needs a multi-position group. Fire only when the Debank row
-        # has BOTH supply AND borrow legs and no earlier stage matched —
-        # `has_supply + has_borrow` keeps single-leg rows (e.g. legacy V2
-        # `Rewards` / `Staked` items) from accidentally pairing with the
-        # active V3 vault adapter.
+        # Stage 3b: NET_POSITION adapters
         if not results and short_id in NET_POSITION_DEBANK_IDS:
             has_supply = any(not is_borrow for tok, is_borrow in tokens
                              if float(tok.get("amount", 0)) > 0)
@@ -533,27 +742,41 @@ def render_unified_table(
                     local_matched.add(idx)
                     matched_nav.add(idx)
                     sym = p.get("symbol", "?")
-                    decimals = int(p.get("decimals", 18))
-                    amt = int(p.get("amount", 0)) / 10 ** decimals
-                    usd = int(p.get("valueUsd8dp", 0)) / 1e8
-                    label = "borrow" if p.get("isDebt") else "supply"
+                    amt = _nav_amount_float(p)
+                    usd = _nav_usd(p)
+                    label = _leg_kind(p)
                     results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                    if leg_matches_out is not None:
+                        leg_matches_out.append(LegMatch(
+                            account=account, chain_id=chain_id, account_label=account_label,
+                            protocol=p.get("protocol", ""),
+                            debank_id=short_id,
+                            position_id=p.get("positionId", ""),
+                            position_detail=p.get("positionDetail", {}),
+                            leg_kind=_leg_kind(p),
+                            symbol=p.get("symbol", "?"),
+                            is_debt=bool(p.get("isDebt", False)),
+                            nav_amount=amt,
+                            nav_unit_price_usd=_nav_unit_price(p),
+                            nav_usd=usd,
+                            debank_amount=None,
+                            debank_unit_price_usd=None,
+                            debank_usd=item_usd,
+                            match_stage="3b",
+                            item_label=build_item_label(item),
+                        ))
                     break
 
         return results
 
     lines: list[str] = []
 
-    # Capture untracked-by-design entries while we walk Debank's response so we can
-    # render them in a single compact footer instead of polluting the main tables.
-    untracked_protos: list[tuple[str, str, float, str]] = []   # (name, short_id, usd, detail)
-    untracked_wallet: list[tuple[str, float, str]] = []         # (symbol, usd, address)
+    untracked_protos: list[tuple[str, str, float, str]] = []
+    untracked_wallet: list[tuple[str, float, str]] = []
 
     # ── Protocol positions table ──────────────────────────────────────────────────
     covered_protos = [p for p in chain_protos if p.get("_short_id", "") in supported_ids]
 
-    # Collect untracked Debank protocols for the footer (full inline render skipped
-    # to keep the main tables focused on what NAV actually attempts to track).
     for p in chain_protos:
         short_id = p.get("_short_id", "")
         if short_id in supported_ids:
@@ -561,16 +784,27 @@ def render_unified_table(
         usd = proto_net_usd(p)
         if abs(usd) < 0.01:
             continue
-        untracked_protos.append((p.get("name", short_id), short_id, usd, build_debank_proto_detail(p)))
+        entry = (p.get("name", short_id), short_id, usd, build_debank_proto_detail(p))
+        untracked_protos.append(entry)
+        if global_untracked_out is not None:
+            global_untracked_out.append({
+                "pname": p.get("name", short_id),
+                "debank_id": short_id,
+                "usd": usd,
+                "account": account,
+                "account_label": account_label,
+                "chain_id": chain_id,
+                "chain_name": chain_name,
+            })
 
     if covered_protos:
         lines += [
             "#### Protocol positions",
             "",
-            "_Left side ↙ Debank's view (from /v1/user/all_complex_protocol_list). Right side ↘ NAV's view (from registered balance adapters)._",
+            "_Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right side ↘ NAV's view (from registered balance adapters)._",
             "",
-            "| Protocol | Debank ID | Debank Σ USD | Debank item | Debank tokens | Debank $ | NAV adapter | NAV tokens | NAV $ |",
-            "|---|---|---:|---|---|---:|---|---|---:|",
+            "| Protocol | │ | DeBank Σ USD | DeBank item | DeBank tokens | DeBank $ | │ | NAV Σ USD | NAV adapter | NAV tokens | NAV $ |",
+            "|---|:---:|---:|---|---|---:|:---:|---:|---|---|---:|",
         ]
         for p in covered_protos:
             short_id = p.get("_short_id", "")
@@ -579,24 +813,38 @@ def render_unified_table(
             all_items = [i for i in p.get("portfolio_item_list", [])
                          if abs(i.get("stats", {}).get("net_usd_value", 0)) >= 0.01]
 
-            # LP items from disabled adapters (unregistered token) go to the footer.
             items = []
             for item in all_items:
                 ctrl = (item.get("pool") or {}).get("controller", "").lower()
                 if ctrl and ctrl in disabled_pools:
                     item_usd = item.get("stats", {}).get("net_usd_value", 0)
                     untracked_protos.append((pname, short_id, item_usd, build_item_tokens(item)))
+                    if global_untracked_out is not None:
+                        global_untracked_out.append({
+                            "pname": pname,
+                            "debank_id": short_id,
+                            "usd": item_usd,
+                            "account": account,
+                            "account_label": account_label,
+                            "chain_id": chain_id,
+                            "chain_name": chain_name,
+                        })
                 else:
                     items.append(item)
 
             if not items:
                 continue
 
-            total = sum(i.get("stats", {}).get("net_usd_value", 0) for i in items)
+            # For protocols that split one logical position across multiple items (e.g.
+            # Compound V3 emits a "Lending" item for rewards and a "Yield" item for supply
+            # on the same Comet market), merge items sharing the same pool.controller so
+            # all legs are matched together against the corresponding NAV adapter.
+            if short_id in CONTROLLER_MERGE_DEBANK_IDS:
+                items = merge_items_by_controller(items)
 
+            total = sum(i.get("stats", {}).get("net_usd_value", 0) for i in items)
             has_adapters = bool(nav_adapters_by_debank.get(short_id))
             pf_syms = debank_to_pf_symbols.get(short_id, set())
-            # Pre-collect price-feed matches for non-adapter protocols (LSTs etc.)
             pf_pool: list[tuple[int, dict]] = []
             if not has_adapters and pf_syms:
                 for sym_l in pf_syms:
@@ -604,7 +852,10 @@ def render_unified_table(
                     if entry and entry[0] not in matched_nav:
                         pf_pool.append(entry)
 
-            first_row = True
+            # Pass 1: collect matches and coverage gaps (side effects on matched_nav / leg_matches_out)
+            proto_leg_start = len(leg_matches_out) if leg_matches_out is not None else 0
+            pf_nav_total: float = 0.0
+            item_data: list[tuple] = []
             for item in items:
                 item_usd = item.get("stats", {}).get("net_usd_value", 0)
                 item_label = build_item_label(item)
@@ -613,70 +864,127 @@ def render_unified_table(
                 if has_adapters:
                     nav_matches = _match_nav_for_item(item, short_id)
                 elif pf_pool:
-                    # Pick the pf_pool entry whose NAV USD is closest to item USD.
-                    # Avoids wrong matches when a protocol has multiple wallet
-                    # positions of very different sizes (e.g. wstETH vs dust stETH).
                     best_i = min(
                         range(len(pf_pool)),
-                        key=lambda i: abs(int(pf_pool[i][1].get("valueUsd8dp", 0)) / 1e8 - item_usd),
+                        key=lambda i: abs(_nav_usd(pf_pool[i][1]) - item_usd),
                     )
                     idx, pos = pf_pool.pop(best_i)
                     matched_nav.add(idx)
                     sym = pos.get("symbol", "?")
-                    decimals = int(pos.get("decimals", 18))
-                    amt = int(pos.get("amount", 0)) / 10 ** decimals
-                    usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
+                    amt = _nav_amount_float(pos)
+                    usd_val = _nav_usd(pos)
+                    pf_nav_total += usd_val
                     nav_matches = [("price feed", f"{sym} {fmt_amt(amt)}", fmt_usd(usd_val))]
                 else:
                     nav_matches = []
 
-                nav_market, nav_pos, nav_usd_s = nav_matches[0] if nav_matches else ("—", "—", "—")
+                # Coverage gap detection (Section 4.2)
+                if not nav_matches and abs(item_usd) >= 1.0:
+                    detail = item.get("detail", {})
+                    all_item_toks = (
+                        detail.get("supply_token_list", [])
+                        + detail.get("borrow_token_list", [])
+                        + detail.get("reward_token_list", [])
+                    )
+                    nonzero_toks = [t for t in all_item_toks if t.get("amount", 0) > 0]
+                    unregistered = [
+                        t.get("symbol", "?") for t in nonzero_toks
+                        if (t.get("id") or "").lower() not in (reg_addrs | agg_addrs)
+                    ]
+                    # All tokens unpriced (registered but no feed, or fully unknown) →
+                    # "Untracked by design" rather than a coverage gap.
+                    unpriced = [
+                        t.get("symbol", "?") for t in nonzero_toks
+                        if (t.get("id") or "").lower() not in (priced_addrs | agg_addrs)
+                    ]
+                    if nonzero_toks and len(unpriced) == len(nonzero_toks):
+                        untracked_protos.append((pname, short_id, item_usd, item_tokens))
+                        if global_untracked_out is not None:
+                            global_untracked_out.append({
+                                "pname": pname,
+                                "debank_id": short_id,
+                                "usd": item_usd,
+                                "account": account,
+                                "account_label": account_label,
+                                "chain_id": chain_id,
+                                "chain_name": chain_name,
+                            })
+                        continue
+                    if coverage_gaps_out is not None:
+                        if not has_adapters and not pf_pool:
+                            hint = f"No NAV adapter/feed registered for `{short_id}` on chain {chain_id}"
+                        elif unregistered:
+                            hint = f"Token(s) not in NAV registry: {', '.join(unregistered[:4])}"
+                        else:
+                            hint = "Adapter registered but no matching position (zero balance or positionDetail mismatch)"
+                        coverage_gaps_out.append({
+                            "account": account,
+                            "account_label": account_label,
+                            "chain_id": chain_id,
+                            "chain_name": chain_name,
+                            "debank_id": short_id,
+                            "protocol_name": pname,
+                            "item_label": item_label,
+                            "item_usd": item_usd,
+                            "item_tokens": item_tokens,
+                            "hint": hint,
+                        })
 
+                item_data.append((item_usd, item_label, item_tokens, nav_matches))
+
+            # Compute NAV Σ USD: adapter matches from leg_matches_out + price-feed matches tracked above
+            if leg_matches_out is not None:
+                adapter_nav_total = sum(lm.nav_usd or 0 for lm in leg_matches_out[proto_leg_start:])
+            else:
+                adapter_nav_total = 0.0
+            nav_total_float = adapter_nav_total + pf_nav_total
+            nav_total_str = fmt_usd(nav_total_float) if nav_total_float > 0 else "—"
+
+            # Pass 2: render rows
+            proto_cell = f"{pname}<br>`{display_id}`"
+            first_row = True
+            for item_usd, item_label, item_tokens, nav_matches in item_data:
+                nav_market, nav_pos, nav_usd_s = nav_matches[0] if nav_matches else ("—", "—", "—")
                 if first_row:
                     lines.append(
-                        f"| {pname} | `{display_id}` | {fmt_usd(total)} "
-                        f"| {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
-                        f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
+                        f"| {proto_cell} | │ | {fmt_usd(total)} | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
+                        f"| │ | {nav_total_str} | {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
                     first_row = False
                 else:
                     lines.append(
-                        f"| | | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
-                        f"| {nav_market} | {nav_pos} | {nav_usd_s} |"
+                        f"| | │ | | {item_label} | {item_tokens} | {fmt_usd(item_usd)} "
+                        f"| │ | | {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
-
                 for nav_market, nav_pos, nav_usd_s in nav_matches[1:]:
                     lines.append(
-                        f"| | | | | | | {nav_market} | {nav_pos} | {nav_usd_s} |"
+                        f"| | │ | | | | | │ | | {nav_market} | {nav_pos} | {nav_usd_s} |"
                     )
 
-            if first_row:  # protocol had no items above threshold
+            if first_row and not item_data:
+                # All items for this protocol were routed to untracked — skip the stub row.
+                continue
+            if first_row:
                 if not has_adapters and pf_pool:
-                    # All Debank items are below the $0.01 threshold (or none exist)
-                    # but the protocol has tracked wallet positions in NAV (e.g. dust
-                    # wstETH/stETH under Lido).  Emit pf_pool matches so these don't
-                    # fall into the "without Debank counterpart" table.
                     for j, (p_idx, p_pos) in enumerate(pf_pool):
                         matched_nav.add(p_idx)
                         p_sym = p_pos.get("symbol", "?")
-                        p_dec = int(p_pos.get("decimals", 18))
-                        p_amt = int(p_pos.get("amount", 0)) / 10 ** p_dec
-                        p_usd = int(p_pos.get("valueUsd8dp", 0)) / 1e8
+                        p_amt = _nav_amount_float(p_pos)
+                        p_usd = _nav_usd(p_pos)
+                        pf_nav_total += p_usd
                         if j == 0:
                             lines.append(
-                                f"| {pname} | `{display_id}` | {fmt_usd(total)} "
-                                f"| — | — | — "
-                                f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
+                                f"| {proto_cell} | │ | {fmt_usd(total)} | — | — | — "
+                                f"| │ | {fmt_usd(p_usd)} | price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
                             )
                         else:
                             lines.append(
-                                f"| | | | | | "
-                                f"| price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
+                                f"| | │ | | | | "
+                                f"| │ | | price feed | {p_sym} {fmt_amt(p_amt)} | {fmt_usd(p_usd)} |"
                             )
                 else:
                     lines.append(
-                        f"| {pname} | `{display_id}` | {fmt_usd(total)} "
-                        f"| — | — | — | — | — | — |"
+                        f"| {proto_cell} | │ | {fmt_usd(total)} | — | — | — | │ | — | — | — | — |"
                     )
         lines.append("")
 
@@ -686,9 +994,6 @@ def render_unified_table(
         if t.get("amount", 0) * t.get("price", 0) >= 0.50
     ]
 
-    # Partition into covered (NAV-priceable) and untracked. Render the covered ones
-    # in the main wallet table; the untracked ones land in the footer alongside
-    # untracked Debank protocols.
     covered_wallet: list[dict] = []
     for t in significant_wallet:
         tid = (t.get("id") or "").lower()
@@ -705,10 +1010,10 @@ def render_unified_table(
         lines += [
             "#### Wallet tokens",
             "",
-            "_Left side ↙ Debank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._",
+            "_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._",
             "",
-            "| Symbol | Address | Debank amount | Debank price | Debank $ | NAV source | NAV amount | NAV $ |",
-            "|---|---|---:|---:|---:|---|---:|---:|",
+            "| Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |",
+            "|---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|",
         ]
         for t in covered_wallet:
             tid = (t.get("id") or "").lower()
@@ -719,31 +1024,14 @@ def render_unified_table(
             is_native = tid == dbank_chain.lower()
             lookup = NATIVE_SENTINEL if is_native else tid
 
-            nav_source_s, nav_amt_s, nav_usd_s = "—", "—", "—"
+            nav_amt_s, nav_price_s, nav_usd_s = "—", "—", "—"
 
-            # WALLET_AGGREGATING adapter wallet leg: cUSD/stcUSD wallet tokens
-            # aren't standalone NAV positions, but they ARE counted (via the Cap
-            # adapter aggregating them into a single USDC PositionBalance, which
-            # is paired with the Cap protocol row above). Annotate accordingly
-            # instead of leaving misleading dashes.
             if lookup in agg_addrs:
-                # Find which aggregating adapter consumes this specific token by
-                # walking back through the registry → chain config. With only Cap
-                # today the answer is unambiguous, but the lookup is general.
-                try:
-                    cid_for_lookup = next(
-                        cid for cid, ccfg in {}.items()  # placeholder; pass real chain map if multi-chain ambiguity emerges
-                    )
-                except StopIteration:
-                    cid_for_lookup = None
-                # In practice the only WALLET_AGGREGATING adapter today is Cap;
-                # name it directly to avoid plumbing the chain config through.
                 adapter_label = next(iter(WALLET_AGGREGATING_ADAPTERS.keys()), "aggregating adapter")
-                nav_source_s = f"↑ aggregated by {adapter_label} (see protocol row)"
                 lines.append(
                     f"| {sym} | `{tid}` "
-                    f"| {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
-                    f"| {nav_source_s} | {nav_amt_s} | {nav_usd_s} |"
+                    f"| │ | {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
+                    f"| │ | ↑ aggregated (see protocol row) | — | — |"
                 )
                 continue
 
@@ -752,32 +1040,26 @@ def render_unified_table(
                 idx, pos = entry
                 if idx not in matched_nav:
                     matched_nav.add(idx)
-                    decimals = int(pos.get("decimals", 18))
-                    nav_amt_val = int(pos.get("amount", 0)) / 10 ** decimals
-                    nav_usd_val = int(pos.get("valueUsd8dp", 0)) / 1e8
-                    det = pos.get("positionDetail", {})
-                    det_s = det.get("product", "") if isinstance(det, dict) else str(det)
-                    nav_source_s = f"price feed ({pos.get('protocol', '')}/{det_s})"
+                    nav_amt_val = _nav_amount_float(pos)
+                    nav_usd_val = _nav_usd(pos)
+                    nav_price_val = _nav_unit_price(pos)
                     nav_amt_s = fmt_amt(nav_amt_val)
+                    nav_price_s = fmt_usd(nav_price_val) if nav_price_val is not None else "—"
                     nav_usd_s = fmt_usd(nav_usd_val)
 
             lines.append(
                 f"| {sym} | `{tid}` "
-                f"| {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
-                f"| {nav_source_s} | {nav_amt_s} | {nav_usd_s} |"
+                f"| │ | {fmt_amt(amt)} | {fmt_usd(price)} | {fmt_usd(tok_usd)} "
+                f"| │ | {nav_amt_s} | {nav_price_s} | {nav_usd_s} |"
             )
         lines.append("")
 
     # ── Untracked-by-design footer ────────────────────────────────────────────────
-    # Debank entries that NAV deliberately doesn't track. Rationale lives in
-    # accounts.json.chains.<id>.$untracked_by_design (read by humans, not parsed
-    # here). Showing them in a small footer keeps the main tables focused and
-    # reassures reviewers that ❌ entries aren't oversights.
     if untracked_protos or untracked_wallet:
         lines += [
             "#### Untracked by design",
             "",
-            "_Debank reports these but NAV doesn't (deliberately). See `accounts.json.chains.<id>.$untracked_by_design` for the full rationale._",
+            "_DeBank reports these but NAV doesn't (deliberately). See `accounts.json.chains.<id>.$untracked_by_design` for the full rationale._",
             "",
             "| Source | Type | $ value | Detail |",
             "|---|---|---:|---|",
@@ -789,13 +1071,10 @@ def render_unified_table(
             lines.append(f"| {sym} | wallet token | {fmt_usd(usd)} | `{addr}` |")
         lines.append("")
 
-    # ── Silent wallet absorption: sub-threshold Debank wallet tokens ─────────────
-    # Debank may hold wallet tokens below the $0.50 display cut-off. Absorb any
-    # unmatched NAV wallet position whose token address appears in that list so
-    # they don't surface as "without counterpart".
+    # ── Silent wallet absorption ──────────────────────────────────────────────────
     for t in wallet_tokens:
         if t.get("amount", 0) * t.get("price", 0) >= 0.50:
-            continue  # already handled in the table above
+            continue
         tid = (t.get("id") or "").lower()
         is_native = tid == dbank_chain.lower()
         lookup = NATIVE_SENTINEL if is_native else tid
@@ -812,35 +1091,262 @@ def render_unified_table(
     ]
     if unmatched:
         lines += [
-            "#### NAV positions with no Debank counterpart row",
+            "#### NAV positions with no DeBank counterpart row",
             "",
-            "_NAV reports these but Debank either doesn't surface them at all, or surfaces them under a Debank shape the matcher couldn't pair (e.g. the Cap adapter aggregates cUSD+stcUSD into a USDC `PositionBalance` on the NAV side, while Debank reports the Cap protocol as a cUSD entry plus a separate cUSD wallet token). Their dollar value IS counted in the headline NAV total — only the per-row pairing failed._",
+            "_NAV reports these but DeBank either doesn't surface them at all, or surfaces them under a DeBank shape the matcher couldn't pair (e.g. the Cap adapter aggregates cUSD+stcUSD into a USDC `PositionBalance` on the NAV side, while DeBank reports the Cap protocol as a cUSD entry plus a separate cUSD wallet token). Their dollar value IS counted in the headline NAV total — only the per-row pairing failed._",
             "",
             "| NAV source | Detail | Asset | NAV amount | NAV $ |",
             "|---|---|---|---:|---:|",
         ]
         for _, pos in unmatched:
             sym = pos.get("symbol", "?")
-            decimals = int(pos.get("decimals", 18))
-            amount = int(pos.get("amount", 0)) / 10 ** decimals
-            usd = int(pos.get("valueUsd8dp", 0)) / 1e8
+            amount = _nav_amount_float(pos)
+            usd = _nav_usd(pos)
             is_debt = pos.get("isDebt", False)
             sign = "−" if is_debt else ""
             proto = pos.get("protocol", "")
             det = pos.get("positionDetail", {})
-            det_s = det.get("product", "") if isinstance(det, dict) else str(det)
+            det_product = det.get("product", "") if isinstance(det, dict) else str(det)
+            det_type = det.get("type", "") if isinstance(det, dict) else ""
             nav_type_s = "price feed" if proto == "wallet" else "adapter"
-            nav_detail_s = f"{proto} / {det_s}" if det_s else proto
+            nav_detail_parts = [p for p in [proto, det_product, det_type] if p]
+            nav_detail_s = " / ".join(nav_detail_parts) if nav_detail_parts else proto
             lines.append(
                 f"| {nav_type_s} | {nav_detail_s} | {sym} | {fmt_amt(amount)} "
                 f"| {sign}{fmt_usd(abs(usd))} |"
+            )
+            # Collect as nav_only LegMatch for Section 3
+            if leg_matches_out is not None and abs(usd) >= 0.01:
+                leg_matches_out.append(LegMatch(
+                    account=account, chain_id=chain_id, account_label=account_label,
+                    protocol=proto,
+                    debank_id="",
+                    position_id=pos.get("positionId", ""),
+                    position_detail=pos.get("positionDetail", {}),
+                    leg_kind=_leg_kind(pos),
+                    symbol=pos.get("symbol", "?"),
+                    is_debt=is_debt,
+                    nav_amount=amount,
+                    nav_unit_price_usd=_nav_unit_price(pos),
+                    nav_usd=usd,
+                    debank_amount=None,
+                    debank_unit_price_usd=None,
+                    debank_usd=None,
+                    match_stage="nav_only",
+                    item_label="",
+                ))
+        lines.append("")
+
+    return lines
+
+
+# ── Section 3: Per-adapter granular detail ─────────────────────────────────────
+
+def render_per_adapter_detail_section(
+    all_leg_matches: list[LegMatch],
+    chains_cfg: dict,
+) -> list[str]:
+    """Render one sub-section per (adapter instance × chain), each with one table
+    per account showing per-leg amount / unit-price / USD drift."""
+    lines = [
+        "---",
+        "",
+        "## Section 3 — Per-Adapter Granular Detail",
+        "",
+        "_One table per adapter instance × account. **Amount drift** (Δ amt %) signals a balance-adapter issue. "
+        "**Price drift** (Δ price %) signals a price-feed issue. If both are small but USD drift is large, check "
+        "decimal/precision handling in the price computation._",
+        "",
+        "_Severity: **OK** ≤1% · **WARN** 1–5% · **FAIL** >5%. Rows sorted by descending NAV USD._",
+        "_`nav_only` rows (no DeBank match) are listed in a separate subsection._",
+        "",
+    ]
+
+    # Filter to adapter positions only (exclude wallet/price-feed and nav_only for main tables)
+    adapter_matches = [
+        lm for lm in all_leg_matches
+        if lm.protocol != "wallet"
+        and lm.match_stage not in ("nav_only", "pf")
+    ]
+    nav_only_matches = [
+        lm for lm in all_leg_matches
+        if lm.match_stage == "nav_only"
+        and lm.protocol != "wallet"
+    ]
+
+    if not adapter_matches and not nav_only_matches:
+        lines += ["_No adapter positions matched._", ""]
+        return lines
+
+    # Group by (chain_id, position_id, protocol)
+    from collections import defaultdict
+    by_adapter: dict[tuple, list[LegMatch]] = defaultdict(list)
+    for lm in adapter_matches:
+        key = (lm.chain_id, lm.position_id, lm.protocol)
+        by_adapter[key].append(lm)
+
+    # Sort: by chain_id ascending, then by total absolute NAV USD descending
+    def _adapter_sort(kv: tuple) -> tuple:
+        (cid, _pos_id, _proto), matches = kv
+        total = sum(abs(lm.nav_usd or 0) for lm in matches)
+        return (cid, -total)
+
+    for (cid, pos_id, protocol), matches in sorted(by_adapter.items(), key=_adapter_sort):
+        chain_name = chains_cfg.get(cid, {}).get("name", f"chain {cid}")
+        pos_id_short = f"{pos_id[:12]}…" if len(pos_id) > 14 else pos_id
+        lines += [
+            f"### {protocol} — {chain_name.title()} (chain {cid}) — `{pos_id_short}`",
+            "",
+        ]
+
+        # Sub-group by account
+        by_account: dict[str, list[LegMatch]] = defaultdict(list)
+        for lm in matches:
+            by_account[lm.account].append(lm)
+
+        for addr, acct_matches in sorted(by_account.items()):
+            lbl = acct_matches[0].account_label
+            addr_short = f"{addr[:8]}…{addr[-6:]}"
+            lines += [
+                f"#### {lbl} (`{addr_short}`)",
+                "",
+                "| Leg | Side | NAV amount | DB amount | Δ amt % | NAV unit $ | DB unit $ | Δ price % | NAV USD | DB USD | Δ USD % |",
+                "|---|:---:|---:|---:|---|---:|---:|---|---:|---:|---|",
+            ]
+            for lm in sorted(acct_matches, key=lambda x: -(abs(x.nav_usd or 0))):
+                side = "−" if lm.is_debt else "+"
+                nav_amt_s = fmt_amt(lm.nav_amount) if lm.nav_amount is not None else "—"
+                db_amt_s = fmt_amt(lm.debank_amount) if lm.debank_amount is not None else "—"
+                nav_price_s = fmt_usd(lm.nav_unit_price_usd) if lm.nav_unit_price_usd is not None else "—"
+                db_price_s = fmt_usd(lm.debank_unit_price_usd) if lm.debank_unit_price_usd is not None else "—"
+                nav_usd_s = fmt_usd(lm.nav_usd) if lm.nav_usd is not None else "—"
+                db_usd_s = fmt_usd(lm.debank_usd) if lm.debank_usd is not None else "—"
+                amt_d = _drift_pct(lm.nav_amount, lm.debank_amount)
+                price_d = _drift_pct(lm.nav_unit_price_usd, lm.debank_unit_price_usd)
+                usd_d = _drift_pct(lm.nav_usd, lm.debank_usd)
+                leg_label = f"{lm.symbol} ({lm.leg_kind})"
+                lines.append(
+                    f"| {leg_label} | {side} "
+                    f"| {nav_amt_s} | {db_amt_s} | {fmt_drift_cell(amt_d)} "
+                    f"| {nav_price_s} | {db_price_s} | {fmt_drift_cell(price_d)} "
+                    f"| {nav_usd_s} | {db_usd_s} | {fmt_drift_cell(usd_d)} |"
+                )
+            lines.append("")
+
+    # Nav-only appendix
+    if nav_only_matches:
+        lines += [
+            "### NAV-only positions (no DeBank counterpart matched)",
+            "",
+            "_These adapter positions are counted in the headline NAV but have no DeBank row. See Section 2 inline tables for rationale._",
+            "",
+            "| Chain | Account | Protocol | Leg | NAV amount | NAV unit $ | NAV USD |",
+            "|---|---|---|---|---:|---:|---:|",
+        ]
+        for lm in sorted(nav_only_matches, key=lambda x: -(abs(x.nav_usd or 0))):
+            chain_name = chains_cfg.get(lm.chain_id, {}).get("name", f"chain {lm.chain_id}")
+            addr_short = f"{lm.account[:8]}…{lm.account[-6:]}"
+            nav_amt_s = fmt_amt(lm.nav_amount) if lm.nav_amount is not None else "—"
+            nav_price_s = fmt_usd(lm.nav_unit_price_usd) if lm.nav_unit_price_usd is not None else "—"
+            nav_usd_s = fmt_usd(lm.nav_usd) if lm.nav_usd is not None else "—"
+            leg_label = f"{lm.symbol} ({lm.leg_kind})"
+            lines.append(
+                f"| {chain_name} ({lm.chain_id}) | {lm.account_label} (`{addr_short}`) "
+                f"| {lm.protocol} | {leg_label} | {nav_amt_s} | {nav_price_s} | {nav_usd_s} |"
             )
         lines.append("")
 
     return lines
 
 
-def main(refresh_debank: bool = False) -> None:
+# ── Section 4: Coverage gaps ──────────────────────────────────────────────────
+
+def render_coverage_gap_section(
+    all_coverage_gaps: list[dict],
+    all_global_untracked: list[dict],
+) -> list[str]:
+    """Render coverage-gap diagnostics: unsupported protocols (4.1) and
+    supported protocol items with no NAV match (4.2)."""
+    lines = [
+        "---",
+        "",
+        "## Section 4 — Coverage Gaps",
+        "",
+        "_Use this section to identify missing adapter registrations, unregistered tokens, or missing price feeds._",
+        "",
+    ]
+
+    # 4.1 — Untracked protocols
+    lines += [
+        "### 4.1 — DeBank protocols with value not in `supportedDeBankProtocols`",
+        "",
+        "_These show non-zero DeBank balance but are absent from the per-chain allowlist in `accounts.json`. "
+        "If an NAV adapter exists for the protocol, consider adding it to `supportedDeBankProtocols` and "
+        "registering the adapter on that chain._",
+        "",
+    ]
+    # Deduplicate by (chain_id, debank_id), keeping the highest-value entry
+    dedup: dict[tuple, dict] = {}
+    for e in all_global_untracked:
+        key = (e["chain_id"], e["debank_id"])
+        if key not in dedup or abs(e["usd"]) > abs(dedup[key]["usd"]):
+            dedup[key] = e
+    # Also collect per-account rows sorted by USD
+    sorted_untracked = sorted(all_global_untracked, key=lambda x: -abs(x["usd"]))
+    if sorted_untracked:
+        lines += [
+            "| Chain | Account | Protocol | DeBank ID | Value | NAV adapter? |",
+            "|---|---|---|---|---:|---|",
+        ]
+        for e in sorted_untracked:
+            did = e["debank_id"]
+            nav_protos = _DEBANK_ID_TO_NAV_PROTOCOLS.get(did, [])
+            adapter_s = f"Yes (`{'`, `'.join(nav_protos)}`)" if nav_protos else "No"
+            display_did = DEBANK_ID_DISPLAY.get(did, did)
+            chain_lbl = f"{e['chain_name'].title()} ({e['chain_id']})"
+            lines.append(
+                f"| {chain_lbl} | {e['account_label']} "
+                f"| {e['pname']} | `{display_did}` "
+                f"| {fmt_usd(e['usd'])} | {adapter_s} |"
+            )
+    else:
+        lines.append("_None — all DeBank protocols with value are in the allowlist._")
+    lines.append("")
+
+    # 4.2 — Supported protocols with no NAV match
+    lines += [
+        "### 4.2 — Supported protocol items with no NAV match",
+        "",
+        "_The protocol IS in `supportedDeBankProtocols` but no NAV position matched the item. "
+        "Possible causes: adapter not deployed on this chain, token not in NAV registry, price feed missing, "
+        "or account has zero balance in this market._",
+        "",
+    ]
+    if all_coverage_gaps:
+        lines += [
+            "| Chain | Account | Protocol | DeBank ID | Item | Value | Hint |",
+            "|---|---|---|---|---|---:|---|",
+        ]
+        for g in sorted(all_coverage_gaps, key=lambda x: -abs(x["item_usd"])):
+            did = g["debank_id"]
+            display_did = DEBANK_ID_DISPLAY.get(did, did)
+            chain_lbl = f"{g['chain_name'].title()} ({g['chain_id']})"
+            lines.append(
+                f"| {chain_lbl} | {g['account_label']} "
+                f"| {g['protocol_name']} | `{display_did}` "
+                f"| {g['item_label']} | {fmt_usd(g['item_usd'])} "
+                f"| {g['hint']} |"
+            )
+    else:
+        lines.append("_None — all supported protocol items matched a NAV position._")
+    lines.append("")
+
+    return lines
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
     with open(ACCOUNTS_JSON) as f:
         data = json.load(f)
     with open(ASSETS_JSON) as f:
@@ -852,8 +1358,15 @@ def main(refresh_debank: bool = False) -> None:
 
     # Build registered-token address sets: chain_id -> {lowercase_address}
     registered: dict[str, set[str]] = {}
+    # priced: subset of registered that actually have a working price feed.
+    # Used to detect items whose tokens are known but unpriced (→ untracked, not a coverage gap).
+    priced: dict[str, set[str]] = {}
     for cid, tokens in assets.get("tokens", {}).items():
         registered[cid] = {v["address"].lower() for v in tokens.values()}
+        priced[cid] = {
+            v["address"].lower() for v in tokens.values()
+            if v.get("pricefeed") and v.get("type", "None") not in ("None", "none", "")
+        }
 
     # Load NAV position detail files
     nav_positions_by_chain: dict[str, dict[str, list]] = {}
@@ -864,23 +1377,33 @@ def main(refresh_debank: bool = False) -> None:
         else:
             print(f"  [nav] chain {cid}: no file (run refresh script to generate)", file=sys.stderr)
 
+    # Cross-section accumulators (populated by render_unified_table calls)
+    all_leg_matches: list[LegMatch] = []
+    all_coverage_gaps: list[dict] = []
+    all_global_untracked: list[dict] = []
+
+    # DeBank total accumulator (for write-back to accounts.json)
     debank_totals: dict[int, dict[str, float]] = {}
 
     lines = [
-        "# NAV vs Debank — Detailed Comparison Report",
+        "# NAV vs DeBank — Detailed Comparison Report",
         "",
         f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}  ",
         f"Tolerance: {tolerance * 100:.0f}%",
         "",
     ]
-    if refresh_debank:
+    if from_cache:
         lines.append(
-            "Debank anchor: freshly captured against current chain state "
+            "DeBank anchor: read from `test/integration/debank-cache/` (no live API call).  "
+        )
+    elif refresh_debank:
+        lines.append(
+            "DeBank anchor: freshly captured against current chain state "
             "(`--refresh-debank`).  "
         )
     else:
         lines.append(
-            "Debank anchor: from `accounts.json.expected.<cid>.debankUsd` "
+            "DeBank anchor: from `accounts.json.expected.<cid>.debankUsd` "
             "(captured at forge-snapshot time). Re-run with `--refresh-debank` "
             "to recapture against current chain state.  "
         )
@@ -895,23 +1418,33 @@ def main(refresh_debank: bool = False) -> None:
         lines.append(f"| {ccfg['name']} ({cid}) | {ccfg['forkBlock']} |")
     lines.append("")
 
-    # Drift summary table goes here — filled in after the per-account loop runs.
-    # We splice it in via this sentinel so the loop can still walk in order.
     SUMMARY_SENTINEL = "<<DRIFT_SUMMARY_TABLE>>"
     lines.append(SUMMARY_SENTINEL)
     lines.append("")
-    summary_rows: list[dict] = []  # one entry per (account, chain) we render
+    summary_rows: list[dict] = []
 
     for acc_idx, acc in enumerate(accounts):
         addr = acc["address"]
         label = acc["label"]
-        enabled = [str(c) for c in acc["enabledChains"]]
+        enabled = [str(c) for c in acc.get("enabledChains", [])]
+        # Skip placeholder accounts (no address yet)
+        if not addr or addr.startswith("<"):
+            continue
         debank_totals[acc_idx] = {}
 
         lines += ["---", "", f"## {label}", "", f"**Address:** `{addr}`", ""]
 
-        print(f"[{label}] fetching protocol list...", file=sys.stderr)
-        proto_resp = debank_get("/v1/user/all_complex_protocol_list", f"id={addr}")
+        # Load or fetch all_complex_protocol_list (once per account)
+        if from_cache:
+            proto_resp = load_protocols_from_cache(addr) or []
+            if not proto_resp:
+                print(f"  [{label}] no protocol cache — run with --refresh-debank first", file=sys.stderr)
+        else:
+            print(f"[{label}] fetching protocol list...", file=sys.stderr)
+            proto_resp = debank_get("/v1/user/all_complex_protocol_list", f"id={addr}")
+            if not from_cache:
+                save_protocols_to_cache(addr, proto_resp)
+
         protos_by_chain: dict[str, list] = {}
         for p in proto_resp:
             c = p.get("chain", "")
@@ -921,38 +1454,39 @@ def main(refresh_debank: bool = False) -> None:
             ccfg = chains_cfg[cid]
             dbank_chain = ccfg["debankChainId"]
             chain_name = ccfg["name"]
-            supported_ids = set(ccfg.get("supportedDebankProtocols", []))
+            supported_ids = set(ccfg.get("supportedDeBankProtocols", []))
             exp = acc.get("expected", {}).get(cid, {})
             nav_raw = exp.get("navUsd8dp") or "0"
             dbank_usd_s = exp.get("debankUsd", "")
             nav_usd = int(nav_raw) / 1e8
 
-            # Annotate each Debank protocol entry with its normalised short_id
             raw_protos = protos_by_chain.get(dbank_chain, [])
             for p in raw_protos:
                 p["_short_id"] = normalise_pid(p.get("id", ""), dbank_chain)
             chain_protos = sorted(raw_protos, key=proto_net_usd, reverse=True)
 
-            # Early skip: if the account has no NAV positions on this chain AND Debank
-            # reports no protocol entries AND the cached anchor is empty/zero, the
-            # section would just render a "_No positions on this chain._" stub. Skip
-            # entirely (avoids the wallet-token Debank fetch too — saves credits)
-            # and don't add a summary row for it. Pure noise reduction.
             anchor_zero = (not dbank_usd_s) or (not dbank_usd_s.strip()) or float(dbank_usd_s or 0) == 0
             if nav_usd == 0 and not chain_protos and anchor_zero:
                 continue
 
-            # Wallet tokens
-            print(f"  [{label}] fetching token list chain {cid}...", file=sys.stderr)
-            tok_resp = debank_get("/v1/user/token_list",
-                                  f"id={addr}&chain_id={dbank_chain}&is_all=false")
+            # Load or fetch token list (per account × chain)
+            if from_cache:
+                tok_resp = load_tokens_from_cache(addr, cid) or []
+                if not tok_resp and not anchor_zero:
+                    print(f"  [{label}] no token cache for chain {cid}", file=sys.stderr)
+            else:
+                print(f"  [{label}] fetching token list chain {cid}...", file=sys.stderr)
+                tok_resp = debank_get("/v1/user/token_list",
+                                      f"id={addr}&chain_id={dbank_chain}&is_all=false")
+                save_tokens_to_cache(addr, cid, tok_resp)
+
             reg_addrs = registered.get(cid, set())
+            priced_addrs = priced.get(cid, set())
             agg_addrs = adapter_aggregated_addrs(cid)
             all_covered = reg_addrs | agg_addrs
             disabled_pools = disabled_lp_pool_addrs(cid)
 
-            # Compute Debank filtered total for write-back:
-            # protocol sum (supported IDs, excluding disabled-pool LP items) + wallet token sum
+            # Compute DeBank filtered total for write-back
             filtered_proto_sum = 0.0
             for p in chain_protos:
                 if p["_short_id"] not in supported_ids:
@@ -962,10 +1496,6 @@ def main(refresh_debank: bool = False) -> None:
                     if ctrl and ctrl in disabled_pools:
                         continue
                     filtered_proto_sum += item.get("stats", {}).get("net_usd_value", 0)
-            # No USD floor here — must mirror refresh-integration-snapshot.sh's
-            # tok_sum exactly so the stored anchor and fresh_filtered agree on
-            # cUSD-style dust positions. The $0.50 floor still applies to the
-            # rendered wallet table (significant_wallet) for readability.
             filtered_token_sum = 0.0
             for t in tok_resp:
                 tid = (t.get("id") or "").lower()
@@ -978,7 +1508,6 @@ def main(refresh_debank: bool = False) -> None:
             fresh_filtered = filtered_proto_sum + filtered_token_sum
             debank_totals[acc_idx][cid] = fresh_filtered
 
-            # Pick anchor for drift header
             if refresh_debank:
                 anchor_usd: float | None = fresh_filtered
                 has_anchor = True
@@ -996,7 +1525,7 @@ def main(refresh_debank: bool = False) -> None:
                 drift_s = f"{drift * 100:+.2f}%"
                 flag = "✅" if abs(drift) <= tolerance else "⚠️"
                 lines.append(
-                    f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: {drift_s} {flag}**"
+                    f"**NAV: {fmt_usd(nav_usd)} | DeBank filtered: {fmt_usd(anchor_usd)} | Drift: {drift_s} {flag}**"
                 )
                 summary_rows.append({
                     "label": label, "chain": chain_name, "cid": cid,
@@ -1005,7 +1534,7 @@ def main(refresh_debank: bool = False) -> None:
                 })
             elif has_anchor:
                 lines.append(
-                    f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: {fmt_usd(anchor_usd)} | Drift: — **"
+                    f"**NAV: {fmt_usd(nav_usd)} | DeBank filtered: {fmt_usd(anchor_usd)} | Drift: — **"
                 )
                 summary_rows.append({
                     "label": label, "chain": chain_name, "cid": cid,
@@ -1013,7 +1542,7 @@ def main(refresh_debank: bool = False) -> None:
                     "drift_s": "—", "flag": "",
                 })
             else:
-                lines.append(f"**NAV: {fmt_usd(nav_usd)} | Debank filtered: — (not available)**")
+                lines.append(f"**NAV: {fmt_usd(nav_usd)} | DeBank filtered: — (not available)**")
                 summary_rows.append({
                     "label": label, "chain": chain_name, "cid": cid,
                     "nav": nav_usd, "anchor": None,
@@ -1021,18 +1550,16 @@ def main(refresh_debank: bool = False) -> None:
                 })
             lines.append("")
 
-            # NAV positions for this account × chain
             nav_pos_map = nav_positions_by_chain.get(cid, {})
             account_positions = nav_pos_map.get(addr.lower(), None)
 
             if account_positions is None:
                 lines += ["_NAV position detail not available — run refresh script._", ""]
-                # Fall back: show Debank-only tables
                 if chain_protos:
                     lines += [
-                        "#### Debank protocol positions",
+                        "#### DeBank protocol positions",
                         "",
-                        "| Protocol | Debank ID | Covered | Debank USD | Debank position detail |",
+                        "| Protocol | DeBank ID | Covered | DeBank USD | DeBank position detail |",
                         "|---|---|:---:|---:|---|",
                     ]
                     for p in chain_protos:
@@ -1051,13 +1578,21 @@ def main(refresh_debank: bool = False) -> None:
                     [t for t in tok_resp if (t.get("amount", 0) * t.get("price", 0)) >= 0.50],
                     supported_ids,
                     reg_addrs,
+                    priced_addrs,
                     agg_addrs,
                     dbank_chain,
                     disabled_pools,
+                    # Extended:
+                    leg_matches_out=all_leg_matches,
+                    coverage_gaps_out=all_coverage_gaps,
+                    global_untracked_out=all_global_untracked,
+                    account=addr.lower(),
+                    chain_id=cid,
+                    chain_name=chain_name,
+                    account_label=label,
                 )
 
-    # Splice the drift summary into the SUMMARY_SENTINEL slot.
-    # Only counts rows with a meaningful comparison (anchor > 0).
+    # Drift summary
     summary_block: list[str] = ["## Drift summary", ""]
     countable = [r for r in summary_rows if r["anchor"] not in (None, 0)]
     in_tol = sum(1 for r in countable if r["flag"] == "✅")
@@ -1069,13 +1604,13 @@ def main(refresh_debank: bool = False) -> None:
         )
         summary_block.append("")
     summary_block += [
-        "| Account | Chain | NAV | Debank filtered | Drift |  |",
-        "|---|---|---:|---:|---:|:---:|",
+        "| Account | Chain | │ | NAV | │ | DeBank filtered | Drift |  |",
+        "|---|---|:---:|---:|:---:|---:|---:|:---:|",
     ]
     for r in summary_rows:
         anchor_s = fmt_usd(r["anchor"]) if r["anchor"] not in (None, 0) else "—"
         summary_block.append(
-            f"| {r['label']} | {r['chain']} | {fmt_usd(r['nav'])} | {anchor_s} | {r['drift_s']} | {r['flag']} |"
+            f"| {r['label']} | {r['chain']} | │ | {fmt_usd(r['nav'])} | │ | {anchor_s} | {r['drift_s']} | {r['flag']} |"
         )
     summary_block.append("")
 
@@ -1083,9 +1618,11 @@ def main(refresh_debank: bool = False) -> None:
         sidx = lines.index(SUMMARY_SENTINEL)
         lines = lines[:sidx] + summary_block + lines[sidx + 1:]
 
-    # Write Debank totals back to accounts.json.
-    # By default only fill empty slots so forge-time captures are preserved.
-    # With --refresh-debank, overwrite every slot.
+    # Append Section 3 and Section 4
+    lines += render_per_adapter_detail_section(all_leg_matches, chains_cfg)
+    lines += render_coverage_gap_section(all_coverage_gaps, all_global_untracked)
+
+    # Write DeBank totals back to accounts.json
     for acc_idx, chain_totals in debank_totals.items():
         for cid, total in chain_totals.items():
             exp = accounts[acc_idx].setdefault("expected", {}).setdefault(cid, {})
@@ -1106,12 +1643,33 @@ if __name__ == "__main__":
     parser.add_argument(
         "--refresh-debank",
         action="store_true",
-        help="Overwrite expected.<cid>.debankUsd in accounts.json with the freshly "
-             "captured Debank totals. Default is to fill only empty slots so "
-             "forge-time captures are preserved.",
+        help="Fetch live DeBank data, update cache + accounts.json debankUsd. Requires DEBANK_API_KEY.",
+    )
+    parser.add_argument(
+        "--from-cache",
+        action="store_true",
+        help="Read DeBank data from test/integration/debank-cache/ only — no API calls, no API key needed.",
     )
     args = parser.parse_args()
-    if not DEBANK_API_KEY:
+
+    # Cache-first fallback: if no flag given and no API key, try the cache
+    if not args.from_cache and not args.refresh_debank and not DEBANK_API_KEY:
+        if os.path.isdir(DEBANK_CACHE_DIR) and any(os.scandir(DEBANK_CACHE_DIR)):
+            print(
+                "DEBANK_API_KEY not set — using cached DeBank data (pass --refresh-debank to recapture).",
+                file=sys.stderr,
+            )
+            args.from_cache = True
+        else:
+            print(
+                "DEBANK_API_KEY not set and no cache found in test/integration/debank-cache/. "
+                "Source .env first, or run --refresh-debank after setting the key.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if args.refresh_debank and not DEBANK_API_KEY:
         print("DEBANK_API_KEY not set — source .env first", file=sys.stderr)
         sys.exit(1)
-    main(refresh_debank=args.refresh_debank)
+
+    main(refresh_debank=args.refresh_debank, from_cache=args.from_cache)

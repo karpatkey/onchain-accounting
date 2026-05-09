@@ -27,7 +27,7 @@ import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3Safe
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
-import {MerklRewardsBalanceOracle} from "src/balances/protocols/MerklRewards.sol";
+import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
@@ -587,8 +587,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, positionId, navAddr));
+        return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
@@ -927,6 +926,26 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             console2.log("[merkl] no fixtures for chain; skipping cache seed");
             return;
         }
+
+        // Warn loudly if the fixture's captured root doesn't match the live root at this fork block.
+        // This happens when the Merkl root rotated between the `cast call --block` and the API fetch
+        // during refresh-integration-snapshot.sh — a narrow but real race window. All proofs will
+        // fail submitProof in that case, silently zeroing Merkl rewards in NAV.
+        // Fix: re-run refresh-integration-snapshot.sh to re-capture proofs against the current root.
+        string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
+        if (vm.keyExistsJson(json, expectedRootKey)) {
+            bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
+            address distributor = MerklRewardsBalanceOracle(_merklOracle).DISTRIBUTOR();
+            bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
+            if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
+                console2.log(
+                    "[merkl] WARNING: fixture root does not match live Distributor root at this fork block."
+                    " All proof submissions will fail and Merkl rewards will be 0 in NAV."
+                    " Re-run refresh-integration-snapshot.sh to capture proofs against the current root."
+                );
+            }
+        }
+
         string memory usersKey = string.concat(chainKey, ".users");
         if (!vm.keyExistsJson(json, usersKey)) {
             console2.log("[merkl] empty proof block; skipping");
@@ -964,7 +983,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](31);
+            string[] memory s = new string[](33);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -996,6 +1015,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[28] = "ETHx";
             s[29] = "COMP";
             s[30] = "EURC";
+            s[31] = "WBTC";
+            s[32] = "AAVE";
             return s;
         }
         if (chainId == 42161) {
@@ -1137,7 +1158,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             string memory base = string.concat(".accounts[", vm.toString(i), "]");
             if (!vm.keyExists(json, base)) break;
 
-            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
             uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
 
             if (_contains(enabled, _chainId)) {
@@ -1189,7 +1217,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             string memory base = string.concat(".accounts[", vm.toString(i), "]");
             if (!vm.keyExists(json, base)) break;
 
-            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
             string memory label = json.readString(string.concat(base, ".label"));
             uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
 
@@ -1263,7 +1298,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         while (true) {
             string memory base = string.concat(".accounts[", vm.toString(i), "]");
             if (!vm.keyExists(json, base)) break;
-            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
             uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
             if (_contains(enabled, _chainId)) {
                 INAVCalculator.NAV memory n = _readUsdNav(account);

@@ -447,11 +447,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
         MorphoMarketBalanceOracle adapter =
-            new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, positionId, navCalculator);
+            new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

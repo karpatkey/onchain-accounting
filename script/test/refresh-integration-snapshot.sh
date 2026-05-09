@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refresh fork blocks + NAV snapshots + (optional) Debank reference for the integration
+# Refresh fork blocks + NAV snapshots + (optional) DeBank reference for the integration
 # tests, all driven from test/integration/accounts.json.
 #
 # Steps:
@@ -15,7 +15,7 @@
 #   3. (Optional) If `DEBANK_API_KEY` is set: per account, fetch /v1/user/all_complex_protocol_list
 #      ONCE (covers all chains), and per (chain × account) fetch /v1/user/token_list. Sum
 #      two buckets into expected.<chainId>.debankUsd:
-#        (a) full net_usd_value of every protocol in chains[chainId].supportedDebankProtocols
+#        (a) full net_usd_value of every protocol in chains[chainId].supportedDeBankProtocols
 #            — NAV has its own balance adapter for each, so its accounting (debt netting,
 #            interest, rewards) is the apples-to-apples reference;
 #        (b) wallet token_list filtered to NAV-registered assets in script/config/assets.json
@@ -23,7 +23,7 @@
 #            This mirrors `IERC20.balanceOf(account)` exactly and so is what NAV's default
 #            ERC20 oracle reads (USDC, USDT, GHO, stETH, rsETH, native ETH, …).
 #      The filter is what makes the comparison apples-to-apples: many accounts hold positions
-#      outside NAV's coverage; an unfiltered Debank total would always exceed NAV. Logs the
+#      outside NAV's coverage; an unfiltered DeBank total would always exceed NAV. Logs the
 #      API key tier and remaining units at the start; degrades gracefully if missing/expired/
 #      out of units.
 #   4. Tolerance check: for every (chain × account) with both navUsd8dp and debankUsd,
@@ -49,6 +49,8 @@ WALLET_AGGREGATING_REGISTRY="script/test/wallet-aggregating-adapters.json"
 MERKL_PROOFS_JSON="test/integration/merkl-proofs.json"
 MERKL_DISTRIBUTOR="0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
 REPORT_MD="${REPORT_MD:-refresh-report.md}"
+# Persistent DeBank response cache consumed by generate-comparison-report.py --from-cache.
+DEBANK_CACHE_DIR="test/integration/debank-cache"
 
 # ─── Prereqs ──────────────────────────────────────────────────────────────────
 for cmd in jq cast forge curl; do
@@ -100,7 +102,7 @@ jq_inplace() {
   mv "$tmp" "$ACCOUNTS_JSON"
 }
 
-# Wrapper for Debank curl calls: bounded timeout + light retry so a slow Debank can't hang CI.
+# Wrapper for DeBank curl calls: bounded timeout + light retry so a slow DeBank can't hang CI.
 # `--max-time` caps total wall time; `--retry --retry-delay --retry-connrefused` covers transient failures.
 # Echoes the response body on success; empty string on failure.
 debank_curl() {
@@ -117,20 +119,20 @@ debank_units_balance() {
   echo "$response" | jq -r '.balance // empty' 2>/dev/null || echo ""
 }
 
-# ─── 0. Debank tier introspection (informational) ─────────────────────────────
+# ─── 0. DeBank tier introspection (informational) ─────────────────────────────
 debank_active="false"
 debank_units_at_start=""
 if [[ -n "${DEBANK_API_KEY:-}" ]]; then
-  echo "Probing Debank /v1/account/units …"
+  echo "Probing DeBank /v1/account/units …"
   debank_units_at_start=$(debank_units_balance)
   if [[ -n "$debank_units_at_start" ]]; then
-    echo "Debank API key OK. Units at start: $debank_units_at_start"
+    echo "DeBank API key OK. Units at start: $debank_units_at_start"
     debank_active="true"
   else
-    echo "Debank /v1/account/units returned no balance — proceeding without Debank cross-check."
+    echo "DeBank /v1/account/units returned no balance — proceeding without DeBank cross-check."
   fi
 else
-  echo "DEBANK_API_KEY not set — Debank cross-check skipped."
+  echo "DEBANK_API_KEY not set — DeBank cross-check skipped."
 fi
 
 # ─── 1. Bump forkBlock per chain (parallel) ───────────────────────────────────
@@ -284,10 +286,10 @@ else
 fi
 
 # ─── 2. Refresh NAV snapshot per chain (parallel, throttled) ──────────────────
-# Each forge fork+deploy peaks at ~900MB RSS. Five concurrent forges saturate an
-# 8GB host. MAX_PARALLEL caps the number running at once; default 2 is safe on a
-# WSL2/8GB box, override via env (e.g. MAX_PARALLEL=4 on a beefier CI runner).
-MAX_PARALLEL="${MAX_PARALLEL:-2}"
+# Each forge fork+deploy peaks at ~900MB RSS. Five concurrent forges need ~4.5GB;
+# default 5 runs all chains in parallel on 16GB+ hosts. Lower via env on smaller
+# machines (e.g. MAX_PARALLEL=2 on an 8GB box).
+MAX_PARALLEL="${MAX_PARALLEL:-5}"
 echo
 echo "=== 2. Refreshing NAV snapshots (parallel, MAX_PARALLEL=$MAX_PARALLEL) ==="
 
@@ -412,28 +414,33 @@ if (( ${#failed_chains[@]} > 0 )); then
   echo "  proceeding to step 3/4 with the ${#ok_chains[@]} chains that succeeded."
 fi
 
-# ─── 3. Refresh Debank reference per (chain × account) ─────────────────────────
-# Filtered comparison: sum only the Debank protocols whose ids appear in the chain's
-# `supportedDebankProtocols` allowlist, plus only the wallet tokens whose addresses are
+# ─── 3. Refresh DeBank reference per (chain × account) ─────────────────────────
+# Filtered comparison: sum only the DeBank protocols whose ids appear in the chain's
+# `supportedDeBankProtocols` allowlist, plus only the wallet tokens whose addresses are
 # registered as NAV assets in `script/config/assets.json`. This is what makes drift
 # meaningful — without filtering, any account holding a position outside NAV's coverage
-# would always show NAV < Debank.
+# would always show NAV < DeBank.
 #
-# One /v1/user/all_complex_protocol_list call per account covers every chain (Debank
+# One /v1/user/all_complex_protocol_list call per account covers every chain (DeBank
 # returns all chains in the response and we slice by `.chain == debankChainId`).
 # /v1/user/token_list is fetched once per (chain × account) since it is chain-scoped.
 echo
 if [[ "$debank_active" == "true" ]]; then
-  echo "=== 3. Refreshing Debank references (filtered) ==="
+  echo "=== 3. Refreshing DeBank references (filtered) ==="
   account_count=$(jq '.accounts | length' "$ACCOUNTS_JSON")
 
-  # Cache complex_protocol_list per account address — one Debank call covers all chains.
+  # Cache complex_protocol_list per account address — one DeBank call covers all chains.
   proto_dir=$(mktemp -d)
   trap 'rm -rf "$block_dir" "$forge_dir" "$proto_dir"' EXIT
 
   for ((i=0; i<account_count; i++)); do
     addr=$(jq -r ".accounts[$i].address" "$ACCOUNTS_JSON")
     label=$(jq -r ".accounts[$i].label" "$ACCOUNTS_JSON")
+    # Skip placeholder accounts (address not yet filled in).
+    if [[ -z "$addr" || "$addr" == "<"* ]]; then
+      echo "  [skip] $label: no address set (placeholder)"
+      continue
+    fi
 
     proto_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/all_complex_protocol_list?id=${addr}")
     if [[ -z "$proto_resp" ]]; then
@@ -441,13 +448,16 @@ if [[ "$debank_active" == "true" ]]; then
       proto_resp="[]"
     fi
     echo "$proto_resp" > "$proto_dir/$i.json"
+    # Persist to the comparison-report cache so it can regenerate without API calls.
+    mkdir -p "$DEBANK_CACHE_DIR"
+    echo "$proto_resp" | jq '.' > "${DEBANK_CACHE_DIR}/${addr,,}-protocols.json" 2>/dev/null || true
 
     for chain_id in $chain_ids; do
       enabled=$(jq -r ".accounts[$i].enabledChains | index($chain_id)" "$ACCOUNTS_JSON")
       [[ "$enabled" == "null" ]] && continue
 
       debank_chain=$(jq -r ".chains.\"$chain_id\".debankChainId" "$ACCOUNTS_JSON")
-      supported_protos=$(jq -c ".chains.\"$chain_id\".supportedDebankProtocols // []" "$ACCOUNTS_JSON")
+      supported_protos=$(jq -c ".chains.\"$chain_id\".supportedDeBankProtocols // []" "$ACCOUNTS_JSON")
 
       # Build NAV-registered asset address allowlist for this chain (lowercased).
       # Union of two sources, matching generate-comparison-report.py's `all_covered`:
@@ -481,10 +491,10 @@ if [[ "$debank_active" == "true" ]]; then
           ]
         ')
 
-      # Sum 1 — protocols in supportedDebankProtocols: full net_usd_value of every
+      # Sum 1 — protocols in supportedDeBankProtocols: full net_usd_value of every
       # portfolio_item_list entry. NAV has its own balance adapter for each, so its
       # accounting (debt netting, interest accrual, etc.) is the apples-to-apples reference.
-      # Debank returns short ids on mainnet (`aave3`) and `<chain>_<short>` elsewhere
+      # DeBank returns short ids on mainnet (`aave3`) and `<chain>_<short>` elsewhere
       # (`arb_aave3`); accept either. Bind .id to $pid before the comparison —
       # `index(.id)` would re-resolve `.id` against $allowed.
       proto_sum=$(jq -r \
@@ -507,22 +517,22 @@ if [[ "$debank_active" == "true" ]]; then
       # Sum 2 — wallet token_list, restricted to NAV-registered assets that AREN'T
       # already accounted for in a protocol entry above.
       #
-      # We pass `is_all=false` because Debank's default (`is_all=true`) returns every
-      # wallet-held token including LSTs (rETH, sUSDS, wstETH, ETHx, …) which Debank
+      # We pass `is_all=false` because DeBank's default (`is_all=true`) returns every
+      # wallet-held token including LSTs (rETH, sUSDS, wstETH, ETHx, …) which DeBank
       # *also* categorises under their staking protocols (Rocket Pool, Sky, Lido,
       # Stader). Summing both Sum 1 and an `is_all=true` Sum 2 double-counts those
       # positions — observed as ACCOUNT_10 mainnet anchor inflated by ~$58M from
       # rETH+sUSDS+ETHx+wstETH wallet entries that were already counted under their
-      # respective protocols. With `is_all=false`, Debank suppresses tokens that have
+      # respective protocols. With `is_all=false`, DeBank suppresses tokens that have
       # a protocol_list entry, leaving only "pure wallet" holdings (USDC, GHO, native
       # ETH, etc.) — matching how NAV counts each economic position exactly once
       # (either via a balance adapter OR a wallet/Holding price feed, never both).
       #
       # generate-comparison-report.py uses the same `is_all=false` flag for its
-      # rendered Debank wallet table; keeping the two scripts symmetric is what
+      # rendered DeBank wallet table; keeping the two scripts symmetric is what
       # makes the stored anchor reconcile with the rendered tables.
       #
-      # Native token id from Debank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
+      # Native token id from DeBank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
       # is accepted iff NAV registers the ERC-7528 native sentinel (0xEee…eEeE) for this
       # chain — `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for it.
       tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}&is_all=false")
@@ -530,6 +540,7 @@ if [[ "$debank_active" == "true" ]]; then
         echo "  [warn] $label chain $chain_id: token_list request failed; using protocol total only"
         tok_resp="[]"
       fi
+      echo "$tok_resp" | jq '.' > "${DEBANK_CACHE_DIR}/${addr,,}-tokens-${chain_id}.json" 2>/dev/null || true
       tok_sum=$(jq -r \
         --arg dc "$debank_chain" \
         --argjson allowed "$asset_allowlist" \
@@ -553,7 +564,7 @@ if [[ "$debank_active" == "true" ]]; then
     done
   done
 else
-  echo "=== 3. Skipping Debank refresh (no key or probe failed) ==="
+  echo "=== 3. Skipping DeBank refresh (no key or probe failed) ==="
 fi
 
 # ─── 4. Tolerance check + report ──────────────────────────────────────────────
@@ -574,7 +585,7 @@ fi
   echo "Tolerance: ${tolerance}"
   if [[ -n "$debank_units_at_start" || -n "$debank_units_at_end" ]]; then
     echo
-    echo "| Debank units | Value |"
+    echo "| DeBank units | Value |"
     echo "|---|---|"
     [[ -n "$debank_units_at_start" ]] && echo "| at start | ${debank_units_at_start} |"
     [[ -n "$debank_units_at_end" ]]   && echo "| at end   | ${debank_units_at_end} |"

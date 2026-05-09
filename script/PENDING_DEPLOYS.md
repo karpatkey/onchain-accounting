@@ -62,7 +62,7 @@ Sorted by family.
 |---|---|
 | `AaveV3SafetyModule` | stkGHO. ⚠ different from the existing production-deployed `AaveV3SafetyModule_stkGHO` recorded in DEPLOYED_ADDRESSES.md — verify whether this entry is a redeploy under the renamed key or an additional one before broadcasting. ⚠ **Constructor signature changed in PR #35**: every balance adapter now takes `(protocol_, positionDetail_, positionId_)` strings (see `docs/howto/position-detail-schema.md`). The existing production bytecode predates this and lacks the three params — the new adapter will have a different bytecode and CREATE2 address. Either rename the production entry to `AaveV3SafetyModule_stkGHO_legacy` and add the new one as `AaveV3SafetyModule`, or migrate cleanly via Safe TX bundle: `addBalanceOracle(<new>)` + `removeBalanceOracle(<old>)` in one transaction. Don't double-register both. |
 | `AaveUmbrella` | Aave V4 Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) |
-| `AaveV2_Mainnet` | aTokens only — V2 lending. Note: `aave2` is in `chains.1.$untracked_by_design` for filtered Debank purposes; deploying this adapter still makes sense for any account that holds Aave V2 aTokens (the comparison-report drift won't credit it, but NAV will count it correctly). |
+| `AaveV2_Mainnet` | aTokens only — V2 lending. Note: `aave2` is in `chains.1.$untracked_by_design` for filtered DeBank purposes; deploying this adapter still makes sense for any account that holds Aave V2 aTokens (the comparison-report drift won't credit it, but NAV will count it correctly). |
 
 **StakeWise V3 (3)**
 

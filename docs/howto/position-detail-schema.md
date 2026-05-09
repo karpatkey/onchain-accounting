@@ -19,7 +19,7 @@ append the closing fragment at query time, so the returned string is always vali
 |-----|----------|----------------|-------|
 | `protocol` | ✓ | `"Aave V3"`, `"Morpho"`, `"Curve"`, `"wallet"` | Mirrors the adapter's `protocol` field. Stable name for the top-level protocol. |
 | `product` | ✓ | see table below | The market or product name as shown in the protocol's own UI. |
-| `type` | ✗ | `"Supply"`, `"Borrow"`, `"Collateral"`, `"Reward"`, `"Staked"`, `"fees"` | Disambiguates sub-positions within one adapter instance. |
+| `type` | ✗ | `"Supply"`, `"Borrow"`, `"Collateral"`, `"Staking"`, `"Rewards"`, `"Fees"` | Disambiguates sub-positions within one adapter instance. Constants defined in `src/utils/PositionType.sol`. |
 | `token` | ✗ | `"WETH"`, `"CRV"`, `"CVX"` | Added by adapters that return multiple token legs (e.g. Convex, Curve rewards). |
 
 ## `product` and `name` values by adapter type
@@ -37,8 +37,8 @@ specific **market or instance**, using the name shown in the protocol's own UI.
 | Aave V3 — Base pool | `"Lending"` | `"Base Market"` |
 | Aave V2 — Mainnet | `"Lending"` | `"Mainnet Market"` |
 | Spark / SparkLend | `"Lending"` | `"SparkLend"` |
-| Aave V3 Safety Module | `"Staking"` | — |
-| Aave Umbrella | `"Staking"` | — |
+| Aave V3 Safety Module | `"Safety Module"` | — |
+| Aave Umbrella | `"Umbrella"` | — |
 | Morpho Vault | `"Vault"` | vault display name (e.g. `"kpk ETH Prime V1"`) |
 | Morpho Market | `"Market"` | collateral/loan pair (e.g. `"wstETH/USDC"`) |
 | Compound V3 | `"Lending"` | base token (e.g. `"USDC"`) |
@@ -69,7 +69,7 @@ the position type). It is the most specific immutable address pinned by the adap
 
 | Adapter type | `positionId` source |
 |---|---|
-| AaveV3 / AaveV2 / Spark | `dataProvider` address |
+| AaveV3 / AaveV2 / Spark | Pool address (existing deployments used `dataProvider`; canonical is Pool) |
 | Aave V3 Safety Module | `stkAAVE` address (first hardcoded stake token) |
 | Aave Umbrella | `rewardsController` address |
 | Morpho Vault | `vault` address |
@@ -102,6 +102,6 @@ When implementing a new balance adapter:
 2. Pick `positionId` as the most specific immutable address in the constructor.
 3. Store both as private constructor-pinned variables.
 4. Emit: `string.concat(_positionDetail, "}")` for single-type adapters, or
-   `string.concat(_positionDetail, ",\"type\":\"", typeLabel, "\"}")` for multi-type adapters.
+   `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from `src/utils/PositionType.sol`) for multi-type adapters.
 5. Add `positionDetail` and `positionId` to the adapter's `constructor` block in every chain
    config that uses it (`script/config/chains/<chainId>.json`).

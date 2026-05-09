@@ -1,0 +1,885 @@
+[
+  {
+    "id": "arb_gmx",
+    "chain": "arb",
+    "name": "GMX",
+    "site_url": "https://gmx.io",
+    "logo_url": "https://static.debank.com/image/project/logo_url/arb_gmx/1a57f390512f4fe108c2b7155dc1fb6d.png",
+    "has_supported_portfolio": true,
+    "tvl": 53691751.88358271,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 0.0,
+          "debt_usd_value": 0,
+          "net_usd_value": 0.0
+        },
+        "asset_dict": {
+          "0xf42ae1d54fd613c9bb14810b0588faaa09a426ca": 1.6195159874262126
+        },
+        "asset_token_list": [
+          {
+            "id": "0xf42ae1d54fd613c9bb14810b0588faaa09a426ca",
+            "chain": "arb",
+            "name": "Escrowed GMX",
+            "symbol": "esGMX",
+            "display_symbol": null,
+            "optimized_symbol": "esGMX",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xf42ae1d54fd613c9bb14810b0588faaa09a426ca/28fd1e74e9f42ad073992bc8359a073a.png",
+            "protocol_id": "arb_gmx",
+            "price": 0,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1626958493.0,
+            "amount": 1.6195159874262126
+          }
+        ],
+        "update_at": 1778247742.0,
+        "name": "Staked",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xf42ae1d54fd613c9bb14810b0588faaa09a426ca",
+              "chain": "arb",
+              "name": "Escrowed GMX",
+              "symbol": "esGMX",
+              "display_symbol": null,
+              "optimized_symbol": "esGMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xf42ae1d54fd613c9bb14810b0588faaa09a426ca/28fd1e74e9f42ad073992bc8359a073a.png",
+              "protocol_id": "arb_gmx",
+              "price": 0,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1626958493.0,
+              "amount": 1.6195159874262126
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x908c4d94d34924765f1edc22a1dd098397c59dd4:0xf42ae1d54fd613c9bb14810b0588faaa09a426ca",
+          "chain": "arb",
+          "project_id": "arb_gmx",
+          "adapter_id": "gmx_staking",
+          "controller": "0x908c4d94d34924765f1edc22a1dd098397c59dd4",
+          "index": "0xf42ae1d54fd613c9bb14810b0588faaa09a426ca",
+          "time_at": 1626958565
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 6.315600842299478,
+          "debt_usd_value": 0,
+          "net_usd_value": 6.315600842299478
+        },
+        "asset_dict": {
+          "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a": 0.442162062635432,
+          "arb": 0.001290081407702648
+        },
+        "asset_token_list": [
+          {
+            "id": "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a",
+            "chain": "arb",
+            "name": "GMX",
+            "symbol": "GMX",
+            "display_symbol": null,
+            "optimized_symbol": "GMX",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a/b4e362278f64a738b878e5393fa29837.png",
+            "protocol_id": "arb_gmx",
+            "price": 7.533606322101805,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1626958493.0,
+            "amount": 0.442162062635432
+          },
+          {
+            "id": "arb",
+            "chain": "arb",
+            "name": "ETH",
+            "symbol": "ETH",
+            "display_symbol": null,
+            "optimized_symbol": "ETH",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png",
+            "protocol_id": "",
+            "price": 2313.44,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1622131200.0,
+            "amount": 0.001290081407702648
+          }
+        ],
+        "update_at": 1778247742.0,
+        "name": "Staked",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a",
+              "chain": "arb",
+              "name": "GMX",
+              "symbol": "GMX",
+              "display_symbol": null,
+              "optimized_symbol": "GMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a/b4e362278f64a738b878e5393fa29837.png",
+              "protocol_id": "arb_gmx",
+              "price": 7.533606322101805,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1626958493.0,
+              "amount": 0.0
+            }
+          ],
+          "reward_token_list": [
+            {
+              "id": "arb",
+              "chain": "arb",
+              "name": "ETH",
+              "symbol": "ETH",
+              "display_symbol": null,
+              "optimized_symbol": "ETH",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png",
+              "protocol_id": "",
+              "price": 2313.44,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1622131200.0,
+              "amount": 0.001290081407702648
+            },
+            {
+              "id": "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a",
+              "chain": "arb",
+              "name": "GMX",
+              "symbol": "GMX",
+              "display_symbol": null,
+              "optimized_symbol": "GMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a/b4e362278f64a738b878e5393fa29837.png",
+              "protocol_id": "arb_gmx",
+              "price": 7.533606322101805,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1626958493.0,
+              "amount": 0.442162062635432
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x908c4d94d34924765f1edc22a1dd098397c59dd4:0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a",
+          "chain": "arb",
+          "project_id": "arb_gmx",
+          "adapter_id": "gmx_staking",
+          "controller": "0x908c4d94d34924765f1edc22a1dd098397c59dd4",
+          "index": "0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a",
+          "time_at": 1626958565
+        }
+      }
+    ]
+  },
+  {
+    "id": "avax_gmx",
+    "chain": "avax",
+    "name": "GMX",
+    "site_url": "https://gmx.io",
+    "logo_url": "https://static.debank.com/image/project/logo_url/avax_gmx/d65d25544fb5bbcb1dba15b6b3569b04.png",
+    "has_supported_portfolio": true,
+    "tvl": 4343932.180487131,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 11.324830512681457,
+          "debt_usd_value": 0,
+          "net_usd_value": 11.324830512681457
+        },
+        "asset_dict": {
+          "0x62edc0692bd897d2295872a9ffcac5425011c661": 1.0975575669107047,
+          "avax": 0.30584217233447775
+        },
+        "asset_token_list": [
+          {
+            "id": "0x62edc0692bd897d2295872a9ffcac5425011c661",
+            "chain": "avax",
+            "name": "GMX",
+            "symbol": "GMX",
+            "display_symbol": null,
+            "optimized_symbol": "GMX",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/avax_token/logo_url/0x62edc0692bd897d2295872a9ffcac5425011c661/b4e362278f64a738b878e5393fa29837.png",
+            "protocol_id": "avax_gmx",
+            "price": 7.54,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1639735632.0,
+            "amount": 1.0975575669107047
+          },
+          {
+            "id": "avax",
+            "chain": "avax",
+            "name": "AVAX",
+            "symbol": "AVAX",
+            "display_symbol": null,
+            "optimized_symbol": "AVAX",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/project/logo_url/avax_wavax/e195cdd89f44bf3d0c65d38ce2c6c662.png",
+            "protocol_id": "",
+            "price": 9.97,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": null,
+            "amount": 0.30584217233447775
+          }
+        ],
+        "update_at": 1778274359.0,
+        "name": "Staked",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0x62edc0692bd897d2295872a9ffcac5425011c661",
+              "chain": "avax",
+              "name": "GMX",
+              "symbol": "GMX",
+              "display_symbol": null,
+              "optimized_symbol": "GMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/avax_token/logo_url/0x62edc0692bd897d2295872a9ffcac5425011c661/b4e362278f64a738b878e5393fa29837.png",
+              "protocol_id": "avax_gmx",
+              "price": 7.54,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1639735632.0,
+              "amount": 0.0
+            }
+          ],
+          "reward_token_list": [
+            {
+              "id": "avax",
+              "chain": "avax",
+              "name": "AVAX",
+              "symbol": "AVAX",
+              "display_symbol": null,
+              "optimized_symbol": "AVAX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/project/logo_url/avax_wavax/e195cdd89f44bf3d0c65d38ce2c6c662.png",
+              "protocol_id": "",
+              "price": 9.97,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": null,
+              "amount": 0.30584217233447775
+            },
+            {
+              "id": "0x62edc0692bd897d2295872a9ffcac5425011c661",
+              "chain": "avax",
+              "name": "GMX",
+              "symbol": "GMX",
+              "display_symbol": null,
+              "optimized_symbol": "GMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/avax_token/logo_url/0x62edc0692bd897d2295872a9ffcac5425011c661/b4e362278f64a738b878e5393fa29837.png",
+              "protocol_id": "avax_gmx",
+              "price": 7.54,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1639735632.0,
+              "amount": 1.0975575669107047
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x2bd10f8e93b3669b6d42e74eeedc65dd1b0a1342:0x62edc0692bd897d2295872a9ffcac5425011c661",
+          "chain": "avax",
+          "project_id": "avax_gmx",
+          "adapter_id": "gmx_staking",
+          "controller": "0x2bd10f8e93b3669b6d42e74eeedc65dd1b0a1342",
+          "index": "0x62edc0692bd897d2295872a9ffcac5425011c661",
+          "time_at": 1639738159
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 0.0,
+          "debt_usd_value": 0,
+          "net_usd_value": 0.0
+        },
+        "asset_dict": {
+          "0xff1489227bbaac61a9209a08929e4c2a526ddd17": 4.0113755060086
+        },
+        "asset_token_list": [
+          {
+            "id": "0xff1489227bbaac61a9209a08929e4c2a526ddd17",
+            "chain": "avax",
+            "name": "Escrowed GMX",
+            "symbol": "esGMX",
+            "display_symbol": null,
+            "optimized_symbol": "esGMX",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xff1489227bbaac61a9209a08929e4c2a526ddd17/42d4874fa412916928a68adb6ad3b042.png",
+            "protocol_id": "avax_gmx",
+            "price": 0,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1639735723.0,
+            "amount": 4.0113755060086
+          }
+        ],
+        "update_at": 1778274359.0,
+        "name": "Staked",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xff1489227bbaac61a9209a08929e4c2a526ddd17",
+              "chain": "avax",
+              "name": "Escrowed GMX",
+              "symbol": "esGMX",
+              "display_symbol": null,
+              "optimized_symbol": "esGMX",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xff1489227bbaac61a9209a08929e4c2a526ddd17/42d4874fa412916928a68adb6ad3b042.png",
+              "protocol_id": "avax_gmx",
+              "price": 0,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1639735723.0,
+              "amount": 4.0113755060086
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x2bd10f8e93b3669b6d42e74eeedc65dd1b0a1342:0xff1489227bbaac61a9209a08929e4c2a526ddd17",
+          "chain": "avax",
+          "project_id": "avax_gmx",
+          "adapter_id": "gmx_staking",
+          "controller": "0x2bd10f8e93b3669b6d42e74eeedc65dd1b0a1342",
+          "index": "0xff1489227bbaac61a9209a08929e4c2a526ddd17",
+          "time_at": 1639738159
+        }
+      }
+    ]
+  },
+  {
+    "id": "base_morphoblue",
+    "chain": "base",
+    "name": "Morpho",
+    "site_url": "https://app.morpho.org",
+    "logo_url": "https://static.debank.com/image/project/logo_url/morphoblue/cfe5f811a4fb96355e0fb367b5201f87.png",
+    "has_supported_portfolio": true,
+    "tvl": 2804650648.4319606,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 683898.9036766323,
+          "debt_usd_value": 0,
+          "net_usd_value": 683898.9036766323
+        },
+        "asset_dict": {
+          "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": 683967.293567
+        },
+        "asset_token_list": [
+          {
+            "id": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            "chain": "base",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 0.9999000099990001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1692383789.0,
+            "amount": 683967.293567
+          }
+        ],
+        "update_at": 1778279931.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+              "chain": "base",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 0.9999000099990001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1692383789.0,
+              "amount": 683967.293567
+            }
+          ],
+          "description": "Steakhouse USDC High Yield"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x01afd5fa7e69ce5f506c166d2fcbfb12488412af",
+          "chain": "base",
+          "project_id": "base_morphoblue",
+          "adapter_id": "redeemable_tokenized_vault_yield",
+          "controller": "0x01afd5fa7e69ce5f506c166d2fcbfb12488412af",
+          "index": null,
+          "time_at": 1763607223
+        }
+      }
+    ]
+  },
+  {
+    "id": "morphoblue",
+    "chain": "eth",
+    "name": "Morpho",
+    "site_url": "https://app.morpho.org",
+    "logo_url": "https://static.debank.com/image/project/logo_url/morphoblue/cfe5f811a4fb96355e0fb367b5201f87.png",
+    "has_supported_portfolio": true,
+    "tvl": 4028575827.2607036,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 9574611.353954142,
+          "debt_usd_value": 0,
+          "net_usd_value": 9574611.353954142
+        },
+        "asset_dict": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": 9576526.659286
+        },
+        "asset_token_list": [
+          {
+            "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "chain": "eth",
+            "name": "Tether USD",
+            "symbol": "USDT",
+            "display_symbol": "",
+            "optimized_symbol": "USDT",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+            "protocol_id": "tether",
+            "price": 0.9998,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1511829681.0,
+            "amount": 9576526.659286
+          }
+        ],
+        "update_at": 1778248048.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "chain": "eth",
+              "name": "Tether USD",
+              "symbol": "USDT",
+              "display_symbol": "",
+              "optimized_symbol": "USDT",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+              "protocol_id": "tether",
+              "price": 0.9998,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1511829681.0,
+              "amount": 9576526.659286
+            }
+          ],
+          "description": "Gaunlet USDT Core"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x6ab8dd6124e5f5789b8b5074c5760b9917a2dfc6",
+          "chain": "eth",
+          "project_id": "morphoblue",
+          "adapter_id": "tokenized_proxy_vault_yield",
+          "controller": "0x6ab8dd6124e5f5789b8b5074c5760b9917a2dfc6",
+          "index": null,
+          "time_at": 1763773007
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 3987940.973321668,
+          "debt_usd_value": 0,
+          "net_usd_value": 3987940.973321668
+        },
+        "asset_dict": {
+          "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 3988339.767419
+        },
+        "asset_token_list": [
+          {
+            "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "chain": "eth",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 0.9999000099990001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1533324504.0,
+            "amount": 3988339.767419
+          }
+        ],
+        "update_at": 1778248048.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "chain": "eth",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 0.9999000099990001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1533324504.0,
+              "amount": 3988339.767419
+            }
+          ],
+          "description": "Gaunlet USDC Core"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0xe08145eb0132a219aad1b78a85bad8666a97cb94",
+          "chain": "eth",
+          "project_id": "morphoblue",
+          "adapter_id": "tokenized_proxy_vault_yield",
+          "controller": "0xe08145eb0132a219aad1b78a85bad8666a97cb94",
+          "index": null,
+          "time_at": 1763686775
+        }
+      }
+    ]
+  },
+  {
+    "id": "op_compound3",
+    "chain": "op",
+    "name": "Compound V3",
+    "site_url": "https://v3-app.compound.finance",
+    "logo_url": "https://static.debank.com/image/project/logo_url/compound3/28e2b958e38eb0c49d600633b9ce0969.png",
+    "has_supported_portfolio": true,
+    "tvl": 13775289.259238407,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 896.3752747599999,
+          "debt_usd_value": 0,
+          "net_usd_value": 896.3752747599999
+        },
+        "asset_dict": {
+          "0x7e7d4467112689329f7e06571ed0e8cbad4910ee": 38.421572
+        },
+        "asset_token_list": [
+          {
+            "id": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+            "chain": "op",
+            "name": "Compound",
+            "symbol": "COMP",
+            "display_symbol": null,
+            "optimized_symbol": "COMP",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xc3048e19e76cb9a3aa9d77d8c03c29fc906e2437/dd174d3d7083fa027a433dc50edaf0bc.png",
+            "protocol_id": "op_compound3",
+            "price": 23.33,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1709297561.0,
+            "amount": 38.421572
+          }
+        ],
+        "update_at": 1778275425.0,
+        "name": "Lending",
+        "detail_types": [
+          "lending"
+        ],
+        "detail": {
+          "supply_token_list": [],
+          "reward_token_list": [
+            {
+              "id": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+              "chain": "op",
+              "name": "Compound",
+              "symbol": "COMP",
+              "display_symbol": null,
+              "optimized_symbol": "COMP",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xc3048e19e76cb9a3aa9d77d8c03c29fc906e2437/dd174d3d7083fa027a433dc50edaf0bc.png",
+              "protocol_id": "op_compound3",
+              "price": 23.33,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1709297561.0,
+              "amount": 38.421572
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x2e44e174f7d53f0212823acc11c01a11d58c5bcb:lending",
+          "chain": "op",
+          "project_id": "op_compound3",
+          "adapter_id": "compound_lending2",
+          "controller": "0x2e44e174f7d53f0212823acc11c01a11d58c5bcb",
+          "index": "lending",
+          "time_at": 1712411329
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 756256.9379292071,
+          "debt_usd_value": 0,
+          "net_usd_value": 756256.9379292071
+        },
+        "asset_dict": {
+          "0x0b2c639c533813f4aa9d7837caf62653d097ff85": 756332.563623
+        },
+        "asset_token_list": [
+          {
+            "id": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+            "chain": "op",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 0.9999000099990001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1668453318.0,
+            "amount": 756332.563623
+          }
+        ],
+        "update_at": 1778275425.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+              "chain": "op",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 0.9999000099990001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1668453318.0,
+              "amount": 756332.563623
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x2e44e174f7d53f0212823acc11c01a11d58c5bcb:yield",
+          "chain": "op",
+          "project_id": "op_compound3",
+          "adapter_id": "compound3_yield",
+          "controller": "0x2e44e174f7d53f0212823acc11c01a11d58c5bcb",
+          "index": "yield",
+          "time_at": 1712411329
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 3242.47164025,
+          "debt_usd_value": 0,
+          "net_usd_value": 3242.47164025
+        },
+        "asset_dict": {
+          "0x7e7d4467112689329f7e06571ed0e8cbad4910ee": 138.982925
+        },
+        "asset_token_list": [
+          {
+            "id": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+            "chain": "op",
+            "name": "Compound",
+            "symbol": "COMP",
+            "display_symbol": null,
+            "optimized_symbol": "COMP",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xc3048e19e76cb9a3aa9d77d8c03c29fc906e2437/dd174d3d7083fa027a433dc50edaf0bc.png",
+            "protocol_id": "op_compound3",
+            "price": 23.33,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1709297561.0,
+            "amount": 138.982925
+          }
+        ],
+        "update_at": 1778275425.0,
+        "name": "Lending",
+        "detail_types": [
+          "lending"
+        ],
+        "detail": {
+          "supply_token_list": [],
+          "reward_token_list": [
+            {
+              "id": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+              "chain": "op",
+              "name": "Compound",
+              "symbol": "COMP",
+              "display_symbol": null,
+              "optimized_symbol": "COMP",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/avax_token/logo_url/0xc3048e19e76cb9a3aa9d77d8c03c29fc906e2437/dd174d3d7083fa027a433dc50edaf0bc.png",
+              "protocol_id": "op_compound3",
+              "price": 23.33,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1709297561.0,
+              "amount": 138.982925
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x995e394b8b2437ac8ce61ee0bc610d617962b214:lending",
+          "chain": "op",
+          "project_id": "op_compound3",
+          "adapter_id": "compound_lending2",
+          "controller": "0x995e394b8b2437ac8ce61ee0bc610d617962b214",
+          "index": "lending",
+          "time_at": 1716189905
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 2005258.7538244065,
+          "debt_usd_value": 0,
+          "net_usd_value": 2005258.7538244065
+        },
+        "asset_dict": {
+          "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": 2005860.511978
+        },
+        "asset_token_list": [
+          {
+            "id": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+            "chain": "op",
+            "name": "Tether USD",
+            "symbol": "USDT",
+            "display_symbol": null,
+            "optimized_symbol": "USDT",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/464c0de678334b8fe87327e527bc476d.png",
+            "protocol_id": "",
+            "price": 0.9997,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": null,
+            "amount": 2005860.511978
+          }
+        ],
+        "update_at": 1778275425.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+              "chain": "op",
+              "name": "Tether USD",
+              "symbol": "USDT",
+              "display_symbol": null,
+              "optimized_symbol": "USDT",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/464c0de678334b8fe87327e527bc476d.png",
+              "protocol_id": "",
+              "price": 0.9997,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": null,
+              "amount": 2005860.511978
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x995e394b8b2437ac8ce61ee0bc610d617962b214:yield",
+          "chain": "op",
+          "project_id": "op_compound3",
+          "adapter_id": "compound3_yield",
+          "controller": "0x995e394b8b2437ac8ce61ee0bc610d617962b214",
+          "index": "yield",
+          "time_at": 1716189905
+        }
+      }
+    ]
+  }
+]

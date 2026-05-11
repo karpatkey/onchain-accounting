@@ -39,6 +39,7 @@ specific **market or instance**, using the name shown in the protocol's own UI.
 | Spark / SparkLend | `"Lending"` | `"SparkLend"` |
 | Aave V3 Safety Module | `"Safety Module"` | — |
 | Aave Umbrella | `"Umbrella"` | — |
+| ERC-4626 wrap (e.g. Aave waEthLidoGHO) | varies per instance (e.g. `"Lending"`) | wrap descriptor (e.g. `"Prime Instance (LidoGHO stata wrap)"`) |
 | Morpho Vault | `"Vault"` | vault display name (e.g. `"kpk ETH Prime V1"`) |
 | Morpho Market | `"Market"` | collateral/loan pair (e.g. `"wstETH/USDC"`) |
 | Compound V3 | `"Lending"` | base token (e.g. `"USDC"`) |
@@ -74,6 +75,7 @@ the position type). It is the most specific immutable address pinned by the adap
 | Aave Umbrella | `rewardsController` address |
 | Morpho Vault | `vault` address |
 | Morpho Market | `marketId` (bytes32 hex) |
+| ERC-4626 wrap | `wrapper` address |
 | Compound V3 | `comet` address |
 | Fluid fToken | `fToken` address |
 | Fluid Vault | `vault` address |

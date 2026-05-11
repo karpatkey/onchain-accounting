@@ -151,6 +151,17 @@
       },
       "deployed": ""
     },
+    "ERC4626Wrap_waEthLidoGHO": {
+      "$comment": "Aave V3 Lido instance stata-token wrap of aEthLidoGHO. waEthLidoGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. ACCOUNT_11 holds ~$233 of this token. Production adapter not deployed yet \u2014 integration test deploys it ephemerally from this config block. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
+      "enabled": true,
+      "constructor": {
+        "wrapper": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C",
+        "protocol": "Aave V3",
+        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Prime Instance (LidoGHO stata wrap)\"",
+        "positionId": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C"
+      },
+      "deployed": ""
+    },
     "MorphoMarket_wstETH_USDC": {
       "enabled": true,
       "constructor": {

@@ -19,6 +19,7 @@ import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
+import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
@@ -96,16 +97,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///         script/test/refresh-integration-snapshot.sh; missing or empty entries are tolerated.
     string internal constant MERKL_PROOFS_JSON = "test/integration/merkl-proofs.json";
 
-    /// @notice Relative tolerance (basis points, 1 bp = 0.01%) applied to the `test_accountNavs`
-    ///         assertion when comparing NAV against `accounts.json.expected.<chain>.navUsd8dp`.
-    /// @dev    Strict equality is too brittle — Compound V3's `presentValueSupply`/`presentValueBorrow`
-    ///         and Aave V3's `getReserveData` accrue interest per-block with rounding that resolves
-    ///         differently across RPC providers/replicas at the same fork block, surfacing as
-    ///         single-wei to single-cent drifts on the larger accounts. 10 bps (0.10%) absorbs that
-    ///         noise while still being tight enough to catch real adapter regressions; for context,
-    ///         the existing `accounts.json.tolerance` (Debank cross-check) is 100 bps (1%).
-    uint256 internal constant _NAV_ASSERTION_TOLERANCE_BPS = 10;
-
     /// @notice Address of the deployed MerklRewards adapter for this chain (zero if not deployed).
     address internal _merklOracle;
 
@@ -146,8 +137,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         nav.grantRole(MANAGER, admin);
 
         _deployAllPriceFeeds();
-        _deployAllBalanceAdapters();
+        // Asset registration MUST precede balance-adapter deployment because some adapter
+        // constructors (e.g. ERC4626WrapBalanceOracle) require the underlying asset to be
+        // registered before they can deploy. Production deploy mirrors this via the Safe-TX
+        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceOracle).
         _registerAllAssets();
+        _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
         _seedMerklProofs();
         vm.stopPrank();
@@ -495,6 +490,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "MorphoVault_")) {
             return _deployMorphoVault(name, navAddr);
         }
+        if (_startsWith(name, "ERC4626Wrap_")) {
+            return _deployERC4626Wrap(name, navAddr);
+        }
         if (_startsWith(name, "GearboxMarket_")) {
             return _deployGearboxMarket(name, navAddr);
         }
@@ -607,6 +605,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
         return address(new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
+        address wrapper =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new ERC4626WrapBalanceOracle(wrapper, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployGearboxMarket(string memory name, address navAddr) internal returns (address) {
@@ -1211,16 +1219,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     /// @notice Iterate every account in accounts.json whose enabledChains includes _chainId,
-    ///         read NAV via getAccountNav, log it, and assert it matches the snapshotted expected
-    ///         value within `_NAV_ASSERTION_TOLERANCE_BPS` (10 bps = 0.10% relative).
+    ///         read NAV via getAccountNav, log it, and assert it equals the snapshotted expected value.
     /// @dev Deferred-failure: walks every enabled (account, chain) pair, logs each actual NAV vs
     ///      expected, accumulates mismatches into a single list, and reverts at the end with a
     ///      summary if any account failed. This way a single CI run surfaces every drifted snapshot
     ///      at once instead of stopping at the first mismatch — important when the harness adapter
     ///      surface changes and many snapshots need re-pinning.
-    ///      The 10 bps tolerance absorbs RPC-replica nondeterminism in protocols whose view
-    ///      functions accrue interest per-block with rounding (Compound V3, Aave V3) — a real
-    ///      adapter regression typically moves NAV by far more than that.
     function _assertNavsForCurrentChain() internal view {
         require(_chainId != 0, "_chainId not set");
         string memory json = _readAccountsJson();
@@ -1252,21 +1256,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
                 INAVCalculator.NAV memory n = _readUsdNav(account);
                 _logNav(label, account);
-                int256 delta = n.value >= expected ? n.value - expected : expected - n.value;
-                // delta is non-negative by construction (branch above), so the int256→uint256 cast cannot sign-flip.
-                // forge-lint: disable-next-line(unsafe-typecast)
-                uint256 deltaAbs = uint256(delta);
-                // Both branches produce a non-negative int256 before the cast (expected ≥ 0, or −expected when expected < 0).
-                // forge-lint: disable-next-line(unsafe-typecast)
-                uint256 expectedAbs = expected >= 0 ? uint256(expected) : uint256(-expected);
-                bool exceeded =
-                    expectedAbs == 0 ? deltaAbs != 0 : deltaAbs * 10_000 > expectedAbs * _NAV_ASSERTION_TOLERANCE_BPS;
-                if (exceeded) {
+                if (n.value != expected) {
                     console2.log("[NAV-MISMATCH]", label, "chainId:", _chainId);
                     console2.log("  expected (8dp USD):", expected);
                     console2.log("  actual   (8dp USD):", n.value);
-                    console2.log("  delta abs (8dp USD):", delta);
-                    console2.log("  tolerance bps:", _NAV_ASSERTION_TOLERANCE_BPS);
                     unchecked {
                         ++mismatches;
                     }

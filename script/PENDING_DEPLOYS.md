@@ -14,12 +14,12 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 
 | Chain | Pending price feeds | Pending balance adapters | Total |
 |---|---:|---:|---:|
-| Mainnet (1) | 1 | 24 | **25** |
+| Mainnet (1) | 1 | 25 | **26** |
 | Optimism (10) | 0 | 3 | 3 |
 | Gnosis (100) | 0 | 0 | **0 ✓** |
 | Base (8453) | 0 | 9 | 9 |
 | Arbitrum (42161) | 0 | 9 | 9 |
-| **Total** | **1** | **45** | **46** |
+| **Total** | **1** | **46** | **47** |
 
 ### 1.1 Pending price feeds
 
@@ -78,12 +78,13 @@ Sorted by family.
 |---|---|
 | `MorphoVault_kpkEURC_V1` | kpk EURC Yield V2 (vault `0xa877d5BB…`) — closes ACCOUNT_9's $2.59M coverage gap. ⚠ Despite the `_V1` suffix in the config key, this is the **V2** of the kpk EURC Yield vault per Morpho's catalog (`name = "kpk EURC Yield V2"`). Naming inconsistency to fix in a follow-up: rename to `MorphoVault_kpkEURCYield_V2` to match the convention used by `_kpkUSDCPrime_V1/_V2`, `_kpkETHPrime_V1/_V2`. |
 
-**Other (2)**
+**Other (3)**
 
 | Key | Notes |
 |---|---|
 | `StaderWithdrawalQueue` | Stader UserWithdrawalManager pending unstake requests |
 | `UniswapV3_WBTC_WETH_3000` | Mainnet Uni V3 WBTC/WETH 0.3% pool. No current test-account exposure. |
+| `ERC4626Wrap_waEthLidoGHO` | Aave V3 Prime stata-token wrap (`0xC71Ea051…`). Generic `ERC4626WrapBalanceOracle`. Underlying = GHO (must be registered first). Covers ACCOUNT_11's ~$233 wallet position previously invisible to `AaveV3_Prime.getUserReserveData`. |
 
 ### 1.3 Pending balance adapters — L2 chains
 
@@ -257,16 +258,6 @@ PR #35 added WBTC and AAVE to `script/manage/RegisterAssets.s.sol` (indices 29 a
 
 Action: include `registerAsset(WBTC, ...)` and `registerAsset(AAVE, ...)` in the mainnet Phase C Safe TX bundle alongside the existing `registerAsset(EURC, ...)` and `setPriceFeed(ETHx, ...)` calls.
 
-## 4.8 ERC-4626 wrapping balance oracle for Aave stata-tokens (waEth*)
-
-Holders sometimes supply into Aave V3 Prime via the `staticATokenLM` wrapper (e.g. `waEthLidoGHO` = ERC-4626 wrap of `aEthLidoGHO`). Two consequences for our NAV pipeline today:
-
-1. **Stata-token holders are invisible to `getUserReserveData`** — so the `AaveV3_Prime` balance adapter does not surface those positions even though the underlying is supplied into the Aave Prime market.
-2. **The shape doesn't pair on DeBank** — DeBank reports the underlying GHO/aGHO position rather than the stata-token wrap, so the comparison report files the leg under §4.2 ("NAV positions with no DeBank counterpart"). Mostly a cosmetic gap, but it also drives the integration-test 10 bps tolerance: per-share value derived from the live Aave liquidity index resolves slightly differently across RPC providers, surfacing as a wei-to-cent drift on whichever account holds the wrap. Today that's `ACCOUNT_11_MAINNET_COMPOUND_UNISWAP` with ~$233 of `waEthLidoGHO`.
-
-**Resolution path (deferred, low priority):** ship a small `ERC4626Wrap` balance oracle that, given a wrapper address, returns `convertToAssets(IERC4626(wrapper).balanceOf(account))` denominated in the underlying. Register one instance per known wrap (initially just `waEthLidoGHO`; the family includes `waEthUSDC`, `waEthUSDT`, `waEthWETH` etc., used today via the AaveUmbrella stake-token chain but also held bare). Once registered, the integration-test tolerance could be tightened back down (currently 10 bps; the residual after this fix would be ≪ 1 bp).
-
-No production action required until the adapter is built. Tracking note in `test/integration/accounts.json.chains.1.$untracked_by_design`.
 
 ---
 
@@ -324,7 +315,7 @@ Mainnet bundle includes:
 - `registerAsset(WBTC, …, Chainlink, …)` — new in PR #35 (§4.7)
 - `registerAsset(AAVE, …, Chainlink, …)` — new in PR #35 (§4.7)
 - `setPriceFeed(ETHx, <ethxOracle>, Custom, 0)` — point ETHx at the freshly-deployed feed
-- `addBalanceOracle(<adapter>)` × 24 — register every new balance adapter
+- `addBalanceOracle(<adapter>)` × 25 — register every new balance adapter (24 from earlier scope + 1 ERC4626Wrap_waEthLidoGHO landed in PR #35)
 - (if §4.5/§4.6 migrations bundled here) `addBalanceOracle(<new>) + removeBalanceOracle(<old>)` per redeployed MorphoMarket / AaveV3 / AaveV2 / Spark entry
 
 Other chains: `addBalanceOracle(...)` × 3 (op), 9 (base), 9 (arb).

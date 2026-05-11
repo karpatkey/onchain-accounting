@@ -62,6 +62,14 @@
     "positionId": "<vault address>"
   },
 
+  "ERC4626Wrap": {
+    "$perPositionFields": "type: Supply",
+    "$comment": "Generic ERC-4626 unwrap balance oracle. Constructor checks the wrapper's `asset()` is NAV-registered (reverts otherwise). Reports `convertToAssets(balanceOf(account))` denominated in the underlying. Used for Aave V3 stata-tokens (waEth*) and any other thin ERC-4626 wrapper where the share price is derivable purely from convertToAssets. Per-instance constructor args set the protocol/product/name shown in PositionBalance metadata (e.g. for waEthLidoGHO: protocol=\"Aave V3\", product=\"Lending\", name=\"Prime Instance (LidoGHO stata wrap)\"). positionId is the wrapper address.",
+    "protocol": "<varies — set per instance>",
+    "positionDetail": { "protocol": "<varies>", "product": "<varies>", "name": "<wrap name>" },
+    "positionId": "<wrapper address>"
+  },
+
   "MorphoMarket": {
     "$perPositionFields": "type: Supply | Borrow | Collateral",
     "$positionIdNote": "positionId is derived automatically from marketId (Strings.toHexString(uint256(marketId), 32)) — not a constructor parameter.",

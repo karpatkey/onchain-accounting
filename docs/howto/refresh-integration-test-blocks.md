@@ -1,6 +1,6 @@
 # How to refresh integration-test fork blocks (and cross-check NAV against Debank)
 
-The integration tests in `test/integration/` deploy `NAVCalculator` from scratch on a forked chain at a pinned block, register every asset and balance adapter from chain config, and assert `getAccountNav` values for a set of accounts against the snapshotted expected values within a 10 bps (0.10%) relative tolerance — see `_NAV_ASSERTION_TOLERANCE_BPS` in [`IntegrationFromConfigBase.fork.sol`](../../test/integration/IntegrationFromConfigBase.fork.sol). The tolerance absorbs per-block interest-accrual nondeterminism in protocols like Compound V3 and Aave V3 whose view functions resolve rounding differently across RPC replicas at the same fork block. Over time those fork blocks rot and the expected NAVs drift from reality. This walkthrough covers the bump-and-snapshot workflow that keeps them current and (optionally) cross-checks each NAV against DeBank's USD total.
+The integration tests in `test/integration/` deploy `NAVCalculator` from scratch on a forked chain at a pinned block, register every asset and balance adapter from chain config, and assert exact `getAccountNav` values for a set of accounts. Over time those fork blocks rot and the expected NAVs drift from reality. This walkthrough covers the bump-and-snapshot workflow that keeps them current and (optionally) cross-checks each NAV against DeBank's USD total.
 
 The single source of truth is [`test/integration/accounts.json`](../../test/integration/accounts.json). The workflow reads and writes it; the integration tests assert against it. **Do not edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files** when adding accounts or refreshing values — only edit `accounts.json`.
 
@@ -214,7 +214,7 @@ A persistent ~3% drift on a single Mainnet account with fresh blocks usually mea
 
 - `_chainId` is set by the per-chain test contract.
 - `_forkBlock` is read from `accounts.json[".chains.<chainId>.forkBlock"]` (unless the child sets a literal — used only for one-off debugging).
-- For each account whose `enabledChains` includes `_chainId`, the test reads the expected `navUsd8dp` from `accounts.json[".accounts[i].expected.<chainId>.navUsd8dp"]` and asserts the live NAV matches within `_NAV_ASSERTION_TOLERANCE_BPS` (10 bps = 0.10% relative). Failures cite the account label and log the absolute delta plus the tolerance value.
+- For each account whose `enabledChains` includes `_chainId`, the test reads the expected `navUsd8dp` from `accounts.json[".accounts[i].expected.<chainId>.navUsd8dp"]` and `assertEq`'s the live NAV against it. Failures cite the account label.
 
 Per-chain test contracts are stubs:
 

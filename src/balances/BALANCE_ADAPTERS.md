@@ -178,6 +178,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **Convex** | Convex staking rewards (CRV, CVX, extras) for one gauge. | |
 | **Curve** | Curve gauge LP. Emits two legs per asset: `Supply` (unstaked wallet LP) and `Staking` (gauge-staked LP + gauge rewards). | |
 | **DaiDsr** | DAI Savings Rate. | |
+| **ERC4626Wrap** | Generic ERC-4626 wrap balance oracle. Reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family) and any other thin ERC-4626 wrapper whose share price is derivable from `convertToAssets`. | Per-instance constructor sets protocol/product/name. `positionId` = wrapper address. Chain config key prefix: `ERC4626Wrap_`. |
 | **FluidFToken** | Fluid fToken (ERC4626 lending vault) — converts shares to underlying via `convertToAssets`. | |
 | **FluidVault** | Fluid Smart Vault — reports collateral and debt legs per vault. | |
 | **GearboxMarket** | Gearbox passive lending pool dToken balance. | |

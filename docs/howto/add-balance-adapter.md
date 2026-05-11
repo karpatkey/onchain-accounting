@@ -52,10 +52,14 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
     string private _protocol;
     /// @notice JSON metadata BASE for the PositionBalance.positionDetail field — no closing `}`.
     /// @dev Single-type adapters emit `string.concat(_positionDetail, "}")`. Multi-leg adapters
-    ///      append `,"type":"<leg>"}` at query time. See docs/howto/position-detail-schema.md.
+    ///      use `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` from
+    ///      `src/utils/PositionType.sol`. See docs/howto/position-detail-schema.md.
     string private _positionDetail;
     /// @notice Stable hex identifier for this adapter instance (most-specific immutable address —
     ///         vault, comet, gauge, marketId, …). Used by frontends as a cross-block React key.
+    /// @dev Pass as constructor arg for almost every adapter. MorphoMarket is the documented
+    ///      exception: it derives `_positionId` automatically from `marketId` via
+    ///      `Strings.toHexString(uint256(marketId), 32)` — no `positionId_` constructor param.
     string private _positionId;
 
     constructor(
@@ -114,11 +118,11 @@ Reuse patterns from existing adapters:
 Conventions:
 
 - All addresses set in the constructor are **immutable**. No setters.
-- The three identity strings (`_protocol`, `_positionDetail`, `_positionId`) are **mandatory constructor params** as of PR #35 — they pin user-facing metadata into immutable storage and flow through every emitted `PositionBalance`. Schema reference: [`docs/howto/position-detail-schema.md`](position-detail-schema.md).
+- The three identity strings (`_protocol`, `_positionDetail`, `_positionId`) are **mandatory constructor params** as of PR #35 — they pin user-facing metadata into immutable storage and flow through every emitted `PositionBalance`. Schema reference: [`docs/howto/position-detail-schema.md`](position-detail-schema.md); canonical per-adapter values: [`script/config/adapter-identities.json`](../../script/config/adapter-identities.json). Exception: `MorphoMarket` takes only `marketId_` (positionId derived automatically via `Strings.toHexString`).
 - For each external call to the protocol, use a **minimal interface** declared at the bottom of the file (or in a sibling `I<Protocol>.sol`) — do not import the protocol's full library.
 - For asset metadata (symbol/decimals on the `PositionBalance.underlyingAsset` field), call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list. This is what `ERC20DefaultOracle` does.
 - `amount` in `PositionBalance` is **always positive**. Use `isDebt` to mark debt.
-- When emitting a `PositionBalance`, set `protocol = _protocol`, `positionId = _positionId`, and `positionDetail = string.concat(_positionDetail, "}")` for single-type adapters or `string.concat(_positionDetail, ",\"type\":\"<leg>\"}")` for multi-leg adapters.
+- When emitting a `PositionBalance`, set `protocol = _protocol`, `positionId = _positionId`, and `positionDetail = string.concat(_positionDetail, "}")` for single-type adapters or `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from [`src/utils/PositionType.sol`](../../src/utils/PositionType.sol)) for multi-leg adapters.
 
 ---
 
@@ -325,7 +329,7 @@ If your adapter affects NAV for an existing test account in `test/integration/ac
 script/test/refresh-integration-snapshot.sh
 ```
 
-This regenerates the expected `navUsd8dp` values, optionally cross-checks against Debank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
+This regenerates the expected `navUsd8dp` values, optionally cross-checks against DeBank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
 
 ## 8. Open the PR
 

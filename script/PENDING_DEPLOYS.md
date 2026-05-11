@@ -257,6 +257,17 @@ PR #35 added WBTC and AAVE to `script/manage/RegisterAssets.s.sol` (indices 29 a
 
 Action: include `registerAsset(WBTC, ...)` and `registerAsset(AAVE, ...)` in the mainnet Phase C Safe TX bundle alongside the existing `registerAsset(EURC, ...)` and `setPriceFeed(ETHx, ...)` calls.
 
+## 4.8 ERC-4626 wrapping balance oracle for Aave stata-tokens (waEth*)
+
+Holders sometimes supply into Aave V3 Prime via the `staticATokenLM` wrapper (e.g. `waEthLidoGHO` = ERC-4626 wrap of `aEthLidoGHO`). Two consequences for our NAV pipeline today:
+
+1. **Stata-token holders are invisible to `getUserReserveData`** — so the `AaveV3_Prime` balance adapter does not surface those positions even though the underlying is supplied into the Aave Prime market.
+2. **The shape doesn't pair on DeBank** — DeBank reports the underlying GHO/aGHO position rather than the stata-token wrap, so the comparison report files the leg under §4.2 ("NAV positions with no DeBank counterpart"). Mostly a cosmetic gap, but it also drives the integration-test 10 bps tolerance: per-share value derived from the live Aave liquidity index resolves slightly differently across RPC providers, surfacing as a wei-to-cent drift on whichever account holds the wrap. Today that's `ACCOUNT_11_MAINNET_COMPOUND_UNISWAP` with ~$233 of `waEthLidoGHO`.
+
+**Resolution path (deferred, low priority):** ship a small `ERC4626Wrap` balance oracle that, given a wrapper address, returns `convertToAssets(IERC4626(wrapper).balanceOf(account))` denominated in the underlying. Register one instance per known wrap (initially just `waEthLidoGHO`; the family includes `waEthUSDC`, `waEthUSDT`, `waEthWETH` etc., used today via the AaveUmbrella stake-token chain but also held bare). Once registered, the integration-test tolerance could be tightened back down (currently 10 bps; the residual after this fix would be ≪ 1 bp).
+
+No production action required until the adapter is built. Tracking note in `test/integration/accounts.json.chains.1.$untracked_by_design`.
+
 ---
 
 ## 5. Deployment sequence (post-PR-#35-merge)

@@ -38,7 +38,13 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_getAaveAssets());
-        oracle = new AaveV3InstanceBalanceOracle(address(AAVE_DATA_PROVIDER), "Aave v3", address(balances));
+        oracle = new AaveV3InstanceBalanceOracle(
+            address(AAVE_DATA_PROVIDER),
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function _getAaveAssets() internal pure returns (address[] memory) {
@@ -170,7 +176,13 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), USDT_FORK_BLOCK);
 
         balances = _deployBalancesForOracle(USDT);
-        oracle = new AaveV3InstanceBalanceOracle(address(AAVE_DATA_PROVIDER), "Aave v3", address(balances));
+        oracle = new AaveV3InstanceBalanceOracle(
+            address(AAVE_DATA_PROVIDER),
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(LEND_USDT_USER, USDT);
         assertEq(amount, 569_793_916_136_725);

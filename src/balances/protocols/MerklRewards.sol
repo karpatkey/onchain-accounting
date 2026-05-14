@@ -8,6 +8,7 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Merkl Rewards Balance Oracle (proof-cached)
 /// @author kpk
@@ -48,8 +49,11 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Merkl").
     string public PROTOCOL;
 
-    /// @notice Position detail emitted on every PositionBalance (e.g. "Unclaimed Rewards").
+    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
     string public POSITION_DETAIL;
+
+    /// @notice Stable hex identifier for this adapter instance (distributor address).
+    string private _positionId;
 
     /// @notice Cached allocations: `allocations[user][token] = (cumulativeAmount, root, submittedAt)`.
     mapping(address user => mapping(address token => CachedAllocation)) public allocations;
@@ -93,13 +97,15 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     /// @param distributor_     The Merkl Distributor address. Must be a contract.
     /// @param navCalculator_   The NAVCalculator address. Must be a contract.
     /// @param protocol_        Protocol identifier (e.g. "Merkl").
-    /// @param positionDetail_  Position detail (e.g. "Unclaimed Rewards").
+    /// @param positionDetail_  JSON metadata base without closing `}`.
+    /// @param positionId_      Stable hex identifier for this adapter instance (distributor address).
     /// @param initialOwner_    Owner authorized to call `submitProof` / `clearAllocation`. Should be the OIV Safe.
     constructor(
         address distributor_,
         address navCalculator_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address initialOwner_
     ) Ownable(initialOwner_) {
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
@@ -112,6 +118,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         PROTOCOL = protocol_;
         POSITION_DETAIL = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -252,7 +259,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
                 amount: bal,
                 isDebt: false,
                 protocol: PROTOCOL,
-                positionDetail: POSITION_DETAIL
+                positionDetail: PositionType.withType(POSITION_DETAIL, PositionType.REWARDS),
+                positionId: _positionId
             });
         }
 

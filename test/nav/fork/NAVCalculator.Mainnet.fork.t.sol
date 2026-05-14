@@ -41,7 +41,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public cUsdCv3 = address(0xc3d688B66703497DAA19211EEdff47f25384cdc3);
     address public compoundRewardContract = address(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
-    // Morpho Blue (Ethereum Mainnet)
+    // Morpho (Ethereum Mainnet)
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
     bytes32 public marketIdSusdsUsdt = 0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b; // sUSDS/USDT
 
@@ -142,19 +142,36 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(
+            aaveV3DataProvider,
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
         // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav, protocol).
-        AaveV3SafetyModuleBalanceOracle smOracle =
-            new AaveV3SafetyModuleBalanceOracle(address(nav), "Aave V3 Safety Module");
+        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(
+            address(nav), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
+        );
 
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract,
+            cUsdCv3,
+            compound,
+            "Compound v3 USDC",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        morphoBlueOracle =
-            new MorphoMarketBalanceOracle(morphoBlue, marketIdSusdsUsdt, "Morpho - sUSDS/USDT", address(nav));
+        morphoBlueOracle = new MorphoMarketBalanceOracle(
+            morphoBlue, marketIdSusdsUsdt, "Morpho - sUSDS/USDT", "{\"p\":\"t\"", address(nav)
+        );
 
-        daiDsr = new DaiDsrBalanceOracle(dai, dsr, "Maker", "DSR", address(nav));
+        daiDsr = new DaiDsrBalanceOracle(
+            dai, dsr, "Maker", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav)
+        );
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(smOracle));

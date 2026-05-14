@@ -38,7 +38,13 @@ contract StakeWiseV3OsTokenBalanceOracleForkTest is BalanceAdapterTestBase {
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(GNO);
         oracle = new StakeWiseV3OsTokenBalanceOracle(
-            OS_GNO, GNO, OS_TOKEN_VAULT_CONTROLLER, "Stakewise v3", "osGNO", address(balances)
+            OS_GNO,
+            GNO,
+            OS_TOKEN_VAULT_CONTROLLER,
+            "Stakewise v3",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"osToken\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 

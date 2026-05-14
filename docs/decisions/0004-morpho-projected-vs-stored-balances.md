@@ -1,10 +1,10 @@
-# 0004 — Morpho Blue: project pending interest into NAV (vs use stored values)
+# 0004 — Morpho: project pending interest into NAV (vs use stored values)
 
 **Status:** accepted
 
 ## Context
 
-`MorphoMarketBalanceOracle` (`src/balances/protocols/MorphoMarket.sol`) reads a user's lending position in a Morpho Blue market by:
+`MorphoMarketBalanceOracle` (`src/balances/protocols/MorphoMarket.sol`) reads a user's lending position in a Morpho market by:
 
 1. Calling `MORPHO.position(marketId, account)` to get the user's `supplyShares` / `borrowShares` / `collateral`.
 2. Calling `MORPHO.expectedMarketBalances(marketParams)` (from `morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol`) to get the *projected* `totalSupplyAssets` / `totalSupplyShares` / `totalBorrowAssets` / `totalBorrowShares` *after accruing interest forward to `block.timestamp`*.
@@ -12,7 +12,7 @@
 
 `expectedMarketBalances` differs from a raw `MORPHO.market(id)` read in one respect: it folds the IRM-implied accrual between `lastUpdate` and `block.timestamp` into both `totalBorrowAssets` and `totalSupplyAssets` before returning. For a market that hasn't been touched recently, this can amount to a large delta — especially at high utilization, where Morpho's Adaptive Curve IRM produces aggressive borrow rates.
 
-This choice came up empirically during the integration-test Debank cross-check (PR #19 workflow). At one point, ACCOUNT_1 on Mainnet showed a ~3% drift between our NAV and Debank's portfolio total. Tracing it line by line landed on a single position: a small USDC supply in the **wstUSR/USDC** Morpho Blue market. At that moment the market was ~24 days past its last touch and at 100% utilization, so the projection inflated supply assets by ~53% over the stored value. Stored value: $10.34. Projected value: $15.83. Debank reports the stored value.
+This choice came up empirically during the integration-test Debank cross-check (PR #19 workflow). At one point, ACCOUNT_1 on Mainnet showed a ~3% drift between our NAV and Debank's portfolio total. Tracing it line by line landed on a single position: a small USDC supply in the **wstUSR/USDC** Morpho market. At that moment the market was ~24 days past its last touch and at 100% utilization, so the projection inflated supply assets by ~53% over the stored value. Stored value: $10.34. Projected value: $15.83. Debank reports the stored value.
 
 ## Decision
 
@@ -32,7 +32,7 @@ Morpho's own UI and the `MorphoBalancesLib` library — both maintained by Morph
 
 **Negative / things to watch:**
 
-- **Persistent drift against Debank for affected positions.** Debank uses stored values, so accounts holding Morpho Blue positions in markets with stale `lastUpdate` and high utilization will show NAV > Debank by the projection delta. This is *expected* and not a bug. The integration-test Debank cross-check workflow (`script/test/refresh-integration-snapshot.sh`) will surface this as a tolerance violation; reviewers should triage with this ADR in mind. See `docs/howto/refresh-integration-test-blocks.md` "Tolerance failures — how to triage" for the standard workflow.
+- **Persistent drift against Debank for affected positions.** Debank uses stored values, so accounts holding Morpho positions in markets with stale `lastUpdate` and high utilization will show NAV > Debank by the projection delta. This is *expected* and not a bug. The integration-test Debank cross-check workflow (`script/test/refresh-integration-snapshot.sh`) will surface this as a tolerance violation; reviewers should triage with this ADR in mind. See `docs/howto/refresh-integration-test-blocks.md` "Tolerance failures — how to triage" for the standard workflow.
 - **Projection is not realizable while utilization is at 100%.** The projected supply value reflects what the user *would* receive if a withdrawal happened, but if the market is fully utilized, withdrawals revert until borrowers repay. NAV technically over-states immediately liquid value in those cases. Acceptable: NAV is a portfolio valuation, not a liquidity metric.
 - **Projection is sensitive to IRM behavior.** A future Morpho upgrade that changes the IRM math, or a new market with an unusual IRM, could produce surprising projections. If we ever see a multi-percent drift from a Morpho position with no obvious cause, double-check the IRM rate at the last update vs now.
 

@@ -11,6 +11,7 @@ import {InvalidArguments} from "src/errors.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Uniswap V3 Pool Balance Oracle
 /// @author kpk
@@ -100,9 +101,11 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Uniswap V3").
     string private _protocol;
 
-    /// @notice Position detail base string emitted on liquidity entries (e.g. "ETH/USDC 0.05%").
-    ///         Fee entries append " Fees" to this string.
+    /// @notice JSON metadata base (no closing `}`) emitted on liquidity entries.
     string private _positionDetail;
+
+    /// @notice Stable hex identifier for this adapter instance (pool address).
+    string private _positionId;
 
     //
     // Constructor
@@ -111,14 +114,15 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param pool_ The Uniswap V3 pool address.
     /// @param positionManager_ The NonfungiblePositionManager address (per-chain canonical NPM).
     /// @param protocol_ Protocol identifier (e.g. "Uniswap V3").
-    /// @param positionDetail_ Position detail base (e.g. "ETH/USDC 0.05%"). Liquidity entries use
-    ///        this verbatim; fee entries use `"<positionDetail_> Fees"`.
+    /// @param positionDetail_ JSON metadata base without closing `}` (e.g. `{"protocol":"Uniswap V3","pool":"ETH/USDC 0.05%"`).
+    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ NAVCalculator contract address (asset registry source).
     constructor(
         address pool_,
         address positionManager_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (pool_ == address(0) || positionManager_ == address(0) || navCalculator_ == address(0)) {
@@ -137,6 +141,7 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -242,8 +247,8 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](4);
         uint256 count;
 
-        string memory liquidityDetail = _positionDetail;
-        string memory feesDetail = string.concat(_positionDetail, " Fees");
+        string memory liquidityDetail = PositionType.withType(_positionDetail, PositionType.SUPPLY);
+        string memory feesDetail = PositionType.withType(_positionDetail, PositionType.FEES);
 
         if (token0Eligible && liq0 > 0) {
             temp[count++] = _makePosition(TOKEN0, liq0, liquidityDetail);
@@ -403,7 +408,8 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
             amount: amount,
             isDebt: false,
             protocol: _protocol,
-            positionDetail: detail
+            positionDetail: detail,
+            positionId: _positionId
         });
     }
 

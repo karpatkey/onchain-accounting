@@ -50,6 +50,7 @@ contract RefreshIntegrationSnapshot is Script, IntegrationFromConfigBase {
         _setupAndDeploy();
 
         _writeNavSnapshotsForCurrentChain();
+        _writeNavPositionsForCurrentChain();
     }
 
     /// @dev Emits one structured line per (account, chain) snapshot. The shell wrapper greps
@@ -104,5 +105,23 @@ contract RefreshIntegrationSnapshot is Script, IntegrationFromConfigBase {
         }
 
         console2.log("Wrote", written, "snapshot line(s) to stdout (parsed by refresh-integration-snapshot.sh).");
+    }
+
+    /// @notice Writes per-account position details to test/integration/nav-positions-<chainId>.json.
+    ///         The Python comparison report reads this file to show real NAV position breakdowns
+    ///         alongside the DeBank data.
+    function _writeNavPositionsForCurrentChain() internal {
+        string memory outPath = string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json");
+        string memory payload = string.concat(
+            '{"chainId":',
+            vm.toString(_chainId),
+            ',"forkBlock":',
+            vm.toString(_forkBlock),
+            ',"accounts":',
+            _buildPositionDetailsJson(),
+            "}"
+        );
+        vm.writeFile(outPath, payload);
+        console2.log("Written NAV positions to", outPath);
     }
 }

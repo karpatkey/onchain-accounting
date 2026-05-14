@@ -64,7 +64,13 @@ contract CapBalanceOracleTest is Test {
         mockCUsd = new MockCUsd(address(mockUsdc));
         mockStcUsd = new MockStcUsd();
         oracle = new CapBalanceOracle(
-            address(mockCUsd), address(mockStcUsd), address(mockUsdc), "Cap", "cUSD + stcUSD", address(mockBalances)
+            address(mockCUsd),
+            address(mockStcUsd),
+            address(mockUsdc),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
@@ -75,35 +81,65 @@ contract CapBalanceOracleTest is Test {
     function test_constructor_invalidArgs_zeroCUsd() public {
         vm.expectRevert(InvalidArguments.selector);
         new CapBalanceOracle(
-            address(0), address(mockStcUsd), address(mockUsdc), "Cap", "cUSD + stcUSD", address(mockBalances)
+            address(0),
+            address(mockStcUsd),
+            address(mockUsdc),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_zeroStcUsd() public {
         vm.expectRevert(InvalidArguments.selector);
         new CapBalanceOracle(
-            address(mockCUsd), address(0), address(mockUsdc), "Cap", "cUSD + stcUSD", address(mockBalances)
+            address(mockCUsd),
+            address(0),
+            address(mockUsdc),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_zeroUsdc() public {
         vm.expectRevert(InvalidArguments.selector);
         new CapBalanceOracle(
-            address(mockCUsd), address(mockStcUsd), address(0), "Cap", "cUSD + stcUSD", address(mockBalances)
+            address(mockCUsd),
+            address(mockStcUsd),
+            address(0),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_nonContractCUsd() public {
         vm.expectRevert("cUSD must be a contract");
         new CapBalanceOracle(
-            address(0xdead), address(mockStcUsd), address(mockUsdc), "Cap", "cUSD + stcUSD", address(mockBalances)
+            address(0xdead),
+            address(mockStcUsd),
+            address(mockUsdc),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
         new CapBalanceOracle(
-            address(mockCUsd), address(mockStcUsd), address(mockUsdc), "Cap", "cUSD + stcUSD", address(0xdead)
+            address(mockCUsd),
+            address(mockStcUsd),
+            address(mockUsdc),
+            "Cap",
+            "cUSD + stcUSD",
+            "0x0000000000000000000000000000000000000001",
+            address(0xdead)
         );
     }
 

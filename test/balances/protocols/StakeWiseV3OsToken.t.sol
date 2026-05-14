@@ -25,7 +25,8 @@ contract StakeWiseV3OsTokenBalanceOracleTest is BalanceAdapterTestBase {
             address(mockUnderlying),
             address(mockVaultController),
             "Stakewise v3",
-            "osGNO",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"osETH\"",
+            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }

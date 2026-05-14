@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Cap Protocol cUSD Interface
 /// @notice Minimal interface for interacting with Cap protocol's cUSD token
@@ -51,10 +52,10 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
-
+    /// @notice Stable hex identifier for this adapter instance (cUsd address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -66,7 +67,8 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
     /// @param stcUsd_ The address of the Cap stcUSD token
     /// @param usdc_ The address of USDC (the underlying asset returned)
     /// @param protocol_ Protocol identifier (e.g., "Cap")
-    /// @param positionDetail_ Position detail (e.g., "cUSD + stcUSD")
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (cUsd address).
     /// @param navCalculator_ The address of the NAVCalculator contract
     constructor(
         address cUsd_,
@@ -74,6 +76,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
         address usdc_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (cUsd_ == address(0) || stcUsd_ == address(0) || usdc_ == address(0)) {
@@ -89,6 +92,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
         USDC = usdc_;
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -184,7 +188,8 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
             amount: balance,
             isDebt: false,
             protocol: _protocol,
-            positionDetail: _positionDetail
+            positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
+            positionId: _positionId
         });
     }
 

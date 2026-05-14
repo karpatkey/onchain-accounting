@@ -4,7 +4,7 @@ Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator
 
 **Companion docs:**
 - [`DEPLOYMENT_SUMMARY.md`](DEPLOYMENT_SUMMARY.md) — architectural overview (CREATE2, atomic proxy deploy, Safe multisig control). Read first if you're new to the system.
-- [`ORACLE_MIGRATION_PLAN.md`](../ORACLE_MIGRATION_PLAN.md) — historical record of the v1 → v2 oracle migration, plus known follow-up improvements. Start here if you want to understand why a particular oracle looks the way it does.
+- [`docs/historical/oracle-migration-plan.md`](../docs/historical/oracle-migration-plan.md) — historical record of the v1 → v2 oracle migration, plus known follow-up improvements. Read if you want to understand why a particular oracle looks the way it does. Archival; for current ops, use this runbook.
 
 **When you use this runbook:**
 1. Deploying NAV v2 to a new chain for the first time.
@@ -225,7 +225,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
 
 8. **Update the "Canonical addresses" table** at the top of this runbook with the new proxy + ERC20Default addresses. Bump the verification date.
 
-9. **Update `ORACLE_MIGRATION_PLAN.md`** "Aspects to improve" — the `02_DeployProxies` MANAGER-grant bug entry should be marked as fixed in `d513f27` (already past tense in this runbook; align the migration plan to match).
+9. **Update `docs/historical/oracle-migration-plan.md`** "Aspects to improve" — the `02_DeployProxies` MANAGER-grant bug entry should be marked as fixed in `d513f27` (already past tense in this runbook; align the historical plan to match).
 
 10. **Optionally clean up the orphaned `AtomicProxyDeployer` admin role.** From the new constructor logs, find the `AtomicProxyDeployer` address(es) deployed on each chain. Issue a Safe TX:
     ```
@@ -558,7 +558,9 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `StakeWiseV3Vault_*`, `StakeWiseV3OsToken_*`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
+**StakeWise V3 (Mainnet):** `StakeWiseV3OsToken_ETH` (raw osETH wallet balance, returned as ETH-sentinel via `OsTokenVaultController.convertToAssets`), `StakeWiseV3Vault_Genesis` (Genesis Vault deposit net of minted-osETH debt — `vaultAssets - mintedOs`). Wired primarily for integration-report cross-checks against accounts holding StakeWise positions; the Alpha funds themselves do not currently use StakeWise. No dedicated `osETH` price feed is needed — both adapters report positions denominated in ETH (sentinel), which is already a registered priceable asset on Mainnet.
+
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 
@@ -572,7 +574,7 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom oracle we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom oracles (see `ORACLE_MIGRATION_PLAN.md` → "Empirical confirmation"). For any adapter whose `assets.json.tokens.<chainId>.<symbol>.pricefeed` already points at a working fund-side address, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
+> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom oracle we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom oracles (see `docs/historical/oracle-migration-plan.md` → "Empirical confirmation"). For any adapter whose `assets.json.tokens.<chainId>.<symbol>.pricefeed` already points at a working fund-side address, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
 >
 > Running this phase only adds value when:
 > - You're onboarding a new oracle that the fund-side never deployed.
@@ -639,7 +641,7 @@ Deployed adapter addresses are auto-saved to `script/config/chains/<chainId>.jso
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:144` (and 21 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/chains/<id>.json.balanceAdapters.<name>.deployed`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/chains/` before the real broadcast.** Tracked as a blocking follow-up in `ORACLE_MIGRATION_PLAN.md` "Aspects to improve" #4.
+> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:144` (and 21 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/chains/<id>.json.balanceAdapters.<name>.deployed`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/chains/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
 
 ### 4.1 Mainnet
 
@@ -837,7 +839,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 ```
 
-> **Known limitation — hardcoded adapter list.** `VerifyEtherscan.s.sol` does **not** iterate the full `04_DeployBalanceAdapters.run()` inventory. It emits `forge verify-contract` commands only for the names in the hardcoded arrays inside `_emitVerifyBalanceAdapters` and `_balanceAdapterPathAndArgs` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`). Adapters outside that list (`AaveV3_Core`, `AaveV3_Prime`, `Aura_*`, `Curve_*`, `Convex_*`, `MorphoMarket_*`, etc.) are silently skipped. When you add a new adapter type or instance, either extend the hardcoded arrays in `VerifyEtherscan.s.sol` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `ORACLE_MIGRATION_PLAN.md` ("Aspects to improve").
+> **Known limitation — hardcoded adapter list.** `VerifyEtherscan.s.sol` does **not** iterate the full `04_DeployBalanceAdapters.run()` inventory. It emits `forge verify-contract` commands only for the names in the hardcoded arrays inside `_emitVerifyBalanceAdapters` and `_balanceAdapterPathAndArgs` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`). Adapters outside that list (`AaveV3_Core`, `AaveV3_Prime`, `Aura_*`, `Curve_*`, `Convex_*`, `MorphoMarket_*`, etc.) are silently skipped. When you add a new adapter type or instance, either extend the hardcoded arrays in `VerifyEtherscan.s.sol` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
 
 ### 8.2 Run the printed commands
 

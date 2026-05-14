@@ -1,14 +1,120 @@
-# docs/
+# Documentation Index
 
-Onboarding and reference material that supplements the in-tree per-domain docs (`README.md`, `QUICKSTART.md`, `src/balances/BALANCE_ADAPTERS.md`, `src/bridge/BRIDGE_ADAPTERS.md`, `script/DEPLOYMENT_SUMMARY.md`, `script/deploy/README.md`, `script/config/CONFIG_GUIDE.md`).
+Every project doc, organised by what kind of question it answers. If you're looking for "where do I find X", start here.
 
-| Path | Purpose |
+The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by intent" table, which is optimised for Claude / CI sessions and points only at the docs they need most. This index is the human-facing complete map.
+
+---
+
+## I'm new — start here
+
+| Doc | Purpose |
 |---|---|
-| [`onboarding-claude.md`](onboarding-claude.md) | Architectural walkthrough for a new contributor (or new Claude session). Read before starting any non-trivial PR. |
-| [`PRICE_ADAPTERS.md`](PRICE_ADAPTERS.md) | Price feed reference — interface, existing custom feeds, registration. The price-side counterpart to `src/balances/BALANCE_ADAPTERS.md`. |
-| [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | End-to-end walkthrough: write the adapter + factory + tests + chain config + deploy + register. |
-| [`howto/add-price-feed.md`](howto/add-price-feed.md) | End-to-end walkthrough for adding a new custom price feed. |
-| [`howto/add-chain.md`](howto/add-chain.md) | End-to-end walkthrough for adding a new chain (config, asset registry, deploy steps). |
-| [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | How to bump the integration-test fork blocks, refresh expected NAVs, and cross-check against Debank. |
-| [`decisions/`](decisions/) | Numbered ADRs (Architecture Decision Records). Read when you want the *why* behind a design. |
-| [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) | Backlog of protocols and position types not yet covered by balance oracles (LST withdrawal queues, restaking primitives, RWA, perps, …). Pick from here when adding a new adapter. |
+| [`README.md`](../README.md) | Project pitch — what `onchain-accounting` is, the four subsystems (balances, prices, NAV, bridge), and the elevator-summary architecture. |
+| [`CLAUDE.md`](../CLAUDE.md) | Per-session orientation. Repo layout map + intent-keyed link table + conventions you must respect. **Read every session.** |
+| [`QUICKSTART.md`](../QUICKSTART.md) | Local environment bring-up: install, env vars, first build, first test run. |
+| [`docs/onboarding-claude.md`](onboarding-claude.md) | Architectural walkthrough for a new contributor (or new Claude session). Read before starting any non-trivial PR. |
+
+---
+
+## Adding new things — recipes (`docs/howto/`)
+
+| Doc | When to read |
+|---|---|
+| [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | Adding a new balance oracle. End-to-end: contract, factory, unit + fork tests, chain config, deploy + register. Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (framework) first. |
+| [`howto/add-price-feed.md`](howto/add-price-feed.md) | Adding a new custom price feed. Same recipe shape, framework reference is [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md). |
+| [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain (`chains/<id>.json`, asset registry, deploy steps). |
+| [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against DeBank. |
+| [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
+
+---
+
+## Framework references — what is each subsystem?
+
+| Doc | Subsystem |
+|---|---|
+| [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) | Balance oracle architecture — `IBalanceOracleAdapter`, `Balances` registry, all implemented adapters. |
+| [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) | Price feed architecture — `Prices` registry, `IPriceFeedCustom`, all implemented custom feeds. |
+| [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md) | Bridge module — `BridgeEscrow` + per-protocol bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis). |
+
+---
+
+## Architecture decisions (`docs/decisions/`)
+
+Numbered ADRs. Read when you want the *why* behind a design choice.
+
+| ADR | Topic |
+|---|---|
+| [`0001-balance-adapter-factory-pattern.md`](decisions/0001-balance-adapter-factory-pattern.md) | CREATE2 factory pattern for balance adapters. |
+| [`0002-aave-safety-module-multi-token.md`](decisions/0002-aave-safety-module-multi-token.md) | (Superseded by 0005.) |
+| [`0003-integration-test-snapshot-workflow.md`](decisions/0003-integration-test-snapshot-workflow.md) | JSON-driven fork-test snapshots; weekly refresh cron; DeBank cross-check. |
+| [`0004-morpho-projected-vs-stored-balances.md`](decisions/0004-morpho-projected-vs-stored-balances.md) | Morpho projected-share accounting vs stored values. |
+| [`0005-aave-safety-module-hardcoded-immutable.md`](decisions/0005-aave-safety-module-hardcoded-immutable.md) | Aave V3 SM adapter immutability (supersedes 0002). |
+| [`0006-aave-umbrella-balance-oracle.md`](decisions/0006-aave-umbrella-balance-oracle.md) | Aave Umbrella stake-token coverage. |
+| [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. |
+| [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
+| [`decisions/README.md`](decisions/README.md) | ADR index + template. |
+
+---
+
+## Operations (`docs/operations/`)
+
+| Doc | When to use |
+|---|---|
+| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewards` adapter cache so unclaimed rewards stay valued in NAV. |
+
+---
+
+## Roadmap (`docs/roadmap/`)
+
+| Doc | Use |
+|---|---|
+| [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) | Backlog of protocols / position types not yet covered by balance oracles (LST withdrawal queues, restaking primitives, RWA, perps). Pick from here when adding a new adapter. |
+| [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md) | Polish backlog for the `comparison-report.md` generator (drift breakdown lines, Etherscan links, sub-row tables, etc.). |
+
+---
+
+## Deploys + production state (`script/`)
+
+| Doc | When to read |
+|---|---|
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, Safe multisig control, the per-script roles (`01_…` → `06_…`). Read first if new. |
+| [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional oracles to a live chain, registering new assets, rotating roles, validating an existing deployment. |
+| [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
+| [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
+| [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` and `assets.json`. |
+| [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
+| [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `06_…` deploy scripts. |
+| [`script/test/README.md`](../script/test/README.md) | Per-folder index for `script/test/` (snapshot refresh + comparison report). |
+
+---
+
+## Historical / archival (`docs/historical/`)
+
+| Doc | Why kept |
+|---|---|
+| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The v1 → v2 oracle migration plan (PRs #10–#15, completed 2026-04-30). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see `script/NAV_V2_DEPLOYMENT_RUNBOOK.md` for that. |
+
+---
+
+## Generated artifacts (committed for review)
+
+| File | What it is |
+|---|---|
+| [`comparison-report.md`](../comparison-report.md) | Per-(account × chain) NAV-vs-DeBank comparison. Regenerated by `script/test/generate-comparison-report.py`. The drift summary table at the top is the headline. |
+| [`refresh-report.md`](../refresh-report.md) | Compact summary of the most-recent `refresh-integration-snapshot.sh` run — fork blocks, per-account NAV/drift, DeBank credit consumption. Regenerated on every snapshot bump. |
+
+---
+
+## Where to track a NAV-vs-DeBank gap
+
+When you spot a position in `comparison-report.md` that NAV doesn't cover (a `—` row, a drift on a specific account, etc.), the right place to record it depends on **what action would close it**. Four-bucket partition by intent:
+
+| Bucket | When to use | Where it lives |
+|---|---|---|
+| **Untracked by design** | The gap is intentional — token has no Chainlink mainnet feed, protocol is deprecated/legacy, etc. "Will not fix unless rule changes." | `test/integration/accounts.json.chains.<chainId>.$untracked_by_design` (per-chain prose field; today only chain 1 is populated). |
+| **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to mainnet yet. "Wire's done, ship pending." | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) — operational checklist with the forge invocations + Safe TX flow. |
+| **Need new adapter / feed code** | The gap requires a new contract or new ADR. "Have to build something." | [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) for missing balance adapters; [`howto/add-price-feed.md`](howto/add-price-feed.md) is the recipe to fix one. |
+| **Display polish / matcher heuristics** | The math is right but the report's per-row pairing or layout could be clearer. "Visual / UX work on the report itself." | [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md). |
+
+A single gap should land in exactly one of these — the bucket determines who owns the next action. If it doesn't fit any, that's a flag worth raising before adding a fifth bucket.

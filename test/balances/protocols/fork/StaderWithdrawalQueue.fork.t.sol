@@ -26,7 +26,12 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         _setupFork();
         balances = _deployBalancesForOracle(MAINNET_WETH);
         oracle = new StaderWithdrawalQueueBalanceOracle(
-            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, "Stader", "ETH Withdrawal Queue", address(balances)
+            USER_WITHDRAWAL_MANAGER,
+            MAINNET_WETH,
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -52,7 +57,10 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Stader");
-        assertEq(positions[0].positionDetail, "ETH Withdrawal Queue");
+        assertEq(
+            positions[0].positionDetail,
+            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\",\"type\":\"Staking\"}"
+        );
     }
 
     function test_getOracleBalances_realHolder() public view {

@@ -30,9 +30,9 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     address public cUsdCv3 = address(0xb125E6687d4313864e53df431d5425969c15Eb2F);
     address public compoundRewardContract = address(0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1);
 
-    // Morpho Blue (Base) — cbBTC/USDC market (USD Prime fund position)
+    // Morpho (Base) — cbBTC/USDC market (USD Prime fund position)
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
-    // Morpho Blue Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
+    // Morpho Base cbBTC/USDC market (loanToken=USDC, collateralToken=cbBTC)
     bytes32 public marketIdCbbtcUsdc = 0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836;
 
     /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.
@@ -77,13 +77,31 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, "Aave v3", address(nav));
+        aaveOracle = new AaveV3InstanceBalanceOracle(
+            aaveV3DataProvider,
+            "Aave v3",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        compoundV3Comet =
-            new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));
+        compoundV3Comet = new CompoundV3Comet(
+            compoundRewardContract,
+            cUsdCv3,
+            compound,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
 
-        morphoBlueOracle =
-            new MorphoMarketBalanceOracle(morphoBlue, marketIdCbbtcUsdc, "Morpho - cbBTC/USDC", address(nav));
+        morphoBlueOracle = new MorphoMarketBalanceOracle(
+            morphoBlue,
+            marketIdCbbtcUsdc,
+            "Morpho - cbBTC/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(nav)
+        );
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(compoundV3Comet));

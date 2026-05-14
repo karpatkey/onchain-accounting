@@ -1,0 +1,25 @@
+[
+  {
+    "id": "eth",
+    "chain": "eth",
+    "name": "ETH",
+    "symbol": "ETH",
+    "display_symbol": null,
+    "optimized_symbol": "ETH",
+    "decimals": 18,
+    "logo_url": "https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png",
+    "protocol_id": "",
+    "price": 2338.52,
+    "price_24h_change": -0.016881823035112955,
+    "is_verified": true,
+    "is_core": true,
+    "is_wallet": true,
+    "is_suspicious": false,
+    "time_at": 1483200000.0,
+    "total_supply": 120686531.0558495,
+    "credit_score": 42335353.954481654,
+    "amount": 0.002564320128809432,
+    "raw_amount": 2564320128809432,
+    "raw_amount_hex_str": "0x91c3c4e5e39d8"
+  }
+]

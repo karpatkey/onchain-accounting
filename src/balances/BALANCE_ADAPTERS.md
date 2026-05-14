@@ -81,8 +81,9 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `balanceOracle`  | `address` | The adapter that reported this position. |
 | `amount`         | `uint256` | **Always positive.** Nominal amount in asset decimals. |
 | `isDebt`         | `bool` | `true` = debt (subtract from NAV), `false` = credit (add to NAV). |
-| `protocol`       | `string` | Protocol name (e.g. `"wallet"`, `"Compound v3 USDC"`). |
-| `positionDetail` | `string` | Short label (e.g. `"Holding"`, `"Collateral"`, `"Borrow"`). |
+| `protocol`       | `string` | Stable top-level protocol name (e.g. `"wallet"`, `"Aave V3"`, `"Morpho"`). Pinned in the adapter's constructor as `_protocol`. |
+| `positionDetail` | `string` | Fully-closed JSON object — required keys `protocol`, `product`; optional `type`, `token`. Adapters store a base string (no closing `}`) in `_positionDetail` and append the closing fragment at query time. Schema: [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md). |
+| `positionId`     | `string` | Stable hex identifier for this adapter instance — derived from the most-specific immutable address pinned by the constructor (vault, comet, gauge, marketId, …). Frontend uses it as a cross-block React key. |
 
 **Credits-only oracles** (e.g. ERC20DefaultOracle, DaiDsr, AaveV3SafetyModule, StakeWiseV3OsToken, SkySavingsUsds) use `uint256` internally for balances and always report `isDebt: false`; they cast to `int256` only at the adapter interface boundary.
 
@@ -166,21 +167,31 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | Adapter | Description | Protocol string / notes |
 |---------|-------------|-------------------------|
 | **ERC20DefaultOracle** | Wallet ERC20 and native balances for all registered assets. | `"wallet"`, positionDetail `"Holding"`. Auto-registered at init. |
-| **AaveV3Instance** | Aave v3 positions (supply/borrow) for one market. | Configurable protocol name. |
-| **AaveV3SafetyModule** | Aave safety module (e.g. staked AAVE). | |
-| **Aura** | Aura vault/lp positions. | |
-| **BalancerV3** | Balancer V3 positions. | |
-| **CompoundV3Comet** | Compound V3 Comet: base borrow, collaterals, rewards. | Constructor: protocol string (e.g. "Compound v3 USDC"). Uses NAVCalculator for asset metadata. |
+| **AaveV2Instance** | Aave V2 lending positions (supply/collateral/borrow) for one market via V2 ProtocolDataProvider. Thin subclass of `AaveV3InstanceBalanceOracle`. | Protocol `"Aave V2"`, product `"Lending"`. Stable-debt positions not reported (governance-disabled). Mainnet only. |
+| **AaveV3Instance** | Aave V3 lending positions (supply/collateral/borrow) for one market via V3 ProtocolDataProvider. Discovers all reserves dynamically; emits two legs per reserve (supply/collateral + borrow). | Protocol `"Aave V3"`, product `"Lending"`. `positionId` = Pool address. |
+| **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction; two legs per token (Staking + Rewards). | Protocol `"Aave V3"`, product `"Safety Module"`. DeBank reports stkAAVE under `aave2`, not `aave3`. |
+| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token (Staking + Rewards) denominated in the bare reserve. | Protocol `"Aave V3"`, product `"Umbrella"`. Picks up new stake tokens via governance without redeploy. See `docs/decisions/0006-aave-umbrella-balance-oracle.md`. |
+| **Aura** | Aura gauge staked LP + claimable BAL/AURA rewards. | |
+| **BalancerV3** | Balancer V3 pool LP. Emits two legs per asset: `Supply` (unstaked wallet LP) and `Staking` (gauge-staked LP + gauge rewards). | |
+| **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. | |
+| **CompoundV3Comet** | Compound V3 Comet: base supply/borrow, collaterals, COMP rewards. | Constructor: protocol string (e.g. `"Compound v3 USDC"`). Uses NAVCalculator for asset metadata. |
+| **Convex** | Convex staking rewards (CRV, CVX, extras) for one gauge. | |
+| **Curve** | Curve gauge LP. Emits two legs per asset: `Supply` (unstaked wallet LP) and `Staking` (gauge-staked LP + gauge rewards). | |
 | **DaiDsr** | DAI Savings Rate. | |
-| **GMX** | GMX positions. | |
+| **ERC4626Wrap** | Generic ERC-4626 wrap balance oracle. Reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family) and any other thin ERC-4626 wrapper whose share price is derivable from `convertToAssets`. | Per-instance constructor sets protocol/product/name. `positionId` = wrapper address. Chain config key prefix: `ERC4626Wrap_`. |
+| **FluidFToken** | Fluid fToken (ERC4626 lending vault) — converts shares to underlying via `convertToAssets`. | |
+| **FluidVault** | Fluid Smart Vault — reports collateral and debt legs per vault. | |
+| **GearboxMarket** | Gearbox passive lending pool dToken balance. | |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. | Mutable per-(user, token) cache, `onlyOwner` writes, proofs verified against the live Distributor root. The framework's documented mutable-adapter exception. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. |
-| **MorphoMarket** | Morpho market positions. | |
+| **MorphoMarket** | Morpho market positions (collateral supply, loan supply, borrow). `positionId` derived automatically from `marketId` via `Strings.toHexString` — no separate constructor param needed. | |
+| **MorphoVault** | Morpho ERC4626 vault (MetaMorpho) share balance converted to underlying. | |
 | **SkySavingsUsds** | Sky savings USDS. | |
-| **SparkLend** | Spark lending positions. | |
-| **StakeWiseV3OsToken** | StakeWise V3 osToken. | |
-| **StakeWiseV3Vault** | StakeWise V3 vault. | |
+| **SparkLend** | Spark lending positions (subclass of AaveV3Instance). | |
+| **StakeWiseV3OsToken** | StakeWise V3 osToken wallet balance converted to underlying via `OsTokenVaultController.convertToAssets`. Same contract serves osETH (Mainnet) and osGNO (Gnosis). | Mainnet: `StakeWiseV3OsToken_ETH` (osETH → ETH-sentinel). |
+| **StakeWiseV3Vault** | StakeWise V3 vault. `getOraclePositions` emits two legs: `Staking` (vault shares → assets) and `Borrow` (osToken debt → assets). `getOracleBalances`/`getOracleBalanceForAsset` return the signed net for backward compat. | One adapter per vault. |
 | **StaderWithdrawalQueue** | Stader UserWithdrawalManager pending unstake requests; reports the sum of `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. | Mainnet only; underlying configured to WETH. |
-| **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. One adapter instance per pair; no rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
+| **UniswapV2** | Uniswap V2 pair LP — pro-rata share of token0/token1 reserves, dilution-adjusted for the pending protocol-fee mint. No rewards (V2 swap fees auto-compound into reserves). | Constructor: `(pair, protocol, positionDetail, navCalculator)`. |
+| **UniswapV3Pool** | Uniswap V3 concentrated-liquidity LP — principal amounts derivable from `liquidity` at the current pool price, plus unclaimed fees, across all of the account's NFTs in this pool. One adapter per pool. Only legs whose token is registered with NAVCalculator are reported; mark `"enabled": false` in chain config until all pool tokens have price feeds. | Constructor: `(pool, positionManager, protocol, positionDetail, positionId, navCalculator)`. Chain config key prefix: `UniswapV3_`. |
 
 Protocol adapters typically take a **NAVCalculator** (or equivalent) in the constructor to read the asset registry (and sometimes symbols/decimals) so they can build correct `Asset` and only report registered assets if desired.
 
@@ -199,8 +210,9 @@ Protocol adapters typically take a **NAVCalculator** (or equivalent) in the cons
      - `balanceOracle`: `address(this)`.
      - `amount`: positive `uint256` in asset decimals.
      - `isDebt`: `true` for borrows/debts, `false` for collateral/supply/claims.
-     - `protocol`: e.g. `"YourProtocol Name"`.
-     - `positionDetail`: e.g. `"Collateral"`, `"Borrow"`, `"Rewards"`.
+     - `protocol`: emit `_protocol` from the constructor-pinned field (e.g. `"Aave V3"`, `"Morpho"`).
+     - `positionDetail`: emit `string.concat(_positionDetail, "}")` for single-type adapters, or `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from `src/utils/PositionType.sol`) for multi-leg adapters. Per-adapter examples in [`docs/howto/position-detail-schema.md`](../../docs/howto/position-detail-schema.md) §4.
+     - `positionId`: emit `_positionId` from the constructor-pinned field (hex string of the adapter's most-specific anchor address).
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
    - You may return only assets that are registered in NAVCalculator (like ERC20DefaultOracle) to avoid unnecessary work; unregistered positions are dropped by NAVCalculator anyway.
 4. Implement **`getOracleBalances`** and **`getOracleBalanceForAsset`** (per-asset amounts and debt flags). Return `(assets[], amounts[], isDebt[])` from `getOracleBalances` and `(amount, isDebt)` from `getOracleBalanceForAsset`. Iterate over all `underlyingAssetsSupported()` and include only non-zero amounts. These can derive from the same data as `getOraclePositions` or be implemented with a simpler path.

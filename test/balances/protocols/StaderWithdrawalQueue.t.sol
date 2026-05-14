@@ -70,7 +70,12 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         super.setUp();
         manager = new MockUserWithdrawalManager();
         oracle = new StaderWithdrawalQueueBalanceOracle(
-            address(manager), address(weth), "Stader", "ETH Withdrawal Queue", address(balances)
+            address(manager),
+            address(weth),
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -79,27 +84,51 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     function test_constructor_revertsOnZeroManager() public {
         vm.expectRevert(InvalidArguments.selector);
         new StaderWithdrawalQueueBalanceOracle(
-            address(0), address(weth), "Stader", "ETH Withdrawal Queue", address(balances)
+            address(0),
+            address(weth),
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
         new StaderWithdrawalQueueBalanceOracle(
-            address(manager), address(0), "Stader", "ETH Withdrawal Queue", address(balances)
+            address(manager),
+            address(0),
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("UserWithdrawalManager must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(eoa, address(weth), "Stader", "ETH Withdrawal Queue", address(balances));
+        new StaderWithdrawalQueueBalanceOracle(
+            eoa,
+            address(weth),
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("NAVCalculator must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(address(manager), address(weth), "Stader", "ETH Withdrawal Queue", eoa);
+        new StaderWithdrawalQueueBalanceOracle(
+            address(manager),
+            address(weth),
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            eoa
+        );
     }
 
     // ---- Interface ----
@@ -241,7 +270,12 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         // bare EOA-style address is enough to demonstrate the asset-registry filtering behaviour.
         address unregisteredAsset = makeAddr("unregisteredAsset");
         StaderWithdrawalQueueBalanceOracle freshOracle = new StaderWithdrawalQueueBalanceOracle(
-            address(manager), unregisteredAsset, "Stader", "ETH Withdrawal Queue", address(balances)
+            address(manager),
+            unregisteredAsset,
+            "Stader",
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
 
         manager.pushRequest(
@@ -275,7 +309,10 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 1e18);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Stader");
-        assertEq(positions[0].positionDetail, "ETH Withdrawal Queue");
+        assertEq(
+            positions[0].positionDetail,
+            "{\"protocol\":\"Stader\",\"product\":\"Withdrawal Queue\",\"name\":\"ETHx\",\"type\":\"Staking\"}"
+        );
     }
 
     function test_getOraclePositions_zeroBalanceProducesEmpty() public view {

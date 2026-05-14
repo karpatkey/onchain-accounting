@@ -71,6 +71,24 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
         return _decimals;
     }
 
+    /// @inheritdoc IPriceFeedCustom
+    function latestRoundData()
+        external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = WEETH_TO_EETH_CHAINLINK.latestRoundData();
+        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
+        }
+        (uint256 price,) = this.getLatestPrice();
+        answer = int256(price);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;

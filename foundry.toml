@@ -6,12 +6,13 @@ fs_permissions = [
   { access = "read-write", path = "script" },
   { access = "read-write", path = "out" },
   { access = "read-write", path = "safe-transactions" },
-  { access = "read", path = "test/integration" },
+  { access = "read-write", path = "test/integration" },
 ]
 ffi = true
 ast = true
 build_info = true
 extra_output = ["storageLayout"]
+
 
 # Default behaviour changed on commit https://github.com/foundry-rs/foundry/commit/39f13df8971b02f5961d4fd2cb278f44e19a717a
 optimizer = true
@@ -48,6 +49,14 @@ show_metrics = true
 # compute_units_per_second: mirrors --compute-units-per-second (throttles RPC during fork; default 330)
 [profile.slow]
 threads = 1
+# The integration harness in test/integration/IntegrationFromConfigBase.fork.sol
+# deploys ~30 balance adapters + registers ~28 assets in a single setUp call
+# frame. EVM memory expansion (quadratic gas cost) accumulates and trips
+# MemoryOOG against the default 1 GiB script gas_limit. Bump both to 16 GiB
+# under the slow profile so the integration tests have headroom; default
+# profile (unit tests) is unaffected.
+gas_limit = 17179869184
+memory_limit = 17179869184
 
 
 [etherscan]

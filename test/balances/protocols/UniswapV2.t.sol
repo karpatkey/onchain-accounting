@@ -89,7 +89,13 @@ contract UniswapV2BalanceOracleTest is Test {
         token0 = new MockToken("TKN0");
         token1 = new MockToken("TKN1");
         mockPair = new MockUniswapV2Pair(address(token0), address(token1), address(mockFactory));
-        oracle = new UniswapV2BalanceOracle(address(mockPair), "Uniswap V2", "TKN0/TKN1 LP", address(mockBalances));
+        oracle = new UniswapV2BalanceOracle(
+            address(mockPair),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     // ============================================
@@ -98,30 +104,60 @@ contract UniswapV2BalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroPair() public {
         vm.expectRevert(InvalidArguments.selector);
-        new UniswapV2BalanceOracle(address(0), "Uniswap V2", "X/Y LP", address(mockBalances));
+        new UniswapV2BalanceOracle(
+            address(0),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractPair() public {
         vm.expectRevert("Pair must be a contract");
-        new UniswapV2BalanceOracle(address(0xdead), "Uniswap V2", "X/Y LP", address(mockBalances));
+        new UniswapV2BalanceOracle(
+            address(0xdead),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new UniswapV2BalanceOracle(address(mockPair), "Uniswap V2", "X/Y LP", address(0xdead));
+        new UniswapV2BalanceOracle(
+            address(mockPair),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0xdead)
+        );
     }
 
     function test_constructor_zeroToken_reverts() public {
         // Pair where token0 == address(0): constructor must reject.
         MockUniswapV2Pair badPair = new MockUniswapV2Pair(address(0), address(token1), address(mockFactory));
         vm.expectRevert("Pair tokens must be non-zero");
-        new UniswapV2BalanceOracle(address(badPair), "Uniswap V2", "X/Y LP", address(mockBalances));
+        new UniswapV2BalanceOracle(
+            address(badPair),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_identicalTokens_reverts() public {
         MockUniswapV2Pair badPair = new MockUniswapV2Pair(address(token0), address(token0), address(mockFactory));
         vm.expectRevert("Pair tokens must differ");
-        new UniswapV2BalanceOracle(address(badPair), "Uniswap V2", "X/Y LP", address(mockBalances));
+        new UniswapV2BalanceOracle(
+            address(badPair),
+            "Uniswap V2",
+            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_stores_immutables() public view {

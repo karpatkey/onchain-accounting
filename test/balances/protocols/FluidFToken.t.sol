@@ -58,7 +58,13 @@ contract FluidFTokenBalanceOracleTest is Test {
         mockBalances = new MockBalances();
         mockAsset = new MockToken();
         mockFToken = new MockFluidFToken(address(mockAsset));
-        oracle = new FluidFTokenBalanceOracle(address(mockFToken), "Fluid Lending", "fUSDC", address(mockBalances));
+        oracle = new FluidFTokenBalanceOracle(
+            address(mockFToken),
+            "Fluid Lending",
+            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     // ============================================
@@ -67,17 +73,35 @@ contract FluidFTokenBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroFToken() public {
         vm.expectRevert(InvalidArguments.selector);
-        new FluidFTokenBalanceOracle(address(0), "Fluid Lending", "fUSDC", address(mockBalances));
+        new FluidFTokenBalanceOracle(
+            address(0),
+            "Fluid Lending",
+            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractFToken() public {
         vm.expectRevert("fToken must be a contract");
-        new FluidFTokenBalanceOracle(address(0xdead), "Fluid Lending", "fUSDC", address(mockBalances));
+        new FluidFTokenBalanceOracle(
+            address(0xdead),
+            "Fluid Lending",
+            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
+        );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new FluidFTokenBalanceOracle(address(mockFToken), "Fluid Lending", "fUSDC", address(0xdead));
+        new FluidFTokenBalanceOracle(
+            address(mockFToken),
+            "Fluid Lending",
+            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0xdead)
+        );
     }
 
     function test_constructor_stores_immutables() public view {

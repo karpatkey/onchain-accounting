@@ -28,7 +28,13 @@ contract AaveUmbrellaBalanceOracleTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         stubRewardsController = address(new RewardsControllerStub());
-        oracle = new AaveUmbrellaBalanceOracle(stubRewardsController, address(balances), "Aave Umbrella");
+        oracle = new AaveUmbrellaBalanceOracle(
+            stubRewardsController,
+            address(balances),
+            "Aave Umbrella",
+            "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"",
+            "0x0000000000000000000000000000000000000001"
+        );
     }
 
     // ─── Constructor ──────────────────────────────────────────────────────────
@@ -41,22 +47,38 @@ contract AaveUmbrellaBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroRewardsController() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveUmbrellaBalanceOracle(address(0), address(balances), "x");
+        new AaveUmbrellaBalanceOracle(
+            address(0), address(balances), "x", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
+        );
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveUmbrellaBalanceOracle(stubRewardsController, address(0), "x");
+        new AaveUmbrellaBalanceOracle(
+            stubRewardsController, address(0), "x", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
+        );
     }
 
     function test_constructor_revertsOnNonContractRewardsController() public {
         vm.expectRevert(); // require message; selector check unnecessary
-        new AaveUmbrellaBalanceOracle(makeAddr("eoa-controller"), address(balances), "x");
+        new AaveUmbrellaBalanceOracle(
+            makeAddr("eoa-controller"),
+            address(balances),
+            "x",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001"
+        );
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(); // require message; selector check unnecessary
-        new AaveUmbrellaBalanceOracle(stubRewardsController, makeAddr("eoa-nav"), "x");
+        new AaveUmbrellaBalanceOracle(
+            stubRewardsController,
+            makeAddr("eoa-nav"),
+            "x",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001"
+        );
     }
 
     // ─── Zero-account / zero-asset shortcuts (no controller calls expected) ───

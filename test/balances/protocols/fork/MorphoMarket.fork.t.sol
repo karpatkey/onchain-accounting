@@ -76,7 +76,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), "Morpho - wstETH/USDC", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
+            "Morpho - wstETH/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_USDC_USER, USDC);
@@ -98,7 +102,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
+            "Morpho - USDC/DAI/MKR",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, USDC);
@@ -116,7 +124,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
+            "Morpho - USDC/DAI/MKR",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         (uint256 amountMkr, bool isDebtMkr) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, MKR);
@@ -137,7 +149,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assetsToRegister);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), "Morpho - wstETH/USDC", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
+            "Morpho - wstETH/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         address[] memory assets = oracle.underlyingAssetsSupported();
@@ -159,7 +175,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assetsToRegister);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), "Morpho - wstETH/USDC", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
+            "Morpho - wstETH/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         assertEq(oracle.COLLATERAL_TOKEN(), WSTETH);
@@ -180,7 +200,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), "Morpho - USDC/DAI/MKR", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
+            "Morpho - USDC/DAI/MKR",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         (address[] memory resultAssets, uint256[] memory amounts,) = oracle.getOracleBalances(BORROW_USDC_USER);
@@ -199,7 +223,11 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
 
         oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), "Morpho - wstETH/USDC", address(balances)
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_WSTETH_USDC),
+            "Morpho - wstETH/USDC",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
         );
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SUPPLY_USDC_USER, address(0));

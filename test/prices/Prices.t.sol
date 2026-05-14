@@ -6,6 +6,8 @@ import {Test} from "forge-std/Test.sol";
 import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {
+    Mock_ChainlinkL2SequencerUptimeFeed,
+    Mock_ChainlinkL2SequencerUptimeFeedUninitialized,
     Mock_CustomPriceFeed,
     Mock_PriceOracleChainlink,
     Mock_CustomPriceFeedStaled
@@ -40,6 +42,8 @@ contract PricesTest is Test {
     Mock_CustomPriceFeed public oracleusdc;
     Mock_PriceOracleChainlink public oracleaBuidl;
     Mock_PriceOracleChainlink public disabledUptimeFeed;
+    Mock_ChainlinkL2SequencerUptimeFeed public enabledUptimeFeed;
+    Mock_ChainlinkL2SequencerUptimeFeedUninitialized public uninitializedUptimeFeed;
     Mock_CustomPriceFeedStaled public customStaled;
 
     address alice = makeAddr("alice");
@@ -51,6 +55,8 @@ contract PricesTest is Test {
         oracleusdc = new Mock_CustomPriceFeed("usdc", address(usdc), 100_000_000, 8);
         oracleaBuidl = new Mock_PriceOracleChainlink("buidl", 1000, 8);
         disabledUptimeFeed = new Mock_PriceOracleChainlink("UptimeFeed", 1, 8);
+        enabledUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeed();
+        uninitializedUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeedUninitialized();
         manager = new PricesHarness(address(0));
         managerL2 = new PricesHarness(address(chainlinkUptimeFeed));
         customStaled = new Mock_CustomPriceFeedStaled("usdc", address(usdc), 100_000_000, 8);
@@ -94,17 +100,21 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_AfterHearBeat() public {
-        manager.setPriceFeed(usdc, address(oracleusdc), 0, IPrices.PriceType.Custom);
+        // Chainlink: stale when block.timestamp - latestRoundData().updatedAt > heartbeat.
+        // Custom: stale is determined solely by getLatestPrice().stale (per-feed checks inside the adapter).
+        manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), 1, IPrices.PriceType.Chainlink);
 
         vm.warp(block.timestamp + 2);
 
         vm.startPrank(alice);
+        // Custom feed: mock always returns stale=false from getLatestPrice() — not stale by heartbeat.
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertFalse(stale);
 
+        // Chainlink feed: updatedAt is stale after warp past heartbeat=1.
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);
         assertEq(decimals, 8);
@@ -114,14 +124,17 @@ contract PricesTest is Test {
     }
 
     function test_latestPrice_CustomOracleStaled() public {
-        manager.setPriceFeed(usdc, address(customStaled), 0, IPrices.PriceType.Custom);
+        // Mock_CustomPriceFeedStaled.getLatestPrice() returns stale=true — always stale.
+        manager.setPriceFeed(usdc, address(customStaled), 1, IPrices.PriceType.Custom);
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.warp(2);
 
         vm.startPrank(alice);
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
-        assertTrue(stale);
+        assertTrue(stale); // stale: getLatestPrice() returns stale=true
 
         (value, decimals, stale) = manager.latestPrice(buidl);
         assertEq(value, 1000);
@@ -181,9 +194,14 @@ contract PricesTest is Test {
         manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Chainlink);
     }
 
-    function test_setPriceFeed_chainlinkZeroHeartbeat() public {
+    function test_setPriceFeed_zeroHeartbeat_chainlink() public {
         vm.expectRevert();
         manager.setPriceFeed(buidl, address(oracleaBuidl), 0, IPrices.PriceType.Chainlink);
+    }
+
+    function test_setPriceFeed_zeroHeartbeat_custom() public {
+        vm.expectRevert();
+        manager.setPriceFeed(usdc, address(oracleusdc), 0, IPrices.PriceType.Custom);
     }
 
     function test_unsetPriceFeed_notSet() public {
@@ -244,6 +262,21 @@ contract PricesTest is Test {
         managerL2 = new PricesHarness(address(disabledUptimeFeed));
 
         // The uptime feed is disabled (answer = 1), so sequencer is down
+        bool stale = managerL2.checkL2SequencerUptime();
+        assertTrue(stale);
+    }
+
+    function test_checkL2SequencerUptime_initializedUpAfterGracePeriod() public {
+        managerL2 = new PricesHarness(address(enabledUptimeFeed));
+        vm.warp(block.timestamp + 2 hours + 1);
+
+        bool stale = managerL2.checkL2SequencerUptime();
+        assertFalse(stale);
+    }
+
+    function test_checkL2SequencerUptime_uninitializedStartedAtZero() public {
+        managerL2 = new PricesHarness(address(uninitializedUptimeFeed));
+
         bool stale = managerL2.checkL2SequencerUptime();
         assertTrue(stale);
     }

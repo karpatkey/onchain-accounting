@@ -10,12 +10,14 @@ contract Mock_CustomPriceFeed is IPriceFeedCustom {
     address addressSupported;
     uint256 price;
     uint8 internal _decimals;
+    uint256 internal _updatedAt;
 
     constructor(string memory name_, address addressSupported_, uint256 price_, uint8 decimals_) {
         name = name_;
         addressSupported = addressSupported_;
         price = price_;
         _decimals = decimals_;
+        _updatedAt = block.timestamp;
     }
 
     function setPrice(uint256 _price) external {
@@ -31,7 +33,11 @@ contract Mock_CustomPriceFeed is IPriceFeedCustom {
     }
 
     function underlyingAssetSupported() external view override returns (address) {
-        return addressSupported; // This mock does not support any underlying asset
+        return addressSupported;
+    }
+
+    function latestRoundData() external view virtual override returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, int256(price), 0, _updatedAt, 0);
     }
 
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
@@ -92,6 +98,20 @@ contract Mock_ChainlinkL2SequencerUptimeFeed is Mock_PriceOracleChainlink {
 
     function latestRoundData()
         external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        uint256 statusStartedAt = block.timestamp > 1 hours ? block.timestamp - 1 hours - 1 : 1;
+        return (0, 0, statusStartedAt, statusStartedAt, 0);
+    }
+}
+
+contract Mock_ChainlinkL2SequencerUptimeFeedUninitialized is Mock_PriceOracleChainlink {
+    constructor() Mock_PriceOracleChainlink("L2 sequencer uninitialized", 0, 0) {}
+
+    function latestRoundData()
+        external
         pure
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
@@ -133,5 +153,10 @@ contract Mock_CustomPriceFeedStaled is Mock_CustomPriceFeed {
 
     function getLatestPrice() external view override returns (uint256, bool) {
         return (price, true);
+    }
+
+    // updatedAt = 0 so block.timestamp - 0 > any positive heartbeat is always true
+    function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, 0, 0, 0, 0);
     }
 }

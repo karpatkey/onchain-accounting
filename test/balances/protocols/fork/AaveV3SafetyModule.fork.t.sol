@@ -35,6 +35,13 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
     AaveV3SafetyModuleBalanceOracle public oracle;
 
+    // positionDetail prefix must match the constructor arg used in setUp.
+    string private constant _PD_PREFIX = "{\"p\":\"t\"";
+
+    function _detail(string memory typeLabel) private pure returns (string memory) {
+        return string.concat(_PD_PREFIX, ",\"type\":\"", typeLabel, "\"}");
+    }
+
     // Real Mainnet holders, one per stake token. STK_AAVE_HOLDER also holds stkABPTv2 — kept distinct for clarity.
     address public constant STK_AAVE_HOLDER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
     address public constant STK_ABPT_HOLDER = 0xD9a776A672E4Df85bbbE97d390Ff9674B382d2ea;
@@ -60,7 +67,9 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = ABPT;
         assets[3] = ABPT_V2;
         balances = _deployBalancesForOracle(assets);
-        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances), "Aave V3 Safety Module");
+        oracle = new AaveV3SafetyModuleBalanceOracle(
+            address(balances), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
+        );
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────
@@ -128,7 +137,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawGhoStakedFromGho;
         for (uint256 i; i < positions.length; ++i) {
             address asset = positions[i].underlyingAsset.asset;
-            if (asset == GHO && _eq(positions[i].positionDetail, "stkGHO")) sawGhoStakedFromGho = true;
+            if (asset == GHO && _eq(positions[i].positionDetail, _detail("Staking"))) sawGhoStakedFromGho = true;
             assertGt(positions[i].amount, 0);
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "Aave V3 Safety Module");
@@ -141,7 +150,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, GHO);
-        assertEq(positions[0].positionDetail, "stkGHO");
+        assertEq(positions[0].positionDetail, _detail("Staking"));
     }
 
     // ─── Reward freeze behaviour (only when distributionEnd is in the future) ─

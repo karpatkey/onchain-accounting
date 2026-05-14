@@ -21,12 +21,10 @@ The `rewardsController` is the protocol's trust anchor — every other piece of 
 - **Stake-token set.** `RewardsController.getAllAssets() → address[]` enumerates every Umbrella stake token currently configured. Aave governance can add a new stake token and the adapter picks it up on the next view call without a redeploy.
 - **Bare reserve per stake token.** The adapter walks the ERC4626 `asset()` chain (up to two hops) until it lands on a non-ERC4626 token, using `try/catch` on `asset()` to detect the boundary. For the wa-backed stake tokens this resolves `stk → waToken → bare reserve`; for `stkGHO.v1` a single hop yields plain GHO.
 - **Bare reserve per reward token.** The adapter calls `IAToken.UNDERLYING_ASSET_ADDRESS()` with `try/catch`; aTokens return the bare reserve, and any reward token that does not implement that getter (e.g. plain GHO) is treated as already-bare.
-- **Symbol for `positionDetail`.** `IERC20Metadata.symbol()` on the stake token gives the human-readable label (`"stkwaEthUSDC.v1"`, etc.); the adapter appends `" Staked"` / `" Rewards"` to disambiguate the two legs.
+For each stake position the adapter emits up to two `PositionBalance` entries:
 
-For each stake position the adapter emits two `PositionBalance` entries:
-
-- Staked leg: `(<bareReserve>, "<symbol> Staked")` — principal denominated in the bare reserve.
-- Rewards leg: `(<bareReserve>, "<symbol> Rewards")` — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
+- Staking leg: `(<bareReserve>, type="Staking")` — principal denominated in the bare reserve. The `underlyingAsset` field disambiguates which stake token the position belongs to.
+- Rewards leg: `(<bareReserve>, type="Rewards")` — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
 
 Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstanceBalanceOracle` uses for unregistered Aave reserves.
 
@@ -50,7 +48,7 @@ Each stake token currently pays one reward token (the matching aToken; or GHO fo
 
 ## Debank cross-check classification
 
-Debank surfaces Umbrella positions under the existing `aave3` (Aave V3) protocol id rather than a dedicated `aaveumbrella` entry. Verified by querying `/v1/user/all_complex_protocol_list` for a real `stkGHO.v1` holder: the `aave3` portfolio item lists both the staked GHO supply leg and the GHO rewards leg matching this adapter's output unit-for-unit. Since `aave3` is already in `test/integration/accounts.json`'s Mainnet `supportedDebankProtocols` allowlist, **no allowlist change is required** — the cross-check transparently includes Umbrella the moment an account holds an Umbrella position.
+Debank surfaces Umbrella positions under the existing `aave3` (Aave V3) protocol id rather than a dedicated `aaveumbrella` entry. Verified by querying `/v1/user/all_complex_protocol_list` for a real `stkGHO.v1` holder: the `aave3` portfolio item lists both the staked GHO supply leg and the GHO rewards leg matching this adapter's output unit-for-unit. Since `aave3` is already in `test/integration/accounts.json`'s Mainnet `supportedDeBankProtocols` allowlist, **no allowlist change is required** — the cross-check transparently includes Umbrella the moment an account holds an Umbrella position.
 
 The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and remains in place: legacy stkAAVE / stkABPT rewards are still surfaced under `aave2` by Debank.
 

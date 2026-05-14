@@ -29,7 +29,9 @@
       "enabled": true,
       "constructor": {
         "dataProvider": "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5",
-        "protocol": "Aave V3 Arbitrum"
+        "protocol": "Aave V3",
+        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Arbitrum Market\"",
+        "positionId": "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
       },
       "deployed": "0x503514123e25696304E82beb393DEEb72729a550"
     },
@@ -37,8 +39,9 @@
       "enabled": true,
       "constructor": {
         "vault": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
-        "protocol": "Morpho Vault",
-        "positionDetail": "kpk USDC Yield V1"
+        "protocol": "Morpho",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Yield V1\"",
+        "positionId": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d"
       },
       "deployed": "0x77f1E73A81189C8e67C997aBF908E8f7aB20447F"
     },
@@ -47,7 +50,8 @@
       "constructor": {
         "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
         "marketId": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
-        "protocol": "Morpho Blue - sUSDS/USDC"
+        "protocol": "Morpho",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"sUSDS/USDC\""
       },
       "deployed": "0xd6dFb63356C38d14ee4e48dCF31D2eA98b15990d"
     },
@@ -56,7 +60,8 @@
       "constructor": {
         "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
         "marketId": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40",
-        "protocol": "Morpho Blue - syrupUSDC/USDC"
+        "protocol": "Morpho",
+        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"syrupUSDC/USDC\""
       },
       "deployed": "0xE4785f2A6590C589Ea36ba59A1Eb57A1FdC0e74e"
     },
@@ -68,7 +73,8 @@
         "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
         "pid": "99",
         "protocol": "Aura",
-        "positionDetail": "Aave GHO/USDC/USDT"
+        "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC/USDT\"",
+        "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
       },
       "deployed": "0xF0163C3CabFA53c613B94fb2b95313Ecc1964892"
     },
@@ -78,7 +84,9 @@
         "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
         "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
         "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
-        "protocol": "Balancer V3 - Aave GHO/USDC/USDT"
+        "protocol": "Balancer V3",
+        "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC/USDT\"",
+        "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
       },
       "deployed": "0x70AC1F4ddbD431Dd022f70f759F06a470663DeeB"
     },
@@ -86,8 +94,9 @@
       "enabled": true,
       "constructor": {
         "fToken": "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
-        "protocol": "Fluid Lending",
-        "positionDetail": "fUSDC"
+        "protocol": "Fluid",
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+        "positionId": "0x1A996cb54bb95462040408C06122D45D6Cdb6096"
       },
       "deployed": ""
     },
@@ -95,8 +104,9 @@
       "enabled": true,
       "constructor": {
         "fToken": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
-        "protocol": "Fluid Lending",
-        "positionDetail": "fUSDT"
+        "protocol": "Fluid",
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDT\"",
+        "positionId": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03"
       },
       "deployed": ""
     },
@@ -104,8 +114,9 @@
       "enabled": true,
       "constructor": {
         "fToken": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205",
-        "protocol": "Fluid Lending",
-        "positionDetail": "fWETH"
+        "protocol": "Fluid",
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fWETH\"",
+        "positionId": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205"
       },
       "deployed": ""
     },
@@ -113,8 +124,9 @@
       "enabled": true,
       "constructor": {
         "fToken": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9",
-        "protocol": "Fluid Lending",
-        "positionDetail": "fwstETH"
+        "protocol": "Fluid",
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fwstETH\"",
+        "positionId": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9"
       },
       "deployed": ""
     },
@@ -122,8 +134,9 @@
       "enabled": true,
       "constructor": {
         "fToken": "0x037dFf1C12805707d7c29F163E0F09fC9102657A",
-        "protocol": "Fluid Lending",
-        "positionDetail": "fGHO"
+        "protocol": "Fluid",
+        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fGHO\"",
+        "positionId": "0x037dFf1C12805707d7c29F163E0F09fC9102657A"
       },
       "deployed": ""
     },
@@ -133,7 +146,9 @@
         "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
         "comet": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
         "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3 USDC.e"
+        "protocol": "Compound v3",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC.e\"",
+        "positionId": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA"
       },
       "deployed": ""
     },
@@ -143,7 +158,9 @@
         "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
         "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
         "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3 USDC"
+        "protocol": "Compound v3",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
+        "positionId": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
       },
       "deployed": ""
     },
@@ -153,7 +170,9 @@
         "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
         "comet": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
         "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3 USDT"
+        "protocol": "Compound v3",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
+        "positionId": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07"
       },
       "deployed": ""
     },
@@ -163,7 +182,9 @@
         "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
         "comet": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486",
         "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3 WETH"
+        "protocol": "Compound v3",
+        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
+        "positionId": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
       },
       "deployed": ""
     },
@@ -172,10 +193,11 @@
       "constructor": {
         "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
         "protocol": "Merkl",
-        "positionDetail": "Unclaimed Rewards"
+        "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
+        "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
       },
       "deployed": "",
-      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default — enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
+      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     }
   },
   "bridgeAdapters": {

@@ -59,6 +59,8 @@ The `?proxyAddress=` query parameter filters the result to the single entry matc
 | crvUSD/USD | [feeds-mainnet.json?proxyAddress=0xEEf0C605546958c1f899b6fB336C20671f9cD49F](https://reference-data-directory.vercel.app/feeds-mainnet.json?proxyAddress=0xEEf0C605546958c1f899b6fB336C20671f9cD49F) |
 | RLUSD/USD | [feeds-mainnet.json?proxyAddress=0x26C46B7aD0012cA71F2298ada567dC9Af14E7f2A](https://reference-data-directory.vercel.app/feeds-mainnet.json?proxyAddress=0x26C46B7aD0012cA71F2298ada567dC9Af14E7f2A) |
 | ETH+/USD | [feeds-mainnet.json?proxyAddress=0x66Ab900341C98de949EC31d11b3C4180743844F1](https://reference-data-directory.vercel.app/feeds-mainnet.json?proxyAddress=0x66Ab900341C98de949EC31d11b3C4180743844F1) |
+| EURC/USD | [feeds-mainnet.json?proxyAddress=0x04F84020Fdf10d9ee64D1dcC2986EDF2F556DA11](https://reference-data-directory.vercel.app/feeds-mainnet.json?proxyAddress=0x04F84020Fdf10d9ee64D1dcC2986EDF2F556DA11) |
+| COMP/USD | [feeds-mainnet.json?proxyAddress=0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5](https://reference-data-directory.vercel.app/feeds-mainnet.json?proxyAddress=0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5) |
 
 ### Arbitrum (42161)
 

@@ -226,7 +226,13 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         mockComet = new MockCometMinimal(address(usdc));
         mockRewardToken = new MockContract();
         oracle = new CompoundV3Comet(
-            address(mockRewards), address(mockComet), address(mockRewardToken), "Compound v3 USDC", address(balances)
+            address(mockRewards),
+            address(mockComet),
+            address(mockRewardToken),
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -234,17 +240,41 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroCompoundRewards() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(address(0), address(mockComet), address(mockRewardToken), "x", address(balances));
+        new CompoundV3Comet(
+            address(0),
+            address(mockComet),
+            address(mockRewardToken),
+            "x",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function test_constructor_revertsOnZeroComet() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(address(mockRewards), address(0), address(mockRewardToken), "x", address(balances));
+        new CompoundV3Comet(
+            address(mockRewards),
+            address(0),
+            address(mockRewardToken),
+            "x",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function test_constructor_revertsOnZeroRewardToken() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(address(mockRewards), address(mockComet), address(0), "x", address(balances));
+        new CompoundV3Comet(
+            address(mockRewards),
+            address(mockComet),
+            address(0),
+            "x",
+            "{\"p\":\"t\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function test_constructor_pinsBaseTokenFromComet() public view {
@@ -282,7 +312,13 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         MockCometRich rich = new MockCometRich(address(usdc), cols);
 
         CompoundV3Comet o = new CompoundV3Comet(
-            address(mockRewards), address(rich), address(mockRewardToken), "Compound v3 USDC", address(balances)
+            address(mockRewards),
+            address(rich),
+            address(mockRewardToken),
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
 
         address[] memory assets = o.underlyingAssetsSupported();
@@ -371,7 +407,13 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         rich = new MockCometRich(address(usdc), cols);
         r = new MockCompoundRewardsConfigurable(address(mockRewardToken));
         o = new CompoundV3Comet(
-            address(r), address(rich), address(mockRewardToken), "Compound v3 USDC", address(balances)
+            address(r),
+            address(rich),
+            address(mockRewardToken),
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -415,10 +457,16 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceOracle, address(o));
             assertEq(positions[i].protocol, "Compound v3 USDC");
             assertFalse(positions[i].isDebt);
-            if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Collateral")) {
+            if (
+                keccak256(bytes(positions[i].positionDetail))
+                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}")
+            ) {
                 assertEq(positions[i].amount, 100);
                 sawCollateral = true;
-            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Reward")) {
+            } else if (
+                keccak256(bytes(positions[i].positionDetail))
+                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Rewards\"}")
+            ) {
                 assertEq(positions[i].amount, 25);
                 sawReward = true;
             }
@@ -439,7 +487,10 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         // Only WETH collateral remains; mockRewardToken (unregistered) is filtered out.
         assertEq(positions.length, 1);
         assertEq(positions[0].underlyingAsset.asset, address(weth));
-        assertEq(positions[0].positionDetail, "Collateral");
+        assertEq(
+            positions[0].positionDetail,
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}"
+        );
         assertEq(positions[0].amount, 5 ether);
     }
 
@@ -463,7 +514,9 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory positions = o.getOraclePositions(alice, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(positions[0].positionDetail, "Supply");
+        assertEq(
+            positions[0].positionDetail, "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Supply\"}"
+        );
         assertFalse(positions[0].isDebt);
     }
 
@@ -473,7 +526,9 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory positions = o.getOraclePositions(alice, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(positions[0].positionDetail, "Borrow");
+        assertEq(
+            positions[0].positionDetail, "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Borrow\"}"
+        );
         assertTrue(positions[0].isDebt);
     }
 

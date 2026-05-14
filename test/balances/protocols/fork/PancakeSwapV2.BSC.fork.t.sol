@@ -89,7 +89,13 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         assets[0] = BSC_ETH;
         assets[1] = BSC_COW;
         balances = _deployBalancesForOracle(assets);
-        oracle = new PancakeSwapV2BalanceOracle(PAIR, "PancakeSwap V2", "ETH/COW LP", address(balances));
+        oracle = new PancakeSwapV2BalanceOracle(
+            PAIR,
+            "PancakeSwap V2",
+            "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     // ============================================
@@ -191,7 +197,7 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "PancakeSwap V2");
-            assertEq(positions[i].positionDetail, "ETH/COW LP");
+            assertEq(positions[i].positionDetail, "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"}");
             assertFalse(positions[i].isDebt);
             assertGt(positions[i].amount, 0);
             if (positions[i].underlyingAsset.asset == BSC_ETH) sawEth = true;
@@ -230,8 +236,13 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         address[] memory shippedAssets = new address[](1);
         shippedAssets[0] = BSC_ETH;
         BalancesHarnessForFork shippedBalances = _deployBalancesForOracle(shippedAssets);
-        PancakeSwapV2BalanceOracle shippedOracle =
-            new PancakeSwapV2BalanceOracle(PAIR, "PancakeSwap V2", "ETH/COW LP", address(shippedBalances));
+        PancakeSwapV2BalanceOracle shippedOracle = new PancakeSwapV2BalanceOracle(
+            PAIR,
+            "PancakeSwap V2",
+            "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"",
+            "0x0000000000000000000000000000000000000001",
+            address(shippedBalances)
+        );
 
         INAVCalculator.PositionBalance[] memory positions = shippedOracle.getOraclePositions(TEST_HOLDER, address(0));
         assertEq(positions.length, 1, "only ETH leg should survive the registry filter");

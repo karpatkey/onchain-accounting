@@ -1,0 +1,641 @@
+[
+  {
+    "id": "arb_compound3",
+    "chain": "arb",
+    "name": "Compound V3",
+    "site_url": "https://v3-app.compound.finance",
+    "logo_url": "https://static.debank.com/image/project/logo_url/compound3/28e2b958e38eb0c49d600633b9ce0969.png",
+    "has_supported_portfolio": true,
+    "tvl": 78684918.99411853,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 2060408.4796189235,
+          "debt_usd_value": 0,
+          "net_usd_value": 2060408.4796189235
+        },
+        "asset_dict": {
+          "0xaf88d065e77c8cc2239327c5edb3a432268e5831": 2059996.397923
+        },
+        "asset_token_list": [
+          {
+            "id": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+            "chain": "arb",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xaf88d065e77c8cc2239327c5edb3a432268e5831/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 1.0002000400080016,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1667248932.0,
+            "amount": 2059996.397923
+          }
+        ],
+        "update_at": 1778481580.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+              "chain": "arb",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xaf88d065e77c8cc2239327c5edb3a432268e5831/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 1.0002000400080016,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1667248932.0,
+              "amount": 2059996.397923
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf:yield",
+          "chain": "arb",
+          "project_id": "arb_compound3",
+          "adapter_id": "compound3_yield",
+          "controller": "0x9c4ec768c28520b50860ea7a15bd7213a9ff58bf",
+          "index": "yield",
+          "time_at": 1692224992
+        }
+      }
+    ]
+  },
+  {
+    "id": "arb_vertex",
+    "chain": "arb",
+    "name": "Vertex",
+    "site_url": "https://app.vertexprotocol.com/portfolio/overview",
+    "logo_url": "https://static.debank.com/image/project/logo_url/arb_vertex/13ed8347504bf67bfb3e368ac60f1f98.png",
+    "has_supported_portfolio": true,
+    "tvl": 72312.34549108034,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 0.0004055124270271912,
+          "debt_usd_value": 0,
+          "net_usd_value": 0.0004055124270271912
+        },
+        "asset_dict": {
+          "0xaf88d065e77c8cc2239327c5edb3a432268e5831": 3.76283194468E-7,
+          "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f": 4.968447691E-9
+        },
+        "asset_token_list": [
+          {
+            "id": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+            "chain": "arb",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xaf88d065e77c8cc2239327c5edb3a432268e5831/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 1.0002000400080016,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1667248932.0,
+            "amount": 3.76283194468E-7
+          },
+          {
+            "id": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+            "chain": "arb",
+            "name": "Wrapped BTC",
+            "symbol": "WBTC",
+            "display_symbol": null,
+            "optimized_symbol": "WBTC",
+            "decimals": 8,
+            "logo_url": "https://static.debank.com/image/arb_token/logo_url/0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f/40fb6752165330e1c417ed0eb6ec06e9.png",
+            "protocol_id": "",
+            "price": 81541.78,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1623867469.0,
+            "amount": 4.968447691E-9
+          }
+        ],
+        "update_at": 1774623487.0,
+        "name": "Lending",
+        "detail_types": [
+          "lending"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+              "chain": "arb",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0xaf88d065e77c8cc2239327c5edb3a432268e5831/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 1.0002000400080016,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1667248932.0,
+              "amount": 3.76283194468E-7
+            },
+            {
+              "id": "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+              "chain": "arb",
+              "name": "Wrapped BTC",
+              "symbol": "WBTC",
+              "display_symbol": null,
+              "optimized_symbol": "WBTC",
+              "decimals": 8,
+              "logo_url": "https://static.debank.com/image/arb_token/logo_url/0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f/40fb6752165330e1c417ed0eb6ec06e9.png",
+              "protocol_id": "",
+              "price": 81541.78,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1623867469.0,
+              "amount": 4.968447691E-9
+            }
+          ]
+        },
+        "proxy_detail": {},
+        "position_index": "530bfd7de5d63329e2df996cf5afb2616524936d64656661756c740000000000",
+        "pool": {
+          "id": "0xbbee07b3e8121227afcfe1e2b82772246226128e",
+          "chain": "arb",
+          "project_id": "arb_vertex",
+          "adapter_id": "vertex_lending",
+          "controller": "0xbbee07b3e8121227afcfe1e2b82772246226128e",
+          "index": null,
+          "time_at": 1678055504
+        }
+      }
+    ]
+  },
+  {
+    "id": "euler2",
+    "chain": "eth",
+    "name": "Euler",
+    "site_url": "https://app.euler.finance/",
+    "logo_url": "https://static.debank.com/image/project/logo_url/euler2/672f19349da6dd7cdf30621720681753.png",
+    "has_supported_portfolio": true,
+    "tvl": 318267260.3918362,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 35164.37355171034,
+          "debt_usd_value": 0,
+          "net_usd_value": 35164.37355171034
+        },
+        "asset_dict": {
+          "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 35157.340677
+        },
+        "asset_token_list": [
+          {
+            "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "chain": "eth",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 1.0002000400080016,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1533324504.0,
+            "amount": 35157.340677
+          }
+        ],
+        "update_at": 1778497162.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "chain": "eth",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 1.0002000400080016,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1533324504.0,
+              "amount": 35157.340677
+            }
+          ],
+          "description": "EVK Vault eUSDC-2"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x797dd80692c3b2dadabce8e30c07fde5307d48a9",
+          "chain": "eth",
+          "project_id": "euler2",
+          "adapter_id": "euler_tokenized_vault_yield",
+          "controller": "0x797dd80692c3b2dadabce8e30c07fde5307d48a9",
+          "index": null,
+          "time_at": 1724016935
+        }
+      }
+    ]
+  },
+  {
+    "id": "fluid",
+    "chain": "eth",
+    "name": "Fluid",
+    "site_url": "https://fluid.io",
+    "logo_url": "https://static.debank.com/image/project/logo_url/fluid/faeb92cc788df0676eb21db724f80704.png",
+    "has_supported_portfolio": true,
+    "tvl": 576842542.6182046,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 200289.77551185372,
+          "debt_usd_value": 0,
+          "net_usd_value": 200289.77551185372
+        },
+        "asset_dict": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": 200269.748537
+        },
+        "asset_token_list": [
+          {
+            "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "chain": "eth",
+            "name": "Tether USD",
+            "symbol": "USDT",
+            "display_symbol": "",
+            "optimized_symbol": "USDT",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+            "protocol_id": "tether",
+            "price": 1.0001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1511829681.0,
+            "amount": 200269.748537
+          }
+        ],
+        "update_at": 1778524358.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "chain": "eth",
+              "name": "Tether USD",
+              "symbol": "USDT",
+              "display_symbol": "",
+              "optimized_symbol": "USDT",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+              "protocol_id": "tether",
+              "price": 1.0001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1511829681.0,
+              "amount": 200269.748537
+            }
+          ],
+          "description": "Fluid Tether USD"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x5c20b550819128074fd538edf79791733ccedd18",
+          "chain": "eth",
+          "project_id": "fluid",
+          "adapter_id": "tokenized_vault_yield",
+          "controller": "0x5c20b550819128074fd538edf79791733ccedd18",
+          "index": null,
+          "time_at": 1708173947
+        }
+      },
+      {
+        "stats": {
+          "asset_usd_value": 207048.0548839768,
+          "debt_usd_value": 0,
+          "net_usd_value": 207048.0548839768
+        },
+        "asset_dict": {
+          "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 207006.645273
+        },
+        "asset_token_list": [
+          {
+            "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "chain": "eth",
+            "name": "USD Coin",
+            "symbol": "USDC",
+            "display_symbol": null,
+            "optimized_symbol": "USDC",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+            "protocol_id": "",
+            "price": 1.0002000400080016,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1533324504.0,
+            "amount": 207006.645273
+          }
+        ],
+        "update_at": 1778524358.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "chain": "eth",
+              "name": "USD Coin",
+              "symbol": "USDC",
+              "display_symbol": null,
+              "optimized_symbol": "USDC",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
+              "protocol_id": "",
+              "price": 1.0002000400080016,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1533324504.0,
+              "amount": 207006.645273
+            }
+          ],
+          "description": "Fluid USD Coin"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x9fb7b4477576fe5b32be4c1843afb1e55f251b33",
+          "chain": "eth",
+          "project_id": "fluid",
+          "adapter_id": "tokenized_vault_yield",
+          "controller": "0x9fb7b4477576fe5b32be4c1843afb1e55f251b33",
+          "index": null,
+          "time_at": 1708173263
+        }
+      }
+    ]
+  },
+  {
+    "id": "maple",
+    "chain": "eth",
+    "name": "Maple",
+    "site_url": "https://app.maple.finance",
+    "logo_url": "https://static.debank.com/image/project/logo_url/maple/72d7fa72ce93129a5191ae36b6c67055.png",
+    "has_supported_portfolio": true,
+    "tvl": 1675366861.0353494,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 300567.9977783984,
+          "debt_usd_value": 0,
+          "net_usd_value": 300567.9977783984
+        },
+        "asset_dict": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": 300537.943984
+        },
+        "asset_token_list": [
+          {
+            "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "chain": "eth",
+            "name": "Tether USD",
+            "symbol": "USDT",
+            "display_symbol": "",
+            "optimized_symbol": "USDT",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+            "protocol_id": "tether",
+            "price": 1.0001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1511829681.0,
+            "amount": 300537.943984
+          }
+        ],
+        "update_at": 1778527130.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "chain": "eth",
+              "name": "Tether USD",
+              "symbol": "USDT",
+              "display_symbol": "",
+              "optimized_symbol": "USDT",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+              "protocol_id": "tether",
+              "price": 1.0001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1511829681.0,
+              "amount": 300537.943984
+            }
+          ],
+          "description": "Syrup USDT"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0x356b8d89c1e1239cbbb9de4815c39a1474d5ba7d",
+          "chain": "eth",
+          "project_id": "maple",
+          "adapter_id": "maple_tokenized_vault_yield",
+          "controller": "0x356b8d89c1e1239cbbb9de4815c39a1474d5ba7d",
+          "index": null,
+          "time_at": 1722528059
+        }
+      }
+    ]
+  },
+  {
+    "id": "morphoblue",
+    "chain": "eth",
+    "name": "Morpho",
+    "site_url": "https://app.morpho.org",
+    "logo_url": "https://static.debank.com/image/project/logo_url/morphoblue/cfe5f811a4fb96355e0fb367b5201f87.png",
+    "has_supported_portfolio": true,
+    "tvl": 4165437383.844397,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 124438.328598601,
+          "debt_usd_value": 0,
+          "net_usd_value": 124438.328598601
+        },
+        "asset_dict": {
+          "0xdac17f958d2ee523a2206206994597c13d831ec7": 124425.88601
+        },
+        "asset_token_list": [
+          {
+            "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "chain": "eth",
+            "name": "Tether USD",
+            "symbol": "USDT",
+            "display_symbol": "",
+            "optimized_symbol": "USDT",
+            "decimals": 6,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+            "protocol_id": "tether",
+            "price": 1.0001,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1511829681.0,
+            "amount": 124425.88601
+          }
+        ],
+        "update_at": 1778540047.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "chain": "eth",
+              "name": "Tether USD",
+              "symbol": "USDT",
+              "display_symbol": "",
+              "optimized_symbol": "USDT",
+              "decimals": 6,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
+              "protocol_id": "tether",
+              "price": 1.0001,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1511829681.0,
+              "amount": 124425.88601
+            }
+          ],
+          "description": "Steakhouse Prime Instant"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0xbeef003c68896c7d2c3c60d363e8d71a49ab2bf9",
+          "chain": "eth",
+          "project_id": "morphoblue",
+          "adapter_id": "tokenized_proxy_vault_yield",
+          "controller": "0xbeef003c68896c7d2c3c60d363e8d71a49ab2bf9",
+          "index": null,
+          "time_at": 1764406511
+        }
+      }
+    ]
+  },
+  {
+    "id": "sky",
+    "chain": "eth",
+    "name": "Sky",
+    "site_url": "https://app.sky.money/",
+    "logo_url": "https://static.debank.com/image/project/logo_url/sky/6ee24b04e01abbd4f2ace465a430fad4.png",
+    "has_supported_portfolio": true,
+    "tvl": 6991083699.800268,
+    "portfolio_item_list": [
+      {
+        "stats": {
+          "asset_usd_value": 927982.2427902636,
+          "debt_usd_value": 0,
+          "net_usd_value": 927982.2427902636
+        },
+        "asset_dict": {
+          "0xdc035d45d973e3ec169d2276ddab16f1e407384f": 928167.8763655367
+        },
+        "asset_token_list": [
+          {
+            "id": "0xdc035d45d973e3ec169d2276ddab16f1e407384f",
+            "chain": "eth",
+            "name": "USDS Stablecoin",
+            "symbol": "USDS",
+            "display_symbol": null,
+            "optimized_symbol": "USDS",
+            "decimals": 18,
+            "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdc035d45d973e3ec169d2276ddab16f1e407384f/78fbc2e73e33fa80fcecfaafa2074887.png",
+            "protocol_id": "sky",
+            "price": 0.9998,
+            "is_verified": true,
+            "is_core": true,
+            "is_wallet": true,
+            "time_at": 1725290327.0,
+            "amount": 928167.8763655367
+          }
+        ],
+        "update_at": 1778497570.0,
+        "name": "Yield",
+        "detail_types": [
+          "common"
+        ],
+        "detail": {
+          "supply_token_list": [
+            {
+              "id": "0xdc035d45d973e3ec169d2276ddab16f1e407384f",
+              "chain": "eth",
+              "name": "USDS Stablecoin",
+              "symbol": "USDS",
+              "display_symbol": null,
+              "optimized_symbol": "USDS",
+              "decimals": 18,
+              "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdc035d45d973e3ec169d2276ddab16f1e407384f/78fbc2e73e33fa80fcecfaafa2074887.png",
+              "protocol_id": "sky",
+              "price": 0.9998,
+              "is_verified": true,
+              "is_core": true,
+              "is_wallet": true,
+              "time_at": 1725290327.0,
+              "amount": 928167.8763655367
+            }
+          ],
+          "description": "Savings USDS"
+        },
+        "proxy_detail": {},
+        "pool": {
+          "id": "0xa3931d71877c0e7a3148cb7eb4463524fec27fbd",
+          "chain": "eth",
+          "project_id": "sky",
+          "adapter_id": "tokenized_vault_yield",
+          "controller": "0xa3931d71877c0e7a3148cb7eb4463524fec27fbd",
+          "index": null,
+          "time_at": 1725455483
+        }
+      }
+    ]
+  }
+]

@@ -135,7 +135,12 @@ contract PancakeSwapV3PoolBalanceOracleTest is Test {
         nav.setAssets(a);
 
         oracle = new PancakeSwapV3PoolBalanceOracle(
-            address(pool), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(nav)
+            address(pool),
+            address(npm),
+            "PancakeSwap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
         );
     }
 
@@ -155,22 +160,50 @@ contract PancakeSwapV3PoolBalanceOracleTest is Test {
 
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new PancakeSwapV3PoolBalanceOracle(address(0), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(nav));
+        new PancakeSwapV3PoolBalanceOracle(
+            address(0),
+            address(npm),
+            "PancakeSwap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
     }
 
     function test_constructor_reverts_zeroPositionManager() public {
         vm.expectRevert(InvalidArguments.selector);
-        new PancakeSwapV3PoolBalanceOracle(address(pool), address(0), "PancakeSwap V3", "T0/T1 0.25%", address(nav));
+        new PancakeSwapV3PoolBalanceOracle(
+            address(pool),
+            address(0),
+            "PancakeSwap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
     }
 
     function test_constructor_reverts_zeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new PancakeSwapV3PoolBalanceOracle(address(pool), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(0));
+        new PancakeSwapV3PoolBalanceOracle(
+            address(pool),
+            address(npm),
+            "PancakeSwap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(0)
+        );
     }
 
     function test_constructor_reverts_eoaPool() public {
         vm.expectRevert("Pool must be a contract");
-        new PancakeSwapV3PoolBalanceOracle(address(0xdead), address(npm), "PancakeSwap V3", "T0/T1 0.25%", address(nav));
+        new PancakeSwapV3PoolBalanceOracle(
+            address(0xdead),
+            address(npm),
+            "PancakeSwap V3",
+            "{\"protocol\":\"Uniswap V3\",\"pool\":\"T0/T1 0.05%\"",
+            "0x0000000000000000000000000000000000000001",
+            address(nav)
+        );
     }
 
     // ============================================

@@ -39,7 +39,13 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
         mockGauge = new MockBalancerGauge(address(mockPool));
         mockMinter = new MockContract();
         oracle = new BalancerV3PoolBalanceOracle(
-            address(mockPool), address(mockGauge), address(mockMinter), "Balancer v3", address(balances)
+            address(mockPool),
+            address(mockGauge),
+            address(mockMinter),
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
         );
     }
 
@@ -55,14 +61,26 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
         new BalancerV3PoolBalanceOracle(
-            address(0), address(mockGauge), address(mockMinter), "Balancer v3", address(mockBalances)
+            address(0),
+            address(mockGauge),
+            address(mockMinter),
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 
     function test_constructor_reverts_zeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
         new BalancerV3PoolBalanceOracle(
-            address(mockPool), address(0), address(mockMinter), "Balancer v3", address(mockBalances)
+            address(mockPool),
+            address(0),
+            address(mockMinter),
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(mockBalances)
         );
     }
 

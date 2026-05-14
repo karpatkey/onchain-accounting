@@ -107,8 +107,7 @@ Each chain config file (`chains/{chainId}.json`) contains:
   "addresses": {
     "safeMultisig": "0xYourSafeAddress",
     "admin": "0xYourAdminAddress",
-    "manager": "0xYourManagerAddress",
-    "assetRecoverer": "0xYourRecovererAddress"
+    "manager": "0xYourManagerAddress"
   },
   
   "deployed": {
@@ -145,8 +144,7 @@ Edit `script/config/chains/{chainId}.json`:
   "addresses": {
     "safeMultisig": "0xYourActualSafeAddress",
     "admin": "0xYourActualAdminAddress",
-    "manager": "0xYourActualManagerAddress",
-    "assetRecoverer": "0xYourActualRecovererAddress"
+    "manager": "0xYourActualManagerAddress"
   },
   
   "balanceAdapters": {
@@ -249,8 +247,7 @@ If deployment is interrupted, re-running the script will:
   "addresses": {
     "safeMultisig": "0xYourGnosisChainSafe",
     "admin": "0xYourGnosisChainSafe",
-    "manager": "0xYourManagerOnGnosis",
-    "assetRecoverer": "0xYourRecovererOnGnosis"
+    "manager": "0xYourManagerOnGnosis"
   },
   "balanceAdapters": {
     "AaveV3_USDC": {
@@ -301,7 +298,6 @@ You should see the `deployed` field filled in!
 | `safeMultisig` | address | Safe multisig address (deploys proxies) |
 | `admin` | address | Admin role (can upgrade, authorize adapters) |
 | `manager` | address | Manager role (can register assets, add oracles) |
-| `assetRecoverer` | address | Can recover wrongly sent funds |
 
 ### Adapter Configuration
 | Field | Type | Description |

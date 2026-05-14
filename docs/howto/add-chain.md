@@ -42,8 +42,7 @@ Edit the new file:
   "addresses": {
     "safeMultisig": "0x...",
     "admin":        "0x...",
-    "manager":      "0x...",
-    "assetRecoverer": "0x..."
+    "manager":      "0x..."
   },
 
   "deployed": {
@@ -64,7 +63,7 @@ Edit the new file:
 Notes:
 
 - **`chainlinkSequencerFeed`** is critical for L2s. Without it, the sequencer-uptime check is a no-op and you lose downtime protection. L1s leave it as zero.
-- **Roles:** `safeMultisig` is the deploy authority (proxy admin). `admin` and `manager` are NAVCalculator roles. `assetRecoverer` recovers wrongly-sent funds. On most chains all four point to the same Safe.
+- **Roles:** `safeMultisig` is the deploy authority. `admin` (DEFAULT_ADMIN_ROLE) and `manager` (MANAGER) are NAVCalculator roles. On most chains all three point to the same Safe (currently `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every live chain).
 - **`deployed`** starts empty; deploy scripts write into it.
 - **`balanceAdapters`** starts with just `ERC20Default`; add per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)).
 
@@ -85,7 +84,7 @@ Edit `script/config/assets.json` (single file, all chains):
 }
 ```
 
-2. For any custom price feed on this chain (sDAI, wstETH, etc.), add a `priceFeeds.<symbol>.<newChainId>` entry. Many will use the `_L2_Price` variant — see [`../PRICE_ADAPTERS.md`](../PRICE_ADAPTERS.md) §7 for the right contract.
+2. For any custom price feed on this chain (sDAI, wstETH, etc.), add a `priceFeeds.<symbol>.<newChainId>` entry. Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
 
 3. Update `_symbolsForChain(<newChainId>)` in `script/manage/RegisterAssets.s.sol` to list the symbols this chain registers.
 
@@ -103,17 +102,18 @@ forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID -
 # 02 — proxies + initializers (atomic; placeholder + proxy + upgrade in one tx)
 forge script script/deploy/02_DeployProxies.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 03 — register assets and price feeds (deploys custom feeds, then registers them on NAVCalculator)
-forge script script/deploy/03_RegisterAssets.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+# 03 — deploy custom price feed adapters from assets.json.priceFeeds
+forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
 # 04 — deploy enabled balance adapters from chain config
-forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 05 — deploy adapter factories (registry + per-protocol factories)
-forge script script/deploy/05_DeployAdapterFactories.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+# 05 — deploy bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis)
+forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 06 — migrate existing adapters into the registry (so factory tracking covers everything)
-forge script script/deploy/06_MigrateExistingAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+# 06 — emit Safe TX JSON to register assets, add balance oracles to NAV, authorize bridge adapters
+forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --sig 'run()'
+# Owners on the chain's admin Safe sign and execute the resulting JSON.
 ```
 
 Each script reads from and writes back to `script/config/chains/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.

@@ -26,6 +26,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     CompoundV3Comet public oracle;
     CometExtInterface public comet;
 
+    string internal constant DETAIL_SUPPLY =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Supply\"}";
+    string internal constant DETAIL_BORROW =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Borrow\"}";
+    string internal constant DETAIL_COLLATERAL =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}";
+    string internal constant DETAIL_REWARD =
+        "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Rewards\"}";
+
     // Real users with known positions at FORK_BLOCK.
     address public constant LEND_USER = 0x2b2E894f08F1BF8C93a82297c347EbdC8717d99a;
     address public constant BORROW_USER = 0xe84A061897afc2e7fF5FB7e3686717C528617487;
@@ -46,8 +55,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+        oracle = new CompoundV3Comet(
+            COMPOUND_REWARDS,
+            USDCV3_COMET,
+            REWARD_TOKEN,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
         comet = CometExtInterface(USDCV3_COMET);
     }
 
@@ -56,8 +72,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     ///      internally, so no further dedup is needed here.
     function _collectSupportedAssets() internal returns (address[] memory) {
         BalancesHarnessForFork tmpBalances = new BalancesHarnessForFork();
-        CompoundV3Comet tmp =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(tmpBalances));
+        CompoundV3Comet tmp = new CompoundV3Comet(
+            COMPOUND_REWARDS,
+            USDCV3_COMET,
+            REWARD_TOKEN,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(tmpBalances)
+        );
         return tmp.underlyingAssetsSupported();
     }
 
@@ -134,8 +157,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         // Use the same fork as setUp so state is consistent.
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+        oracle = new CompoundV3Comet(
+            COMPOUND_REWARDS,
+            USDCV3_COMET,
+            REWARD_TOKEN,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         INAVCalculator.PositionBalance[] memory positions =
             oracle.getOraclePositions(MULTI_COLLATERAL_USER, REWARD_TOKEN);
@@ -151,10 +181,10 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceOracle, address(oracle));
             assertEq(positions[i].protocol, "Compound v3 USDC");
             assertFalse(positions[i].isDebt);
-            if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Collateral")) {
+            if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_COLLATERAL))) {
                 sawCollateral = true;
                 collateralAmount = positions[i].amount;
-            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256("Reward")) {
+            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_REWARD))) {
                 sawReward = true;
                 rewardAmount = positions[i].amount;
             }
@@ -200,8 +230,15 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_protocolAndDetailLabels() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle =
-            new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, "Compound v3 USDC", address(balances));
+        oracle = new CompoundV3Comet(
+            COMPOUND_REWARDS,
+            USDCV3_COMET,
+            REWARD_TOKEN,
+            "Compound v3 USDC",
+            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(BORROW_USER, address(0));
         assertGt(positions.length, 0);
@@ -214,10 +251,12 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
             string memory d = positions[i].positionDetail;
             // Every position must carry one of the expected role labels.
             bool isKnown =
-                (keccak256(bytes(d)) == keccak256("Supply") || keccak256(bytes(d)) == keccak256("Borrow")
-                    || keccak256(bytes(d)) == keccak256("Collateral") || keccak256(bytes(d)) == keccak256("Reward"));
+                (keccak256(bytes(d)) == keccak256(bytes(DETAIL_SUPPLY))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_COLLATERAL))
+                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_REWARD)));
             assertTrue(isKnown, "unexpected positionDetail");
-            if (keccak256(bytes(d)) == keccak256("Borrow")) {
+            if (keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))) {
                 sawBorrow = true;
                 assertTrue(positions[i].isDebt);
                 assertEq(positions[i].underlyingAsset.asset, address(USDC));

@@ -93,7 +93,7 @@ Two flavors:
 
 L2 deployments check `chainlinkSequencerFeed`; if down or in grace period, prices are flagged stale.
 
-Read [`./PRICE_ADAPTERS.md`](./PRICE_ADAPTERS.md) for the full list of custom feeds and [`./howto/add-price-feed.md`](./howto/add-price-feed.md) when adding one.
+Read [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) for the full list of custom feeds and [`./howto/add-price-feed.md`](./howto/add-price-feed.md) when adding one.
 
 ## 6. Bridge module (separate concern)
 
@@ -106,11 +106,14 @@ Bridge has its own complete reference: [`src/bridge/BRIDGE_ADAPTERS.md`](../src/
 Deployment is scripted and config-driven. Read [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md), [`script/deploy/README.md`](../script/deploy/README.md), and [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) for specifics. Skeleton:
 
 1. `01_DeployImplementations.s.sol` — implementation contracts (NAVCalculator, BridgeEscrow).
-2. `02_DeployProxies.s.sol` — UUPS proxies + initializers.
-3. `03_RegisterAssets.s.sol` — registers assets + price feeds.
-4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from chain config and registers them with NAVCalculator.
-5. `05_DeployAdapterFactories.s.sol` — deploys `BalanceAdapterRegistry` + per-protocol factories at deterministic addresses (CREATE2). Once factories own MANAGER, they become the registration path.
-6. `06_MigrateExistingAdapters.s.sol` — moves pre-existing adapters under registry tracking via `factory.registerExternal(adapter)`.
+2. `02_DeployProxies.s.sol` — UUPS proxies + atomic initialize + role grants (admin + MANAGER to the per-chain Safe; deployer EOA self-renounces admin).
+3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters from `assets.json.priceFeeds`.
+4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from `chains/<id>.json.balanceAdapters`.
+5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
+6. `06_Configure.s.sol` — emits Safe TX JSON: register assets, add balance oracles to NAV, authorize bridge adapters on BridgeEscrow.
+7. `07_HandoffRolesToSafe.s.sol` — final post-deploy role-handoff sanity script (legacy path; atomic deploy in `02_` already handles role grants).
+
+For the operational sequencing + Safe TX flow see [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
 
 Per-chain configuration is in `script/config/chains/<chainId>.json`. Five chains today: `1` (Mainnet), `10` (Optimism), `100` (Gnosis), `42161` (Arbitrum), `8453` (Base).
 
@@ -132,7 +135,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 | What is registered on chain X today? | `script/config/chains/<X>.json` — `deployed`, `assets`, `balanceAdapters` blocks. |
 | Why is the framework structured this way? | [`./decisions/`](./decisions/) ADRs. |
 | How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + `NAVCalculator._readPositionsRangeWithQuote`. |
-| Why is the Aave Safety Module adapter mutable while everything else is immutable? | [`./decisions/0002-aave-safety-module-multi-token.md`](./decisions/0002-aave-safety-module-multi-token.md). |
+| Why is the Merkl rewards adapter mutable while every other adapter is immutable? | [`./decisions/0007-merkl-trust-minimized-cache.md`](./decisions/0007-merkl-trust-minimized-cache.md). The Aave Safety Module was previously the documented exception (ADR 0002) but is now fully immutable per ADR 0005. |
 | Bridge invoice lifecycle? | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). |
 | How are integration-test fork blocks and expected NAVs kept current? | [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). |
 

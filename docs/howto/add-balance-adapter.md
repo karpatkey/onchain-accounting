@@ -48,12 +48,27 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
     /// @notice NAVCalculator (asset registry source).
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance.
+    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3", "Morpho").
     string private _protocol;
-    /// @notice Position detail (e.g. "Supply", "Borrow", "Rewards", or a market label).
+    /// @notice JSON metadata BASE for the PositionBalance.positionDetail field — no closing `}`.
+    /// @dev Single-type adapters emit `string.concat(_positionDetail, "}")`. Multi-leg adapters
+    ///      use `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` from
+    ///      `src/utils/PositionType.sol`. See docs/howto/position-detail-schema.md.
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (most-specific immutable address —
+    ///         vault, comet, gauge, marketId, …). Used by frontends as a cross-block React key.
+    /// @dev Pass as constructor arg for almost every adapter. MorphoMarket is the documented
+    ///      exception: it derives `_positionId` automatically from `marketId` via
+    ///      `Strings.toHexString(uint256(marketId), 32)` — no `positionId_` constructor param.
+    string private _positionId;
 
-    constructor(address protocolContract_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address protocolContract_,
+        address navCalculator_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_
+    ) {
         if (protocolContract_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
         require(protocolContract_.code.length > 0, "Protocol contract must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -62,6 +77,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
@@ -102,13 +118,25 @@ Reuse patterns from existing adapters:
 Conventions:
 
 - All addresses set in the constructor are **immutable**. No setters.
+- The three identity strings (`_protocol`, `_positionDetail`, `_positionId`) are **mandatory constructor params** as of PR #35 — they pin user-facing metadata into immutable storage and flow through every emitted `PositionBalance`. Schema reference: [`docs/howto/position-detail-schema.md`](position-detail-schema.md); canonical per-adapter values: [`script/config/adapter-identities.json`](../../script/config/adapter-identities.json). Exception: `MorphoMarket` takes only `marketId_` (positionId derived automatically via `Strings.toHexString`).
 - For each external call to the protocol, use a **minimal interface** declared at the bottom of the file (or in a sibling `I<Protocol>.sol`) — do not import the protocol's full library.
 - For asset metadata (symbol/decimals on the `PositionBalance.underlyingAsset` field), call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list. This is what `ERC20DefaultOracle` does.
 - `amount` in `PositionBalance` is **always positive**. Use `isDebt` to mark debt.
+- When emitting a `PositionBalance`, set `protocol = _protocol`, `positionId = _positionId`, and `positionDetail = string.concat(_positionDetail, "}")` for single-type adapters or `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from [`src/utils/PositionType.sol`](../../src/utils/PositionType.sol)) for multi-leg adapters.
 
 ---
 
 ## 2. Write the factory
+
+> **⚠ Aspirational section.** The factory framework (`BalanceAdapterFactoryBase`, `BalanceAdapterRegistry`, the `5_DeployAdapterFactories` script, etc.) is described in [ADR 0001](../decisions/0001-balance-adapter-factory-pattern.md) but is **not yet implemented in the codebase as of `4def473` (2026-05-06)**. `src/balances/factories/` does not exist. Until the framework lands, **skip this section** and use the current direct-deploy path:
+>
+> 1. Skip writing a factory contract. Your adapter is a single Solidity file under `src/balances/protocols/<protocol>/` (or directly under `src/balances/protocols/` for single-file adapters).
+> 2. Add a `_deployIfEnabled("MyProtocol_<instance>")` call to `script/deploy/04_DeployBalanceAdapters.s.sol` so the production deploy picks it up. Wire dispatch via `_deployBalanceAdapter` (e.g. follow the pattern of `_deployMorphoVault`).
+> 3. Add the chain-config entry under `chains/<id>.json.balanceAdapters.MyProtocol_<instance>` with the constructor params your adapter needs.
+> 4. Registration on `NAVCalculator` happens via `script/deploy/06_Configure.s.sol`'s Safe TX bundle calling `addBalanceOracle(adapter)` directly — no factory in the loop.
+> 5. Skip §3 (factory tests), §5 (factory deploy block), and §6 (registry handoff) below; jump to §4 (adapter unit + fork tests) and §7 (Safe TX flow via `06_Configure`).
+>
+> The aspirational instructions below describe the target end state; preserve them so the recipe is ready to use the moment ADR 0001 ships, but **do not** create `src/balances/factories/*` files in your PR until that framework is shipped.
 
 File: `src/balances/protocols/<protocol>/<MyProtocol>AdapterFactory.sol`.
 
@@ -215,7 +243,8 @@ Add an entry under `balanceAdapters`:
   "constructor": {
     "protocolContract": "0x...",
     "protocol": "My Protocol",
-    "positionDetail": "Supply"
+    "positionDetail": "{\"protocol\":\"My Protocol\",\"product\":\"Lending\",\"name\":\"<instance>\"",
+    "positionId": "0x..."
   },
   "deployed": ""
 }
@@ -244,9 +273,11 @@ function _deployMyProtocol(string memory adapterName, address navCalculator) int
         ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
     string memory positionDetail =
         ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+    string memory positionId =
+        ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
     MyProtocolBalanceOracle adapter =
-        new MyProtocolBalanceOracle(protocolContract, protocol, positionDetail, navCalculator);
+        new MyProtocolBalanceOracle(protocolContract, navCalculator, protocol, positionDetail, positionId);
     return address(adapter);
 }
 ```
@@ -298,7 +329,7 @@ If your adapter affects NAV for an existing test account in `test/integration/ac
 script/test/refresh-integration-snapshot.sh
 ```
 
-This regenerates the expected `navUsd8dp` values, optionally cross-checks against Debank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
+This regenerates the expected `navUsd8dp` values, optionally cross-checks against DeBank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
 
 ## 8. Open the PR
 

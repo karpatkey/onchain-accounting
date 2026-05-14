@@ -9,6 +9,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Aura Balancerv3 Balance Oracle
 /// @notice Oracle contract for retrieving token balances from Aura Balancer V3 pools
@@ -70,8 +71,10 @@ contract Aura is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`) for this oracle
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (pool address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -85,7 +88,8 @@ contract Aura is IBalanceOracleAdapter {
     /// @param booster_ Address of the Aura Booster contract
     /// @param pid_ Pool ID in the Aura Booster contract
     /// @param protocol_ Protocol identifier (e.g., "Aura").
-    /// @param positionDetail_ Position detail identifier (e.g., "Some Aura Pool").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
     /// @dev Validates that the gauge's LP token matches the pool address. AURA token address and
     ///      the chain kind (Mainnet vs L2) are both derived from `BOOSTER.minter()`:
@@ -98,6 +102,7 @@ contract Aura is IBalanceOracleAdapter {
         uint256 pid_,
         string memory protocol_,
         string memory positionDetail_,
+        string memory positionId_,
         address navCalculator_
     ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
@@ -154,6 +159,7 @@ contract Aura is IBalanceOracleAdapter {
 
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -722,7 +728,8 @@ contract Aura is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
+                positionId: _positionId
             });
 
             positionCount++;

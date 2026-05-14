@@ -876,6 +876,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             isDebt: balance.isDebt,
             protocol: balance.protocol,
             positionDetail: balance.positionDetail,
+            positionId: balance.positionId,
             quoteAsset: quoteAssetStruct,
             value: value,
             price: priceFeed.price,

@@ -1,0 +1,205 @@
+{
+  "$comment": "Canonical identity strings for each balance adapter family. These are the values to pass as constructor arguments (protocol, positionDetail, positionId) when deploying a new adapter instance. positionDetail is written as a partial JSON string — the deploy script appends the closing brace after adding chain-specific fields. positionId is typically the primary contract address the adapter reads from (e.g. dataProvider for Aave, comet for Compound, pool address for LP adapters). Exception: MorphoMarket derives positionId automatically from marketId and has no positionId constructor parameter.",
+  "$positionDetail_convention": "protocol = bare protocol name (matches top-level protocol field). product = functional category (Lending, Staking, LP, Vault, Market, Rewards, Safety Module, Umbrella, Savings). name = human-readable instance label (market name, pool pair, vault name). Per-position fields (appended at emission time, not part of the constructor template): type = sub-classification that varies per emitted leg (e.g. Supply/Borrow/Collateral for lending, stkAAVE/stkABPT/stkABPTv2/stkGHO for Safety Module); token = per-leg token symbol for LP adapters (BalancerV3, Aura, Curve, Convex, PancakeSwapV3). The $perPositionFields key in each entry documents what the adapter appends at runtime.",
+
+  "ERC20DefaultOracle": {
+    "$comment": "Hardcoded in Solidity to protocol='wallet'. Not configurable.",
+    "protocol": "wallet",
+    "positionDetail": { "protocol": "wallet", "product": "Holding" },
+    "positionId": "0x0000000000000000000000000000000000000000"
+  },
+
+  "AaveV2Instance": {
+    "$perPositionFields": "type: Supply | Borrow | Collateral",
+    "$deployedNote": "Existing deployments used the dataProvider address as positionId. Canonical target is the Pool address.",
+    "protocol": "Aave V2",
+    "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<market name>" },
+    "positionId": "<Pool address>"
+  },
+
+  "AaveV3Instance": {
+    "$perPositionFields": "type: Supply | Borrow | Collateral",
+    "$deployedNote": "Existing deployments used the dataProvider address as positionId. Canonical target is the Pool address.",
+    "protocol": "Aave V3",
+    "positionDetail": { "protocol": "Aave V3", "product": "Lending", "name": "<market name>" },
+    "positionId": "<Pool address>"
+  },
+
+  "AaveV3SafetyModule": {
+    "$perPositionFields": "type: Staking | Reward (underlyingAsset distinguishes the stake token; stkAAVE has two AAVE legs told apart by type alone)",
+    "protocol": "Aave V3",
+    "positionDetail": { "protocol": "Aave V3", "product": "Safety Module" },
+    "positionId": "<stkAave / stkABPT address>"
+  },
+
+  "AaveUmbrella": {
+    "$perPositionFields": "type: Staking | Rewards (underlyingAsset distinguishes the stake token)",
+    "protocol": "Aave V3",
+    "positionDetail": { "protocol": "Aave V3", "product": "Umbrella" },
+    "positionId": "<umbrella staking contract address>"
+  },
+
+  "SparkLend": {
+    "$perPositionFields": "type: Supply | Borrow | Collateral",
+    "$deployedNote": "Existing deployments used the dataProvider address as positionId. Canonical target is the Pool address.",
+    "protocol": "Spark",
+    "positionDetail": { "protocol": "Spark", "product": "Lending", "name": "SparkLend" },
+    "positionId": "<Pool address>"
+  },
+
+  "CompoundV3Comet": {
+    "$perPositionFields": "type: Supply | Borrow | Collateral | Reward",
+    "$deployedNote": "Existing mainnet deployments use protocol='Compound v3' (lowercase v). New deployments should use 'Compound V3' for consistency. Requires redeploy to fix.",
+    "protocol": "Compound V3",
+    "positionDetail": { "protocol": "Compound V3", "product": "Lending", "name": "<base asset symbol>" },
+    "positionId": "<comet address>"
+  },
+
+  "MorphoVault": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Morpho",
+    "positionDetail": { "protocol": "Morpho", "product": "Vault", "name": "<vault name>" },
+    "positionId": "<vault address>"
+  },
+
+  "ERC4626Wrap": {
+    "$perPositionFields": "type: Supply",
+    "$comment": "Generic ERC-4626 unwrap balance oracle. Constructor checks the wrapper's `asset()` is NAV-registered (reverts otherwise). Reports `convertToAssets(balanceOf(account))` denominated in the underlying. Used for Aave V3 stata-tokens (waEth*) and any other thin ERC-4626 wrapper where the share price is derivable purely from convertToAssets. Per-instance constructor args set the protocol/product/name shown in PositionBalance metadata (e.g. for waEthLidoGHO: protocol=\"Aave V3\", product=\"Lending\", name=\"Prime Instance (LidoGHO stata wrap)\"). positionId is the wrapper address.",
+    "protocol": "<varies — set per instance>",
+    "positionDetail": { "protocol": "<varies>", "product": "<varies>", "name": "<wrap name>" },
+    "positionId": "<wrapper address>"
+  },
+
+  "MorphoMarket": {
+    "$perPositionFields": "type: Supply | Borrow | Collateral",
+    "$positionIdNote": "positionId is derived automatically from marketId (Strings.toHexString(uint256(marketId), 32)) — not a constructor parameter.",
+    "protocol": "Morpho",
+    "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<collateral/loan pair>" }
+  },
+
+  "BalancerV3": {
+    "$perPositionFields": "type: Supply | Staking (Supply=wallet LP, Staking=gauge-staked LP + gauge rewards; one pair per underlying pool token)",
+    "protocol": "Balancer V3",
+    "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<pool token pair>" },
+    "positionId": "<pool address>"
+  },
+
+  "Aura": {
+    "$perPositionFields": "type: Staking (one position per underlying asset)",
+    "protocol": "Aura",
+    "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<pool token pair>" },
+    "positionId": "<Aura rewards/booster address>"
+  },
+
+  "Curve": {
+    "$perPositionFields": "type: Supply | Staking (Supply=wallet LP, Staking=gauge-staked LP + CRV/extra rewards; one pair per underlying pool token)",
+    "protocol": "Curve",
+    "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<pool token pair>" },
+    "positionId": "<pool address>"
+  },
+
+  "Convex": {
+    "$perPositionFields": "type: Staking (one position per underlying asset)",
+    "protocol": "Convex",
+    "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<pool token pair>" },
+    "positionId": "<Convex pool/rewards address>"
+  },
+
+  "FluidFToken": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Fluid",
+    "positionDetail": { "protocol": "Fluid", "product": "Lending", "name": "<fToken symbol>" },
+    "positionId": "<fToken address>"
+  },
+
+  "FluidVault": {
+    "$perPositionFields": "type: Collateral | Borrow",
+    "protocol": "Fluid",
+    "positionDetail": { "protocol": "Fluid", "product": "Vault", "name": "<collateral/debt pair>" },
+    "positionId": "<vault address>"
+  },
+
+  "GearboxMarket": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Gearbox",
+    "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<market name>" },
+    "positionId": "<pool address>"
+  },
+
+  "Cap": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Cap",
+    "positionDetail": { "protocol": "Cap", "product": "Lending", "name": "<description>" },
+    "positionId": "<Cap market address>"
+  },
+
+  "StakeWiseV3OsToken": {
+    "$perPositionFields": "type: Staking",
+    "protocol": "StakeWise V3",
+    "positionDetail": { "protocol": "StakeWise V3", "product": "Staking", "name": "osETH" },
+    "positionId": "<osToken contract address>"
+  },
+
+  "StakeWiseV3Vault": {
+    "$perPositionFields": "type: Staking | Borrow (Staking=vault shares converted to assets, isDebt=false; Borrow=osToken debt converted to assets, isDebt=true)",
+    "protocol": "StakeWise V3",
+    "positionDetail": { "protocol": "StakeWise V3", "product": "Vault", "name": "<vault name>" },
+    "positionId": "<vault address>"
+  },
+
+  "StaderWithdrawalQueue": {
+    "$perPositionFields": "type: Staking",
+    "protocol": "Stader",
+    "positionDetail": { "protocol": "Stader", "product": "Staking", "name": "ETH Withdrawal Queue" },
+    "positionId": "<UserWithdrawManager address>"
+  },
+
+  "MerklRewards": {
+    "$perPositionFields": "type: Rewards",
+    "protocol": "Merkl",
+    "positionDetail": { "protocol": "Merkl", "product": "Rewards", "name": "Unclaimed Rewards" },
+    "positionId": "<Distributor address>"
+  },
+
+  "UniswapV3Pool": {
+    "$perPositionFields": "type: Supply | Fees",
+    "protocol": "Uniswap V3",
+    "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<token0/token1 fee%>" },
+    "positionId": "<pool address>"
+  },
+
+  "UniswapV2": {
+    "$perPositionFields": "type: Supply (one position per pool token)",
+    "protocol": "Uniswap V2",
+    "positionDetail": { "protocol": "Uniswap V2", "product": "LP", "name": "<token0/token1>" },
+    "positionId": "<pair address>"
+  },
+
+  "PancakeSwapV3Pool": {
+    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3Pool behaviour.",
+    "protocol": "PancakeSwap V3",
+    "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<token0/token1 fee%>" },
+    "positionId": "<pool address>"
+  },
+
+  "PancakeSwapV2": {
+    "$perPositionFields": "type: Supply (one position per pool token). Inherits UniswapV2 behaviour.",
+    "protocol": "PancakeSwap V2",
+    "positionDetail": { "protocol": "PancakeSwap V2", "product": "LP", "name": "<token0/token1>" },
+    "positionId": "<pair address>"
+  },
+
+  "DaiDsr": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Sky",
+    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "DAI Savings Rate" },
+    "positionId": "<DSR pot address>"
+  },
+
+  "SkySavingsUsds": {
+    "$perPositionFields": "type: Supply",
+    "protocol": "Sky",
+    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "Sky Savings USDS" },
+    "positionId": "<sUSDS address>"
+  }
+}

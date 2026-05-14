@@ -14,10 +14,12 @@ import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
+import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
@@ -26,7 +28,16 @@ import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3Safe
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
-import {MerklRewardsBalanceOracle} from "src/balances/protocols/MerklRewards.sol";
+import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
+import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
+import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
+import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
+import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
+import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
+import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
+import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
@@ -41,6 +52,7 @@ import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "src/prices/protocols/ezETH_Price.sol";
+import {ETHx_PriceOracle} from "src/prices/protocols/ETHx_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 
 // Price feed adapters (L2)
@@ -91,6 +103,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
+    ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
+    ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
+    ///         exists in code but not yet deployed to production); (2) override when a prod
+    ///         address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
+    ///         to IPriceFeedCustom). Key is the feed deploy name, not the token symbol — use
+    ///         _priceFeedNameForSymbol to convert. Fork-only; production registration via
+    ///         RegisterAssets.s.sol reads pricefeed from assets.json.
+    mapping(string => address) internal _ephemeralPriceFeeds;
+
     function _setupAndDeploy() internal {
         require(_chainId != 0, "child must set _chainId");
         require(bytes(_forkNetwork).length > 0, "child must set _forkNetwork");
@@ -115,8 +137,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         nav.grantRole(MANAGER, admin);
 
         _deployAllPriceFeeds();
-        _deployAllBalanceAdapters();
+        // Asset registration MUST precede balance-adapter deployment because some adapter
+        // constructors (e.g. ERC4626WrapBalanceOracle) require the underlying asset to be
+        // registered before they can deploy. Production deploy mirrors this via the Safe-TX
+        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceOracle).
         _registerAllAssets();
+        _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
         _seedMerklProofs();
         vm.stopPrank();
@@ -134,11 +160,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (chainId == 10) return 0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389; // Optimism
         if (chainId == 42161) return 0xFdB631F5EE196F0ed6FAa767959853A9F217697D; // Arbitrum
         if (chainId == 8453) return 0xBCF85224fc0756B9Fa45aA7892530B47e10b6433; // Base
-        return address(0); // Mainnet, Gnosis (L1 / no sequencer feed)
+        // Mainnet (1), Gnosis (100), BSC (56), Polygon (137): no L2 sequencer feed.
+        return address(0);
     }
 
     function _nativeSymbol(uint256 chainId) internal pure returns (string memory) {
         if (chainId == 100) return "xDAI";
+        if (chainId == 56) return "BNB";
+        if (chainId == 137) return "POL";
         return "ETH";
     }
 
@@ -160,6 +189,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("rsETH", _deployRsEth);
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
+            _tryDeployPriceFeed("ETHx", _deployEthx);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -182,7 +212,19 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return;
         }
         address addr = deployer();
+        _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
+    }
+
+    /// @notice Returns the price feed name (as used in _deployAllPriceFeeds) for a given token symbol.
+    function _priceFeedNameForSymbol(string memory symbol) internal view returns (string memory) {
+        if (_chainId == 1) {
+            return symbol;
+        }
+        if (_chainId == 100 && _equals(symbol, "sDAI")) {
+            return "sXDAI";
+        }
+        return string(abi.encodePacked(symbol, "_L2"));
     }
 
     function _deploySdai() internal returns (address) {
@@ -394,12 +436,23 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new syrupUSDC_L2_PriceOracle(syrup, syrupChainlink, usdcUsd, syrupHb, usdcUsdHb));
     }
 
+    function _deployEthx() internal returns (address) {
+        address ethx = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethx"));
+        address stakePoolsManager =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "stakePoolsManager"));
+        address ethUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
+        return address(new ETHx_PriceOracle(ethx, stakePoolsManager, ethUsd, ethUsdHb));
+    }
+
     // -----------------------------------------------------------------------
     // Balance adapter deployment
     // -----------------------------------------------------------------------
 
     function _deployAllBalanceAdapters() internal {
-        string[] memory names = _balanceAdapterNames();
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, _chainId, "balanceAdapters");
         for (uint256 i = 0; i < names.length; i++) {
             string memory n = names[i];
             // MerklRewards is always deployed in the integration test (independent of the
@@ -437,6 +490,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "MorphoVault_")) {
             return _deployMorphoVault(name, navAddr);
         }
+        if (_startsWith(name, "ERC4626Wrap_")) {
+            return _deployERC4626Wrap(name, navAddr);
+        }
         if (_startsWith(name, "GearboxMarket_")) {
             return _deployGearboxMarket(name, navAddr);
         }
@@ -464,6 +520,36 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
+        if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
+            return _deployAaveV2(name, navAddr);
+        }
+        if (_startsWith(name, "Fluid_fToken_")) {
+            return _deployFluidFToken(name, navAddr);
+        }
+        if (_startsWith(name, "Fluid_Vault_")) {
+            return _deployFluidVault(name, navAddr);
+        }
+        if (_equals(name, "StaderWithdrawalQueue")) {
+            return _deployStaderWithdrawalQueue(name, navAddr);
+        }
+        if (_startsWith(name, "StakeWiseV3OsToken_")) {
+            return _deployStakeWiseV3OsToken(name, navAddr);
+        }
+        if (_startsWith(name, "StakeWiseV3Vault_")) {
+            return _deployStakeWiseV3Vault(name, navAddr);
+        }
+        if (_startsWith(name, "UniswapV2_")) {
+            return _deployUniswapV2(name, navAddr);
+        }
+        if (_startsWith(name, "UniswapV3_")) {
+            return _deployUniswapV3Pool(name, navAddr);
+        }
+        if (_startsWith(name, "PancakeSwapV2_")) {
+            return _deployPancakeSwapV2(name, navAddr);
+        }
+        if (_startsWith(name, "PancakeSwapV3_")) {
+            return _deployPancakeSwapV3Pool(name, navAddr);
+        }
         return address(0);
     }
 
@@ -471,14 +557,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveV3InstanceBalanceOracle(dataProvider, protocol, navAddr));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new AaveV3InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deploySparkLend(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new SparkLendBalanceOracle(dataProvider, protocol, navAddr));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new SparkLendBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployCompoundV3(string memory name, address navAddr) internal returns (address) {
@@ -488,7 +580,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address rewardToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, navAddr));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navAddr)
+        );
     }
 
     function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {
@@ -496,7 +593,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         bytes32 marketId =
             vm.parseBytes32(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "marketId"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, navAddr));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
@@ -504,7 +603,18 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new MorphoVaultBalanceOracle(vault, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
+        address wrapper =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new ERC4626WrapBalanceOracle(wrapper, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployGearboxMarket(string memory name, address navAddr) internal returns (address) {
@@ -512,7 +622,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new GearboxMarketBalanceOracle(market, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployCap(address navAddr) internal returns (address) {
@@ -523,7 +634,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "positionDetail");
-        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "positionId");
+        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployCurve(string memory name, address navAddr) internal returns (address) {
@@ -531,7 +643,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new CurveBalanceOracle(gauge, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new CurveBalanceOracle(gauge, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployConvex(string memory name, address navAddr) internal returns (address) {
@@ -542,22 +655,26 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, positionId, navAddr));
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        // Set of stake tokens is hardcoded in AaveV3SafetyModuleBalanceOracle. Constructor only needs (nav, protocol).
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol, positionDetail, positionId));
     }
 
     function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
-        // Stake-token set is discovered at runtime from the RewardsController. Constructor takes
-        // (rewardsController, nav, protocol) — see ADR 0006.
         address rewardsController =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr, protocol));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr, protocol, positionDetail, positionId));
     }
 
     function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
@@ -566,7 +683,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address balancerMinter =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, navAddr));
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, positionDetail, positionId, navAddr)
+        );
     }
 
     function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
@@ -578,7 +700,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        address adapter = address(new MerklRewardsBalanceOracle(distributor, navAddr, protocol, positionDetail, admin));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        address adapter =
+            address(new MerklRewardsBalanceOracle(distributor, navAddr, protocol, positionDetail, positionId, admin));
         _merklOracle = adapter;
         return adapter;
     }
@@ -592,69 +716,132 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new Aura(pool, gauge, booster, pid, protocol, positionDetail, navAddr));
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new Aura(pool, gauge, booster, pid, protocol, positionDetail, positionId, navAddr));
     }
 
-    function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](57);
-        uint256 i = 0;
-        names[i++] = "MerklRewards";
-        names[i++] = "AaveV3_Core";
-        names[i++] = "AaveV3_Prime";
-        names[i++] = "AaveV3_Arbitrum";
-        names[i++] = "AaveV3_Base";
-        names[i++] = "AaveV3_Optimism";
-        names[i++] = "AaveV3_Gnosis";
-        names[i++] = "CompoundV3_USDC";
-        names[i++] = "CompoundV3_USDS";
-        names[i++] = "CompoundV3_USDT";
-        names[i++] = "CompoundV3_WBTC";
-        names[i++] = "CompoundV3_WETH";
-        names[i++] = "CompoundV3_wstETH";
-        names[i++] = "CompoundV3_USDCe";
-        names[i++] = "CompoundV3_USDbC";
-        names[i++] = "CompoundV3_AERO";
-        names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule";
-        names[i++] = "AaveUmbrella";
-        names[i++] = "Cap";
-        names[i++] = "MorphoVault_kpkETHPrime_V1";
-        names[i++] = "MorphoVault_kpkETHPrime_V2";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V1";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V2";
-        names[i++] = "MorphoVault_kpkUSDCYieldV1";
-        names[i++] = "MorphoMarket_wstETH_USDC";
-        names[i++] = "MorphoMarket_cbBTC_USDC";
-        names[i++] = "MorphoMarket_wstUSR_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_USDC";
-        names[i++] = "MorphoMarket_WBTC_USDC";
-        names[i++] = "MorphoMarket_RLP_USDC";
-        names[i++] = "MorphoMarket_syrupUSDC_USDC";
-        names[i++] = "MorphoMarket_sUSDS_USDT";
-        names[i++] = "MorphoMarket_sUSDS_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_WETH";
-        names[i++] = "MorphoMarket_wstETH_WETH";
-        names[i++] = "MorphoMarket_weETH_WETH";
-        names[i++] = "MorphoMarket_rsETH_WETH";
-        names[i++] = "MorphoMarket_cbETH_USDC";
-        names[i++] = "GearboxMarket_kpkWETH";
-        names[i++] = "GearboxMarket_kpkwstETH";
-        names[i++] = "BalancerV3_rETH_WETH";
-        names[i++] = "BalancerV3_GHO_USDT_USDC";
-        names[i++] = "BalancerV3_GHO_USDC_USDT";
-        names[i++] = "BalancerV3_GHO_USDC";
-        names[i++] = "Aura_rETH_WETH";
-        names[i++] = "Aura_GHO_USDT_USDC";
-        names[i++] = "Aura_GHO_USDC_USDT";
-        names[i++] = "Aura_GHO_USDC";
-        names[i++] = "Curve_weETH_WETH";
-        names[i++] = "Curve_crvUSD_USDC";
-        names[i++] = "Curve_crvUSD_USDT";
-        names[i++] = "Curve_RLUSD_USDC";
-        names[i++] = "Convex_weETH_WETH";
-        names[i++] = "Convex_crvUSD_USDC";
-        names[i++] = "Convex_crvUSD_USDT";
-        names[i++] = "Convex_RLUSD_USDC";
+    function _deployAaveV2(string memory name, address navAddr) internal returns (address) {
+        address dataProvider =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployFluidFToken(string memory name, address navAddr) internal returns (address) {
+        address fToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "fToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployFluidVault(string memory name, address navAddr) internal returns (address) {
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        address vaultResolver =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployStaderWithdrawalQueue(string memory name, address navAddr) internal returns (address) {
+        address userWithdrawalManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "userWithdrawalManager")
+        );
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new StaderWithdrawalQueueBalanceOracle(
+                userWithdrawalManager, underlyingToken, protocol, positionDetail, positionId, navAddr
+            )
+        );
+    }
+
+    function _deployStakeWiseV3OsToken(string memory name, address navAddr) internal returns (address) {
+        address osToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osToken"));
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
+        );
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new StakeWiseV3OsTokenBalanceOracle(
+                osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, positionId, navAddr
+            )
+        );
+    }
+
+    function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, positionId, navAddr)
+        );
+    }
+
+    function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
+        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new UniswapV2BalanceOracle(pair, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployUniswapV3Pool(string memory name, address navAddr) internal returns (address) {
+        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return
+            address(
+                new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navAddr)
+            );
+    }
+
+    function _deployPancakeSwapV2(string memory name, address navAddr) internal returns (address) {
+        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployPancakeSwapV3Pool(string memory name, address navAddr) internal returns (address) {
+        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
+        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
+        return address(
+            new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navAddr)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -677,13 +864,35 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         string memory typeStr = ConfigReader.readTokenType(vm, _chainId, symbol);
         if (_equals(typeStr, "None")) return;
-        if (!ConfigReader.hasTokenOracle(vm, _chainId, symbol)) return;
 
-        string memory oracleStr = ConfigReader.readTokenOracle(vm, _chainId, symbol);
-        address oracle = vm.parseAddress(oracleStr);
+        // Resolve the oracle address. Prefer assets.json's hardcoded `pricefeed` (set by
+        // 03_DeployPriceFeeds at production deploy time). When that field is blank — i.e. the
+        // feed contract exists in code but hasn't been deployed to production yet, e.g. ETHx
+        // pre-mainnet-deploy — fall back to the ephemerally-deployed instance from
+        // _deployAllPriceFeeds. This makes the integration test exercise the feed end-to-end
+        // before the production deploy lands. Once the production deploy completes and
+        // assets.json.pricefeed is populated, this branch becomes inert for that symbol.
+        address oracle;
+        if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
+            oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
+        } else if (_ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)] != address(0)) {
+            oracle = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
+            console2.log("[asset/ephemeral]", symbol, oracle);
+        } else {
+            return;
+        }
         uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
 
         IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
+
+        // For Custom feeds: prefer the ephemerally-deployed feed over any prod address in assets.json.
+        // Reason: adding latestRoundData() to IPriceFeedCustom changed the ERC165 interface ID —
+        // old deployed addresses fail checkPriceOracleSupport(). The ephemeral feed (new code)
+        // passes the check and is functionally equivalent for fork tests.
+        if (pt == IPrices.PriceType.Custom) {
+            address fresh = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
+            if (fresh != address(0)) oracle = fresh;
+        }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
         // pre-registered asset) use setPriceFeed instead of registerAsset.
@@ -735,6 +944,26 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             console2.log("[merkl] no fixtures for chain; skipping cache seed");
             return;
         }
+
+        // Warn loudly if the fixture's captured root doesn't match the live root at this fork block.
+        // This happens when the Merkl root rotated between the `cast call --block` and the API fetch
+        // during refresh-integration-snapshot.sh — a narrow but real race window. All proofs will
+        // fail submitProof in that case, silently zeroing Merkl rewards in NAV.
+        // Fix: re-run refresh-integration-snapshot.sh to re-capture proofs against the current root.
+        string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
+        if (vm.keyExistsJson(json, expectedRootKey)) {
+            bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
+            address distributor = MerklRewardsBalanceOracle(_merklOracle).DISTRIBUTOR();
+            bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
+            if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
+                console2.log(
+                    "[merkl] WARNING: fixture root does not match live Distributor root at this fork block."
+                    " All proof submissions will fail and Merkl rewards will be 0 in NAV."
+                    " Re-run refresh-integration-snapshot.sh to capture proofs against the current root."
+                );
+            }
+        }
+
         string memory usersKey = string.concat(chainKey, ".users");
         if (!vm.keyExistsJson(json, usersKey)) {
             console2.log("[merkl] empty proof block; skipping");
@@ -772,7 +1001,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](28);
+            string[] memory s = new string[](33);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -801,10 +1030,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[25] = "crvUSD";
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
+            s[28] = "ETHx";
+            s[29] = "COMP";
+            s[30] = "EURC";
+            s[31] = "WBTC";
+            s[32] = "AAVE";
             return s;
         }
         if (chainId == 42161) {
-            string[] memory s = new string[](11);
+            string[] memory s = new string[](12);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -816,6 +1050,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[8] = "USDT";
             s[9] = "GHO";
             s[10] = "syrupUSDC";
+            s[11] = "COMP";
             return s;
         }
         if (chainId == 100) {
@@ -830,7 +1065,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return s;
         }
         if (chainId == 8453) {
-            string[] memory s = new string[](8);
+            string[] memory s = new string[](9);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -839,15 +1074,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[5] = "MORPHO";
             s[6] = "USDC";
             s[7] = "GHO";
+            s[8] = "COMP";
             return s;
         }
         if (chainId == 10) {
-            string[] memory s = new string[](5);
+            string[] memory s = new string[](6);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
             s[3] = "USDC";
             s[4] = "USDT";
+            s[5] = "COMP";
             return s;
         }
         return new string[](0);
@@ -890,6 +1127,85 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     // -----------------------------------------------------------------------
+    // NAV position detail serialization (used by RefreshIntegrationSnapshot)
+    // -----------------------------------------------------------------------
+
+    /// @notice Serializes one Position to a JSON object string.
+    /// @dev Protocol/positionDetail strings are written verbatim — our adapters use
+    ///      plain ASCII labels with no quotes or backslashes, so no escaping is needed.
+    function _positionToJson(INAVCalculator.Position memory pos) internal pure returns (string memory out) {
+        out = string.concat(
+            '{"symbol":"',
+            pos.underlyingAsset.symbol,
+            '","address":"',
+            vm.toString(pos.underlyingAsset.asset),
+            '","decimals":',
+            vm.toString(uint256(pos.underlyingAsset.decimals))
+        );
+        out = string.concat(out, ',"amount":"', vm.toString(pos.amount), '","isDebt":', pos.isDebt ? "true" : "false");
+        out = string.concat(
+            out,
+            ',"valueUsd8dp":"',
+            vm.toString(pos.value),
+            '","price":"',
+            vm.toString(pos.price),
+            '","priceDecimals":',
+            vm.toString(uint256(pos.priceDecimals))
+        );
+        // positionDetail is a JSON object — embed unquoted so inner keys aren't double-encoded.
+        out = string.concat(
+            out,
+            ',"protocol":"',
+            pos.protocol,
+            '","positionDetail":',
+            pos.positionDetail,
+            ',"positionId":"',
+            pos.positionId,
+            '"}'
+        );
+    }
+
+    /// @notice Calls getAccountPositions for every enabled account on _chainId and returns
+    ///         a JSON object string keyed by account address.
+    function _buildPositionDetailsJson() internal view returns (string memory out) {
+        string memory json = _readAccountsJson();
+        out = "{";
+        bool first = true;
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
+            uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
+
+            if (_contains(enabled, _chainId)) {
+                if (!first) out = string.concat(out, ",");
+                first = false;
+
+                INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, QUOTE_USD);
+                out = string.concat(out, '"', vm.toString(account), '":[');
+                for (uint256 j = 0; j < positions.length; j++) {
+                    if (j > 0) out = string.concat(out, ",");
+                    out = string.concat(out, _positionToJson(positions[j]));
+                }
+                out = string.concat(out, "]");
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        out = string.concat(out, "}");
+    }
+
+    // -----------------------------------------------------------------------
     // accounts.json: drives both the test asserts and the bump script.
     // Schema lives in docs/howto/refresh-integration-test-blocks.md.
     // -----------------------------------------------------------------------
@@ -904,18 +1220,29 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Iterate every account in accounts.json whose enabledChains includes _chainId,
     ///         read NAV via getAccountNav, log it, and assert it equals the snapshotted expected value.
-    /// @dev On a failed assertion the message includes the account label so failures are attributable
-    ///      even though all accounts share a single test method.
+    /// @dev Deferred-failure: walks every enabled (account, chain) pair, logs each actual NAV vs
+    ///      expected, accumulates mismatches into a single list, and reverts at the end with a
+    ///      summary if any account failed. This way a single CI run surfaces every drifted snapshot
+    ///      at once instead of stopping at the first mismatch — important when the harness adapter
+    ///      surface changes and many snapshots need re-pinning.
     function _assertNavsForCurrentChain() internal view {
         require(_chainId != 0, "_chainId not set");
         string memory json = _readAccountsJson();
 
+        uint256 mismatches = 0;
         uint256 i;
         while (true) {
             string memory base = string.concat(".accounts[", vm.toString(i), "]");
             if (!vm.keyExists(json, base)) break;
 
-            address account = vm.parseAddress(json.readString(string.concat(base, ".address")));
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
             string memory label = json.readString(string.concat(base, ".label"));
             uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
 
@@ -929,14 +1256,32 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
                 INAVCalculator.NAV memory n = _readUsdNav(account);
                 _logNav(label, account);
-                assertEq(n.value, expected, string.concat(label, " NAV mismatch (8dp USD)"));
-                assertEq(n.stalePriceAssets.length, 0, string.concat(label, ": stale prices present"));
-                assertEq(n.sequencerDown, false, string.concat(label, ": sequencer down"));
+                if (n.value != expected) {
+                    console2.log("[NAV-MISMATCH]", label, "chainId:", _chainId);
+                    console2.log("  expected (8dp USD):", expected);
+                    console2.log("  actual   (8dp USD):", n.value);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
+                if (n.stalePriceAssets.length != 0) {
+                    console2.log("[STALE-PRICES]", label, "count:", n.stalePriceAssets.length);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
+                if (n.sequencerDown) {
+                    console2.log("[SEQUENCER-DOWN]", label);
+                    unchecked {
+                        ++mismatches;
+                    }
+                }
             }
             unchecked {
                 ++i;
             }
         }
+        require(mismatches == 0, "one or more NAV assertions failed; see [NAV-MISMATCH] logs above");
     }
 
     function _readAccountsJson() internal view returns (string memory) {
@@ -949,5 +1294,76 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             if (haystack[i] == needle) return true;
         }
         return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Snapshot emission — called by refresh-integration-snapshot.sh via
+    // `forge test --match-test test_emitSnapshots` (replaces forge script to
+    // avoid the chain-1 hang documented in docs/howto/refresh-integration-test-blocks.md).
+    // -----------------------------------------------------------------------
+
+    /// @notice Emits SNAPSHOT lines + writes nav-positions JSON without asserting.
+    ///         Always passes; the shell script greps SNAPSHOT lines and applies them to
+    ///         accounts.json with jq — identical to the forge-script path.
+    function test_emitSnapshots() public {
+        _emitNavSnapshotsForCurrentChain();
+        _emitNavPositionsForCurrentChain();
+    }
+
+    function _emitNavSnapshotsForCurrentChain() internal view {
+        string memory json = _readAccountsJson();
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
+            uint256[] memory enabled = json.readUintArray(string.concat(base, ".enabledChains"));
+            if (_contains(enabled, _chainId)) {
+                INAVCalculator.NAV memory n = _readUsdNav(account);
+                // SNAPSHOT format must match RefreshIntegrationSnapshot.s.sol exactly so that
+                // the harvest_chain parser in refresh-integration-snapshot.sh works unchanged.
+                console2.log(
+                    string.concat(
+                        "SNAPSHOT|",
+                        vm.toString(_chainId),
+                        "|",
+                        vm.toString(i),
+                        "|",
+                        vm.toString(account),
+                        "|",
+                        vm.toString(n.value),
+                        "|",
+                        n.sequencerDown ? "true" : "false",
+                        "|",
+                        vm.toString(n.stalePriceAssets.length)
+                    )
+                );
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _emitNavPositionsForCurrentChain() internal {
+        vm.writeFile(
+            string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json"),
+            string.concat(
+                '{"chainId":',
+                vm.toString(_chainId),
+                ',"forkBlock":',
+                vm.toString(_forkBlock),
+                ',"accounts":',
+                _buildPositionDetailsJson(),
+                "}"
+            )
+        );
     }
 }

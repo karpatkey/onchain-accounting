@@ -7,18 +7,20 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Aave Umbrella Balance Oracle (multi-token, dynamic discovery)
 /// @author kpk
 /// @notice Reports balances across every Aave Umbrella stake token registered with a single
 ///         `RewardsController` (the protocol's trust anchor, pinned at construction). For each
-///         stake position the adapter emits two `PositionBalance` entries:
-///           - `(<bareReserve>, "<stkSymbol> Staked")` — the user's principal denominated in the
-///             bare reserve token (e.g. USDC, USDT, WETH, GHO).
-///           - `(<bareReserve>, "<stkSymbol> Rewards")` — the user's claimable but unclaimed
-///             rewards, also denominated in the bare reserve. Reward aTokens are 1:1 unit-equivalent
-///             with their underlying reserve, so the amount returned by `calculateCurrentUserRewards`
-///             can be treated as bare-reserve-denominated.
+///         stake position the adapter emits up to two `PositionBalance` entries:
+///           - `(<bareReserve>, type="Staking")` — the user's principal denominated in the bare
+///             reserve token (e.g. USDC, USDT, WETH, GHO).
+///           - `(<bareReserve>, type="Rewards")` — the user's claimable but unclaimed rewards,
+///             also denominated in the bare reserve. Reward aTokens are 1:1 unit-equivalent with
+///             their underlying reserve, so the amount returned by `calculateCurrentUserRewards`
+///             can be treated as bare-reserve-denominated. The `underlyingAsset` field disambiguates
+///             which stake token the position belongs to.
 /// @dev The full Umbrella stake-token set is discovered at runtime via
 ///      `RewardsController.getAllAssets()`. For each stake token the adapter follows at most one
 ///      ERC4626 wrapper hop on the `asset()` chain — `stk → waToken → bare reserve` for the
@@ -53,11 +55,6 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     ///      `deposit()`, USDC's proxy chain) from burning the caller's remaining gas budget.
     uint256 private constant PROBE_GAS = 30_000;
 
-    /// @dev Larger gas budget for `symbol()` since it returns a dynamic string and Solidity's ABI
-    ///      decoder needs to read the length prefix plus the payload. 50k is plenty for any
-    ///      reasonable symbol (≤ 32 bytes).
-    uint256 private constant SYMBOL_PROBE_GAS = 50_000;
-
     //
     // State
     //
@@ -71,6 +68,10 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
     string public PROTOCOL;
+    /// @notice JSON metadata base (no closing `}`)
+    string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (rewardsController address)
+    string private _positionId;
 
     //
     // Constructor
@@ -79,13 +80,25 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     /// @param rewardsController The Umbrella RewardsController address (registry root). Required to be a contract.
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
     /// @param protocol_ Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
-    constructor(address rewardsController, address navCalculator, string memory protocol_) {
-        if (rewardsController == address(0) || navCalculator == address(0)) revert InvalidArguments();
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (rewardsController address).
+    constructor(
+        address rewardsController,
+        address navCalculator,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_
+    ) {
+        if (rewardsController == address(0) || navCalculator == address(0)) {
+            revert InvalidArguments();
+        }
         require(rewardsController.code.length > 0, "RewardsController must be a contract");
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
         NAV_CALCULATOR = INAVCalculator(navCalculator);
         PROTOCOL = protocol_;
+        _positionDetail = positionDetail_;
+        _positionId = positionId_;
     }
 
     //
@@ -190,7 +203,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns one PositionBalance per `(stakeToken, leg)` pair where `leg ∈ {Staked, Rewards}`.
+    /// @notice Returns one PositionBalance per `(stakeToken, leg)` pair where `leg ∈ {Staking, Rewards}`.
     /// @dev Each emitted position is self-describing through `positionDetail`. Zero-amount legs are
     ///      skipped. Stake tokens whose bare reserve is not registered on NAVCalculator are
     ///      silently skipped (same convention as `AaveV3InstanceBalanceOracle`).
@@ -218,8 +231,6 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, bare);
             if (assetMeta.asset == address(0)) continue;
 
-            string memory base = _safeSymbol(stk);
-
             // Staked-token leg.
             uint256 stakedAmount = _stakedUnderlying(stk, account);
             if (stakedAmount != 0) {
@@ -229,7 +240,8 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: stakedAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(base, " Staked")
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
+                    positionId: _positionId
                 });
             }
 
@@ -242,7 +254,8 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     amount: rewardAmount,
                     isDebt: false,
                     protocol: PROTOCOL,
-                    positionDetail: string.concat(base, " Rewards")
+                    positionDetail: PositionType.withType(_positionDetail, PositionType.REWARDS),
+                    positionId: _positionId
                 });
             }
         }
@@ -347,28 +360,6 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
         (bool ok, bytes memory ret) = token.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("asset()"));
         if (!ok || ret.length < 32) return address(0);
         return abi.decode(ret, (address));
-    }
-
-    /// @dev `IERC20Metadata.symbol()` via low-level staticcall with bounded gas. Falls back to the
-    ///      literal string `"stk"` when the token doesn't implement `symbol()` cleanly so emitted
-    ///      `positionDetail` still discriminates legs (`"stk Staked"` / `"stk Rewards"`) rather
-    ///      than emitting an empty prefix.
-    function _safeSymbol(address token) internal view returns (string memory) {
-        (bool ok, bytes memory ret) = token.staticcall{gas: SYMBOL_PROBE_GAS}(abi.encodeWithSignature("symbol()"));
-        if (!ok || ret.length == 0) return "stk";
-        // ABI-decoding a `string` requires the offset+length+payload layout; if the response is
-        // malformed (e.g. a permissive fallback returning short data), fall back to "stk".
-        try this._decodeString(ret) returns (string memory s) {
-            return bytes(s).length == 0 ? "stk" : s;
-        } catch {
-            return "stk";
-        }
-    }
-
-    /// @dev External wrapper around `abi.decode` so the call site can `try` the decode itself.
-    ///      Marked `external` so it is reachable via `this._decodeString(...)` from internal code.
-    function _decodeString(bytes memory raw) external pure returns (string memory) {
-        return abi.decode(raw, (string));
     }
 
     //

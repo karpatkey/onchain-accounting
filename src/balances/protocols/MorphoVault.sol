@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Morpho Vault Balance Oracle
 /// @author kpk
@@ -38,8 +39,10 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier for this oracle
     string private _protocol;
-    /// @notice Position detail identifier for this oracle
+    /// @notice JSON metadata base (no closing `}`); append `}` at emit time
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (vault address)
+    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -49,9 +52,16 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
 
     /// @param vault_ The address of the Morpho ERC4626 vault
     /// @param protocol_ Protocol identifier (e.g., "Morpho")
-    /// @param positionDetail_ Position detail (e.g., "kpkUSDC Vault")
+    /// @param positionDetail_ JSON metadata base without closing `}` (e.g., `{"protocol":"Morpho","product":"Vault","name":"kpk USDC Prime V1"`)
+    /// @param positionId_ Stable hex identifier for this adapter instance (vault address)
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access
-    constructor(address vault_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address vault_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         if (vault_ == address(0)) revert InvalidArguments();
         require(vault_.code.length > 0, "Vault must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -61,6 +71,7 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
         require(ASSET != address(0), "Vault asset must be non-zero");
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -215,7 +226,8 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
+                positionId: _positionId
             });
             positionCount++;
         }

@@ -47,7 +47,9 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(USDC);
-        oracle = new CapBalanceOracle(CUSD, STCUSD, USDC, "Cap", "cUSD + stcUSD", address(balances));
+        oracle = new CapBalanceOracle(
+            CUSD, STCUSD, USDC, "Cap", "cUSD + stcUSD", "0x0000000000000000000000000000000000000001", address(balances)
+        );
     }
 
     // ============================================
@@ -122,7 +124,7 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, EXPECTED_USDC_AMOUNT, "Position amount should match expected");
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocol, "Cap");
-        assertEq(positions[0].positionDetail, "cUSD + stcUSD");
+        assertEq(positions[0].positionDetail, "cUSD + stcUSD,\"type\":\"Supply\"}");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {

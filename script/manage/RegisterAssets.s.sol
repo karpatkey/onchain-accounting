@@ -293,7 +293,7 @@ contract RegisterAssets is BaseDeployScript {
     ///         Add new tokens to assets.json and append the symbol here for the right chain.
     function _symbolsForChain(uint256 chainId) private pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](28);
+            string[] memory s = new string[](31);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -322,10 +322,13 @@ contract RegisterAssets is BaseDeployScript {
             s[25] = "crvUSD";
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
+            s[28] = "COMP";
+            s[29] = "WBTC";
+            s[30] = "AAVE";
             return s;
         }
         if (chainId == 42161) {
-            string[] memory s = new string[](11);
+            string[] memory s = new string[](12);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -337,6 +340,7 @@ contract RegisterAssets is BaseDeployScript {
             s[8] = "USDT";
             s[9] = "GHO";
             s[10] = "syrupUSDC";
+            s[11] = "COMP";
             return s;
         }
         if (chainId == 100) {
@@ -352,7 +356,7 @@ contract RegisterAssets is BaseDeployScript {
             return s;
         }
         if (chainId == 8453) {
-            string[] memory s = new string[](8);
+            string[] memory s = new string[](9);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -361,16 +365,18 @@ contract RegisterAssets is BaseDeployScript {
             s[5] = "MORPHO";
             s[6] = "USDC";
             s[7] = "GHO";
+            s[8] = "COMP";
             return s;
         }
         if (chainId == 10) {
             // Include all tokens defined for chain 10 in assets.json
-            string[] memory s = new string[](5);
+            string[] memory s = new string[](6);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
             s[3] = "USDC";
             s[4] = "USDT";
+            s[5] = "COMP";
             return s;
         }
         if (chainId == 56) {

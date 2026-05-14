@@ -25,14 +25,7 @@ src/
 │   ├── Balances.sol    # Abstract registry (oracles, assets, getBalance)
 │   ├── IBalances.sol
 │   ├── IBalanceOracleAdapter.sol
-│   └── protocols/      # Per-protocol balance adapters
-│       ├── ERC20DefaultOracle.sol   # Plain ERC20 + native
-│       ├── AaveV3Instance.sol
-│       ├── CompoundV3Comet.sol
-│       ├── MorphoMarket.sol
-│       ├── SparkLend.sol
-│       ├── GMX.sol
-│       └── ...
+│   └── protocols/      # Per-protocol balance adapters. Full inventory in src/balances/BALANCE_ADAPTERS.md.
 ├── prices/             # Price feeds
 │   ├── Prices.sol      # Abstract: Chainlink + custom, staleness, L2 sequencer
 │   ├── IPrices.sol
@@ -69,7 +62,7 @@ test/
   - `underlyingAssetsSupported()` → which assets this oracle reports on
 - **Protocol adapters** in `src/balances/protocols/`:
   - **ERC20DefaultOracle**: Plain ERC20 and native token balances.
-  - **AaveV3Instance**, **AaveV3SafetyModule**, **CompoundV3Comet**, **MorphoMarket**, **SparkLend**, **BalancerV3**, **Aura**, **GMX**, **DaiDsr**, **StakeWiseV3Vault**, **StakeWiseV3OsToken**, **SkySavingsUsds**: Protocol-specific positions (supply, borrow, LP, etc.).
+  - Protocol-specific positions (supply, borrow, LP, rewards, lockups, withdrawal queues): **AaveV3Instance**, **AaveV3SafetyModule**, **AaveV2Instance**, **AaveUmbrella**, **CompoundV3Comet**, **MorphoMarket**, **MorphoVault**, **SparkLend**, **BalancerV3**, **Aura**, **Curve**, **Convex**, **Cap**, **DaiDsr**, **SkySavingsUsds**, **FluidFToken**, **FluidVault**, **GearboxMarket**, **StakeWiseV3OsToken**, **StakeWiseV3Vault**, **StaderWithdrawalQueue**, **UniswapV2**, **UniswapV3**, **PancakeSwapV2**, **PancakeSwapV3**, **MerklRewards**. Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
 
 Balance oracles return **PositionBalance** (asset, amount, isDebt, protocol, positionDetail). The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale).
 
@@ -86,7 +79,7 @@ Balance oracles return **PositionBalance** (asset, amount, isDebt, protocol, pos
 ## NAV (NAVCalculator)
 
 - **`NAVCalculator`**: Inherits **Prices** and **Balances**, and adds:
-  - Single `initialize(admin, assetRecoverer, chainlinkL2SequencerUptimeFeed)`: deploys and registers **ERC20DefaultOracle**, inits Prices and Balances.
+  - Single `initialize(admin, chainlinkL2SequencerUptimeFeed, nativeTokenSymbol)`: deploys and registers **ERC20DefaultOracle**, inits Prices and Balances. Pass `address(0)` for the sequencer feed on chains without L2 sequencer (Mainnet, Gnosis).
   - **MANAGER** role: register assets (with price feed), add/remove balance oracles, set/unsets price feeds.
   - **Assets**: Registered via `registerAsset(asset, oracle, priceType, chainlinkHeartbeat)` (asset must have a price feed).
   - **Balance oracles**: Added with `addBalanceOracle(oracle)`; each oracle must implement `IBalanceOracleAdapter` and list supported assets.
@@ -168,7 +161,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 | `@optimism/` | Optimism contracts-bedrock (Superchain adapter) |
 | `aave-v3-core/` | Aave V3 |
 | `comet-contracts/` | Compound III |
-| `morpho-blue/` | Morpho Blue |
+| `morpho-blue/` | Morpho |
 | `gmx-contracts/` | GMX |
 | `openzeppelin-foundry-upgrades/` | UUPS deploy helpers |
 

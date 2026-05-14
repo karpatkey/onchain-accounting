@@ -57,7 +57,15 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterTestBase {
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_getSupportedAssets());
         // Pool: Aave GHO/USDT/USDC; position type: Supplied
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
+        oracle = new BalancerV3PoolBalanceOracle(
+            POOL,
+            GAUGE,
+            BALANCER_MINTER,
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
     }
 
     function _getSupportedAssets() internal pure returns (address[] memory) {
@@ -77,7 +85,15 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOracleBalanceForAsset_tenderly_expectedValues() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_TENDERLY);
         balances = _deployBalancesForOracle(_getSupportedAssets());
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
+        oracle = new BalancerV3PoolBalanceOracle(
+            POOL,
+            GAUGE,
+            BALANCER_MINTER,
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         (uint256 amountUsdt, bool isDebtUsdt) = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDT);
         (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(USER_TENDERLY, USDC);
@@ -94,7 +110,15 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOracleBalanceForAsset_mainnet_staked_gauge() public {
         vm.rollFork(FORK_BLOCK_2);
         balances = _deployBalancesForOracle(_getSupportedAssets());
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
+        oracle = new BalancerV3PoolBalanceOracle(
+            POOL,
+            GAUGE,
+            BALANCER_MINTER,
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         _assertOracleBalancesMatchRedemption(MAINNET_STAKED_USER);
     }
@@ -106,7 +130,15 @@ contract BalancerV3PoolBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOracleBalanceForAsset_mainnet_staked_gauge_AfterRedeem() public {
         vm.rollFork(FORK_BLOCK_3);
         balances = _deployBalancesForOracle(_getSupportedAssets());
-        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, "Balancer v3", address(balances));
+        oracle = new BalancerV3PoolBalanceOracle(
+            POOL,
+            GAUGE,
+            BALANCER_MINTER,
+            "Balancer v3",
+            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
 
         _assertOracleBalancesMatchRedemption(MAINNET_STAKED_USER);
     }

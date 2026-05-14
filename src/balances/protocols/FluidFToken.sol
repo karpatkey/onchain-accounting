@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
+import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Fluid fToken Balance Oracle
 /// @author kpk
@@ -42,8 +43,10 @@ contract FluidFTokenBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Protocol identifier (e.g. "Fluid Lending")
     string private _protocol;
-    /// @notice Position detail (e.g. "fUSDC")
+    /// @notice JSON metadata base (no closing `}`)
     string private _positionDetail;
+    /// @notice Stable hex identifier for this adapter instance (fToken address)
+    string private _positionId;
 
     //
     // Constructor
@@ -51,9 +54,16 @@ contract FluidFTokenBalanceOracle is IBalanceOracleAdapter {
 
     /// @param fToken_ The Fluid Lending fToken contract address (ERC4626).
     /// @param protocol_ Protocol identifier (e.g. "Fluid Lending").
-    /// @param positionDetail_ Position detail (e.g. "fUSDC").
+    /// @param positionDetail_ JSON metadata base without closing `}`.
+    /// @param positionId_ Stable hex identifier for this adapter instance (fToken address).
     /// @param navCalculator_ NAVCalculator address (asset registry source).
-    constructor(address fToken_, string memory protocol_, string memory positionDetail_, address navCalculator_) {
+    constructor(
+        address fToken_,
+        string memory protocol_,
+        string memory positionDetail_,
+        string memory positionId_,
+        address navCalculator_
+    ) {
         if (fToken_ == address(0)) revert InvalidArguments();
         require(fToken_.code.length > 0, "fToken must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -63,6 +73,7 @@ contract FluidFTokenBalanceOracle is IBalanceOracleAdapter {
         require(ASSET != address(0), "fToken asset must be non-zero");
         _protocol = protocol_;
         _positionDetail = positionDetail_;
+        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -215,7 +226,8 @@ contract FluidFTokenBalanceOracle is IBalanceOracleAdapter {
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocol: _protocol,
-                positionDetail: _positionDetail
+                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
+                positionId: _positionId
             });
             positionCount++;
         }

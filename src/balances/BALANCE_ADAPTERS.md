@@ -183,7 +183,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **FluidVault** | Fluid Smart Vault — reports collateral and debt legs per vault. | |
 | **GearboxMarket** | Gearbox passive lending pool dToken balance. | |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. | Mutable per-(user, token) cache, `onlyOwner` writes, proofs verified against the live Distributor root. The framework's documented mutable-adapter exception. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. |
-| **MorphoMarket** | Morpho market positions (collateral supply, loan supply, borrow). `positionId` derived automatically from `marketId` via `Strings.toHexString` — no separate constructor param needed. | |
+| **MorphoMarket** | Morpho market positions emitted **gross** by `getOraclePositions`: up to 3 rows per call — collateral, loan-token supply (`isDebt=false`), loan-token borrow (`isDebt=true`) — each guarded by `> 0`. Same `(positionDetail.type ∈ {Supply, Borrow, Collateral})` discriminators. Simple getters `getOracleBalanceForAsset` / `getOracleBalances` keep netting the loan token (one signed entry per asset), matching Aave V2/V3's simple-getter convention. `positionId` derived automatically from `marketId` via `Strings.toHexString` — no separate constructor param needed. | |
 | **MorphoVault** | Morpho ERC4626 vault (MetaMorpho) share balance converted to underlying. | |
 | **SkySavingsUsds** | Sky savings USDS. | |
 | **SparkLend** | Spark lending positions (subclass of AaveV3Instance). | |

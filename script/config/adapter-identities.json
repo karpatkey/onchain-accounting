@@ -71,7 +71,7 @@
   },
 
   "MorphoMarket": {
-    "$perPositionFields": "type: Supply | Borrow | Collateral",
+    "$perPositionFields": "type: Supply | Borrow | Collateral. getOraclePositions emits gross — Supply and Borrow on the loan token are separate rows when both supplyShares > 0 and borrowShares > 0 (up to 3 rows per call: Collateral + Supply + Borrow). The simple getters getOracleBalanceForAsset / getOracleBalances still net the loan token.",
     "$positionIdNote": "positionId is derived automatically from marketId (Strings.toHexString(uint256(marketId), 32)) — not a constructor parameter.",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<collateral/loan pair>" }

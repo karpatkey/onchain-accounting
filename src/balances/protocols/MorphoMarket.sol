@@ -274,6 +274,9 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
             loanEligible = loanEligible && assetFilter == LOAN_TOKEN;
             collateralEligible = collateralEligible && assetFilter == COLLATERAL_TOKEN;
         }
+        if (!loanEligible && !collateralEligible) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
         // 2. Read position state once, derive gross per-leg amounts.
         Position memory position = MORPHO.position(MARKET_ID, account);

@@ -17,19 +17,25 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Morpho Market Balance Oracle
 /// @author kpk
-/// @notice Returns the underlying token equivalent balance for either the supplied/loan asset or the collateral asset
-/// for a given account. There are two cases for the calculation of the balance:
-///    1. Supplied/Loan Token: The balance for the supplied/loan token is calculated as the difference between the
-///       supplied assets and borrowed assets. The supplied assets are determined based on the user's supply
-///       shares relative to the total supply shares of the market. Similarly, the borrowed assets are determined based
-///       on the user's borrow shares relative to the total borrow shares. Both values are scaled by the total supply
-///       and borrow assets to obtain the corresponding amounts in terms of the underlying asset.
-///    2. Collateral Token: The balance for the collateral token is simply the amount of collateral held by the user in
-///       the market position, without any need for scaling or adjustments.
-/// @dev The rounding for the borrow and supply amounts is done conservatively:
-///    - Borrowed Assets: Rounded up (`Math.Rounding.Ceil`) to ensure that the debt is not underestimated.
-///    - Supplied Assets: Rounded down (`Math.Rounding.Floor`) to ensure that the supplied assets are not
-/// overestimated.
+/// @notice Returns the underlying token equivalent balances for a given account on a single Morpho Blue market.
+///         Two underlying assets are tracked per market: the loan token and the collateral token. Morpho stores
+///         three independent per-user values (`supplyShares`, `borrowShares`, `collateral`); a single account can
+///         legally hold non-zero values across all three simultaneously.
+/// @dev Emission shape per getter:
+///    - `getOraclePositions`: **gross.** Emits up to three rows when their respective legs are non-zero:
+///        1. Collateral row (collateral token, `isDebt = false`)
+///        2. Loan-supplied row (loan token, `isDebt = false`)
+///        3. Loan-borrowed row (loan token, `isDebt = true`)
+///      The supply and borrow legs on the loan token are emitted as separate rows when both are non-zero,
+///      distinguished only by `isDebt`. This matches the gross-emission convention used by Aave V2/V3, Spark,
+///      Compound V3, and Fluid Vault — consumers building cross-protocol UIs see a uniform shape.
+///    - `getOracleBalanceForAsset` / `getOracleBalances`: **net** on the loan token (one signed entry per asset),
+///      matching the simple-getter convention used by other lending adapters.
+/// @dev Per-asset amount derivation:
+///    - Supplied (loan) / Borrowed (loan): user's share fraction × market totals (projected via
+///      `expectedMarketBalances`). Rounding is conservative — `Floor` on supply to avoid overstating credits,
+///      `Ceil` on borrow to avoid understating debts.
+///    - Collateral: raw `position.collateral`, no scaling.
 contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     //
     // Libraries
@@ -233,9 +239,11 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns balance-only positions for the account's Morpho positions
-    /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
-    /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+    /// @notice Returns balance-only positions for the account's Morpho market position.
+    /// @dev Emits up to three rows (each guarded by `> 0`): one collateral row plus separate supply and
+    ///      borrow rows on the loan token. See contract-level NatSpec for the gross-emission rationale.
+    /// @dev Returns PositionBalance structs (balance-only data) without pricing information; NAVCalculator
+    ///      enriches them with prices to build full Position structs.
     /// @dev Only returns positions for assets that are both supported by Morpho and registered in NAVCalculator.
     function getOraclePositions(address account, address assetFilter)
         external
@@ -243,50 +251,77 @@ contract MorphoMarketBalanceOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        // 1. Determine which of the two supported assets are registered in NAVCalculator and pass the filter.
         address[] memory supportedAssets = this.underlyingAssetsSupported();
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         address[] memory registeredAssets = new address[](reg.length);
         for (uint256 i = 0; i < reg.length; i++) {
             registeredAssets[i] = reg[i].asset;
         }
-
-        // Find intersection: assets that are both supported and registered
         address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
 
-        AssetBalanceData[] memory assetBalanceData;
         if (registeredSupportedAssets.length == 0) {
-            assetBalanceData = new AssetBalanceData[](0);
-        } else if (assetFilter != address(0)) {
-            assetBalanceData = new AssetBalanceData[](0);
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                if (registeredSupportedAssets[i] == assetFilter) {
-                    (uint256 amount, bool isDebt) = _calculateBalance(assetFilter, account);
-                    if (amount != 0) {
-                        assetBalanceData = new AssetBalanceData[](1);
-                        assetBalanceData[0] = AssetBalanceData({asset: assetFilter, amount: amount, isDebt: isDebt});
-                    }
-                    break;
-                }
-            }
-        } else {
-            // Pre-allocate temporary array (max size)
-            AssetBalanceData[] memory tempData = new AssetBalanceData[](registeredSupportedAssets.length);
-            uint256 count = 0;
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
-            for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
-                (uint256 amount, bool isDebt) = _calculateBalance(registeredSupportedAssets[i], account);
-                if (amount != 0) {
-                    tempData[count] =
-                        AssetBalanceData({asset: registeredSupportedAssets[i], amount: amount, isDebt: isDebt});
-                    count++;
-                }
-            }
+        bool loanEligible;
+        bool collateralEligible;
+        for (uint256 i = 0; i < registeredSupportedAssets.length; i++) {
+            if (registeredSupportedAssets[i] == LOAN_TOKEN) loanEligible = true;
+            if (registeredSupportedAssets[i] == COLLATERAL_TOKEN) collateralEligible = true;
+        }
+        if (assetFilter != address(0)) {
+            loanEligible = loanEligible && assetFilter == LOAN_TOKEN;
+            collateralEligible = collateralEligible && assetFilter == COLLATERAL_TOKEN;
+        }
+        if (!loanEligible && !collateralEligible) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
-            // Resize to actual count
-            assetBalanceData = new AssetBalanceData[](count);
-            for (uint256 i = 0; i < count; i++) {
-                assetBalanceData[i] = tempData[i];
+        // 2. Read position state once, derive gross per-leg amounts.
+        Position memory position = MORPHO.position(MARKET_ID, account);
+
+        uint256 collateralAmount;
+        if (collateralEligible) {
+            collateralAmount = uint256(position.collateral);
+        }
+
+        uint256 suppliedAssets;
+        uint256 borrowedAssets;
+        if (loanEligible) {
+            MarketParams memory marketParams = MORPHO.idToMarketParams(MARKET_ID);
+            (
+                uint256 totalSupplyAssets,
+                uint256 totalSupplyShares,
+                uint256 totalBorrowAssets,
+                uint256 totalBorrowShares
+            ) = MORPHO.expectedMarketBalances(marketParams);
+
+            if (totalSupplyShares != 0 && position.supplyShares != 0) {
+                suppliedAssets = totalSupplyAssets.mulDiv(position.supplyShares, totalSupplyShares, Math.Rounding.Floor); // Round down to avoid overestimating supply
             }
+            if (totalBorrowShares != 0 && position.borrowShares != 0) {
+                borrowedAssets = totalBorrowAssets.mulDiv(position.borrowShares, totalBorrowShares, Math.Rounding.Ceil); // Round up to avoid underestimating debt
+            }
+        }
+
+        // 3. Emit up to three guarded rows: collateral, loan-supplied, loan-borrowed.
+        AssetBalanceData[] memory tempData = new AssetBalanceData[](3);
+        uint256 count = 0;
+
+        if (collateralEligible && collateralAmount > 0) {
+            tempData[count++] = AssetBalanceData({asset: COLLATERAL_TOKEN, amount: collateralAmount, isDebt: false});
+        }
+        if (loanEligible && suppliedAssets > 0) {
+            tempData[count++] = AssetBalanceData({asset: LOAN_TOKEN, amount: suppliedAssets, isDebt: false});
+        }
+        if (loanEligible && borrowedAssets > 0) {
+            tempData[count++] = AssetBalanceData({asset: LOAN_TOKEN, amount: borrowedAssets, isDebt: true});
+        }
+
+        AssetBalanceData[] memory assetBalanceData = new AssetBalanceData[](count);
+        for (uint256 i = 0; i < count; i++) {
+            assetBalanceData[i] = tempData[i];
         }
         positions = _buildPositions(assetBalanceData);
     }

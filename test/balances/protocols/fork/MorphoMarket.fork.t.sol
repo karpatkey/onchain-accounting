@@ -30,6 +30,25 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
     uint256 public constant FORK_BLOCK_WSTETH_USDC = 20_361_884;
     uint256 public constant FORK_BLOCK_USDC_DAI_MKR = 20_728_491;
 
+    // --- Gross emission verification scenario (added 2026-05-14) ---
+    /// @notice apxUSD/apyUSD Morpho market — picked because the candidate account has all three legs
+    ///         (supply, borrow, collateral) simultaneously non-zero at the pinned block, which exercises
+    ///         the new gross-emission path. Block was the latest mainnet head when this test was written.
+    /// @dev Sourced via the Morpho blue-api on 2026-05-14:
+    ///      https://blue-api.morpho.org/graphql — `marketPositions(supplyShares_gte: 1, borrowShares_gte: 1)`.
+    Id public constant MARKET_ID_APXUSD_APYUSD =
+        Id.wrap(0xe23380494e365453f72f736f2d941959ae945773eb67a06cf4f538c7c4201264);
+    address public constant APXUSD = 0x98A878b1Cd98131B271883B390f68D2c90674665;
+    address public constant APYUSD = 0x38EEb52F0771140d10c4E9A9a72349A329Fe8a6A;
+    /// @notice Account with simultaneous supply + borrow + collateral on apxUSD/apyUSD market.
+    ///         At block 25,094,065 (live): ~$1.01M apxUSD supplied, ~$3.35M apxUSD borrowed,
+    ///         ~$4.10M apyUSD collateral. Verify on debank:
+    ///         https://debank.com/profile/0x81F5d98eA5aCf65640ce8bB68aa8449b7c304c50
+    ///         or Morpho UI:
+    ///         https://app.morpho.org/ethereum/market/0xe23380494e365453f72f736f2d941959ae945773eb67a06cf4f538c7c4201264
+    address public constant SUPPLY_BORROW_USER = 0x81F5d98eA5aCf65640ce8bB68aa8449b7c304c50;
+    uint256 public constant FORK_BLOCK_APXUSD_APYUSD = 25_094_065;
+
     // Oracle instance
     MorphoMarketBalanceOracle public oracle;
 
@@ -266,5 +285,56 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
 
         uint256 assets = vault.convertToAssets(shares);
         assertGe(assets, MIN_BALANCE_V2, "v2 vault underlying USDC for SAFE (accrues per block)");
+    }
+
+    // ============================================
+    // Gross-emission verification at recent block (debank-verifiable)
+    // ============================================
+
+    /// @notice End-to-end check on a real account holding simultaneous supply + borrow + collateral
+    ///         on the same Morpho market. Verifies that `getOraclePositions` emits THREE rows under the
+    ///         gross-emission contract (instead of the old netted shape). Position state was sourced
+    ///         from Morpho's blue-api at the pinned block; debank / app.morpho.org should show
+    ///         the same shape for the account at or near this block.
+    function test_getOraclePositions_simultaneousSupplyBorrowCollateral_grossEmission() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_APXUSD_APYUSD);
+
+        address[] memory assets = new address[](2);
+        assets[0] = APXUSD;
+        assets[1] = APYUSD;
+        balances = _deployBalancesForOracle(assets);
+
+        oracle = new MorphoMarketBalanceOracle(
+            MORPHO_MAINNET,
+            Id.unwrap(MARKET_ID_APXUSD_APYUSD),
+            "Morpho - apxUSD/apyUSD",
+            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
+            address(balances)
+        );
+
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SUPPLY_BORROW_USER, address(0));
+
+        // Expect THREE rows under gross emission: collateral (apyUSD) + supply (apxUSD) + borrow (apxUSD).
+        assertEq(positions.length, 3, "should emit 3 rows under gross emission");
+
+        bool sawCollateral;
+        bool sawSupply;
+        bool sawBorrow;
+        for (uint256 i = 0; i < positions.length; i++) {
+            INAVCalculator.PositionBalance memory p = positions[i];
+            if (p.underlyingAsset.asset == APYUSD && !p.isDebt) {
+                assertGt(p.amount, 0, "apyUSD collateral row has non-zero amount");
+                sawCollateral = true;
+            } else if (p.underlyingAsset.asset == APXUSD && !p.isDebt) {
+                assertGt(p.amount, 0, "apxUSD supply row has non-zero amount");
+                sawSupply = true;
+            } else if (p.underlyingAsset.asset == APXUSD && p.isDebt) {
+                assertGt(p.amount, 0, "apxUSD borrow row has non-zero amount");
+                sawBorrow = true;
+            }
+        }
+        assertTrue(sawCollateral, "apyUSD collateral row emitted");
+        assertTrue(sawSupply, "apxUSD supply row emitted (separate from borrow - proves gross)");
+        assertTrue(sawBorrow, "apxUSD borrow row emitted (separate from supply - proves gross)");
     }
 }

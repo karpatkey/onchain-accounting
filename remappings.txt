@@ -12,3 +12,4 @@ comet-contracts/=lib/comet/contracts/
 aave-v3-core/=lib/aave-v3-core/contracts/
 gmx-contracts/=lib/gmx-contracts/contracts/
 morpho-blue/=lib/morpho-blue/
+@pythnetwork/pyth-sdk-solidity/=lib/pyth-sdk-solidity/

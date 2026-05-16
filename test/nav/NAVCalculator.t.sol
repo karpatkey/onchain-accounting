@@ -128,30 +128,29 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(foundWeth, "WETH should be registered");
         assertTrue(foundNative, "Native address should be registered");
 
-        (address address_, uint8 decimals, uint256 chainlinkHeartbeat_, IPrices.PriceType priceType_) =
-            nav.priceOracles(address(usdc));
-        assertEq(address_, address(usdcOracle));
-        assertEq(decimals, 8);
-        assertEq(chainlinkHeartbeat_, type(uint256).max);
-        assertEq(uint8(priceType_), uint8(IPrices.PriceType.Custom));
+        IPrices.PriceFeedConfig memory cfg_ = nav.getPriceFeedAt(address(usdc), 0);
+        assertEq(cfg_.priceFeed, address(usdcOracle));
+        assertEq(cfg_.decimals, 8);
+        assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
+        assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Custom));
 
-        (address_, decimals, chainlinkHeartbeat_, priceType_) = nav.priceOracles(address(dai));
-        assertEq(address_, address(daiOracle));
-        assertEq(decimals, 8);
-        assertEq(chainlinkHeartbeat_, 86_400);
-        assertEq(uint8(priceType_), uint8(IPrices.PriceType.Chainlink));
+        cfg_ = nav.getPriceFeedAt(address(dai), 0);
+        assertEq(cfg_.priceFeed, address(daiOracle));
+        assertEq(cfg_.decimals, 8);
+        assertEq(cfg_.chainlinkHeartbeat, 86_400);
+        assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Chainlink));
 
-        (address_, decimals, chainlinkHeartbeat_, priceType_) = nav.priceOracles(address(weth));
-        assertEq(address_, address(wethOracle));
-        assertEq(decimals, 8);
-        assertEq(chainlinkHeartbeat_, type(uint256).max);
-        assertEq(uint8(priceType_), uint8(IPrices.PriceType.Custom));
+        cfg_ = nav.getPriceFeedAt(address(weth), 0);
+        assertEq(cfg_.priceFeed, address(wethOracle));
+        assertEq(cfg_.decimals, 8);
+        assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
+        assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Custom));
 
-        (address_, decimals, chainlinkHeartbeat_, priceType_) = nav.priceOracles(nav.NATIVE_ADDRESS());
-        assertEq(address_, address(ethOracle));
-        assertEq(decimals, 8);
-        assertEq(chainlinkHeartbeat_, type(uint256).max);
-        assertEq(uint8(priceType_), uint8(IPrices.PriceType.Chainlink));
+        cfg_ = nav.getPriceFeedAt(nav.NATIVE_ADDRESS(), 0);
+        assertEq(cfg_.priceFeed, address(ethOracle));
+        assertEq(cfg_.decimals, 8);
+        assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
+        assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Chainlink));
 
         // Configure mockBalanceOracle with all three assets
         address[] memory mockAssets = new address[](3);
@@ -298,7 +297,9 @@ contract NAVCalculatorTest is SuperTest {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
 
-        nav.unsetPriceFeed(address(usdc));
+        Mock_PriceOracleChainlink secondOracle = new Mock_PriceOracleChainlink("Second", 1, 8);
+        nav.addPriceFeed(address(usdc), address(secondOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.removePriceFeedAt(address(usdc), 0);
         vm.stopPrank();
     }
 
@@ -310,11 +311,13 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        Mock_PriceOracleChainlink secondOracle = new Mock_PriceOracleChainlink("Second", 1, 8);
+        nav.addPriceFeed(address(usdc), address(secondOracle), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.unsetPriceFeed(address(usdc));
+        nav.removePriceFeedAt(address(usdc), 0);
         vm.stopPrank();
     }
 
@@ -410,15 +413,13 @@ contract NAVCalculatorTest is SuperTest {
         // USDC is already registered in setup with price feed, so we can directly test unregistering
 
         // Verify price feed exists
-        (address oracle,,,) = nav.priceOracles(address(usdc));
-        assertEq(oracle, address(usdcOracle));
+        assertGt(nav.getPriceFeedCount(address(usdc)), 0); // has a feed
 
         // Unregister asset
         nav.unregisterAsset(address(usdc));
 
         // Verify price feed is removed
-        (oracle,,,) = nav.priceOracles(address(usdc));
-        assertEq(oracle, address(0));
+        assertEq(nav.getPriceFeedCount(address(usdc)), 0); // feeds cleared
         vm.stopPrank();
     }
 
@@ -603,7 +604,8 @@ contract NAVCalculatorTest is SuperTest {
         // Create a stale price oracle with short heartbeat
         Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
-        nav.setPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.addPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.removePriceFeed(address(usdc), address(usdcOracle));
         vm.stopPrank();
 
         // Make price stale by warping time
@@ -794,19 +796,19 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
     }
 
-    function test_setPriceFeed_assetNotRegistered() public {
+    function test_addPriceFeed_assetNotRegistered() public {
         address unregisteredAsset = makeAddr("unregistered");
 
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(AssetNotFound.selector);
-        nav.setPriceFeed(unregisteredAsset, address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addPriceFeed(unregisteredAsset, address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_setPriceFeed_zeroOracle() public {
+    function test_addPriceFeed_zeroOracle() public {
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
-        nav.setPriceFeed(address(usdc), address(0), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addPriceFeed(address(usdc), address(0), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -898,14 +900,10 @@ contract NAVCalculatorTest is SuperTest {
             nav.registerAsset(
                 address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
             );
-        } else {
-            // Only set price feed if not already set
-            (address existingOracle,,,) = nav.priceOracles(address(nav.NATIVE_ADDRESS()));
-            if (existingOracle == address(0)) {
-                nav.setPriceFeed(
-                    address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
-                );
-            }
+        } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
+            nav.addPriceFeed(
+                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            );
         }
         vm.stopPrank();
 
@@ -926,14 +924,10 @@ contract NAVCalculatorTest is SuperTest {
             nav.registerAsset(
                 address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
             );
-        } else {
-            // Only set price feed if not already set
-            (address existingOracle,,,) = nav.priceOracles(address(nav.NATIVE_ADDRESS()));
-            if (existingOracle == address(0)) {
-                nav.setPriceFeed(
-                    address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
-                );
-            }
+        } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
+            nav.addPriceFeed(
+                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            );
         }
         vm.stopPrank();
         vm.deal(safe, 11 ether);
@@ -1245,14 +1239,10 @@ contract NAVCalculatorTest is SuperTest {
             nav.registerAsset(
                 address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
             );
-        } else {
-            // Only set price feed if not already set
-            (address existingOracle,,,) = nav.priceOracles(address(nav.NATIVE_ADDRESS()));
-            if (existingOracle == address(0)) {
-                nav.setPriceFeed(
-                    address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
-                );
-            }
+        } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
+            nav.addPriceFeed(
+                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            );
         }
         vm.stopPrank();
 
@@ -1293,14 +1283,10 @@ contract NAVCalculatorTest is SuperTest {
             nav.registerAsset(
                 address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
             );
-        } else {
-            // Only set price feed if not already set
-            (address existingOracle,,,) = nav.priceOracles(address(nav.NATIVE_ADDRESS()));
-            if (existingOracle == address(0)) {
-                nav.setPriceFeed(
-                    address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
-                );
-            }
+        } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
+            nav.addPriceFeed(
+                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            );
         }
         vm.stopPrank();
 
@@ -1454,7 +1440,8 @@ contract NAVCalculatorTest is SuperTest {
         Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
         // USDC is already registered, just update the price oracle with short heartbeat
-        nav.setPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.addPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.removePriceFeed(address(usdc), address(usdcOracle));
         vm.stopPrank();
 
         // Make price stale by warping time
@@ -1591,14 +1578,10 @@ contract NAVCalculatorTest is SuperTest {
             nav.registerAsset(
                 address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
             );
-        } else {
-            // Only set price feed if not already set
-            (address existingOracle,,,) = nav.priceOracles(address(nav.NATIVE_ADDRESS()));
-            if (existingOracle == address(0)) {
-                nav.setPriceFeed(
-                    address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
-                );
-            }
+        } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
+            nav.addPriceFeed(
+                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            );
         }
         vm.stopPrank();
 

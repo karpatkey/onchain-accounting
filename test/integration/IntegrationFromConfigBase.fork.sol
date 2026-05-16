@@ -895,12 +895,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
-        // pre-registered asset) use setPriceFeed instead of registerAsset.
+        // pre-registered asset) add the first price feed via addPriceFeed.
         if (nav.isAssetRegistered(asset)) {
-            try nav.setPriceFeed(asset, oracle, pt, heartbeat) {
-                console2.log("[asset/setFeed]", symbol, asset);
+            try nav.addPriceFeed(asset, oracle, pt, heartbeat) {
+                console2.log("[asset/addFeed]", symbol, asset);
             } catch (bytes memory err) {
-                console2.log("[asset/setFeed]", symbol, "FAILED");
+                console2.log("[asset/addFeed]", symbol, "FAILED");
                 console2.logBytes(err);
             }
             return;

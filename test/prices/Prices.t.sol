@@ -13,6 +13,14 @@ import {
     Mock_CustomPriceFeedStaled
 } from "test/mocks/price_oracles.sol";
 
+contract Mock_CustomPriceFeedZeroUpdatedAt is Mock_CustomPriceFeed {
+    constructor() Mock_CustomPriceFeed("zero_upd", address(0x1234), 100_000_000, 8) {}
+
+    function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, 0, 0, 0, 0); // updatedAt = 0 → sentinel: treated as block.timestamp-1
+    }
+}
+
 contract PricesHarness is Prices {
     constructor(address chainlinkUptimeFeed) initializer {
         __Prices_init(chainlinkUptimeFeed);
@@ -21,17 +29,25 @@ contract PricesHarness is Prices {
     function setPriceOracle(address token, address oracle, uint256 chainlinkHeartbeat, IPrices.PriceType oracleType)
         public
     {
-        _setPriceFeed(token, oracle, chainlinkHeartbeat, oracleType);
+        _addPriceFeed(token, oracle, chainlinkHeartbeat, oracleType);
     }
 
     function setPriceFeed(address token, address oracle, uint256 chainlinkHeartbeat, IPrices.PriceType oracleType)
         public
     {
-        _setPriceFeed(token, oracle, chainlinkHeartbeat, oracleType);
+        _addPriceFeed(token, oracle, chainlinkHeartbeat, oracleType);
     }
 
     function removePriceOracle(address token) public {
-        _unsetPriceFeed(token);
+        _removeAllPriceFeeds(token);
+    }
+
+    function removePriceFeedAt(address token, uint256 index) public {
+        _removePriceFeedAt(token, index);
+    }
+
+    function removePriceFeedByAddr(address token, address feed) public {
+        _removePriceFeed(token, feed);
     }
 }
 
@@ -115,8 +131,9 @@ contract PricesTest is Test {
         assertFalse(stale);
 
         // Chainlink feed: updatedAt is stale after warp past heartbeat=1.
+        // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
         (value, decimals, stale) = manager.latestPrice(buidl);
-        assertEq(value, 1000);
+        assertEq(value, 0);
         assertEq(decimals, 8);
         assertTrue(stale);
 
@@ -131,8 +148,9 @@ contract PricesTest is Test {
         vm.warp(2);
 
         vm.startPrank(alice);
+        // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
         (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
-        assertEq(value, 100_000_000);
+        assertEq(value, 0);
         assertEq(decimals, 8);
         assertTrue(stale); // stale: getLatestPrice() returns stale=true
 
@@ -160,9 +178,8 @@ contract PricesTest is Test {
     function test_unsetPriceFeed() public {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
         manager.removePriceOracle(buidl);
-        (address oracle,,,) = manager.priceOracles(buidl);
 
-        assertEq(oracle, address(0));
+        assertEq(manager.getPriceFeedCount(buidl), 0);
     }
 
     function test_CheckCustomOracleSupport_ValidCustomOracle() public view {
@@ -207,8 +224,7 @@ contract PricesTest is Test {
     function test_unsetPriceFeed_notSet() public {
         // Unsetting non-existent feed should not revert (delete on non-existent mapping is safe)
         manager.removePriceOracle(usdc);
-        (address oracle,,,) = manager.priceOracles(usdc);
-        assertEq(oracle, address(0));
+        assertEq(manager.getPriceFeedCount(usdc), 0);
     }
 
     // ============================================
@@ -218,11 +234,11 @@ contract PricesTest is Test {
     function test_priceOracles() public {
         manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
 
-        (address oracle, uint8 decimals, uint256 heartbeat, IPrices.PriceType priceType) = manager.priceOracles(usdc);
-        assertEq(oracle, address(oracleusdc));
-        assertEq(decimals, 8);
-        assertEq(heartbeat, type(uint256).max);
-        assertEq(uint8(priceType), uint8(IPrices.PriceType.Custom));
+        IPrices.PriceFeedConfig memory cfg = manager.getPriceFeedAt(usdc, 0);
+        assertEq(cfg.priceFeed, address(oracleusdc));
+        assertEq(cfg.decimals, 8);
+        assertEq(cfg.chainlinkHeartbeat, type(uint256).max);
+        assertEq(uint8(cfg.priceType), uint8(IPrices.PriceType.Custom));
     }
 
     function test_chainlinkL2SequencerUptimeFeed() public view {
@@ -279,5 +295,166 @@ contract PricesTest is Test {
 
         bool stale = managerL2.checkL2SequencerUptime();
         assertTrue(stale);
+    }
+
+    // ============================================
+    // Multi-feed Tests
+    // ============================================
+
+    function test_multiFeed_registration() public {
+        assertEq(manager.getPriceFeedCount(buidl), 0);
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+        assertEq(manager.getPriceFeedCount(buidl), 1);
+
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 200, 8);
+        Mock_PriceOracleChainlink oracle3 = new Mock_PriceOracleChainlink("c", 300, 8);
+        manager.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink);
+        manager.setPriceFeed(buidl, address(oracle3), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        assertEq(manager.getPriceFeedCount(buidl), 3);
+
+        IPrices.PriceFeedConfig[] memory feeds = manager.getPriceFeeds(buidl);
+        assertEq(feeds.length, 3);
+        assertEq(feeds[0].priceFeed, address(oracleaBuidl));
+        assertEq(feeds[1].priceFeed, address(oracle2));
+        assertEq(feeds[2].priceFeed, address(oracle3));
+    }
+
+    function test_multiFeed_cannotRemoveLastFeed() public {
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(abi.encodeWithSelector(IPrices.CannotRemoveLastFeed.selector, buidl));
+        manager.removePriceFeedAt(buidl, 0);
+    }
+
+    function test_multiFeed_removePriceFeedAt_swapWithLast() public {
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 200, 8);
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink); // index 0
+        manager.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink); // index 1
+
+        // Remove index 0: oracle2 swapped to index 0 (swap-with-last).
+        manager.removePriceFeedAt(buidl, 0);
+
+        assertEq(manager.getPriceFeedCount(buidl), 1);
+        assertEq(manager.getPriceFeedAt(buidl, 0).priceFeed, address(oracle2));
+    }
+
+    function test_multiFeed_removePriceFeed_byAddress() public {
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 200, 8);
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+        manager.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        manager.removePriceFeedByAddr(buidl, address(oracleaBuidl));
+
+        assertEq(manager.getPriceFeedCount(buidl), 1);
+        assertEq(manager.getPriceFeedAt(buidl, 0).priceFeed, address(oracle2));
+    }
+
+    function test_multiFeed_removePriceFeed_notFound() public {
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 200, 8);
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+        manager.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        address nonExistent = makeAddr("nonExistent");
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedNotFound.selector, buidl, nonExistent));
+        manager.removePriceFeedByAddr(buidl, nonExistent);
+    }
+
+    function test_multiFeed_duplicateFeed_reverts() public {
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.PriceFeedAlreadyRegistered.selector, buidl, address(oracleaBuidl))
+        );
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+    }
+
+    function test_multiFeed_freshestWins() public {
+        // Three feeds at t=100, t=200, t=300; current block at t=400.
+        vm.warp(100);
+        Mock_PriceOracleChainlink oracle1 = new Mock_PriceOracleChainlink("a", 111, 8); // updatedAt=100
+        vm.warp(200);
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 222, 8); // updatedAt=200
+        vm.warp(300);
+        Mock_PriceOracleChainlink oracle3 = new Mock_PriceOracleChainlink("c", 333, 8); // updatedAt=300
+
+        vm.warp(400);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(oracle1), type(uint256).max, IPrices.PriceType.Chainlink);
+        h.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink);
+        h.setPriceFeed(buidl, address(oracle3), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        (int256 price,, bool stale) = h.latestPrice(buidl);
+        assertEq(price, 333); // oracle3 freshest (updatedAt=300)
+        assertFalse(stale);
+    }
+
+    function test_multiFeed_oneStaleHeartbeat_secondWins() public {
+        // oracle1 stale (heartbeat exceeded), oracle2 fresh — oracle2 wins.
+        vm.warp(100);
+        Mock_PriceOracleChainlink oracle1 = new Mock_PriceOracleChainlink("a", 111, 8); // updatedAt=100
+        vm.warp(200);
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 222, 8); // updatedAt=200
+
+        vm.warp(400);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(oracle1), 250, IPrices.PriceType.Chainlink); // 400-100=300 > 250 → stale
+        h.setPriceFeed(buidl, address(oracle2), 250, IPrices.PriceType.Chainlink); // 400-200=200 < 250 → fresh
+
+        (int256 price,, bool stale) = h.latestPrice(buidl);
+        assertEq(price, 222);
+        assertFalse(stale);
+    }
+
+    function test_multiFeed_allStale_returnsZeroAndStale() public {
+        vm.warp(100);
+        Mock_PriceOracleChainlink oracle1 = new Mock_PriceOracleChainlink("a", 111, 8); // updatedAt=100
+        vm.warp(200);
+        Mock_PriceOracleChainlink oracle2 = new Mock_PriceOracleChainlink("b", 222, 8); // updatedAt=200
+
+        vm.warp(400);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(oracle1), 50, IPrices.PriceType.Chainlink); // 400-100=300 > 50 → stale
+        h.setPriceFeed(buidl, address(oracle2), 50, IPrices.PriceType.Chainlink); // 400-200=200 > 50 → stale
+
+        (int256 price, uint8 decimals, bool stale) = h.latestPrice(buidl);
+        assertEq(price, 0); // all stale → zero
+        assertEq(decimals, 8); // first feed's decimals for unit consistency
+        assertTrue(stale);
+    }
+
+    function test_multiFeed_customFeed_zeroUpdatedAt_survivesAsSentinel() public {
+        // Custom feed returning updatedAt=0 means "no trackable oracle".
+        // Treated as block.timestamp-1 so it passes the staleness gate (survives) but
+        // loses to any feed that reports a real on-chain update timestamp.
+        vm.warp(1000);
+        Mock_CustomPriceFeedZeroUpdatedAt customZero = new Mock_CustomPriceFeedZeroUpdatedAt();
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(customZero), type(uint256).max, IPrices.PriceType.Custom);
+
+        (int256 price,, bool stale) = h.latestPrice(buidl);
+        assertEq(price, 100_000_000); // survives — effective time = block.timestamp-1, not 0
+        assertFalse(stale);
+    }
+
+    function test_multiFeed_clockSkewNormalization() public {
+        // A feed whose updatedAt > block.timestamp (Pyth upstream publish time arriving before EVM push)
+        // must be clamped to block.timestamp and NOT systematically beat a normally-timed feed.
+        // Setup: create futureOracle at t=300, then wind block.timestamp back to t=100.
+        vm.warp(300);
+        Mock_PriceOracleChainlink futureOracle = new Mock_PriceOracleChainlink("future", 999, 8); // _updatedAt=300
+
+        vm.warp(100);
+        Mock_PriceOracleChainlink normalOracle = new Mock_PriceOracleChainlink("normal", 111, 8); // _updatedAt=100
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(normalOracle), type(uint256).max, IPrices.PriceType.Chainlink); // index 0
+        h.setPriceFeed(buidl, address(futureOracle), type(uint256).max, IPrices.PriceType.Chainlink); // index 1
+
+        // normalOracle: updatedAt=100 → effectiveTime=min(100,100)=100
+        // futureOracle: updatedAt=300 > block.timestamp=100 → effectiveTime=min(300,100)=100 (clamped)
+        // Both tie at 100; index 0 (normalOracle) wins the tie.
+        (int256 price,, bool stale) = h.latestPrice(buidl);
+        assertFalse(stale);
+        assertEq(price, 111); // normalOracle wins; futureOracle clamped, no longer beats it
     }
 }

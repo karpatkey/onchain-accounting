@@ -83,11 +83,13 @@ abstract contract TestSetupHelpers is Test {
     /// @notice Safely checks if a price oracle exists for an asset
     /// @param nav The NAVCalculator contract instance
     /// @param asset The asset address
-    /// @return oracle The oracle address (address(0) if not set)
-    /// @return exists Whether a price oracle exists
+    /// @return oracle The first oracle address (address(0) if none registered)
+    /// @return exists Whether at least one price oracle exists
     function safeGetPriceOracle(NAVCalculator nav, address asset) internal view returns (address oracle, bool exists) {
-        (oracle,,,) = nav.priceOracles(asset);
-        exists = oracle != address(0);
+        uint256 count = nav.getPriceFeedCount(asset);
+        if (count == 0) return (address(0), false);
+        oracle = nav.getPriceFeedAt(asset, 0).priceFeed;
+        exists = true;
     }
 
     // ============================================
@@ -114,11 +116,10 @@ abstract contract TestSetupHelpers is Test {
             vm.prank(manager);
             nav.registerAsset(asset, priceOracle, priceType, heartbeat);
         } else {
-            // Check if price feed already exists, set if not
-            (address existingOracle,,,) = nav.priceOracles(asset);
-            if (existingOracle == address(0)) {
+            // Check if price feed already exists, add if not
+            if (nav.getPriceFeedCount(asset) == 0) {
                 vm.prank(manager);
-                nav.setPriceFeed(asset, priceOracle, priceType, heartbeat);
+                nav.addPriceFeed(asset, priceOracle, priceType, heartbeat);
             }
         }
     }

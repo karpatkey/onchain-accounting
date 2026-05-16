@@ -136,7 +136,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         nav.registerAsset(aave, ChainlinkPriceFeeds.aaveUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(gho, ChainlinkPriceFeeds.ghoUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.addPriceFeed(native, ChainlinkPriceFeeds.ethUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(wbtc, ChainlinkPriceFeeds.btcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
     }

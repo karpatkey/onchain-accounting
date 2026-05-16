@@ -56,7 +56,7 @@ contract ERC20DefaultOracleTest is Test {
 
         // Register assets in NAVCalculator (native is pre-registered in initialize)
         vm.startPrank(manager);
-        navCalculator.setPriceFeed(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.addPriceFeed(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);

@@ -100,7 +100,7 @@ abstract contract SuperTest is Test {
         vm.startPrank(navCalculatorManager);
 
         // Native is pre-registered in initialize; set price feed only
-        nav.setPriceFeed(
+        nav.addPriceFeed(
             address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
         );
         // Note: The native address balance oracle is handled by ERC20DefaultOracle which is set up in initialize()

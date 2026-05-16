@@ -70,6 +70,8 @@ Check for an existing entry before adding. The constant is used in fork tests an
 
 No new contract to deploy. The `RegisterAssets.s.sol` script reads `assets.json.tokens` and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for each symbol returned by `_symbolsForChain`. Run it as part of the next deployment cycle or management TX.
 
+To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
+
 ### A.6 Verify
 
 ```bash
@@ -275,7 +277,7 @@ forge script script/manage/RegisterAssets.s.sol \
   --sig 'run()'
 ```
 
-This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, 0)` (or `setPriceFeed(asset, newFeed, ...)` for pre-registered assets needing only a feed swap). Owners sign and execute on the chain's admin Safe.
+This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (first feed) or `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for pre-registered assets needing only a feed added. Owners sign and execute on the chain's admin Safe.
 
 Verify:
 
@@ -286,6 +288,45 @@ cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool)" $myAsset --rp
 Expect `(price > 0, decimals, false)` at a fresh block.
 
 ---
+
+## B.6 Open the PR
+
+---
+
+## C. Adding a redundant feed to an existing asset
+
+Use this path when an asset is already registered and you want to add a second (or third) feed for redundancy — e.g., adding a Redstone or Pyth feed alongside an existing Chainlink feed.
+
+### C.1 Find the feed
+
+**Redstone Classic Push** — browse [app.redstone.finance/push-feeds](https://app.redstone.finance/push-feeds) for the asset and chain. Copy the proxy address and note the heartbeat.
+
+**Pyth Network** — find the price feed ID at [pyth.network](https://pyth.network/price-feeds). Deploy a `PythAggregatorV3` wrapper:
+```solidity
+new PythAggregatorV3(pythCoreContract, bytes32(priceFeedId))
+```
+The Pyth core contract address per chain is documented in [Pyth docs](https://docs.pyth.network/price-feeds/contract-addresses/evm).
+
+**API3** — find the `Api3ReaderProxyV1` proxy address for the asset on [market.api3.org](https://market.api3.org).
+
+### C.2 Add the feed via Safe TX
+
+```solidity
+NAVCalculator.addPriceFeed(asset, feedAddress, PriceType.Redstone /* or Pyth/API3 */, heartbeat)
+```
+
+This appends the feed to the asset's array. On the next read, `Prices._selectFeed` picks the freshest non-stale survivor across all feeds.
+
+### C.3 Verify
+
+```bash
+cast call $NAV_CALCULATOR "getPriceFeedCount(address)(uint256)" $ASSET --rpc-url $RPC
+cast call $NAV_CALCULATOR "getPriceFeedAt(address,uint256)(address,uint8,uint256,uint8)" $ASSET 1 --rpc-url $RPC
+```
+
+### C.4 Remove a superseded feed
+
+To remove an old feed: `NAVCalculator.removePriceFeed(asset, oldFeedAddress)` (MANAGER). Cannot remove the last remaining feed — add the replacement first.
 
 ## B.6 Open the PR
 

@@ -35,7 +35,7 @@ contract ManageAdapters is BaseDeployScript {
 
         // Example: Uncomment and modify to perform specific actions
         // _addBalanceOracle(0x1234...);
-        // _setPriceFeed(0x1234..., 0x5678..., "Chainlink", 86400);
+        // _addPriceFeed(0x1234..., 0x5678..., IPrices.PriceType.Chainlink, 86400);
         // _authorizeBridgeAdapter(0x1234...);
         // _registerAsset("USDC  ", 0x1234...);
     }
@@ -84,18 +84,18 @@ contract ManageAdapters is BaseDeployScript {
         console2.log("Balance oracle to remove:", adapter);
     }
 
-    /// @notice Sets a price feed for an asset in NAVCalculator
+    /// @notice Adds a price feed for an asset in NAVCalculator
     /// @param asset The asset address
     /// @param priceFeed The price feed adapter address
-    /// @param priceType The price type (0 = Chainlink, 1 = Custom)
+    /// @param priceType The price type (0 = Chainlink, 1 = Custom, 2 = Redstone, 3 = Pyth, 4 = API3)
     /// @param heartbeat The heartbeat in seconds
-    function _setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 heartbeat) internal {
+    function _addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 heartbeat) internal {
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         require(navProxy != address(0), "NAVCalculator not deployed");
 
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
         transactions[0] = SafeTxBuilder.call(
-            navProxy, 0, abi.encodeCall(NAVCalculator.setPriceFeed, (asset, priceFeed, priceType, heartbeat))
+            navProxy, 0, abi.encodeCall(NAVCalculator.addPriceFeed, (asset, priceFeed, priceType, heartbeat))
         );
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-set-price-feed.json"));

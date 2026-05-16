@@ -76,8 +76,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
         // If quote asset is not USD, verify it has a price feed
         if (quoteAsset != address(0)) {
             vm.assume(nav.isAssetRegistered(quoteAsset));
-            (address oracle,,,) = nav.priceOracles(quoteAsset);
-            vm.assume(oracle != address(0));
+            vm.assume(nav.getPriceFeedCount(quoteAsset) > 0);
         }
 
         // Should not revert (unless account has invalid state, which is unlikely)
@@ -134,8 +133,7 @@ contract NAVCalculatorFuzzTest is SuperTest {
 
         if (quoteAsset != address(0)) {
             vm.assume(nav.isAssetRegistered(quoteAsset));
-            (address oracle,,,) = nav.priceOracles(quoteAsset);
-            vm.assume(oracle != address(0));
+            vm.assume(nav.getPriceFeedCount(quoteAsset) > 0);
         }
 
         // Should not revert

@@ -87,7 +87,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        nav.setPriceFeed(native, ChainlinkPriceFeeds.ethUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.addPriceFeed(native, ChainlinkPriceFeeds.ethUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);

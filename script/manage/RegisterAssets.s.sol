@@ -21,7 +21,7 @@ import {console2} from "forge-std/console2.sol";
 ///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
 ///     reports status but refuses to write the Safe tx file.
 ///   - Pre-registered assets (notably the NATIVE_ADDRESS sentinel inserted by NAVCalculator.initialize)
-///     are wired up with setPriceFeed instead of registerAsset, so the configured oracle is applied
+///     are wired up with addPriceFeed instead of registerAsset, so the configured oracle is applied
 ///     without reverting on duplicate registration.
 ///   - Output: safe-transactions/{chainId}-register-assets.json
 ///   - With --broadcast, tx(s) are sent from the keystore signer (--account $DEPLOYER_NAME). registerAsset checks MANAGER on-chain (msg.sender).
@@ -49,7 +49,7 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs setPriceFeed
+        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs addPriceFeed
         uint256 skipNoOracle;
         uint256 skipMissingAddress;
         uint256 skipNoContract;
@@ -102,9 +102,8 @@ contract RegisterAssets is BaseDeployScript {
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
-                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need setPriceFeed
-                // to wire the configured oracle. Emitting setPriceFeed unconditionally is idempotent;
-                // if the configured oracle already matches on-chain, the tx is a no-op overwrite.
+                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need addPriceFeed
+                // to wire the configured oracle.
                 console2.log("  TO SET PRICE FEED (pre-registered):", symbol);
                 toSetPriceFeed++;
             } else {
@@ -150,7 +149,7 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        // Second pass: build Safe tx batch — registerAsset for new ones, setPriceFeed for pre-registered ones
+        // Second pass: build Safe tx batch — registerAsset for new ones, addPriceFeed for pre-registered ones
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](totalActions);
         uint256 j = 0;
         for (uint256 i = 0; i < symbols.length; i++) {
@@ -176,10 +175,10 @@ contract RegisterAssets is BaseDeployScript {
             IPrices.PriceType priceType =
                 _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
 
-            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need setPriceFeed,
+            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need addPriceFeed,
             // not registerAsset (which would revert with InvalidArguments — already registered).
             bytes memory callData = preRegistered
-                ? abi.encodeCall(NAVCalculator.setPriceFeed, (asset, oracle, priceType, heartbeat))
+                ? abi.encodeCall(NAVCalculator.addPriceFeed, (asset, oracle, priceType, heartbeat))
                 : abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat));
             transactions[j] = SafeTxBuilder.call(navProxy, 0, callData);
             j++;

@@ -18,8 +18,26 @@ export function explorerAddressUrl(chainId: number, address: string): string {
   return base ? `${base}/address/${address}` : '#'
 }
 
-export const NAV_CALCULATOR_ADDRESS =
-  '0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19' as const
+// Production CREATE2 deployment address (same on every chain).
+// Overrides:
+//   - NEXT_PUBLIC_NAV_ADDRESS (global)            — applied to every chain
+//   - NEXT_PUBLIC_NAV_ADDRESS_<chainId> (per-chain) — wins over the global one
+// Per-chain overrides exist because dev forks deploy via plain CREATE (not CREATE2), so the
+// proxy addresses diverge per chain depending on the deployer EOA's nonce on each fork.
+const DEFAULT_NAV_ADDRESS = '0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19' as const
+const GLOBAL_NAV_OVERRIDE = process.env.NEXT_PUBLIC_NAV_ADDRESS || ''
+export const NAV_CALCULATOR_ADDRESS = (GLOBAL_NAV_OVERRIDE || DEFAULT_NAV_ADDRESS) as `0x${string}`
+
+function resolveNavAddress(chainId: number): `0x${string}` {
+  const perChain = {
+    1:     process.env.NEXT_PUBLIC_NAV_ADDRESS_1,
+    10:    process.env.NEXT_PUBLIC_NAV_ADDRESS_10,
+    100:   process.env.NEXT_PUBLIC_NAV_ADDRESS_100,
+    42161: process.env.NEXT_PUBLIC_NAV_ADDRESS_42161,
+    8453:  process.env.NEXT_PUBLIC_NAV_ADDRESS_8453,
+  }[chainId]
+  return (perChain || GLOBAL_NAV_OVERRIDE || DEFAULT_NAV_ADDRESS) as `0x${string}`
+}
 
 const TW = 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains'
 
@@ -31,6 +49,7 @@ export const DEPLOYED_CHAINS = [
     brandColor: '#627EEA',
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL_1,
     sequencerFeed: null as `0x${string}` | null,
+    navAddress: resolveNavAddress(1),
   },
   {
     chain: optimism,
@@ -39,6 +58,7 @@ export const DEPLOYED_CHAINS = [
     brandColor: '#FF0420',
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL_10,
     sequencerFeed: '0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389' as `0x${string}`,
+    navAddress: resolveNavAddress(10),
   },
   {
     chain: gnosis,
@@ -47,6 +67,7 @@ export const DEPLOYED_CHAINS = [
     brandColor: '#04795B',
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL_100,
     sequencerFeed: null as `0x${string}` | null,
+    navAddress: resolveNavAddress(100),
   },
   {
     chain: arbitrum,
@@ -55,6 +76,7 @@ export const DEPLOYED_CHAINS = [
     brandColor: '#12AAFF',
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL_42161,
     sequencerFeed: '0xFdB631F5EE196F0ed6FAa767959853A9F217697D' as `0x${string}`,
+    navAddress: resolveNavAddress(42161),
   },
   {
     chain: base,
@@ -63,5 +85,6 @@ export const DEPLOYED_CHAINS = [
     brandColor: '#0052FF',
     rpcUrl: process.env.NEXT_PUBLIC_RPC_URL_8453,
     sequencerFeed: '0xBCF85224fc0756B9Fa45aA7892530B47e10b6433' as `0x${string}`,
+    navAddress: resolveNavAddress(8453),
   },
 ] as const

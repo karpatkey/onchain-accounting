@@ -3,7 +3,7 @@
 import { useReadContracts } from 'wagmi'
 import { zeroAddress } from 'viem'
 import { navCalcAbi } from '@/config/abis'
-import { AUTOREFRESH_INTERVAL_MS, DEPLOYED_CHAINS, NAV_CALCULATOR_ADDRESS } from '@/config/chains'
+import { AUTOREFRESH_INTERVAL_MS, DEPLOYED_CHAINS } from '@/config/chains'
 
 export type ChainNav = {
   chainId: number
@@ -20,9 +20,9 @@ export type ChainNav = {
 }
 
 export function useAccountNav(account: `0x${string}` | undefined): { chains: ChainNav[]; refetch: () => void } {
-  const contracts = DEPLOYED_CHAINS.map(({ chain }) => ({
+  const contracts = DEPLOYED_CHAINS.map(({ chain, navAddress }) => ({
     chainId: chain.id,
-    address: NAV_CALCULATOR_ADDRESS,
+    address: navAddress,
     abi: navCalcAbi,
     functionName: 'getAccountNav' as const,
     args: [account ?? zeroAddress, zeroAddress] as const,

@@ -4,7 +4,7 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 
 ## Convention
 
-- Files are named `<NNNN>-<kebab-slug>.md`, numbered monotonically from `0001`.
+- Files are named `<NNNN>-<kebab-slug>.md`. Numbers are allocated monotonically — typically reserved at the moment a PR opens, so simultaneous in-flight PRs each pick the next available number. Gaps are therefore expected when an earlier-numbered ADR is still in review while a later one merges first; the gap fills in when the in-flight PR lands.
 - Each ADR has four sections:
   1. **Status** — one of: `proposed`, `accepted`, `superseded by NNNN`, `deprecated`.
   2. **Context** — what problem prompted the decision; constraints in play.

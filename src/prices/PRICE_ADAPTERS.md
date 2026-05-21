@@ -84,7 +84,7 @@ Every custom feed must implement this interface (and ERC165).
 
 | Method | Purpose |
 |---|---|
-| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. The `stale` flag is ignored by `Prices.sol`; a zero price is the reliable signal. |
+| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. `Prices.sol`'s staleness gate for Custom feeds reads the `stale` flag directly; a zero price is **also** treated as stale by `Prices.sol` as a defence-in-depth signal. |
 | `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` does not read this** for staleness (it uses `getLatestPrice().stale` directly), but `NAVCalculator.getPriceData()` does call it to surface the underlying-oracle `updatedAt` to external callers (dashboards, monitoring tools) through the unified `PriceFeedData` struct. See §5.1 for what to return. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |

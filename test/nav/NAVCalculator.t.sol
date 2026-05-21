@@ -605,13 +605,20 @@ contract NAVCalculatorTest is SuperTest {
         // Per IPriceFeedCustom convention, latestRoundData() returning updatedAt = 0 is the
         // documented sentinel for feeds with no trackable oracle dependency (live on-chain rate).
         // getPriceData() must pass the sentinel through to callers — see ADR 0010.
-        Mock_CustomPriceFeedStaled liveRateOracle = new Mock_CustomPriceFeedStaled("LiveRate", address(usdc), 1e8, 8);
+        //
+        // The live-rate feed is NOT stale (getLatestPrice returns stale=false) — only its
+        // latestRoundData() reports updatedAt=0. Mixing the staleness and the no-oracle-dep
+        // signals in one mock would obscure which one is under test, so this uses the dedicated
+        // Mock_CustomPriceFeedLiveRate that flips ONLY the updatedAt sentinel.
+        Mock_CustomPriceFeedLiveRate liveRateOracle =
+            new Mock_CustomPriceFeedLiveRate("LiveRate", address(usdc), 1e8, 8);
         vm.prank(navCalculatorManager);
         nav.setPriceFeed(address(usdc), address(liveRateOracle), IPrices.PriceType.Custom, type(uint256).max);
 
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
         assertEq(priceFeed.updatedAt, 0);
+        assertFalse(priceFeed.stale, "live-rate feed (no oracle dep) must not be marked stale");
     }
 
     function test_getPriceData_stalePrice() public {

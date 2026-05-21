@@ -160,3 +160,23 @@ contract Mock_CustomPriceFeedStaled is Mock_CustomPriceFeed {
         return (0, 0, 0, 0, 0);
     }
 }
+
+/// @notice Mock representing an `IPriceFeedCustom` feed with **no trackable oracle dependency** —
+///         a live on-chain rate. Per the natspec convention on `IPriceFeedCustom.latestRoundData()`,
+///         such feeds return `(0, 0, 0, 0, 0)` with `updatedAt == 0` as the sentinel. The price
+///         itself is NOT stale (`getLatestPrice()` returns `(price, false)`), so the only signal
+///         a caller has that the feed has no external oracle is the `updatedAt == 0` sentinel.
+///         See docs/decisions/0010-custom-feed-updatedAt-surfacing.md.
+contract Mock_CustomPriceFeedLiveRate is Mock_CustomPriceFeed {
+    constructor(string memory _name, address _addressSupported, uint256 _price, uint8 _decimals)
+        Mock_CustomPriceFeed(_name, _addressSupported, _price, _decimals)
+    {}
+
+    function getLatestPrice() external view override returns (uint256, bool) {
+        return (price, false);
+    }
+
+    function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, 0, 0, 0, 0);
+    }
+}

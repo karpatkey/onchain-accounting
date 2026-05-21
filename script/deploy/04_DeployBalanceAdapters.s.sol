@@ -358,8 +358,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMerklRewards(adapterName, navCalculator);
         }
 
-        // Uniswap V2 adapters (one instance per pair). Same constructor shape as PancakeSwapV2;
-        // PancakeSwapV2 is in fact a thin subclass of UniswapV2BalanceOracle (ADR 0008).
+        // Uniswap V2 adapters (one instance per pair). Same constructor shape as PancakeSwapV2,
+        // which is itself a thin subclass of UniswapV2BalanceOracle — see the contract source at
+        // src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
         if (_startsWith(adapterName, "UniswapV2_")) {
             return _deployUniswapV2(adapterName, navCalculator);
         }
@@ -810,13 +811,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployUniswapV2(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
+        // Schema (chains/<id>.json) — matches the canonical entry in
+        // script/config/adapter-identities.json:
         //   "UniswapV2_<pair>": {
         //     "enabled": false,
         //     "constructor": {
         //       "pair": "0x...",
         //       "protocol": "Uniswap V2",
-        //       "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
+        //       "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"USDC/WETH\"",
         //       "positionId": "0x..."
         //     }
         //   }

@@ -4,7 +4,7 @@ One folder per protocol. Each folder holds the **evidence pack** behind the stri
 
 ## Methodology (per protocol)
 
-Mirrors the original V1-migration verification standard used for Balancer V3 / Aura / Curve / Convex. Refer to [`balance-adapter-verification-methodology`](../../../memory) for the long-form description.
+Mirrors the original V1-migration verification standard used for Balancer V3 / Aura / Curve / Convex. The full methodology is captured in this file plus per-protocol READMEs under `<protocol>/`; the same notes are also kept in the maintainer's persistent memory under the slug `balance-adapter-verification-methodology` (not a file in the repo).
 
 ### The five parallel steps
 
@@ -62,4 +62,4 @@ The goal is for any future contributor to be able to (a) re-run the Tenderly sim
 
 ## Adapters in scope
 
-See [`balance-adapter-verification-methodology`](../../../memory) for the full list (PRs #20, #25–#34, #35). Started 2026-05-21 with **Uniswap V2**.
+Adapters from PRs #20, #25–#34, #35 (Aave V3 SM, Aave V2, Aave Umbrella, Merkl rewards, Compound V3, Stader withdrawal queue, Uniswap V2, Uniswap V3, Fluid f/Vaults T1, PancakeSwap V2/V3, plus the `PositionType` multi-leg gross-emissions capstone). Started 2026-05-21 with **Uniswap V2**. Adapters are processed one at a time; each PR appends its protocol folder under this directory and adds the protocol to `script/deploy/04_DeployBalanceAdapters.s.sol` (instances disabled by default until a KPK strategy opens a real position there).

@@ -3,11 +3,22 @@
 # Used so the dev-anvil NAV dashboard surfaces LP positions for the verification holder.
 set -euo pipefail
 
-REPO_ROOT=/home/nicol/projects/onchain-accounting
+# Derive REPO_ROOT relative to this script so it works for any contributor / CI environment.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 STATE="$REPO_ROOT/script/development/state/1-addresses.json"
 RPC=http://127.0.0.1:8545
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-export PATH="/home/nicol/.foundry/bin:$PATH"
+
+# Match the pattern used elsewhere in script/development/**: only adjust PATH when forge/cast
+# aren't already discoverable (don't unconditionally clobber the user's Foundry install location).
+if ! command -v forge >/dev/null 2>&1 || ! command -v cast >/dev/null 2>&1; then
+  if [ -x "$HOME/.foundry/bin/forge" ]; then
+    export PATH="$HOME/.foundry/bin:$PATH"
+  else
+    echo "error: forge/cast not on PATH and not at \$HOME/.foundry/bin" >&2
+    exit 1
+  fi
+fi
 
 NAV=$(jq -r '.NAVCalculatorProxy' "$STATE")
 echo "NAV proxy: $NAV"
@@ -37,7 +48,9 @@ for key in "${LABELS[@]}"; do
   echo
   echo "=== deploying UniswapV2 adapter for $key ($pair) ==="
 
-  position_detail="{\"protocol\":\"Uniswap V2\",\"pool\":\"$human LP\""
+  # Canonical positionDetail schema for UniswapV2 per script/config/adapter-identities.json:
+  # `{ "protocol": "Uniswap V2", "product": "LP", "name": "<token0/token1>" }`.
+  position_detail="{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"$human\""
 
   out=$(forge create src/balances/protocols/UniswapV2.sol:UniswapV2BalanceOracle \
     --rpc-url "$RPC" \

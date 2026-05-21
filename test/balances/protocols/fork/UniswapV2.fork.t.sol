@@ -354,10 +354,36 @@ contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterT
         balances = _deployBalancesForOracle(assets);
 
         for (uint256 i = 0; i < cases.length; i++) {
-            cases[i].adapter = new UniswapV2BalanceOracle(
-                cases[i].pair, "Uniswap V2", "{\"protocol\":\"Uniswap V2\",\"pool\":\"LP\"", "0x0", address(balances)
+            // positionId is the canonical anchor address for the instance per the per-adapter
+            // identity convention (see script/config/adapter-identities.json + the constructor
+            // natspec on UniswapV2BalanceOracle): for Uni V2 it is the pair address. Constructing
+            // it dynamically from cases[i].pair (rather than passing a sentinel like "0x0") makes
+            // the emitted PositionBalance.positionId identify each pool uniquely and catches any
+            // regression where the adapter starts dropping or rewriting the field.
+            //
+            // positionDetail follows the canonical `protocol/product/name` schema from
+            // script/config/adapter-identities.json. The `product` key is fixed to "LP"; `name`
+            // is the human pair label (e.g. "USDC/WETH").
+            string memory positionId = vm.toString(cases[i].pair);
+            string memory positionDetail = string(
+                abi.encodePacked(
+                    "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"", _humanLabel(cases[i].label), "\""
+                )
             );
+            cases[i].adapter =
+                new UniswapV2BalanceOracle(cases[i].pair, "Uniswap V2", positionDetail, positionId, address(balances));
         }
+    }
+
+    /// @dev Convert the internal underscore label ("USDC_WETH") into the human form ("USDC/WETH")
+    ///      used inside the `positionDetail` JSON.
+    function _humanLabel(string memory underscoreLabel) internal pure returns (string memory) {
+        bytes memory b = bytes(underscoreLabel);
+        bytes memory out = new bytes(b.length);
+        for (uint256 i = 0; i < b.length; i++) {
+            out[i] = b[i] == 0x5F ? bytes1(0x2F) : b[i]; // '_' -> '/'
+        }
+        return string(out);
     }
 
     // ============================================
@@ -372,13 +398,21 @@ contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterT
     }
 
     /// @notice Confirms the dilution branch is exercised in this case.
-    /// @dev Each pool's pendingProtocolMint computed off-chain is non-zero — if any drift to zero,
-    ///      the test is no longer testing what it claims to. Re-derive the case.
+    /// @dev Mirrors every guard inside `UniswapV2BalanceOracle._pendingProtocolMint` so this
+    ///      pre-flight assertion cannot pass in a state where the adapter would return 0:
+    ///        1. factory.feeTo() != address(0)        (else `_pendingProtocolMint` returns 0)
+    ///        2. pair.kLast() != 0                   (else `_pendingProtocolMint` returns 0)
+    ///        3. sqrt(k_now) > sqrt(kLast)           (else `_pendingProtocolMint` returns 0)
+    ///        4. pending != 0                        (the dilution contribution itself)
+    ///      If any of these drift on a future re-pin of FORK_BLOCK, the test is no longer
+    ///      testing what it claims to. Re-derive the case.
     function test_dilution_branch_active_each_pool() public view {
+        assertTrue(IUniswapV2FactoryFork(V2_FACTORY).feeTo() != address(0), "factory.feeTo() must be non-zero");
         for (uint256 i = 0; i < cases.length; i++) {
             uint256 ts = IUniswapV2PairFork(cases[i].pair).totalSupply();
             (uint112 r0, uint112 r1,) = IUniswapV2PairFork(cases[i].pair).getReserves();
             uint256 kLast = IUniswapV2PairFork(cases[i].pair).kLast();
+            assertGt(kLast, 0, _msg(cases[i].label, "kLast must be non-zero"));
             uint256 rootK = Math.sqrt(uint256(r0) * uint256(r1));
             uint256 rootKLast = Math.sqrt(kLast);
             assertGt(rootK, rootKLast, _msg(cases[i].label, "sqrt(k_now) must exceed sqrt(kLast)"));
@@ -426,9 +460,10 @@ contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterT
         }
     }
 
-    /// @notice `getOraclePositions` (multi-leg surface) must mirror `getOracleBalances` here —
-    ///         Uniswap V2 has no `type` discriminator (single Supply leg per pair), so the
-    ///         position count equals the number of underlying tokens with a non-zero amount.
+    /// @notice `getOraclePositions` (multi-leg surface) must mirror `getOracleBalances` here.
+    ///         Uniswap V2 always emits `PositionType.SUPPLY` (the only leg kind the adapter
+    ///         produces) via `PositionType.withType(_positionDetail, PositionType.SUPPLY)`, so
+    ///         the position count equals the number of underlying tokens with a non-zero amount.
     function test_strict_equality_via_getOraclePositions() public view {
         for (uint256 i = 0; i < cases.length; i++) {
             INAVCalculator.PositionBalance[] memory positions = cases[i].adapter.getOraclePositions(HOLDER, address(0));

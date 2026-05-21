@@ -662,7 +662,7 @@
       "constructor": {
         "pair": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"USDC/WETH\"",
         "positionId": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
       },
       "deployed": "",
@@ -673,7 +673,7 @@
       "constructor": {
         "pair": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDT/WETH LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"USDT/WETH\"",
         "positionId": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852"
       },
       "deployed": "",
@@ -684,7 +684,7 @@
       "constructor": {
         "pair": "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"DAI/WETH LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"DAI/WETH\"",
         "positionId": "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11"
       },
       "deployed": "",
@@ -695,7 +695,7 @@
       "constructor": {
         "pair": "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"WBTC/WETH LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"WBTC/WETH\"",
         "positionId": "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940"
       },
       "deployed": "",
@@ -706,7 +706,7 @@
       "constructor": {
         "pair": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/USDT LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"USDC/USDT\"",
         "positionId": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f"
       },
       "deployed": "",
@@ -717,7 +717,7 @@
       "constructor": {
         "pair": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5",
         "protocol": "Uniswap V2",
-        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"DAI/USDC LP\"",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"DAI/USDC\"",
         "positionId": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5"
       },
       "deployed": "",

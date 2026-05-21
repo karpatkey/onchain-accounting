@@ -181,7 +181,8 @@ case = {
     },
 }
 
-out_path = Path("/home/nicol/projects/onchain-accounting/script/development/test/uniswapV2/case-multi-pool-mainnet.json")
+# Write next to this script so the helper is reproducible regardless of the user's checkout path.
+out_path = Path(__file__).resolve().parent / "case-multi-pool-mainnet.json"
 out_path.parent.mkdir(parents=True, exist_ok=True)
 out_path.write_text(json.dumps(case, indent=2) + "\n")
 print(f"wrote {out_path}")

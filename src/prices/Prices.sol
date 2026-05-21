@@ -252,6 +252,10 @@ abstract contract Prices is IPrices, Initializable {
             dec = AggregatorV3Interface(priceFeed).decimals();
         }
 
+        if (len > 0 && configs[0].decimals != dec) {
+            revert PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
+        }
+
         configs.push(
             PriceFeedConfig({priceFeed: priceFeed, priceType: priceType, decimals: dec, chainlinkHeartbeat: heartbeat})
         );

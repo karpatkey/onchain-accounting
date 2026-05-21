@@ -80,6 +80,9 @@ interface IPrices {
     /// @notice Error when a feed address is not found in an asset's feed list
     error PriceFeedNotFound(address asset, address feed);
 
+    /// @notice Error when a new feed's decimals do not match the decimals of existing feeds for the asset
+    error PriceFeedDecimalsMismatch(address asset, uint8 existingDecimals, uint8 newDecimals);
+
     /// @notice Returns the latest price for a given token while checking if the price is stale.
     /// @param underlyingAsset The address of the token.
     /// @return price The latest price of the token (int256; positive for all valid prices).

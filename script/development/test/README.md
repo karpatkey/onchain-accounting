@@ -6,14 +6,25 @@ One folder per protocol. Each folder holds the **evidence pack** behind the stri
 
 Mirrors the original V1-migration verification standard used for Balancer V3 / Aura / Curve / Convex. Refer to [`balance-adapter-verification-methodology`](../../../memory) for the long-form description.
 
-1. **Cherry-pick one account** with the most complex realistic scenario for the protocol (supplied + staked + rewards, multi-leg debt, multi-pool LP, etc.). Goal: fewest accounts that exercise all paths.
-2. **Pin a specific block** on the target chain.
-3. **Use Tenderly** (simulations / Virtual TestNets) to compute the **exact** expected balances of the underlying tokens we track. For Uni V2 this is a `pair.burn(holder)` simulation, which returns the same numbers the adapter's pro-rata formula will compute.
-4. **Strengthen** the fork test under `test/balances/protocols/fork/<Adapter>.fork.t.sol` with a new method that asserts **exact equality** against the Tenderly numbers at the pinned block. Existing fork tests remain — we **augment**, never replace.
+### The five parallel steps
 
-## Side channel
+For each protocol, these five steps **must happen in parallel** so the verification turns around in one session rather than serialising on each piece. Sequential ordering wastes time — and worse, lets the user idle while the test is being written, or lets the test get written for a block the user can't visually cross-check.
 
-User runs the local-anvil dev app at the same pinned block + cross-checks against Debank. Debank has live-vs-fork drift, but is useful as a smell test. The contract-side strict-equality assertion is the audit-grade source of truth.
+| # | Step | Who | Output |
+|---|---|---|---|
+| 1 | **Find the account.** Cherry-pick one holder with the most complex realistic scenario for this protocol (supplied + staked + rewards, multi-leg debt, multi-pool LP, …). Goal: fewest accounts that exercise all paths. | Claude (with user sign-off on the candidate) | `holder.address` + scenario rationale |
+| 2 | **Write the test folder.** Create `script/development/test/<protocol>/` with `README.md` (case narrative + verification table) + `case-<slug>.json` (machine-readable evidence pack). | Claude | Evidence pack scaffold, populated incrementally |
+| 3 | **Run the app with the base deployments + the balance oracle under test, forked at the SELECTED block.** The dev anvil must pin at exactly the same block the fork test pins at, otherwise the side-channel cross-check vs Debank measures the wrong drift envelope. | Claude (refork helper + per-protocol adapter deploy on the fork) | User can see the holder's positions in the dashboard at the pinned block |
+| 4 | **Add the strict-equality test** to `test/balances/protocols/fork/<Adapter>.fork.t.sol`. **Augment**, don't replace — existing fork tests stay. New test contract pinned at the same selected block. | Claude | New test contract with strict-equality assertions per leg |
+| 5 | **Check everything is working as intended; fix drift.** User cross-checks the dev app vs Debank; Claude verifies test passes with zero drift vs the off-chain ground truth. If either surface diverges, root-cause it (block drift, derivation difference, real adapter bug). | Both, in parallel | Test ✅ + Debank-vs-app gap explained |
+
+Drift envelope on the side channel = (now − pinned block timestamp). If you pinned at a fresh block (a few minutes back), the Debank-vs-app gap is bounded by minutes of natural pool activity, which is normally sub-bp at the dollar scale. Larger gaps need an explanation before the protocol can be marked verified.
+
+### Hard constraints
+
+- **The dev anvil fork block MUST equal the fork test's `FORK_BLOCK`.** If the refork hits the latest block, that block becomes the test's `FORK_BLOCK` — not the other way around. Don't pin the test at one block and the anvil at another.
+- **Augment, don't replace.** Santi's existing fork tests are the regression net. The new test contract goes alongside them in the same file (or a sibling file when the file is already large).
+- **Strict equality, not "within tolerance".** Drift is a bug to root-cause, not a tolerance to widen. The only acceptable "delta" in the evidence pack JSON is `0`.
 
 ## Folder shape
 

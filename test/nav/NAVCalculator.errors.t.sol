@@ -210,7 +210,10 @@ contract NAVCalculatorErrorTest is SuperTest {
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         bool tokenIsStale = false;
         for (uint256 i; i < navResult.stalePriceAssets.length; i++) {
-            if (navResult.stalePriceAssets[i].asset == address(token)) { tokenIsStale = true; break; }
+            if (navResult.stalePriceAssets[i].asset == address(token)) {
+                tokenIsStale = true;
+                break;
+            }
         }
         assertTrue(tokenIsStale, "reverting feed should mark token stale");
     }
@@ -288,7 +291,10 @@ contract NAVCalculatorErrorTest is SuperTest {
         INAVCalculator.NAV memory navResult2 = nav.getAccountNav(safe, address(0));
         bool tokenIsStale = false;
         for (uint256 i; i < navResult2.stalePriceAssets.length; i++) {
-            if (navResult2.stalePriceAssets[i].asset == address(token)) { tokenIsStale = true; break; }
+            if (navResult2.stalePriceAssets[i].asset == address(token)) {
+                tokenIsStale = true;
+                break;
+            }
         }
         assertTrue(tokenIsStale, "reverting feed should mark token stale");
     }

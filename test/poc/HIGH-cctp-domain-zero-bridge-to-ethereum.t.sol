@@ -38,7 +38,11 @@ contract Poc_CctpDomainZero is Test {
         vm.chainId(uint256(BASE_CHAIN_ID));
 
         usdc = new Mock_ERC20("USDC", 6);
-        messageTransmitter = new MockMessageTransmitter(6 /* localDomain */, address(usdc));
+        messageTransmitter = new MockMessageTransmitter(
+            6,
+            /* localDomain */
+            address(usdc)
+        );
         tokenMessenger = new MockTokenMessenger(address(messageTransmitter));
 
         // Deploy escrow
@@ -46,11 +50,9 @@ contract Poc_CctpDomainZero is Test {
         address[] memory initialAccounts = new address[](1);
         initialAccounts[0] = account;
         address[] memory initialAdapters = new address[](0);
-        address payable escrowProxy = payable(
-            UnsafeUpgrades.deployUUPSProxy(
+        address payable escrowProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 impl, abi.encodeCall(BridgeEscrow.initialize, (admin, BASE_CHAIN_ID, initialAccounts, initialAdapters))
-            )
-        );
+            ));
         srcEscrow = BridgeEscrow(escrowProxy);
         vm.startPrank(admin);
         srcEscrow.grantRole(MANAGER, admin);
@@ -92,7 +94,13 @@ contract Poc_CctpDomainZero is Test {
         usdc.mint(account, amount);
         vm.startPrank(account);
         usdc.approve(address(srcEscrow), amount);
-        srcEscrow.depositAndBridge(42161 /* Arbitrum */, "USDC", amount, address(srcAdapter));
+        srcEscrow.depositAndBridge(
+            42161,
+            /* Arbitrum */
+            "USDC",
+            amount,
+            address(srcAdapter)
+        );
         vm.stopPrank();
         console.log("Arbitrum bridge succeeded; Ethereum bridge reverted because domain==0 is the sentinel.");
     }

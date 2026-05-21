@@ -45,11 +45,9 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         address[] memory initialAccounts = new address[](1);
         initialAccounts[0] = account;
         address[] memory initialAdapters = new address[](0);
-        address payable proxy = payable(
-            UnsafeUpgrades.deployUUPSProxy(
+        address payable proxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 impl, abi.encodeCall(BridgeEscrow.initialize, (admin, DEST_CHAIN_ID, initialAccounts, initialAdapters))
-            )
-        );
+            ));
         destEscrow = BridgeEscrow(proxy);
 
         // Grant MANAGER to admin (registerAsset is MANAGER-gated)

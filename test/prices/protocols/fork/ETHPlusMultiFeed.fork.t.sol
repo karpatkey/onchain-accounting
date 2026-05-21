@@ -41,20 +41,20 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
     // Chainlink ETH+/USD — Ethereum Mainnet (86 400 s heartbeat)
     address public constant CHAINLINK_ETHPLUS_USD = 0x66Ab900341C98de949EC31d11b3C4180743844F1;
-    uint256 public constant CHAINLINK_HEARTBEAT   = 86_400;
+    uint256 public constant CHAINLINK_HEARTBEAT = 86_400;
 
-    uint256 public constant CUSTOM_HEARTBEAT   = 86_400;
-    uint256 public constant REDSTONE_HEARTBEAT =  3_600;
-    uint256 public constant API3_HEARTBEAT     = 172_800;
+    uint256 public constant CUSTOM_HEARTBEAT = 86_400;
+    uint256 public constant REDSTONE_HEARTBEAT = 3_600;
+    uint256 public constant API3_HEARTBEAT = 172_800;
 
     // Stub price for Redstone and API3 mocks (≈$3 200 USD at fork block, 8 decimals)
     uint256 public constant STUB_ETHPLUS_PRICE = 3_200e8;
 
     // ─── Feed instances ────────────────────────────────────────────────────────
 
-    ETHPlus_PriceOracle public customFeed;       // real basket-accounting adapter
+    ETHPlus_PriceOracle public customFeed; // real basket-accounting adapter
     Mock_PriceOracleChainlink public redstoneFeed; // AggregatorV3 stub — Redstone shape
-    Mock_PriceOracleChainlink public api3Feed;     // AggregatorV3 stub — API3 shape
+    Mock_PriceOracleChainlink public api3Feed; // AggregatorV3 stub — API3 shape
 
     // ─── Harness hooks ─────────────────────────────────────────────────────────
 
@@ -72,15 +72,15 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
         // Stubs fix _updatedAt = block.timestamp at construction (= fork block timestamp).
         // Staleness is therefore controllable via vm.warp without touching real feeds.
         redstoneFeed = new Mock_PriceOracleChainlink("Redstone ETH+/USD stub", STUB_ETHPLUS_PRICE, 8);
-        api3Feed     = new Mock_PriceOracleChainlink("API3 ETH+/USD stub",     STUB_ETHPLUS_PRICE, 8);
+        api3Feed = new Mock_PriceOracleChainlink("API3 ETH+/USD stub", STUB_ETHPLUS_PRICE, 8);
 
         // Primary: custom basket-accounting oracle (original approach)
-        nav.registerAsset(ETHPLUS, address(customFeed),      IPrices.PriceType.Custom,    CUSTOM_HEARTBEAT);
+        nav.registerAsset(ETHPLUS, address(customFeed), IPrices.PriceType.Custom, CUSTOM_HEARTBEAT);
         // Direct Chainlink feed (production choice)
-        nav.addPriceFeed(ETHPLUS, CHAINLINK_ETHPLUS_USD,      IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
+        nav.addPriceFeed(ETHPLUS, CHAINLINK_ETHPLUS_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
         // Redundancy stubs
-        nav.addPriceFeed(ETHPLUS, address(redstoneFeed),      IPrices.PriceType.Redstone,  REDSTONE_HEARTBEAT);
-        nav.addPriceFeed(ETHPLUS, address(api3Feed),          IPrices.PriceType.API3,      API3_HEARTBEAT);
+        nav.addPriceFeed(ETHPLUS, address(redstoneFeed), IPrices.PriceType.Redstone, REDSTONE_HEARTBEAT);
+        nav.addPriceFeed(ETHPLUS, address(api3Feed), IPrices.PriceType.API3, API3_HEARTBEAT);
     }
 
     function setupBalanceOracle() internal override {}
@@ -92,20 +92,20 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         assertEq(feeds.length, 4);
 
-        assertEq(feeds[0].priceFeed,          address(customFeed));
-        assertEq(uint8(feeds[0].priceType),   uint8(IPrices.PriceType.Custom));
+        assertEq(feeds[0].priceFeed, address(customFeed));
+        assertEq(uint8(feeds[0].priceType), uint8(IPrices.PriceType.Custom));
         assertEq(feeds[0].chainlinkHeartbeat, CUSTOM_HEARTBEAT);
 
-        assertEq(feeds[1].priceFeed,          CHAINLINK_ETHPLUS_USD);
-        assertEq(uint8(feeds[1].priceType),   uint8(IPrices.PriceType.Chainlink));
+        assertEq(feeds[1].priceFeed, CHAINLINK_ETHPLUS_USD);
+        assertEq(uint8(feeds[1].priceType), uint8(IPrices.PriceType.Chainlink));
         assertEq(feeds[1].chainlinkHeartbeat, CHAINLINK_HEARTBEAT);
 
-        assertEq(feeds[2].priceFeed,          address(redstoneFeed));
-        assertEq(uint8(feeds[2].priceType),   uint8(IPrices.PriceType.Redstone));
+        assertEq(feeds[2].priceFeed, address(redstoneFeed));
+        assertEq(uint8(feeds[2].priceType), uint8(IPrices.PriceType.Redstone));
         assertEq(feeds[2].chainlinkHeartbeat, REDSTONE_HEARTBEAT);
 
-        assertEq(feeds[3].priceFeed,          address(api3Feed));
-        assertEq(uint8(feeds[3].priceType),   uint8(IPrices.PriceType.API3));
+        assertEq(feeds[3].priceFeed, address(api3Feed));
+        assertEq(uint8(feeds[3].priceType), uint8(IPrices.PriceType.API3));
         assertEq(feeds[3].chainlinkHeartbeat, API3_HEARTBEAT);
     }
 
@@ -116,8 +116,8 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         assertFalse(stale);
         assertEq(decimals, 8);
-        assertTrue(price > 100e8,      "price below $100 at fork block");
-        assertTrue(price < 100_000e8,  "price above $100 000 at fork block");
+        assertTrue(price > 100e8, "price below $100 at fork block");
+        assertTrue(price < 100_000e8, "price above $100 000 at fork block");
 
         console2.log("ETH+ latestPrice (USD):", uint256(price) / 1e8);
     }
@@ -150,17 +150,15 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         address basketHandlerAddr = _basketHandlerAddress();
         vm.mockCall(
-            basketHandlerAddr,
-            abi.encodeWithSelector(IBasketHandler.status.selector),
-            abi.encode(CollateralStatus.IFFY)
+            basketHandlerAddr, abi.encodeWithSelector(IBasketHandler.status.selector), abi.encode(CollateralStatus.IFFY)
         );
 
-        (int256 price,, bool stale)           = nav.latestPrice(ETHPLUS);
-        INAVCalculator.PriceFeedData memory d  = nav.getPriceData(ETHPLUS);
+        (int256 price,, bool stale) = nav.latestPrice(ETHPLUS);
+        INAVCalculator.PriceFeedData memory d = nav.getPriceData(ETHPLUS);
 
         assertFalse(stale, "Chainlink must keep the read healthy when basket is IFFY");
         assertTrue(price > 0);
-        assertEq(d.priceFeed,        CHAINLINK_ETHPLUS_USD,              "Chainlink must win");
+        assertEq(d.priceFeed, CHAINLINK_ETHPLUS_USD, "Chainlink must win");
         assertEq(uint8(d.priceType), uint8(IPrices.PriceType.Chainlink), "priceType must be Chainlink");
 
         console2.log("Winner when basket IFFY:", d.priceFeed);
@@ -174,8 +172,8 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_redstoneFeedExpires_after1hWarp() public {
         vm.warp(block.timestamp + REDSTONE_HEARTBEAT + 1);
 
-        (int256 price,, bool stale)           = nav.latestPrice(ETHPLUS);
-        INAVCalculator.PriceFeedData memory d  = nav.getPriceData(ETHPLUS);
+        (int256 price,, bool stale) = nav.latestPrice(ETHPLUS);
+        INAVCalculator.PriceFeedData memory d = nav.getPriceData(ETHPLUS);
 
         assertFalse(stale, "three feeds still healthy after 1h warp");
         assertTrue(price > 0);
@@ -192,13 +190,13 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_redundancy_api3OutlastsOthers_after86401sWarp() public {
         vm.warp(block.timestamp + CHAINLINK_HEARTBEAT + 1);
 
-        (int256 price,, bool stale)           = nav.latestPrice(ETHPLUS);
-        INAVCalculator.PriceFeedData memory d  = nav.getPriceData(ETHPLUS);
+        (int256 price,, bool stale) = nav.latestPrice(ETHPLUS);
+        INAVCalculator.PriceFeedData memory d = nav.getPriceData(ETHPLUS);
 
         assertFalse(stale, "API3 stub should keep the read healthy after 86 401 s warp");
-        assertEq(d.priceFeed, address(api3Feed),       "API3 stub must win after others expire");
+        assertEq(d.priceFeed, address(api3Feed), "API3 stub must win after others expire");
         // forge-lint: disable-next-line(unsafe-typecast)
-        assertEq(price,       int256(STUB_ETHPLUS_PRICE), "price must come from the API3 stub");
+        assertEq(price, int256(STUB_ETHPLUS_PRICE), "price must come from the API3 stub");
 
         console2.log("Winner after 86 401 s warp:", d.priceFeed, "(API3 stub, 48 h heartbeat)");
     }
@@ -209,7 +207,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         (int256 price,, bool stale) = nav.latestPrice(ETHPLUS);
 
-        assertTrue(stale,  "expected all-stale after 48 h warp");
+        assertTrue(stale, "expected all-stale after 48 h warp");
         assertEq(price, 0, "price must be 0 when all feeds are stale");
     }
 

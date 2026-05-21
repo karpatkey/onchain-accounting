@@ -127,9 +127,9 @@ abstract contract Prices is IPrices, Initializable {
                 // treat as block.timestamp - 1 so the feed participates but yields to any feed with
                 // a real on-chain push timestamp.
                 uint256 lrdUpdatedAt;
-                try IPriceFeedCustom(cfg.priceFeed).latestRoundData()
-                    returns (uint80, int256, uint256, uint256 u, uint80)
-                {
+                try IPriceFeedCustom(cfg.priceFeed).latestRoundData() returns (
+                    uint80, int256, uint256, uint256 u, uint80
+                ) {
                     lrdUpdatedAt = u;
                 } catch {
                     continue;
@@ -139,9 +139,9 @@ abstract contract Prices is IPrices, Initializable {
                 // Chainlink / Redstone / API3 — all implement AggregatorV3Interface.
                 int256 answer;
                 uint256 lrdUpdatedAt;
-                try AggregatorV3Interface(cfg.priceFeed).latestRoundData()
-                    returns (uint80, int256 a, uint256, uint256 u, uint80)
-                {
+                try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
+                    uint80, int256 a, uint256, uint256 u, uint80
+                ) {
                     answer = a;
                     lrdUpdatedAt = u;
                 } catch {
@@ -185,7 +185,9 @@ abstract contract Prices is IPrices, Initializable {
         if (address(chainlinkL2SequencerUptimeFeed) != address(0)) {
             int256 answer;
             uint256 startedAt;
-            try chainlinkL2SequencerUptimeFeed.latestRoundData() returns (uint80, int256 a, uint256 s, uint256, uint80) {
+            try chainlinkL2SequencerUptimeFeed.latestRoundData() returns (
+                uint80, int256 a, uint256 s, uint256, uint80
+            ) {
                 answer = a;
                 startedAt = s;
             } catch {

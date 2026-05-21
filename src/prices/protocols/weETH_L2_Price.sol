@@ -50,11 +50,14 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveWeEthUpdatedAt =
+            weEthToEethUpdatedAt > block.timestamp ? block.timestamp : weEthToEethUpdatedAt;
+        uint256 effectiveEthUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
         if (
-            block.timestamp - weEthToEethUpdatedAt > WEETH_TO_EETH_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_EETH_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         price = weEthToEethRate.toUint256()

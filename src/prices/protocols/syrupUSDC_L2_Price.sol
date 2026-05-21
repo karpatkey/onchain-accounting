@@ -51,11 +51,14 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveSyrupUpdatedAt =
+            syrupUsdcToUsdcUpdatedAt > block.timestamp ? block.timestamp : syrupUsdcToUsdcUpdatedAt;
+        uint256 effectiveUsdcUpdatedAt = usdcToUsdUpdatedAt > block.timestamp ? block.timestamp : usdcToUsdUpdatedAt;
         if (
-            block.timestamp - syrupUsdcToUsdcUpdatedAt > SYRUP_USDC_TO_USDC_CHAINLINK_HEARTBEAT
-                || block.timestamp - usdcToUsdUpdatedAt > USDC_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveSyrupUpdatedAt >= SYRUP_USDC_TO_USDC_CHAINLINK_HEARTBEAT
+                || block.timestamp - effectiveUsdcUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         price = syrupUsdcToUsdcRate.toUint256()

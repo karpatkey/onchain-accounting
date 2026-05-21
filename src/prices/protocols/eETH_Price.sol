@@ -97,11 +97,13 @@ contract eETH_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveWeEthUpdatedAt = weEthToEthUpdatedAt > block.timestamp ? block.timestamp : weEthToEthUpdatedAt;
+        uint256 effectiveEthUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
         if (
-            block.timestamp - weEthToEthUpdatedAt > WEETH_TO_ETH_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_ETH_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         // eETH/ETH = weETH/ETH ÷ eETH/weETH (both 18 dec → result 18 dec)

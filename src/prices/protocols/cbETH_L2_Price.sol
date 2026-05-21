@@ -50,11 +50,13 @@ contract cbETH_L2_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveCbEthUpdatedAt = cbEthToEthUpdatedAt > block.timestamp ? block.timestamp : cbEthToEthUpdatedAt;
+        uint256 effectiveEthUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
         if (
-            block.timestamp - cbEthToEthUpdatedAt > CBETH_TO_ETH_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveCbEthUpdatedAt >= CBETH_TO_ETH_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         price = cbEthToEthRate.toUint256()

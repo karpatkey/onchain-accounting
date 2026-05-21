@@ -59,10 +59,13 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveXUpdatedAt = xToUsdUpdatedAt > block.timestamp ? block.timestamp : xToUsdUpdatedAt;
+        uint256 effectiveYUpdatedAt = yToXUpdatedAt > block.timestamp ? block.timestamp : yToXUpdatedAt;
         if (
-            block.timestamp - xToUsdUpdatedAt > X_TO_USD_HEARTBEAT || block.timestamp - yToXUpdatedAt > Y_TO_X_HEARTBEAT
+            block.timestamp - effectiveXUpdatedAt >= X_TO_USD_HEARTBEAT
+                || block.timestamp - effectiveYUpdatedAt >= Y_TO_X_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         // Y/USD = (X/USD) * (Y/X) / 10^yToXDecimals

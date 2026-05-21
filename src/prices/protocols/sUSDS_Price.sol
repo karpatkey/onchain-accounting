@@ -79,8 +79,9 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
         }
 
         // Check if the price is stale based on its heartbeat
-        if (block.timestamp - usdsToUsdUpdatedAt > USDS_TO_USD_CHAINLINK_HEARTBEAT) {
-            stale = true;
+        uint256 effectiveUpdatedAt = usdsToUsdUpdatedAt > block.timestamp ? block.timestamp : usdsToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
         }
 
         // Get user

@@ -440,15 +440,18 @@ contract PricesTest is Test {
     function test_multiFeed_clockSkewNormalization() public {
         // A feed whose updatedAt > block.timestamp (future-dated timestamp)
         // must be clamped to block.timestamp and NOT systematically beat a normally-timed feed.
-        // Setup: create futureOracle at t=300, then wind block.timestamp back to t=100.
+        // Register both feeds at t=300 (no future-timestamp at registration), then adjust normalOracle
+        // to t=100 via setter and warp back to test the read-path clamping.
         vm.warp(300);
         Mock_PriceOracleChainlink futureOracle = new Mock_PriceOracleChainlink("future", 999, 8); // _updatedAt=300
-
-        vm.warp(100);
-        Mock_PriceOracleChainlink normalOracle = new Mock_PriceOracleChainlink("normal", 111, 8); // _updatedAt=100
+        Mock_PriceOracleChainlink normalOracle = new Mock_PriceOracleChainlink("normal", 111, 8); // _updatedAt=300
         PricesHarness h = new PricesHarness(address(0));
         h.setPriceFeed(buidl, address(normalOracle), type(uint256).max, IPrices.PriceType.Chainlink); // index 0
         h.setPriceFeed(buidl, address(futureOracle), type(uint256).max, IPrices.PriceType.Chainlink); // index 1
+
+        // Rewind normalOracle to t=100; futureOracle stays at t=300.
+        normalOracle.setUpdatedAt(100);
+        vm.warp(100);
 
         // normalOracle: updatedAt=100 → effectiveTime=min(100,100)=100
         // futureOracle: updatedAt=300 > block.timestamp=100 → effectiveTime=min(300,100)=100 (clamped)

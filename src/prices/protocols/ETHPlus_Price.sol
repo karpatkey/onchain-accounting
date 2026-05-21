@@ -64,7 +64,7 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
         uint48 minSave = _minBasketLastSave(main, basketHandler);
-        if (block.timestamp - uint256(minSave) > RESERVE_PROTOCOL_HEARTBEAT) {
+        if (block.timestamp - uint256(minSave) >= RESERVE_PROTOCOL_HEARTBEAT) {
             return (0, true);
         }
         uint256 usdPerToken18 = _calculateETHPlusPriceUSD18(basketHandler);

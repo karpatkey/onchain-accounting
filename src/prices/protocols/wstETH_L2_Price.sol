@@ -82,11 +82,14 @@ contract wstETH_L2_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
+        uint256 effectiveWstEthUpdatedAt =
+            wstEthToEthUpdatedAt > block.timestamp ? block.timestamp : wstEthToEthUpdatedAt;
+        uint256 effectiveEthUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
         if (
-            block.timestamp - wstEthToEthUpdatedAt > WSTETH_TO_ETH_CHAINLINK_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveWstEthUpdatedAt >= WSTETH_TO_ETH_CHAINLINK_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         // wstETH/ETH is 18 decimals (Chainlink), ETH/USD is 8 decimals → result is 8 decimals

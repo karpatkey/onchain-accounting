@@ -89,11 +89,13 @@ contract LDO_PriceOracle is IPriceFeedCustom {
         }
 
         // Check if either price is stale based on their respective heartbeats
+        uint256 effectiveLdoUpdatedAt = ldoToUsdUpdatedAt > block.timestamp ? block.timestamp : ldoToUsdUpdatedAt;
+        uint256 effectiveEthUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
         if (
-            block.timestamp - ldoToUsdUpdatedAt > LDO_TO_ETH_CHAINLINK_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+            block.timestamp - effectiveLdoUpdatedAt >= LDO_TO_ETH_CHAINLINK_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) {
-            stale = true;
+            return (0, true);
         }
 
         // LDO/ETH price is in 8 decimals, ETH/USD price is in 8 decimals

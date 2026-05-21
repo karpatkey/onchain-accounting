@@ -77,8 +77,9 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        if (block.timestamp - usdeToUsdUpdatedAt > USDE_TO_USD_CHAINLINK_HEARTBEAT) {
-            stale = true;
+        uint256 effectiveUpdatedAt = usdeToUsdUpdatedAt > block.timestamp ? block.timestamp : usdeToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USDE_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
         }
 
         uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** IERC4626(S_USDE).decimals());

@@ -80,13 +80,15 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        if (block.timestamp - daiToUsdUpdatedAt > DAI_TO_USD_CHAINLINK_HEARTBEAT) stale = true;
+        uint256 effectiveUpdatedAt = daiToUsdUpdatedAt > block.timestamp ? block.timestamp : daiToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= DAI_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
+        }
 
         int256 ratio = int256(RATE_PROVIDER.chi());
 
         if (ratio <= 0) {
-            price = 0;
-            stale = true;
+            return (0, true);
         } else {
             price = uint256((daiToUsdPrice * ratio) / int256(10 ** RATIO_DECIMALS));
         }

@@ -78,7 +78,10 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
 
         IERC4626 sDaiVault = IERC4626(S_DAI);
 
-        if (block.timestamp - xDaiToUsdUpdatedAt > X_DAI_TO_USD_CHAINLINK_HEARTBEAT) stale = true;
+        uint256 effectiveUpdatedAt = xDaiToUsdUpdatedAt > block.timestamp ? block.timestamp : xDaiToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
+        }
 
         uint256 underlyingValue = sDaiVault.convertToAssets(10 ** sDaiVault.decimals());
 

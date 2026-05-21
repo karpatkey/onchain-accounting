@@ -213,6 +213,8 @@ interface INAVCalculator is IBalances {
     function unregisterAsset(address underlyingAsset) external;
 
     /// @notice Sets the Chainlink L2 sequencer uptime feed (use address(0) on L1).
+    /// @dev Requires DEFAULT_ADMIN_ROLE (same privilege level as upgrades). Disabling sequencer-uptime
+    ///      detection on an L2 is equivalent in impact to an upgrade, so MANAGER access is not sufficient.
     /// @param newChainlinkL2UptimeFeed New uptime feed address.
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
 

@@ -158,7 +158,7 @@ abstract contract Prices is IPrices, Initializable {
             // Per-feed staleness gate (>= aligns with the documented heartbeat semantic: stale after N seconds).
             if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) continue;
 
-            // Feed survived all gates â count it.
+            // Feed survived all gates — count it.
             ++healthyFeedCount;
 
             // Select the feed with the largest effective update time.

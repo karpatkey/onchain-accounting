@@ -77,8 +77,9 @@ contract syrupUSDC_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        if (block.timestamp - usdcToUsdUpdatedAt > USDC_TO_USD_CHAINLINK_HEARTBEAT) {
-            stale = true;
+        uint256 effectiveUpdatedAt = usdcToUsdUpdatedAt > block.timestamp ? block.timestamp : usdcToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
         }
 
         uint256 syrupUsdcToUsdcPrice = IERC4626(SYRUP_USDC).convertToAssets(10 ** IERC4626(SYRUP_USDC).decimals());

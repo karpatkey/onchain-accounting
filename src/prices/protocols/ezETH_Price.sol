@@ -45,8 +45,9 @@ contract ezETH_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        if (block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT) {
-            stale = true;
+        uint256 effectiveUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true);
         }
 
         uint256 ezEthRate;

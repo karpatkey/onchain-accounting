@@ -225,7 +225,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2SequencerUptimeFeed) external {
-        _requireManager();
+        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) revert NotAuthorized();
         address oldChainlinkL2SequencerUptimeFeed = address(chainlinkL2SequencerUptimeFeed);
         chainlinkL2SequencerUptimeFeed = AggregatorV3Interface(newChainlinkL2SequencerUptimeFeed);
         emit ChainlinkUptimeFeedUpdated(oldChainlinkL2SequencerUptimeFeed, newChainlinkL2SequencerUptimeFeed);

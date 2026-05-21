@@ -776,12 +776,12 @@ contract NAVCalculatorTest is SuperTest {
     // ============================================
 
     function test_setChainlinkL2SequencerGracePeriod_zeroPeriod() public {
-        vm.startPrank(navCalculatorManager);
+        vm.prank(admin);
         nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeed));
 
+        vm.prank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
         nav.setChainlinkL2SequencerGracePeriod(0);
-        vm.stopPrank();
     }
 
     function test_setChainlinkL2SequencerGracePeriod_noUptimeFeed() public {
@@ -1150,7 +1150,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_setChainlinkUptimeFeed() public {
         assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(sequencerUptimeFeed));
 
-        vm.prank(navCalculatorManager);
+        vm.prank(admin);
         nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeedDown));
 
         assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(sequencerUptimeFeedDown));
@@ -1165,8 +1165,9 @@ contract NAVCalculatorTest is SuperTest {
     function test_setSequencerGracePeriod() public {
         assertEq(nav.chainlinkL2SequencerGracePeriod(), 1 hours);
 
-        vm.startPrank(navCalculatorManager);
+        vm.prank(admin);
         nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeed));
+        vm.prank(navCalculatorManager);
         nav.setChainlinkL2SequencerGracePeriod(2 hours);
 
         assertEq(nav.chainlinkL2SequencerGracePeriod(), 2 hours);
@@ -1184,7 +1185,7 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(sequencerUptimeFeed));
 
         // Set to address(0) - should work for L1 chains
-        vm.prank(navCalculatorManager);
+        vm.prank(admin);
         nav.setChainlinkL2SequencerUptimeFeed(address(0));
 
         assertEq(address(nav.chainlinkL2SequencerUptimeFeed()), address(0));

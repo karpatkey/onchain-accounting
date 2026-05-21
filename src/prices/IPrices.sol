@@ -17,7 +17,7 @@ interface IPrices {
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
     /// @param chainlinkHeartbeat Staleness window in seconds (non-zero for all types). For Chainlink/Redstone/API3
-    /// feeds this gates participation: block.timestamp - effectiveUpdatedAt > chainlinkHeartbeat → skip feed.
+    /// feeds this gates participation: block.timestamp - effectiveUpdatedAt >= chainlinkHeartbeat → skip feed.
     /// For Custom feeds the internal stale signal from getLatestPrice() is the primary gate; updatedAt from
     /// latestRoundData() then applies the same heartbeat gate (updatedAt==0 is treated as block.timestamp-1
     /// so rate-only feeds participate but yield to any feed with a real push timestamp), and among survivors

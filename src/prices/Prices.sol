@@ -15,7 +15,7 @@ import "src/errors.sol";
 /// @title Prices
 /// @notice Manages multiple price feeds per asset, returning the freshest non-stale value on each read.
 /// @dev The read path applies a per-feed staleness gate and then picks the feed with the largest
-/// effectiveUpdatedAt (clamped to block.timestamp to avoid Pyth-style upstream-clock bias). stale=true
+/// effectiveUpdatedAt (clamped to block.timestamp to avoid upstream-clock bias). stale=true
 /// is returned only when every registered feed fails the staleness gate.
 /// @author kpk
 abstract contract Prices is IPrices, Initializable {
@@ -79,7 +79,7 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Selects the freshest non-stale feed for an asset.
     /// @dev All non-Custom (AggregatorV3-shaped) feed types share the same read path. Custom feeds are
     /// gated by their internal stale signal first, then use latestRoundData() for freshness comparison.
-    /// Clock-skew: updatedAt is clamped to block.timestamp so Pyth's upstream publishTime cannot
+    /// Clock-skew: updatedAt is clamped to block.timestamp so a feed with a future timestamp cannot
     /// systematically beat on-chain-push feeds (Chainlink/Redstone). A Custom feed returning
     /// updatedAt == 0 ("no trackable oracle") is treated as block.timestamp - 1 so it participates
     /// but loses any tie against a feed that just refreshed.
@@ -112,26 +112,45 @@ abstract contract Prices is IPrices, Initializable {
                 // Custom feeds gate on their internal staleness signal first.
                 uint256 customPrice;
                 bool internalStale;
-                (customPrice, internalStale) = IPriceFeedCustom(cfg.priceFeed).getLatestPrice();
+                try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+                    customPrice = p;
+                    internalStale = s;
+                } catch {
+                    continue;
+                }
                 if (internalStale || customPrice == 0) continue;
                 rawPrice = customPrice.toInt256();
                 // latestRoundData() provides updatedAt for freshness comparison.
                 // updatedAt == 0 means "no trackable oracle" (e.g. an on-chain rate-only feed);
                 // treat as block.timestamp - 1 so the feed participates but yields to any feed with
                 // a real on-chain push timestamp.
-                (,,, uint256 lrdUpdatedAt,) = IPriceFeedCustom(cfg.priceFeed).latestRoundData();
-                updatedAt = lrdUpdatedAt == 0 ? block.timestamp - 1 : lrdUpdatedAt;
+                uint256 lrdUpdatedAt;
+                try IPriceFeedCustom(cfg.priceFeed).latestRoundData()
+                    returns (uint80, int256, uint256, uint256 u, uint80)
+                {
+                    lrdUpdatedAt = u;
+                } catch {
+                    continue;
+                }
+                updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
             } else {
-                // Chainlink / Redstone / Pyth (wrapper) / API3 — all implement AggregatorV3Interface.
-                (, int256 answer,, uint256 lrdUpdatedAt,) = AggregatorV3Interface(cfg.priceFeed).latestRoundData();
+                // Chainlink / Redstone / API3 — all implement AggregatorV3Interface.
+                int256 answer;
+                uint256 lrdUpdatedAt;
+                try AggregatorV3Interface(cfg.priceFeed).latestRoundData()
+                    returns (uint80, int256 a, uint256, uint256 u, uint80)
+                {
+                    answer = a;
+                    lrdUpdatedAt = u;
+                } catch {
+                    continue;
+                }
                 if (answer <= 0) continue;
                 rawPrice = answer;
                 updatedAt = lrdUpdatedAt;
             }
 
             // Clock-skew normalisation: clamp future timestamps to block.timestamp.
-            // This prevents Pyth's upstream publishTime (signed before the EVM push lands)
-            // from systematically winning over Chainlink/Redstone on-chain push times.
             uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
 
             // Per-feed staleness gate.
@@ -181,14 +200,11 @@ abstract contract Prices is IPrices, Initializable {
         if (priceFeed == address(0) || token == address(0)) revert InvalidPriceOracle();
         if (priceType == PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
-        } else if (
-            priceType == PriceType.Chainlink || priceType == PriceType.Redstone || priceType == PriceType.Pyth
-                || priceType == PriceType.API3
-        ) {
+        } else if (priceType == PriceType.Chainlink || priceType == PriceType.Redstone || priceType == PriceType.API3) {
             // Reject contracts that explicitly identify as IPriceFeedCustom — AggregatorV3-shaped feed
             // types and Custom are mutually exclusive.
             // ERC165Checker.supportsInterface() returns false (not revert) when the feed doesn't
-            // implement ERC165, so this is safe to call on Chainlink/Redstone/Pyth/API3 contracts.
+            // implement ERC165, so this is safe to call on Chainlink/Redstone/API3 contracts.
             if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
             AggregatorV3Interface(priceFeed).latestRoundData();
         } else {

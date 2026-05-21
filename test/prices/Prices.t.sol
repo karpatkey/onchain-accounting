@@ -438,7 +438,7 @@ contract PricesTest is Test {
     }
 
     function test_multiFeed_clockSkewNormalization() public {
-        // A feed whose updatedAt > block.timestamp (Pyth upstream publish time arriving before EVM push)
+        // A feed whose updatedAt > block.timestamp (future-dated timestamp)
         // must be clamped to block.timestamp and NOT systematically beat a normally-timed feed.
         // Setup: create futureOracle at t=300, then wind block.timestamp back to t=100.
         vm.warp(300);

@@ -7,7 +7,7 @@
 
 ## Context
 
-`Prices.sol` previously stored **one feed per asset**. If that single feed froze or returned a stale price, NAV reads degraded silently (`stale=true`, no fallback). Production assets increasingly have multiple viable price sources (Chainlink, Redstone Classic Push, Pyth Network, API3 dAPIs), and registering only one creates unnecessary fragility.
+`Prices.sol` previously stored **one feed per asset**. If that single feed froze or returned a stale price, NAV reads degraded silently (`stale=true`, no fallback). Production assets increasingly have multiple viable price sources (Chainlink, Redstone Classic Push, API3 dAPIs), and registering only one creates unnecessary fragility.
 
 ---
 
@@ -33,7 +33,7 @@ else:         return (winner.price, winner.decimals, false)
 
 | `PriceType` | Read path |
 |---|---|
-| `Chainlink`, `Redstone`, `Pyth` (wrapper), `API3` | `AggregatorV3Interface.latestRoundData()` — `answer` is price, `updatedAt` is freshness timestamp |
+| `Chainlink`, `Redstone`, `API3` | `AggregatorV3Interface.latestRoundData()` — `answer` is price, `updatedAt` is freshness timestamp |
 | `Custom` | `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` gate; then `latestRoundData()` for `updatedAt`. `updatedAt == 0` means "no trackable oracle" → treated as `block.timestamp - 1` |
 
 ### Invariant: cannot remove last feed
@@ -43,16 +43,10 @@ else:         return (winner.price, winner.decimals, false)
 ### New provider types in `PriceType` enum
 
 ```solidity
-Chainlink, Custom, Redstone, Pyth, API3
+Chainlink, Custom, Redstone, API3
 ```
 
-Redstone, Pyth (via `PythAggregatorV3` wrapper), and API3 all implement `AggregatorV3Interface` and share the same read path as Chainlink. The enum values exist for observability and admin-time validation (registration rejects a Pyth wrapper registered as `Custom`, and vice-versa).
-
-### `PythAggregatorV3` wrapper
-
-`src/prices/protocols/PythAggregatorV3.sol` — thin wrapper that calls `IPyth.getPriceUnsafe(priceFeedId)` and normalises Pyth's `(price, expo)` mantissa to 8-decimal `int256` using: `shift = 8 + expo; if shift >= 0: mantissa * 10^shift; else: mantissa / 10^(-shift)`. `updatedAt = publishTime` (upstream Pythnet signing time).
-
-Pyth's `publishTime` often arrives ahead of the EVM block in which the push is included. The clock-skew normalisation (`min(updatedAt, block.timestamp)`) prevents the Pyth feed from systematically winning over Chainlink/Redstone feeds purely on the strength of an upstream signing time.
+Redstone and API3 both implement `AggregatorV3Interface` and share the same read path as Chainlink. The enum values exist for observability and admin-time validation.
 
 ### Storage change
 
@@ -77,10 +71,6 @@ A malicious or misconfigured feed could report a `updatedAt` equal to `block.tim
 ### Why `updatedAt == 0 → block.timestamp - 1` for Custom feeds?
 
 Some on-chain rate-only adapters (e.g., pure DSR or exchange-rate feeds with no external oracle) have no meaningful "last update time" — the rate is a live storage slot that changes continuously. `latestRoundData()` on these returns `updatedAt = 0`. Treating `0` as literally zero would make the staleness gate reject the feed (`block.timestamp - 0 > heartbeat` is almost always true). Treating it as `block.timestamp` would make it win every tie. `block.timestamp - 1` is a compromise: the feed participates, but yields to any feed with a real on-chain timestamp.
-
-### Why a new `PythAggregatorV3` wrapper rather than using the SDK's?
-
-`pyth-sdk-solidity` v2.2.0 (the PyPI/npm package at `lib/pyth-sdk-solidity`) ships `IPyth` and `PythStructs` but not `PythAggregatorV3` (that lives in `pyth-crosschain`, a separate repo). Writing a thin local wrapper using only the two SDK types we already have avoids pulling in an additional submodule or build dependency.
 
 ---
 

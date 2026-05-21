@@ -165,15 +165,18 @@ contract RegisterAssets is BaseDeployScript {
             if (!preRegistered && _hasNoCode(asset)) continue;
 
             string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
-            if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) continue;
+            IPrices.PriceType priceType;
+            if (_equals(priceTypeStr, "Chainlink")) priceType = IPrices.PriceType.Chainlink;
+            else if (_equals(priceTypeStr, "Custom")) priceType = IPrices.PriceType.Custom;
+            else if (_equals(priceTypeStr, "Redstone")) priceType = IPrices.PriceType.Redstone;
+            else if (_equals(priceTypeStr, "API3")) priceType = IPrices.PriceType.API3;
+            else continue;
             string memory oracleStr = ConfigReader.readTokenOracle(vm, currentChainId, symbol);
             if (bytes(oracleStr).length == 0) continue;
             address oracle = vm.parseAddress(oracleStr);
             if (oracle == address(0)) continue;
 
             uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
-            IPrices.PriceType priceType =
-                _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
 
             // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need addPriceFeed,
             // not registerAsset (which would revert with InvalidArguments — already registered).

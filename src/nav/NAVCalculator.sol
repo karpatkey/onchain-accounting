@@ -603,7 +603,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
         priceFeedData.stale = stale || checkL2SequencerUptime();
 
-        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, Pyth, API3).
+        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
         if (config.priceType != IPrices.PriceType.Custom) {
             (,,, uint256 roundUpdatedAt,) = AggregatorV3Interface(config.priceFeed).latestRoundData();
             priceFeedData.updatedAt = roundUpdatedAt;

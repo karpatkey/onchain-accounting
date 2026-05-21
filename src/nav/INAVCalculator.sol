@@ -103,7 +103,7 @@ interface INAVCalculator is IBalances {
     /// @dev When multiple feeds are registered, these fields describe the winning (freshest) feed.
     /// When all feeds are stale, fields describe the first registered feed and stale == true.
     /// @param priceFeed Address of the selected price feed contract.
-    /// @param priceType Feed type (Chainlink, Custom, Redstone, Pyth, or API3).
+    /// @param priceType Feed type (Chainlink, Custom, Redstone, or API3).
     /// @param price Current price (e.g. USD per unit); 0 when stale.
     /// @param decimals Decimals of the selected feed's output.
     /// @param chainlinkHeartbeat Staleness window of the selected feed in seconds.
@@ -168,7 +168,7 @@ interface INAVCalculator is IBalances {
     /// @dev Reverts with PriceFeedAlreadyRegistered if the feed address is already registered for this asset.
     /// @param asset Registered asset address.
     /// @param priceFeed Price feed address (cannot be zero).
-    /// @param priceType Chainlink, Custom, Redstone, Pyth, or API3.
+    /// @param priceType Chainlink, Custom, Redstone, or API3.
     /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero for all types).
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;

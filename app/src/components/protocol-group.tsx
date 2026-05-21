@@ -128,15 +128,25 @@ function PositionRow({ pos, chainId, totalPortfolioNav }: { pos: OnchainPosition
 
 /// Extract a pool / market / vault display name from an adapter's positionDetail JSON.
 /// positionDetail follows the convention defined in `script/config/adapter-identities.json`
-/// — JSON-shaped, typically with a `pool` / `market` / `vault` key. The closing `}` may or
-/// may not be present (the adapter appends a `type` suffix; gracefully handle either form).
+/// — JSON-shaped, with a discriminator key whose name varies per protocol:
+///   - `pool`   — Uniswap V2/V3, PancakeSwap V2/V3, Balancer V3, Curve
+///   - `market` — Aave V3/V2, Compound V3, Spark, Morpho Markets
+///   - `vault`  — Morpho Vaults, ERC-4626 wrappers, StakeWise V3 Vaults
+///   - `name`   — Uniswap V3 in `chains/*.json` uses `"name": "WBTC/WETH 0.3%"` as the canonical
+///                label, and several other adapters mirror this. Check this last to prefer the
+///                protocol-specific key when both are present.
+///   - `product`, `gauge`, `feed` — long-tail fallbacks for protocol-specific shapes.
+/// The closing `}` may or may not be present (the adapter appends a `type` suffix at emit time;
+/// gracefully handle either form).
 function extractPoolLabel(positionDetail: string): string | null {
   if (!positionDetail) return null
   let text = positionDetail.trim()
   if (!text.endsWith('}')) text += '}'
   try {
     const obj = JSON.parse(text) as Record<string, unknown>
-    const candidate = (obj.pool ?? obj.market ?? obj.vault ?? obj.gauge ?? obj.feed) as string | undefined
+    const candidate = (obj.pool ?? obj.market ?? obj.vault ?? obj.name ?? obj.product ?? obj.gauge ?? obj.feed) as
+      | string
+      | undefined
     return typeof candidate === 'string' && candidate.length > 0 ? candidate : null
   } catch {
     return null

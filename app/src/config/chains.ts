@@ -24,9 +24,12 @@ export function explorerAddressUrl(chainId: number, address: string): string {
 //   - NEXT_PUBLIC_NAV_ADDRESS_<chainId> (per-chain) — wins over the global one
 // Per-chain overrides exist because dev forks deploy via plain CREATE (not CREATE2), so the
 // proxy addresses diverge per chain depending on the deployer EOA's nonce on each fork.
+//
+// IMPORTANT: there is no global `NAV_CALCULATOR_ADDRESS` export. Use `DEPLOYED_CHAINS[i].navAddress`
+// or `lookupNavAddress(chainId)` below. A global would silently target the wrong proxy on dev
+// forks where per-chain addresses diverge.
 const DEFAULT_NAV_ADDRESS = '0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19' as const
 const GLOBAL_NAV_OVERRIDE = process.env.NEXT_PUBLIC_NAV_ADDRESS || ''
-export const NAV_CALCULATOR_ADDRESS = (GLOBAL_NAV_OVERRIDE || DEFAULT_NAV_ADDRESS) as `0x${string}`
 
 function resolveNavAddress(chainId: number): `0x${string}` {
   const perChain = {
@@ -88,3 +91,10 @@ export const DEPLOYED_CHAINS = [
     navAddress: resolveNavAddress(8453),
   },
 ] as const
+
+/// Per-chain NAV proxy lookup. Prefer this over a global constant — see the comment above
+/// `resolveNavAddress` for why per-chain matters on dev forks.
+/// Returns the production CREATE2 address if the chainId is not in DEPLOYED_CHAINS.
+export function lookupNavAddress(chainId: number): `0x${string}` {
+  return resolveNavAddress(chainId)
+}

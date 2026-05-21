@@ -5,7 +5,8 @@
 #
 # Usage:  register-assets.sh <chainId>
 # Reads asset list + Chainlink feed addresses from script/config/assets.json.
-# Skips Custom-type (handled by 03_DeployCustomFeeds.s.sol + 04_RegisterCustomAssets.sh).
+# Skips Custom-type assets — those are deployed via prod's script/deploy/03_DeployPriceFeeds.s.sol
+# against the dev anvil RPC (no dev-specific custom-feed deploy script exists; see development/README.md).
 set -euo pipefail
 
 CID=${1:?chainId required}
@@ -80,6 +81,13 @@ done
 
 echo "--- chain $CID summary: ok=$ok fail=$fail skip=$skip"
 
-# Persist count to addresses file for idempotency
-jq --argjson n "$ok" '. + {assetsRegisteredCount: $n}' "$STATE_DIR/$CID-addresses.json" \
-  > "$STATE_DIR/$CID-addresses.json.tmp" && mv "$STATE_DIR/$CID-addresses.json.tmp" "$STATE_DIR/$CID-addresses.json"
+# Persist count to addresses file for idempotency ONLY when every attempted registration succeeded.
+# If any tx failed, leave assetsRegisteredCount unwritten so deploy.sh re-runs this script next
+# invocation (each registerAsset/setPriceFeed is per-asset idempotent on the contract side, so
+# replay is safe).
+if [ "$fail" -eq 0 ]; then
+  jq --argjson n "$ok" '. + {assetsRegisteredCount: $n}' "$STATE_DIR/$CID-addresses.json" \
+    > "$STATE_DIR/$CID-addresses.json.tmp" && mv "$STATE_DIR/$CID-addresses.json.tmp" "$STATE_DIR/$CID-addresses.json"
+else
+  echo "--- chain $CID: $fail failure(s) — NOT stamping assetsRegisteredCount; deploy.sh will retry"
+fi

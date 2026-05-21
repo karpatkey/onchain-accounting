@@ -2,7 +2,7 @@
 
 import { useReadContracts } from 'wagmi'
 import { aggregatorV3Abi, navCalcAbi } from '@/config/abis'
-import { NAV_CALCULATOR_ADDRESS } from '@/config/chains'
+import { lookupNavAddress } from '@/config/chains'
 
 export type SequencerData = {
   chainId: number
@@ -31,7 +31,7 @@ export function useSequencer(
           },
           {
             chainId,
-            address: NAV_CALCULATOR_ADDRESS,
+            address: lookupNavAddress(chainId),
             abi: navCalcAbi,
             functionName: 'chainlinkL2SequencerGracePeriod' as const,
           },

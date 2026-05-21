@@ -131,6 +131,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
 
         assertFalse(stale, "API3 stub should keep the read healthy after 1h warp");
         assertEq(d.priceFeed, address(api3Feed), "API3 stub should win after others expire");
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(price, int256(STUB_BTC_PRICE),   "winning price should come from the API3 stub");
 
         console2.log("Winner after 1h warp:", d.priceFeed, "(API3 stub, 24h heartbeat)");

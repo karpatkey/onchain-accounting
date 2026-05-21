@@ -33,10 +33,7 @@ contract DeployNAV is Script {
 
         NAVCalculator impl = new NAVCalculator();
 
-        bytes memory initData = abi.encodeCall(
-            NAVCalculator.initialize,
-            (admin, sequencerFeed, nativeSymbol)
-        );
+        bytes memory initData = abi.encodeCall(NAVCalculator.initialize, (admin, sequencerFeed, nativeSymbol));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         NAVCalculator nav = NAVCalculator(address(proxy));
 

@@ -604,7 +604,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_getPriceData_customOracle_noTrackableOracle() public {
         // Per IPriceFeedCustom convention, latestRoundData() returning updatedAt = 0 is the
         // documented sentinel for feeds with no trackable oracle dependency (live on-chain rate).
-        // getPriceData() must pass the sentinel through to callers — see ADR 0009.
+        // getPriceData() must pass the sentinel through to callers — see ADR 0010.
         Mock_CustomPriceFeedStaled liveRateOracle = new Mock_CustomPriceFeedStaled("LiveRate", address(usdc), 1e8, 8);
         vm.prank(navCalculatorManager);
         nav.setPriceFeed(address(usdc), address(liveRateOracle), IPrices.PriceType.Custom, type(uint256).max);

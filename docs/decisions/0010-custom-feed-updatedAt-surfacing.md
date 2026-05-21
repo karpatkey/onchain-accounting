@@ -1,4 +1,4 @@
-# 0009 — Surface custom-feed `updatedAt` through `NAVCalculator.getPriceData()`
+# 0010 — Surface custom-feed `updatedAt` through `NAVCalculator.getPriceData()`
 
 **Status:** accepted
 

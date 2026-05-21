@@ -117,7 +117,7 @@ function SortTh({
 
 // Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
 // oracle(s) per IPriceFeedCustom.latestRoundData() convention. updatedAt == 0 is the
-// documented sentinel for "no trackable oracle dependency" (live on-chain rate) — see ADR 0009.
+// documented sentinel for "no trackable oracle dependency" (live on-chain rate) — see ADR 0010.
 const CUSTOM_LIVE_TIP = 'Live on-chain rate — no external oracle dependency.'
 
 interface PriceFeedsTableProps {

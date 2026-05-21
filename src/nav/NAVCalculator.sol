@@ -92,7 +92,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the chainlink feed for the sequencer uptime
     /// @param nativeTokenSymbol_ The native token symbol (e.g. "ETH", "xDAI") — fixed at init
     function initialize(address admin_, address chainlinkL2SequencerUptimeFeed_, string memory nativeTokenSymbol_)
-        public
+        external
         initializer
     {
         __AccessControl_init();

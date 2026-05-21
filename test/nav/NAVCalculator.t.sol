@@ -10,7 +10,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
-        NAVCalculator.initialize(admin, chainlinkUptimeFeed, nativeTokenSymbol);
+        this.initialize(admin, chainlinkUptimeFeed, nativeTokenSymbol);
     }
 }
 

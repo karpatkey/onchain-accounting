@@ -9,7 +9,8 @@
   "block": {
     "number": 25144444,
     "timestamp": 1779376566,
-    "timestamp_hex": "0x6a0f21b6"
+    "timestamp_hex": "0x6a0f21b6",
+    "timestamp_utc": "2026-05-21 15:16:06 UTC"
   },
   "holder": {
     "address": "0xf38521f130fccf29db1961597bc5d2b60f995f85",

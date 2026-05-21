@@ -10,6 +10,7 @@ This mirrors `_pendingProtocolMint` in src/balances/protocols/UniswapV2.sol.
 """
 import json
 import math
+from datetime import datetime, timezone
 from pathlib import Path
 
 HOLDER = "0xf38521f130fccf29db1961597bc5d2b60f995f85"
@@ -18,6 +19,7 @@ FEE_TO = "0xf38521f130fcCF29dB1961597bc5d2B60F995f85"  # same as holder!
 BLOCK = 25_144_444
 TIMESTAMP_HEX = "0x6a0f21b6"
 TIMESTAMP = int(TIMESTAMP_HEX, 16)
+TIMESTAMP_UTC = datetime.fromtimestamp(TIMESTAMP, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 PAIRS = {
     "USDC_WETH": {
@@ -150,7 +152,7 @@ case = {
     "adapter": "src/balances/protocols/UniswapV2.sol",
     "adapter_test": "test/balances/protocols/fork/UniswapV2.fork.t.sol",
     "chain": {"id": 1, "name": "mainnet"},
-    "block": {"number": BLOCK, "timestamp": TIMESTAMP, "timestamp_hex": TIMESTAMP_HEX},
+    "block": {"number": BLOCK, "timestamp": TIMESTAMP, "timestamp_hex": TIMESTAMP_HEX, "timestamp_utc": TIMESTAMP_UTC},
     "holder": {
         "address": HOLDER,
         "type": "Contract (1990B) — Uniswap V2 protocol-fee recipient (factory.feeTo)",

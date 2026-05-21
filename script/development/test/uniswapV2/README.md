@@ -53,7 +53,7 @@ This matches Uniswap V2's `burn()` math exactly modulo the protocol-fee mint seq
 |---|---|
 | Chain | Ethereum mainnet (chainId 1) |
 | Block | **25,144,444** |
-| Block timestamp | 1779376566 (`0x6a0f21b6`) |
+| Block timestamp | 1779376566 (`0x6a0f21b6`) — **2026-05-21 15:16:06 UTC** |
 | Holder | `0xf38521f130fcCF29dB1961597bc5d2B60F995f85` |
 | Factory | `0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f` |
 | Factory `feeTo` | **= holder** (dilution branch active) |
@@ -84,6 +84,34 @@ Computed via `_pendingProtocolMint` formula in arbitrary precision from pinned o
 | Delta (app − debank) | _(record)_ | Should be ≤ minutes of drift in USD terms. |
 
 Debank does its own LP-underlying derivation; if it doesn't apply the dilution adjustment, expect a sub-basis-point delta vs the app — negligible at the dollar scale of these positions.
+
+### Live-vs-fork drift evidence (USDC/WETH spot-check, 2026-05-21)
+
+Comparing the holder's USDC/WETH position at our pinned fork block vs live mainnet **31 minutes later** (156 blocks past the fork). One swap moved the reserves; `totalSupply` / `kLast` / holder LP unchanged.
+
+| Field | Pinned (25,144,444) | Live (25,144,600) | Δ |
+|---|---|---|---|
+| `reserve0` (USDC) | 9,283,709,548,424 | 9,309,477,230,279 | +25.77M USDC |
+| `reserve1` (WETH) | 4,383,885,649,164,906,350,202 | 4,371,788,523,176,526,737,061 | −12.10 WETH |
+| `totalSupply` | 71,524,960,490,263,522 | 71,524,960,490,263,522 | 0 |
+| `kLast` | 40,698,714,004,570,785,604,812,811,690,423,272 | (same) | 0 |
+| Holder LP | 572,118,540,385 | (same) | 0 |
+| → Holder's USDC | **74.26** | **74.47** | +0.21 (+0.28%) |
+| → Holder's WETH | **0.03507** | **0.034969** | −0.0001 (−0.28%) |
+
+The Uniswap web UI's "Remove Liquidity" preview at the live moment showed **74.47 USDC + 0.035 WETH**, matching the live-block math to the cent. Our test's pinned-block values are correct — the gap is just time since the fork, not an adapter bug.
+
+If you observe a Debank delta noticeably larger than what this drift implies, escalate it (could indicate Debank using a different LP-share derivation, or a stale Debank cache, neither of which would impact the adapter).
+
+## Wiring the live dev-anvil dashboard
+
+`deploy-uniV2-adapters-mainnet.sh` deploys + registers all 6 Uni V2 adapters on the local mainnet anvil so the NAV dashboard can render the holder's positions. Run **after** the dev anvil is up + NAV is deployed (i.e. after `bash /tmp/refork.sh`):
+
+```bash
+bash script/development/test/uniswapV2/deploy-uniV2-adapters-mainnet.sh
+```
+
+Deployed addresses go to `script/development/state/1-uniV2-adapters.json` for cross-reference. This step is separate from the fork test (which deploys its own adapter instances in `setUp()`); it's purely the side-channel app surface.
 
 ## Test verdict (2026-05-21)
 

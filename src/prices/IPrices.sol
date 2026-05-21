@@ -14,9 +14,12 @@ interface IPrices {
     /// @notice Struct representing a price feed configuration (stored price feed configuration).
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
-    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds. Staleness is
-    /// determined as block.timestamp - latestRoundData().updatedAt > chainlinkHeartbeat for both Chainlink and Custom
-    /// feeds. For Custom feeds, updatedAt is sourced from IPriceFeedCustom.latestRoundData().
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds.
+    /// For Chainlink feeds, Prices.sol checks block.timestamp - latestRoundData().updatedAt > chainlinkHeartbeat
+    /// and flags stale if exceeded. For Custom feeds the heartbeat is pinned for documentation and
+    /// external observability (NAVCalculator.getPriceData() returns it alongside the underlying-oracle
+    /// updatedAt sourced from IPriceFeedCustom.latestRoundData()); the actual Prices.sol staleness gate
+    /// for Custom feeds uses the stale flag returned by IPriceFeedCustom.getLatestPrice().
     /// @param priceType The type of the price feed (Chainlink or Custom).
     struct PriceFeedConfig {
         address priceFeed;

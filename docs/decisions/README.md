@@ -25,3 +25,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0006 | [Aave Umbrella Balance Oracle: dynamic discovery via RewardsController](0006-aave-umbrella-balance-oracle.md) | accepted |
 | 0007 | [Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache](0007-merkl-trust-minimized-cache.md) | accepted |
 | 0008 | [Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code](0008-uniswap-v3-math-libs-gpl-license.md) | accepted |
+| 0009 | [Surface custom-feed `updatedAt` through `NAVCalculator.getPriceData()`](0009-custom-feed-updatedAt-surfacing.md) | accepted |

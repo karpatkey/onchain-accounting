@@ -596,7 +596,22 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
-        assertEq(priceFeed.updatedAt, 0); // Custom oracle should have 0 updatedAt
+        // Per IPriceFeedCustom.latestRoundData() convention, updatedAt surfaces the worst-case
+        // freshness of the underlying oracle(s); Mock_CustomPriceFeed pins it to block.timestamp.
+        assertEq(priceFeed.updatedAt, block.timestamp);
+    }
+
+    function test_getPriceData_customOracle_noTrackableOracle() public {
+        // Per IPriceFeedCustom convention, latestRoundData() returning updatedAt = 0 is the
+        // documented sentinel for feeds with no trackable oracle dependency (live on-chain rate).
+        // getPriceData() must pass the sentinel through to callers — see ADR 0009.
+        Mock_CustomPriceFeedStaled liveRateOracle = new Mock_CustomPriceFeedStaled("LiveRate", address(usdc), 1e8, 8);
+        vm.prank(navCalculatorManager);
+        nav.setPriceFeed(address(usdc), address(liveRateOracle), IPrices.PriceType.Custom, type(uint256).max);
+
+        INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
+        assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
+        assertEq(priceFeed.updatedAt, 0);
     }
 
     function test_getPriceData_stalePrice() public {

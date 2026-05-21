@@ -85,7 +85,7 @@ Every custom feed must implement this interface (and ERC165).
 | Method | Purpose |
 |---|---|
 | `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. The `stale` flag is ignored by `Prices.sol`; a zero price is the reliable signal. |
-| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` does not read this.** It exists purely for external observability: monitoring tools, dashboards, or other protocols that want to inspect the freshness of the underlying Chainlink data. See §5.1 for what to return. |
+| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` does not read this** for staleness (it uses `getLatestPrice().stale` directly), but `NAVCalculator.getPriceData()` does call it to surface the underlying-oracle `updatedAt` to external callers (dashboards, monitoring tools) through the unified `PriceFeedData` struct. See §5.1 for what to return. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |
 | `supportsInterface(bytes4)` | Must return `true` for `type(IPriceFeedCustom).interfaceId` and `IERC165`. |
@@ -134,9 +134,9 @@ Every Chainlink heartbeat used in an adapter's staleness check is pinned as an i
 | Gnosis | 100 | https://reference-data-directory.vercel.app/feeds-xdai-mainnet.json |
 | BNB Chain | 56 | https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json |
 
-#### What `latestRoundData()` must return (for external callers)
+#### What `latestRoundData()` must return
 
-`latestRoundData()` is kept on all custom feeds so external tools can inspect freshness via the standard Chainlink interface. `Prices.sol` never reads it.
+`latestRoundData()` is implemented on all custom feeds for two consumers: external tools (dashboards, monitoring) that prefer the standard Chainlink interface, and `NAVCalculator.getPriceData()`, which calls it to populate the `updatedAt` field of `PriceFeedData` so callers see a unified freshness timestamp for Chainlink and Custom alike. `Prices.sol`'s staleness gate does not read it — staleness still comes from `getLatestPrice().stale`.
 
 | Feed type | `updatedAt` | `answer` |
 |---|---|---|

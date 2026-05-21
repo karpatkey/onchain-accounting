@@ -8,6 +8,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {IPrices, Prices} from "src/prices/Prices.sol";
+import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
@@ -596,11 +597,16 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
         priceFeedData.stale = stale;
 
-        // Get Chainlink-specific data
+        // Surface the underlying-oracle freshness timestamp for callers (e.g. dashboards).
+        // Chainlink: direct read. Custom: per the IPriceFeedCustom convention, latestRoundData()
+        // returns the worst-case updatedAt across the feed's underlying oracle(s); 0 is the
+        // sentinel for "no trackable oracle dependency" (live on-chain rate).
         if (config.priceType == IPrices.PriceType.Chainlink) {
-            AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
-            (,,, uint256 roundUpdatedAt,) = chainlinkFeed.latestRoundData();
+            (,,, uint256 roundUpdatedAt,) = AggregatorV3Interface(config.priceFeed).latestRoundData();
             priceFeedData.updatedAt = roundUpdatedAt;
+        } else if (config.priceType == IPrices.PriceType.Custom) {
+            (,,, uint256 customUpdatedAt,) = IPriceFeedCustom(config.priceFeed).latestRoundData();
+            priceFeedData.updatedAt = customUpdatedAt;
         }
 
         // Check L2 sequencer uptime (conditional on L2)

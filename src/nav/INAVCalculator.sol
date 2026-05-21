@@ -104,8 +104,14 @@ interface INAVCalculator is IBalances {
     /// @param priceType Chainlink or Custom.
     /// @param price Current price (e.g. USD per unit).
     /// @param decimals Decimals of the price.
-    /// @param chainlinkHeartbeat Heartbeat for staleness (Chainlink only).
-    /// @param updatedAt Last update timestamp (Chainlink: from latestRoundData; Custom: 0).
+    /// @param chainlinkHeartbeat Registered heartbeat for the feed in seconds. Used by Prices.sol
+    ///        for Chainlink staleness checks; pinned at registration for Custom feeds for
+    ///        external observability (Prices.sol relies on the feed's internal stale flag).
+    /// @param updatedAt Last update timestamp from the underlying oracle. Chainlink: returned by
+    ///        latestRoundData(). Custom: returned by IPriceFeedCustom.latestRoundData(), which by
+    ///        convention surfaces the worst-case updatedAt across the feed's underlying oracle(s);
+    ///        a value of 0 is the documented sentinel for "no trackable oracle dependency" (live
+    ///        on-chain rate).
     /// @param stale True if price is stale (heartbeat or custom logic).
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
     struct PriceFeedData {

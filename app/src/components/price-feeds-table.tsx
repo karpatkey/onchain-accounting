@@ -115,7 +115,10 @@ function SortTh({
   )
 }
 
-const CUSTOM_DASH_TIP = 'Heartbeat monitoring is not available for custom feeds.'
+// Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
+// oracle(s) per IPriceFeedCustom.latestRoundData() convention. updatedAt == 0 is the
+// documented sentinel for "no trackable oracle dependency" (live on-chain rate) — see ADR 0009.
+const CUSTOM_LIVE_TIP = 'Live on-chain rate — no external oracle dependency.'
 
 interface PriceFeedsTableProps {
   data: ChainPriceFeeds
@@ -240,14 +243,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                   {formatPrice(feed.price, feed.decimals)}
                 </Td>
                 <Td className={`text-right tabular-nums text-muted-foreground ${td}`}>
-                  {feed.priceType === 0 ? (
-                    formatHeartbeat(feed.chainlinkHeartbeat)
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger className="cursor-default">—</TooltipTrigger>
-                      <TooltipContent>{CUSTOM_DASH_TIP}</TooltipContent>
-                    </Tooltip>
-                  )}
+                  {formatHeartbeat(feed.chainlinkHeartbeat)}
                 </Td>
                 <Td className={`text-right tabular-nums ${td}`}>
                   {feed.updatedAt > 0n ? (
@@ -261,8 +257,8 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                     </Tooltip>
                   ) : feed.priceType === 1 ? (
                     <Tooltip>
-                      <TooltipTrigger className="cursor-default text-muted-foreground">—</TooltipTrigger>
-                      <TooltipContent>{CUSTOM_DASH_TIP}</TooltipContent>
+                      <TooltipTrigger className="cursor-default text-muted-foreground">Live</TooltipTrigger>
+                      <TooltipContent>{CUSTOM_LIVE_TIP}</TooltipContent>
                     </Tooltip>
                   ) : (
                     <span className="text-muted-foreground">—</span>

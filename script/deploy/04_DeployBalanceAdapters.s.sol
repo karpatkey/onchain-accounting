@@ -28,6 +28,7 @@ import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
+import {UniswapV2BalanceOracle} from "../../src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
@@ -168,6 +169,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
+
+        // --- Uniswap V2 (one instance per pair) ---
+        // Adapter is **verified** (see script/development/test/uniswapV2/ + the augmented fork
+        // test contract `UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver`). No KPK fund
+        // currently holds V2 LP, so every entry is disabled by default. Re-enable per-chain
+        // configuration when a strategy opens a V2 position.
+        _deployIfEnabled("UniswapV2_USDC_WETH"); // Mainnet — canonical V2 pair
+        _deployIfEnabled("UniswapV2_USDT_WETH"); // Mainnet
+        _deployIfEnabled("UniswapV2_DAI_WETH"); // Mainnet
+        _deployIfEnabled("UniswapV2_WBTC_WETH"); // Mainnet
+        _deployIfEnabled("UniswapV2_USDC_USDT"); // Mainnet
+        _deployIfEnabled("UniswapV2_DAI_USDC"); // Mainnet
 
         // --- Uniswap V3 (one instance per pool — Mainnet) ---
         _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
@@ -343,6 +356,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
         if (_equals(adapterName, "MerklRewards")) {
             return _deployMerklRewards(adapterName, navCalculator);
+        }
+
+        // Uniswap V2 adapters (one instance per pair). Same constructor shape as PancakeSwapV2;
+        // PancakeSwapV2 is in fact a thin subclass of UniswapV2BalanceOracle (ADR 0008).
+        if (_startsWith(adapterName, "UniswapV2_")) {
+            return _deployUniswapV2(adapterName, navCalculator);
         }
 
         // Uniswap V3 adapters (one instance per pool)
@@ -787,6 +806,34 @@ contract DeployBalanceAdapters is BaseDeployScript {
         MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(
             distributor, navCalculator, protocol, positionDetail, positionId, chainConfig.admin
         );
+        return address(adapter);
+    }
+
+    function _deployUniswapV2(string memory adapterName, address navCalculator) internal returns (address) {
+        // Schema (chains/<id>.json):
+        //   "UniswapV2_<pair>": {
+        //     "enabled": false,
+        //     "constructor": {
+        //       "pair": "0x...",
+        //       "protocol": "Uniswap V2",
+        //       "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
+        //       "positionId": "0x..."
+        //     }
+        //   }
+        // Adapter verified by test/balances/protocols/fork/UniswapV2.fork.t.sol
+        // (UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver). See
+        // script/development/test/uniswapV2/ for the evidence pack + methodology.
+        address pair =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+        string memory positionId =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
+
+        UniswapV2BalanceOracle adapter =
+            new UniswapV2BalanceOracle(pair, protocol, positionDetail, positionId, navCalculator);
         return address(adapter);
     }
 

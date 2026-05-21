@@ -657,6 +657,72 @@
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     },
+    "UniswapV2_USDC_WETH": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
+        "positionId": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
+      },
+      "deployed": "",
+      "comment": "Verified by test/balances/protocols/fork/UniswapV2.fork.t.sol::UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver. Disabled: no KPK fund currently holds V2 LP. Enable when a strategy opens a position. See script/development/test/uniswapV2/."
+    },
+    "UniswapV2_USDT_WETH": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDT/WETH LP\"",
+        "positionId": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852"
+      },
+      "deployed": "",
+      "comment": "Verified pair. Disabled: no KPK fund currently holds V2 LP."
+    },
+    "UniswapV2_DAI_WETH": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"DAI/WETH LP\"",
+        "positionId": "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11"
+      },
+      "deployed": "",
+      "comment": "Verified pair. Disabled: no KPK fund currently holds V2 LP."
+    },
+    "UniswapV2_WBTC_WETH": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"WBTC/WETH LP\"",
+        "positionId": "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940"
+      },
+      "deployed": "",
+      "comment": "Verified pair. Disabled: no KPK fund currently holds V2 LP."
+    },
+    "UniswapV2_USDC_USDT": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/USDT LP\"",
+        "positionId": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f"
+      },
+      "deployed": "",
+      "comment": "Verified pair. Disabled: no KPK fund currently holds V2 LP."
+    },
+    "UniswapV2_DAI_USDC": {
+      "enabled": false,
+      "constructor": {
+        "pair": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5",
+        "protocol": "Uniswap V2",
+        "positionDetail": "{\"protocol\":\"Uniswap V2\",\"pool\":\"DAI/USDC LP\"",
+        "positionId": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5"
+      },
+      "deployed": "",
+      "comment": "Verified pair. Disabled: no KPK fund currently holds V2 LP."
+    },
     "UniswapV3_WBTC_WETH_3000": {
       "enabled": true,
       "constructor": {

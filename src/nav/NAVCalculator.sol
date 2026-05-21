@@ -591,7 +591,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireAssetExists(underlyingAsset);
         _requirePriceFeedExists(underlyingAsset);
 
-        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx) = _selectFeed(underlyingAsset);
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
+            _selectFeed(underlyingAsset);
 
         // Report the selected (freshest non-stale) feed's config.
         // When all feeds are stale winnerIdx == type(uint256).max; fall back to the first feed for config.
@@ -604,6 +605,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         priceFeedData.decimals = decimals;
         priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
         priceFeedData.stale = stale || checkL2SequencerUptime();
+        priceFeedData.healthyFeedCount = healthyFeedCount;
 
         // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
         if (config.priceType != IPrices.PriceType.Custom) {

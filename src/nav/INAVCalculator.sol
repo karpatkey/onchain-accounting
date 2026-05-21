@@ -114,6 +114,9 @@ interface INAVCalculator is IBalances {
     /// @param updatedAt Last update timestamp from latestRoundData (AggregatorV3-shaped feeds only; 0 for Custom).
     /// @param stale True if all feeds are stale or the L2 sequencer is down.
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
+    /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
+    ///        A value below the total registered feed count signals partial redundancy collapse and
+    ///        should trigger off-chain alerting.
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
@@ -123,6 +126,7 @@ interface INAVCalculator is IBalances {
         uint256 updatedAt;
         bool stale;
         bool sequencerDown;
+        uint256 healthyFeedCount;
     }
 
     //

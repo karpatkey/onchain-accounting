@@ -51,7 +51,7 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @inheritdoc IPrices
     function latestPrice(address token) external view returns (int256 price, uint8 decimals, bool stale) {
-        (price, decimals, stale,) = _selectFeed(token);
+        (price, decimals, stale,,) = _selectFeed(token);
         stale = checkL2SequencerUptime() || stale;
     }
 
@@ -73,7 +73,7 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @notice Returns the latest price for a given token without checking the L2 sequencer uptime.
     function _latestPrice(address token) internal view returns (int256 price, uint8 decimals, bool stale) {
-        (price, decimals, stale,) = _selectFeed(token);
+        (price, decimals, stale,,) = _selectFeed(token);
     }
 
     /// @notice Selects the freshest non-stale feed for an asset.
@@ -88,10 +88,12 @@ abstract contract Prices is IPrices, Initializable {
     /// @return decimals Decimals of the selected feed's output (first feed's decimals if all stale).
     /// @return stale True if no feed survived the staleness gate.
     /// @return winnerIdx Index of the selected feed; type(uint256).max when all stale.
+    /// @return healthyFeedCount Number of feeds that passed all staleness gates. Below the total registered
+    ///         count signals partial redundancy collapse (off-chain alerting via getPriceData recommended).
     function _selectFeed(address token)
         internal
         view
-        returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx)
+        returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
     {
         PriceFeedConfig[] storage configs = _priceOracles[token];
         uint256 len = configs.length;
@@ -156,6 +158,9 @@ abstract contract Prices is IPrices, Initializable {
             // Per-feed staleness gate.
             if (block.timestamp - effectiveTime > cfg.chainlinkHeartbeat) continue;
 
+            // Feed survived all gates â count it.
+            ++healthyFeedCount;
+
             // Select the feed with the largest effective update time.
             if (effectiveTime > bestTime) {
                 bestTime = effectiveTime;
@@ -167,10 +172,10 @@ abstract contract Prices is IPrices, Initializable {
 
         if (winnerIdx == type(uint256).max) {
             // All feeds stale: return the first feed's decimals for unit consistency downstream.
-            return (0, configs[0].decimals, true, type(uint256).max);
+            return (0, configs[0].decimals, true, type(uint256).max, 0);
         }
 
-        return (bestPrice, bestDecimals, false, winnerIdx);
+        return (bestPrice, bestDecimals, false, winnerIdx, healthyFeedCount);
     }
 
     /// @inheritdoc IPrices

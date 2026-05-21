@@ -55,6 +55,10 @@ abstract contract Balances is IBalances, Initializable {
     /// @dev Set during initialization by derived contract
     address public erc20DefaultOracle;
 
+    /// @dev Reserved storage gap for future Balances expansions (50 slots).
+    // solhint-disable-next-line var-name-mixedcase
+    uint256[50] private __balancesGap;
+
     //
     // Constructor
     //

@@ -1,19 +1,29 @@
 #!/usr/bin/env bash
-# Run all development deploy scripts against the running anvil forks.
+# Bring all running anvil forks up to a usable NAV baseline for testing.
 #
-# Phase 1: 01_DeployNAV.s.sol — fresh NAV implementation + proxy on every fork, native feed wired.
-# Phase 2: 02_RegisterAssets.s.sol — register the full production asset set with their feeds,
-#          using the same Chainlink/custom feed addresses that exist on the forked chains.
+# Steps per chain:
+#   01. Deploy NAV (impl + proxy + initialize + grant MANAGER + wire native Chainlink feed).
+#       Uses dev's own 01_DeployNAV.s.sol — a single-shot script that bakes the prod multi-phase
+#       deploy (impl + proxy + handoff) into one tx batch suitable for anvil's prefunded EOA #0.
+#   02. Register the full production Chainlink-priced asset set via `register-assets.sh`
+#       (cast-based fallback — forge script hangs on Alchemy-backed forks for batch tx scripts).
 #
-# Idempotency: deploy.sh checks state/<chain>-addresses.json before each step and skips chains
-# that already have the corresponding contract deployed. To force a redeploy, run reset-state.sh
-# (or just delete the relevant entry from the addresses file).
+# Custom-priced assets (sUSDe, wstETH, ...) and per-protocol balance adapters are NOT deployed
+# here. Those are handled by the prod-equivalent scripts under script/deploy/, invoked separately:
+#   - prod/03_DeployPriceFeeds.s.sol   for custom price feeds
+#   - prod/04_DeployBalanceAdapters.s.sol for adapter instances
+# The development tree intentionally keeps only what differs from prod (NAV bootstrap + cast-based
+# asset registration). Adapter deploys + custom feeds reuse prod scripts directly.
+#
+# Idempotency: each step checks state/<chain>-addresses.json and skips if already done. Run
+# anvil/reset-state.sh to force a fresh deploy.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_DIR="$REPO_ROOT/script/development"
 STATE_DIR="$DEV_DIR/state"
 CONFIG="$DEV_DIR/config/chains.json"
+DEPLOY_DIR="$DEV_DIR/deploy"
 
 # Anvil prefunded account #0 — same on every fork.
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -44,14 +54,14 @@ for cid in $(jq -r 'keys[]' "$CONFIG"); do
   rpc="http://127.0.0.1:$port"
 
   if [ ! -f "$pid_file" ] || ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-    echo "[$name $cid] anvil not running — start-forks.sh first; skipping"
+    echo "[$name $cid] anvil not running — anvil/start-forks.sh first; skipping"
     continue
   fi
 
   echo
   echo "=== [$name $cid] $rpc ==="
 
-  # Step 01: NAV proxy
+  # Step 01: NAV proxy + ERC20DefaultOracle + native asset registration.
   if [ -f "$addr_file" ] && [ "$(jq -r '.NAVCalculatorProxy // ""' "$addr_file")" != "" ]; then
     echo "01_DeployNAV: skip (NAV already at $(jq -r '.NAVCalculatorProxy' "$addr_file"))"
   else
@@ -61,7 +71,7 @@ for cid in $(jq -r 'keys[]' "$CONFIG"); do
       DEV_SEQUENCER_FEED="$sequencer" \
       DEV_NATIVE_FEED="$native_feed" \
       DEV_NATIVE_HEARTBEAT="$native_heartbeat" \
-      forge script "$DEV_DIR/01_DeployNAV.s.sol:DeployNAV" \
+      forge script "$DEPLOY_DIR/01_DeployNAV.s.sol:DeployNAV" \
         --rpc-url "$rpc" \
         --private-key "$DEV_PRIVATE_KEY" \
         --sender "$DEV_DEPLOYER_ADDR" \
@@ -89,33 +99,18 @@ for cid in $(jq -r 'keys[]' "$CONFIG"); do
     echo "  -> $addr_file"
   fi
 
-  # Step 02: register the full asset set on this chain's NAV
-  proxy=$(jq -r '.NAVCalculatorProxy' "$addr_file")
+  # Step 02: register Chainlink-priced assets via cast (forge-script alternative hangs).
   registered_count=$(jq -r '.assetsRegisteredCount // 0' "$addr_file")
   if [ "$registered_count" -gt 0 ]; then
     echo "02_RegisterAssets: skip ($registered_count assets already registered)"
   else
     echo "02_RegisterAssets: running"
-    out=$(
-      DEV_NAV_PROXY="$proxy" \
-      forge script "$DEV_DIR/02_RegisterAssets.s.sol:RegisterAssets" \
-        --rpc-url "$rpc" \
-        --private-key "$DEV_PRIVATE_KEY" \
-        --sender "$DEV_DEPLOYER_ADDR" \
-        --broadcast \
-        2>&1
-    )
-    if ! echo "$out" | grep -q "REGISTERED_ASSETS_DONE"; then
-      echo "$out" | tail -30
-      echo "error: 02_RegisterAssets failed; aborting"
-      exit 1
-    fi
-    # Stamp the addresses file so re-runs skip it. We count the printed action lines.
-    reg=$(echo "$out" | grep -E "registerAsset|setPriceFeed" | wc -l)
-    jq --argjson n "$reg" '. + {assetsRegisteredCount: $n}' "$addr_file" > "$addr_file.tmp" && mv "$addr_file.tmp" "$addr_file"
-    echo "  $reg assets registered/updated"
+    bash "$DEPLOY_DIR/register-assets.sh" "$cid"
   fi
 done
 
 echo
-echo "done. run script/development/sync-app-env.sh to point the app at these addresses."
+echo "done. next:"
+echo "  - script/development/app/sync-app-env.sh   (point app at these NAV proxies)"
+echo "  - prod/03_DeployPriceFeeds.s.sol per chain (custom feeds, when needed)"
+echo "  - prod/04_DeployBalanceAdapters.s.sol per chain (adapters, when needed)"

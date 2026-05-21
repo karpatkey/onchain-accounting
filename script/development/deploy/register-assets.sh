@@ -10,7 +10,7 @@ set -euo pipefail
 
 CID=${1:?chainId required}
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_DIR="$REPO_ROOT/script/development"
 STATE_DIR="$DEV_DIR/state"
 ASSETS_JSON="$REPO_ROOT/script/config/assets.json"

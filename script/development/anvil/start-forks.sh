@@ -7,7 +7,7 @@
 # PIDs are written to state/<chainId>.pid so stop-forks.sh can find them later.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_DIR="$REPO_ROOT/script/development"
 STATE_DIR="$DEV_DIR/state"
 CONFIG="$DEV_DIR/config/chains.json"

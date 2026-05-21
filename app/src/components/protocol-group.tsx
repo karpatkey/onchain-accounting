@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
@@ -125,6 +126,49 @@ function PositionRow({ pos, chainId, totalPortfolioNav }: { pos: OnchainPosition
   )
 }
 
+/// Extract a pool / market / vault display name from an adapter's positionDetail JSON.
+/// positionDetail follows the convention defined in `script/config/adapter-identities.json`
+/// — JSON-shaped, typically with a `pool` / `market` / `vault` key. The closing `}` may or
+/// may not be present (the adapter appends a `type` suffix; gracefully handle either form).
+function extractPoolLabel(positionDetail: string): string | null {
+  if (!positionDetail) return null
+  let text = positionDetail.trim()
+  if (!text.endsWith('}')) text += '}'
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown>
+    const candidate = (obj.pool ?? obj.market ?? obj.vault ?? obj.gauge ?? obj.feed) as string | undefined
+    return typeof candidate === 'string' && candidate.length > 0 ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPosition[]> {
+  const groups = new Map<string, OnchainPosition[]>()
+  for (const pos of positions) {
+    const key = pos.balanceOracle.toLowerCase()
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(pos)
+    else groups.set(key, [pos])
+  }
+  return groups
+}
+
+function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint; isDebt: boolean }) {
+  return (
+    <tr>
+      <td colSpan={5} className="p-0">
+        <div className="pl-9 pr-4 py-1 bg-neutral-50/60 border-t border-neutral-100 flex items-center justify-between">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</span>
+          <span className={`text-[11px] tabular-nums font-medium ${isDebt ? 'text-rose-700' : 'text-neutral-600'}`}>
+            {formatUsd(total)}
+          </span>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 function PositionSection({
   label,
   positions,
@@ -141,6 +185,13 @@ function PositionSection({
   totalPortfolioNav: bigint
 }) {
   if (positions.length === 0) return null
+
+  const oracleGroups = groupByOracle(positions)
+  // When >1 distinct adapter contributes positions to this section (Supply or Borrow), render
+  // each as its own pool sub-group with a small sub-header. Otherwise stay flat to avoid noise
+  // for single-instance protocols (Aave market, Compound comet, Morpho vault, …).
+  const useSubGroups = oracleGroups.size > 1
+
   return (
     <>
       <tr>
@@ -158,9 +209,22 @@ function PositionSection({
           </div>
         </td>
       </tr>
-      {positions.map((pos, i) => (
-        <PositionRow key={i} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
-      ))}
+      {useSubGroups
+        ? Array.from(oracleGroups.entries()).map(([oracle, group]) => {
+            const subTotal = group.reduce((s, p) => s + p.value, 0n)
+            const poolLabel = extractPoolLabel(group[0].positionDetail) ?? `Pool ${oracle.slice(0, 6)}…${oracle.slice(-4)}`
+            return (
+              <Fragment key={oracle}>
+                <PoolSubHeader label={poolLabel} total={subTotal} isDebt={isDebt} />
+                {group.map((pos, i) => (
+                  <PositionRow key={`${oracle}-${i}`} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
+                ))}
+              </Fragment>
+            )
+          })
+        : positions.map((pos, i) => (
+            <PositionRow key={i} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
+          ))}
     </>
   )
 }

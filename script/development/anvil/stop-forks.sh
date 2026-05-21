@@ -2,7 +2,7 @@
 # Gracefully stop all dev-fork anvils so each one dumps its --state file before exiting.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 STATE_DIR="$REPO_ROOT/script/development/state"
 CONFIG="$REPO_ROOT/script/development/config/chains.json"
 

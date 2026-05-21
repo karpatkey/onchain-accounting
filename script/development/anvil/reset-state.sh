@@ -4,7 +4,7 @@
 # and the next deploy.sh re-deploys everything cleanly.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 STATE_DIR="$REPO_ROOT/script/development/state"
 
 if [ ! -d "$STATE_DIR" ]; then

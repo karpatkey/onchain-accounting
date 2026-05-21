@@ -206,7 +206,10 @@ abstract contract Prices is IPrices, Initializable {
             // ERC165Checker.supportsInterface() returns false (not revert) when the feed doesn't
             // implement ERC165, so this is safe to call on Chainlink/Redstone/API3 contracts.
             if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
-            AggregatorV3Interface(priceFeed).latestRoundData();
+            (,, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(priceFeed).latestRoundData();
+            // Reject feeds reporting future timestamps — guard against clock-skewed or malicious feeds
+            // at registration time.
+            if (updatedAt > block.timestamp || startedAt > block.timestamp) revert InvalidPriceOracle();
         } else {
             revert InvalidPriceOracleType();
         }

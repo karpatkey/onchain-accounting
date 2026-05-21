@@ -38,6 +38,54 @@ On every `latestPrice(asset)` call, `Prices._selectFeed` iterates all registered
 
 Special case for Custom `updatedAt == 0`: treated as `block.timestamp - 1` (no trackable oracle — feed survives the staleness gate but yields to any feed with a real timestamp). See ADR 0009 for rationale.
 
+### 2.1 `latestPrice(asset)` — top-level flow
+
+```mermaid
+flowchart TD
+    A([latestPrice<br/>asset]) --> B{_priceOracles<br/>array empty?}
+    B -- yes --> ERR1([revert<br/>PriceFeedNotSet])
+    B -- no --> C[_selectFeed]
+    C --> D{L2 sequencer<br/>uptime check}
+    D -- sequencer down<br/>or in grace period --> STALE([return price=0<br/>stale=true])
+    D -- ok --> RET([return price, decimals, stale])
+```
+
+### 2.2 `_selectFeed` — per-feed iteration and freshest-wins selection
+
+```mermaid
+flowchart TD
+    START([_selectFeed]) --> INIT[winnerIdx = none<br/>winnerTime = 0]
+    INIT --> LOOP[for each feed i<br/>in _priceOracles]
+
+    LOOP --> TRY{try read feed i}
+    TRY -- revert --> SKIP[skip feed i]
+    SKIP --> NEXT
+
+    TRY -- ok --> CUSTOM{priceType<br/>== Custom?}
+
+    CUSTOM -- yes --> CG[getLatestPrice<br/>→ price, internalStale]
+    CG --> CK1{internalStale<br/>or price ≤ 0?}
+    CK1 -- yes --> SKIP
+    CK1 -- no --> CLR[latestRoundData<br/>→ updatedAt]
+    CLR --> CLAMP
+
+    CUSTOM -- no --> AV3[latestRoundData<br/>→ price, updatedAt]
+    AV3 --> CLAMP
+
+    CLAMP["effectiveTime =<br/>min(updatedAt, block.timestamp)"]
+    CLAMP --> STALE_GATE{"block.timestamp −<br/>effectiveTime > heartbeat?"}
+    STALE_GATE -- yes --> SKIP
+    STALE_GATE -- no --> FRESH{effectiveTime<br/>> winnerTime?}
+    FRESH -- yes --> UPDATE[winnerIdx = i<br/>winnerTime = effectiveTime]
+    UPDATE --> NEXT
+    FRESH -- no --> NEXT[next feed]
+    NEXT --> LOOP
+
+    LOOP -- done --> WINNER{any winner?}
+    WINNER -- no --> ALLSTALE([return price=0<br/>firstFeed.decimals<br/>stale=true])
+    WINNER -- yes --> RETURN([return winner price<br/>winner decimals<br/>stale=false])
+```
+
 ---
 
 ## 3. Data structures

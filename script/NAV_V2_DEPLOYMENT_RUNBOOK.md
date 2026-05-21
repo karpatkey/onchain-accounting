@@ -42,7 +42,7 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 | Role | Code (constant) | What it gates |
 |---|---|---|
 | `DEFAULT_ADMIN_ROLE` | `0x0000…0000` | UUPS upgrades (`_authorizeUpgrade`), grant/revoke any role |
-| `MANAGER` | `keccak256("MANAGER")` | `registerAsset`, `setPriceFeed`, `unsetPriceFeed`, `addBalanceOracle`, `removeBalanceOracle`, `unregisterAsset`, `excludeAssetFromDefaultOracle`, `includeAssetInDefaultOracle`, `setChainlinkL2SequencerUptimeFeed`, `setChainlinkL2SequencerGracePeriod` |
+| `MANAGER` | `keccak256("MANAGER")` | `registerAsset`, `addPriceFeed`, `removePriceFeedAt`, `removePriceFeed`, `addBalanceOracle`, `removeBalanceOracle`, `unregisterAsset`, `excludeAssetFromDefaultOracle`, `includeAssetInDefaultOracle`, `setChainlinkL2SequencerUptimeFeed`, `setChainlinkL2SequencerGracePeriod` |
 
 **How the roles actually get assigned (read `02_DeployProxies.s.sol` + `AtomicProxyDeployer.sol` for the source of truth):**
 
@@ -798,16 +798,18 @@ cast send $NAV_PROXY \
 
 ---
 
-## Phase 7: Set Custom Price Feeds on NAVCalculator
+## Phase 7: Add or Update Price Feeds on NAVCalculator
 
-Custom price feed adapters (deployed in Phase 3) must be linked to their assets on NAVCalculator via `setPriceFeed()`. This is separate from asset registration — `registerAsset()` sets the initial price feed, but `setPriceFeed()` can update it later.
+Custom price feed adapters (deployed in Phase 3) must be linked to their assets on NAVCalculator via `addPriceFeed()`. `registerAsset()` sets the first feed; use `addPriceFeed()` to append a second or third feed for redundancy, or after replacing an old adapter.
 
-If you registered assets in Phase 5 with the correct Custom oracle addresses in `assets.json`, the price feeds are already set. Only use this phase if you need to update or add price feeds after initial registration.
+If you registered assets in Phase 5 with the correct Custom oracle addresses in `assets.json`, the price feeds are already set. Only use this phase if you need to update or add feeds after initial registration.
+
+To remove an old feed after replacing it: `removePriceFeed(asset, oldFeedAddress)` (MANAGER). Cannot remove the last remaining feed — add the replacement first.
 
 ### Using ManageAdapters.s.sol
 
 ```solidity
-_setPriceFeed(
+_addPriceFeed(
     0x...,  // asset address
     0x...,  // custom price adapter address (from Phase 3)
     IPrices.PriceType.Custom,
@@ -820,13 +822,13 @@ _setPriceFeed(
 ```bash
 NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/1.json)
 cast send $NAV_PROXY \
-  "setPriceFeed(address,address,uint8,uint256)" \
+  "addPriceFeed(address,address,uint8,uint256)" \
   <asset> <priceFeed> 1 3600 \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --account $DEPLOYER_NAME
 ```
 
-(PriceType: 0 = Chainlink, 1 = Custom)
+(PriceType: 0 = Chainlink, 1 = Custom, 2 = Redstone, 3 = API3)
 
 ---
 
@@ -1034,7 +1036,7 @@ Phase 9: Post-deployment validation -- per chain
 
 ## Rollback
 
-- **Price feeds and balance adapters are NOT upgradeable** — they're standalone contracts. To "rollback", deploy a corrected version and update the NAVCalculator to point to the new one via `setPriceFeed()` / `removeBalanceOracle()` + `addBalanceOracle()`. Both are MANAGER-only.
+- **Price feeds and balance adapters are NOT upgradeable** — they're standalone contracts. To "rollback", deploy a corrected version and update the NAVCalculator to point to the new one via `addPriceFeed()` + `removePriceFeed()` / `removeBalanceOracle()` + `addBalanceOracle()`. Both are MANAGER-only.
 - **NAVCalculator and BridgeEscrow ARE upgradeable** (UUPS). Use `script/upgrade/UpgradeNAVCalculator.s.sol` or `UpgradeBridgeEscrow.s.sol`. Requires DEFAULT_ADMIN_ROLE on the target proxy — i.e. the OIV Safe for each chain after the production redeploy (currently still the EOA on salt-v2 proxies; see §"Roles and governance").
 - **Partial deploys are re-runnable.** `03_DeployPriceFeeds.s.sol` and `04_DeployBalanceAdapters.s.sol` both read `.deployed` and skip any entry already populated. If a broadcast runs out of gas halfway, top up the EOA and re-run — the script will continue from where it stopped.
 
@@ -1056,7 +1058,7 @@ if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_"))
 
 ### `PriceFeedNotSet(<asset>)` revert during `getAccountNav`
 
-The asset is registered in NAVCalculator, but no price feed is linked. Happens when Phase 5 registered the asset with `type: "None"` or empty `pricefeed`. Fix: call `setPriceFeed(asset, priceFeed, priceType, heartbeat)` via Phase 7.
+The asset is registered in NAVCalculator, but no price feed is linked. Happens when Phase 5 registered the asset with `type: "None"` or empty `pricefeed`. Fix: call `addPriceFeed(asset, priceFeed, priceType, heartbeat)` via Phase 7.
 
 ### Every asset flagged `stale: true`
 
@@ -1098,7 +1100,7 @@ Workflow for a brand-new oracle after the migration PRs are merged. Each step ha
 4. **Register in `assets.json`** under `priceFeeds.<Name>.<chainId>` with `enabled: true` and all constructor params. Also make sure `chains/<chainId>.json.priceFeeds.<Name>` exists (even as `{"deployed": ""}`) so `ConfigReader.writeAdapterAddress` has a parent to write to.
 5. **Wire into `03_DeployPriceFeeds.s.sol`**: add `import {...}` at top, add `_deployIfEnabled`-style dispatch inside the correct `_deploy<Chain>PriceAdapters()` function, add a `_deploy<Name>()` helper that reads constructor params via `ConfigReader.readPriceFeedParam` and writes back via `ConfigReader.writeAdapterAddress`. Reference: `_deploySdai` in the same file.
 6. **Run tests locally**: `forge test --match-path "test/prices/protocols/<Name>*"` must pass before pushing.
-7. **Register the asset with the new price feed**. If the asset is already registered on NAVCalculator with a Chainlink feed, call `setPriceFeed(asset, newFeed, PriceType.Custom, heartbeat)` (Phase 7) via Safe. Otherwise, register from scratch in Phase 5.
+7. **Register the asset with the new price feed**. If the asset is already registered on NAVCalculator with a Chainlink feed, call `addPriceFeed(asset, newFeed, PriceType.Custom, heartbeat)` (Phase 7) via Safe, then remove the old feed with `removePriceFeed(asset, oldFeed)`. Otherwise, register from scratch in Phase 5.
 8. **Update `assets.json.tokens.<chainId>.<Symbol>.pricefeed`** to the newly-deployed adapter address, so future `RegisterAssets.s.sol` runs (if you unregister + re-register) use the right feed.
 
 ---

@@ -73,13 +73,13 @@ Notes:
 
 Edit `script/config/assets.json` (single file, all chains):
 
-1. Add tokens under `tokens.<newChainId>` for every asset you want priced on this chain. Each needs `address`, `type` (`Chainlink` / `Custom` / `None`), `oracle` (Chainlink aggregator or custom feed deployed on this chain), and optionally `heartbeat`.
+1. Add tokens under `tokens.<newChainId>` for every asset you want priced on this chain. Each needs `address`, `type` (`Chainlink` / `Custom` / `Redstone` / `API3` / `None`), `pricefeed` (Chainlink aggregator, Redstone/API3 push feed, or custom feed deployed on this chain), and optionally `heartbeat`.
 
 ```json
 "tokens": {
   "<newChainId>": {
-    "ETH": { "address": "0xEee...EEeE", "type": "Chainlink", "oracle": "0x...", "heartbeat": 3600 },
-    "USDC": { "address": "0x...", "type": "Chainlink", "oracle": "0x...", "heartbeat": 86400 }
+    "ETH": { "address": "0xEee...EEeE", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 3600 },
+    "USDC": { "address": "0x...", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 86400 }
   }
 }
 ```

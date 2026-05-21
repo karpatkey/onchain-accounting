@@ -90,6 +90,9 @@ interface INAVCalculator is IBalances {
     /// @param timestamp Block timestamp of the reading.
     /// @param stalePriceAssets Assets whose prices were stale at query time.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
+    /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
+    ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
+    ///        interpreting value as being in the requested quote currency.
     // forge-lint: disable-next-line(pascal-case-struct)
     struct NAV {
         int256 value;
@@ -97,6 +100,7 @@ interface INAVCalculator is IBalances {
         uint64 timestamp;
         Asset[] stalePriceAssets;
         bool sequencerDown;
+        bool quoteAssetStale;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.

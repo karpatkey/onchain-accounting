@@ -262,6 +262,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         nav.timestamp = uint64(block.timestamp);
         QuoteAssetInfo memory quoteInfo = _getQuoteAssetInfo(quoteAsset);
         nav.quoteAsset = quoteInfo.assetStruct;
+        nav.quoteAssetStale = quoteInfo.stale;
 
         uint256 length = getAssetCount();
 
@@ -463,6 +464,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         int256 price;
         uint8 priceDecimals;
         uint8 assetDecimals;
+        bool stale;
     }
 
     /// @notice Finds price feed for an asset in the cache array
@@ -524,7 +526,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             info.assetDecimals = NAV_DECIMALS;
         } else {
             _requirePriceFeedExists(quoteAsset);
-            (info.price, info.priceDecimals,) = _latestPrice(quoteAsset);
+            (info.price, info.priceDecimals, info.stale) = _latestPrice(quoteAsset);
             INAVCalculator.Asset memory reg = _getRegisteredAsset(quoteAsset);
             info.assetStruct = INAVCalculator.Asset({
                 asset: quoteAsset,

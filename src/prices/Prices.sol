@@ -155,8 +155,8 @@ abstract contract Prices is IPrices, Initializable {
             // Clock-skew normalisation: clamp future timestamps to block.timestamp.
             uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
 
-            // Per-feed staleness gate.
-            if (block.timestamp - effectiveTime > cfg.chainlinkHeartbeat) continue;
+            // Per-feed staleness gate (>= aligns with the documented heartbeat semantic: stale after N seconds).
+            if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) continue;
 
             // Feed survived all gates â count it.
             ++healthyFeedCount;

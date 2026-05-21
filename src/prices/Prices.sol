@@ -183,7 +183,14 @@ abstract contract Prices is IPrices, Initializable {
         stale = false;
 
         if (address(chainlinkL2SequencerUptimeFeed) != address(0)) {
-            (, int256 answer, uint256 startedAt,,) = chainlinkL2SequencerUptimeFeed.latestRoundData();
+            int256 answer;
+            uint256 startedAt;
+            try chainlinkL2SequencerUptimeFeed.latestRoundData() returns (uint80, int256 a, uint256 s, uint256, uint80) {
+                answer = a;
+                startedAt = s;
+            } catch {
+                return true;
+            }
 
             if (answer != 0) {
                 stale = true;

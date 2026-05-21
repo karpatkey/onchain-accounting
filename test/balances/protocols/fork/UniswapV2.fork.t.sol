@@ -242,3 +242,217 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         return (totalSupply * (rootK - rootKLast)) / (rootK * 5 + rootKLast);
     }
 }
+
+/// @title UniswapV2BalanceOracle fork tests — multi-pool real holder (factory.feeTo recipient)
+/// @notice Zero-drift verification against a real mainnet holder at a fresh block.
+/// @dev    Picked via Dune query 7553459 (multi-pool Uni V2 LP holders, ordered by pair count).
+///         The holder is the current value of `UniswapV2Factory.feeTo()` — the protocol-fee
+///         recipient wallet — and holds non-zero LP in all 6 canonical V2 pairs simultaneously.
+///         Because feeTo != address(0) at this block, the adapter's dilution branch is exercised
+///         live (not via mocks). Expected amounts are derived from the same `_pendingProtocolMint`
+///         formula implemented in src/balances/protocols/UniswapV2.sol; evidence pack lives at
+///         script/development/test/uniswapV2/case-multi-pool-mainnet.json.
+contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterTestBase {
+    address public constant HOLDER = 0xf38521f130fcCF29dB1961597bc5d2B60F995f85;
+    address public constant V2_FACTORY = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
+    uint256 public constant FORK_BLOCK = 25_144_444;
+
+    struct PoolCase {
+        string label;
+        address pair;
+        address token0;
+        address token1;
+        uint256 expected0;
+        uint256 expected1;
+        UniswapV2BalanceOracle adapter;
+    }
+
+    PoolCase[6] public cases;
+
+    function setUp() public override {
+        super.setUp();
+        _setupFork();
+        _seedCases();
+        _deployAdapters();
+    }
+
+    function _setupFork() internal override {
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
+    }
+
+    /// @dev Expected amounts are dilution-adjusted per `_pendingProtocolMint` at FORK_BLOCK.
+    ///      Computed off-chain via the Python helper `script/development/test/uniswapV2/`
+    ///      using arbitrary-precision integers; mirrored here as constants so the test stays
+    ///      self-contained. Any change in on-chain state at FORK_BLOCK invalidates these.
+    function _seedCases() internal {
+        cases[0] = PoolCase({
+            label: "USDC_WETH",
+            pair: 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc,
+            token0: MAINNET_USDC,
+            token1: MAINNET_WETH,
+            expected0: 74_259_143,
+            expected1: 35_066_111_262_254_964,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+        cases[1] = PoolCase({
+            label: "USDT_WETH",
+            pair: 0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852,
+            token0: MAINNET_WETH,
+            token1: MAINNET_USDT,
+            expected0: 34_371_817_334_190_102,
+            expected1: 72_841_301,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+        cases[2] = PoolCase({
+            label: "DAI_WETH",
+            pair: 0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11,
+            token0: MAINNET_DAI,
+            token1: MAINNET_WETH,
+            expected0: 36_218_518_466_527_858_189,
+            expected1: 17_105_149_103_443_307,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+        cases[3] = PoolCase({
+            label: "WBTC_WETH",
+            pair: 0xBb2b8038a1640196FbE3e38816F3e67Cba72D940,
+            token0: MAINNET_WBTC,
+            token1: MAINNET_WETH,
+            expected0: 59_860,
+            expected1: 21_711_539_995_652_021,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+        cases[4] = PoolCase({
+            label: "USDC_USDT",
+            pair: 0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f,
+            token0: MAINNET_USDC,
+            token1: MAINNET_USDT,
+            expected0: 72_501,
+            expected1: 72_670,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+        cases[5] = PoolCase({
+            label: "DAI_USDC",
+            pair: 0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5,
+            token0: MAINNET_DAI,
+            token1: MAINNET_USDC,
+            expected0: 12_470_607_855_679_992_115,
+            expected1: 12_499_207,
+            adapter: UniswapV2BalanceOracle(address(0))
+        });
+    }
+
+    function _deployAdapters() internal {
+        // Single Balances harness registered with every unique underlying token across the 6 pools.
+        address[] memory assets = new address[](5);
+        assets[0] = MAINNET_USDC;
+        assets[1] = MAINNET_WETH;
+        assets[2] = MAINNET_DAI;
+        assets[3] = MAINNET_USDT;
+        assets[4] = MAINNET_WBTC;
+        balances = _deployBalancesForOracle(assets);
+
+        for (uint256 i = 0; i < cases.length; i++) {
+            cases[i].adapter = new UniswapV2BalanceOracle(
+                cases[i].pair, "Uniswap V2", "{\"protocol\":\"Uniswap V2\",\"pool\":\"LP\"", "0x0", address(balances)
+            );
+        }
+    }
+
+    // ============================================
+    // Setup invariants
+    // ============================================
+
+    /// @notice Pre-flight check: the chosen holder IS the factory's current fee recipient.
+    /// @dev If this assertion fails, the dilution branch may no longer be active live and the
+    ///      whole case needs re-derivation against a new block / new holder.
+    function test_holder_is_factory_feeTo() public view {
+        assertEq(IUniswapV2FactoryFork(V2_FACTORY).feeTo(), HOLDER, "holder must be factory.feeTo");
+    }
+
+    /// @notice Confirms the dilution branch is exercised in this case.
+    /// @dev Each pool's pendingProtocolMint computed off-chain is non-zero — if any drift to zero,
+    ///      the test is no longer testing what it claims to. Re-derive the case.
+    function test_dilution_branch_active_each_pool() public view {
+        for (uint256 i = 0; i < cases.length; i++) {
+            uint256 ts = IUniswapV2PairFork(cases[i].pair).totalSupply();
+            (uint112 r0, uint112 r1,) = IUniswapV2PairFork(cases[i].pair).getReserves();
+            uint256 kLast = IUniswapV2PairFork(cases[i].pair).kLast();
+            uint256 rootK = Math.sqrt(uint256(r0) * uint256(r1));
+            uint256 rootKLast = Math.sqrt(kLast);
+            assertGt(rootK, rootKLast, _msg(cases[i].label, "sqrt(k_now) must exceed sqrt(kLast)"));
+            uint256 pending = (ts * (rootK - rootKLast)) / (rootK * 5 + rootKLast);
+            assertGt(pending, 0, _msg(cases[i].label, "pendingProtocolMint must be non-zero"));
+        }
+    }
+
+    // ============================================
+    // Strict-equality assertions (the audit-grade core)
+    // ============================================
+
+    /// @notice The adapter's `getOracleBalanceForAsset` must return EXACTLY the dilution-adjusted
+    ///         amount per pool, per token, with no drift. This is the same number Uniswap V2's
+    ///         own `pair.burn(HOLDER)` would transfer at this block.
+    function test_strict_equality_per_pool_token0() public view {
+        for (uint256 i = 0; i < cases.length; i++) {
+            (uint256 amt0, bool isDebt) = cases[i].adapter.getOracleBalanceForAsset(HOLDER, cases[i].token0);
+            assertEq(amt0, cases[i].expected0, _msg(cases[i].label, "token0 amount mismatch"));
+            assertFalse(isDebt, _msg(cases[i].label, "token0 must not be debt"));
+        }
+    }
+
+    function test_strict_equality_per_pool_token1() public view {
+        for (uint256 i = 0; i < cases.length; i++) {
+            (uint256 amt1, bool isDebt) = cases[i].adapter.getOracleBalanceForAsset(HOLDER, cases[i].token1);
+            assertEq(amt1, cases[i].expected1, _msg(cases[i].label, "token1 amount mismatch"));
+            assertFalse(isDebt, _msg(cases[i].label, "token1 must not be debt"));
+        }
+    }
+
+    /// @notice `getOracleBalances` must aggregate token0+token1 per adapter and surface both with
+    ///         the exact dilution-adjusted amounts, in the order [token0, token1].
+    function test_strict_equality_via_getOracleBalances() public view {
+        for (uint256 i = 0; i < cases.length; i++) {
+            (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+                cases[i].adapter.getOracleBalances(HOLDER);
+            assertEq(assets.length, 2, _msg(cases[i].label, "must emit both tokens"));
+            assertEq(assets[0], cases[i].token0, _msg(cases[i].label, "assets[0] should be token0"));
+            assertEq(assets[1], cases[i].token1, _msg(cases[i].label, "assets[1] should be token1"));
+            assertEq(amounts[0], cases[i].expected0, _msg(cases[i].label, "amounts[0] mismatch"));
+            assertEq(amounts[1], cases[i].expected1, _msg(cases[i].label, "amounts[1] mismatch"));
+            assertFalse(isDebt[0], _msg(cases[i].label, "isDebt[0] must be false"));
+            assertFalse(isDebt[1], _msg(cases[i].label, "isDebt[1] must be false"));
+        }
+    }
+
+    /// @notice `getOraclePositions` (multi-leg surface) must mirror `getOracleBalances` here —
+    ///         Uniswap V2 has no `type` discriminator (single Supply leg per pair), so the
+    ///         position count equals the number of underlying tokens with a non-zero amount.
+    function test_strict_equality_via_getOraclePositions() public view {
+        for (uint256 i = 0; i < cases.length; i++) {
+            INAVCalculator.PositionBalance[] memory positions = cases[i].adapter.getOraclePositions(HOLDER, address(0));
+            assertEq(positions.length, 2, _msg(cases[i].label, "expect 2 positions per pair"));
+            bool saw0;
+            bool saw1;
+            for (uint256 j = 0; j < positions.length; j++) {
+                assertEq(positions[j].balanceOracle, address(cases[i].adapter), _msg(cases[i].label, "balanceOracle"));
+                assertFalse(positions[j].isDebt, _msg(cases[i].label, "isDebt"));
+                if (positions[j].underlyingAsset.asset == cases[i].token0) {
+                    assertEq(positions[j].amount, cases[i].expected0, _msg(cases[i].label, "token0 via positions"));
+                    saw0 = true;
+                }
+                if (positions[j].underlyingAsset.asset == cases[i].token1) {
+                    assertEq(positions[j].amount, cases[i].expected1, _msg(cases[i].label, "token1 via positions"));
+                    saw1 = true;
+                }
+            }
+            assertTrue(saw0, _msg(cases[i].label, "token0 position missing"));
+            assertTrue(saw1, _msg(cases[i].label, "token1 position missing"));
+        }
+    }
+
+    function _msg(string memory label, string memory tail) internal pure returns (string memory) {
+        return string(abi.encodePacked("[", label, "] ", tail));
+    }
+}

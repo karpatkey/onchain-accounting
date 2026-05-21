@@ -1,0 +1,335 @@
+{
+  "protocol": "Uniswap V2",
+  "adapter": "src/balances/protocols/UniswapV2.sol",
+  "adapter_test": "test/balances/protocols/fork/UniswapV2.fork.t.sol",
+  "chain": {
+    "id": 1,
+    "name": "mainnet"
+  },
+  "block": {
+    "number": 25144444,
+    "timestamp": 1779376566,
+    "timestamp_hex": "0x6a0f21b6"
+  },
+  "holder": {
+    "address": "0xf38521f130fccf29db1961597bc5d2b60f995f85",
+    "type": "Contract (1990B) \u2014 Uniswap V2 protocol-fee recipient (factory.feeTo)",
+    "notes": [
+      "This wallet is the current value of UniswapV2Factory.feeTo() \u2014 confirmed at the pinned block.",
+      "factory.feeTo was historically address(0) but is now set to this address.",
+      "Implication: the dilution branch of the adapter IS active on real mainnet at this block (not just behind mocks).",
+      "Holder LP in each pool is the protocol-fee LP that has been minted to this wallet over time."
+    ]
+  },
+  "factory": {
+    "address": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+    "feeTo": "0xf38521f130fcCF29dB1961597bc5d2B60F995f85",
+    "feeTo_active": true
+  },
+  "positions": [
+    {
+      "label": "USDC_WETH",
+      "pair": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+      "token0": {
+        "symbol": "USDC",
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6
+      },
+      "token1": {
+        "symbol": "WETH",
+        "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "decimals": 18
+      },
+      "state": {
+        "totalSupply": "71524960490263522",
+        "reserve0": "9283709548424",
+        "reserve1": "4383885649164906350202",
+        "kLast": "40698714004570785604812811690423272",
+        "holderLP": "572118540385"
+      },
+      "dilution": {
+        "pendingProtocolMint": "1033333952",
+        "effectiveSupply": "71524961523597474",
+        "dilutionPctOfSupply_e9": "14"
+      },
+      "expected": {
+        "amount0": "74259143",
+        "amount1": "35066111262254964",
+        "amount0_humanized": 74.259143,
+        "amount1_humanized": 0.035066111262254965
+      },
+      "naive_unadjusted": {
+        "amount0": "74259144",
+        "amount1": "35066111768861373",
+        "delta0_vs_dilution_adjusted": "1",
+        "delta1_vs_dilution_adjusted": "506606409"
+      },
+      "observed_from_adapter": {
+        "amount0": "74259143",
+        "amount1": "35066111262254964",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    },
+    {
+      "label": "USDT_WETH",
+      "pair": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+      "token0": {
+        "symbol": "WETH",
+        "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "USDT",
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "decimals": 6
+      },
+      "state": {
+        "totalSupply": "56039400702797694",
+        "reserve0": "3674300582886516441277",
+        "reserve1": "7786636206675",
+        "kLast": "28609165329760219541904241659177024",
+        "holderLP": "524231255292"
+      },
+      "dilution": {
+        "pendingProtocolMint": "208380389358",
+        "effectiveSupply": "56039609083187052",
+        "dilutionPctOfSupply_e9": "3718"
+      },
+      "expected": {
+        "amount0": "34371817334190102",
+        "amount1": "72841301",
+        "amount0_humanized": 0.034371817334190105,
+        "amount1_humanized": 72.841301
+      },
+      "naive_unadjusted": {
+        "amount0": "34371945144491233",
+        "amount1": "72841572",
+        "delta0_vs_dilution_adjusted": "127810301131",
+        "delta1_vs_dilution_adjusted": "271"
+      },
+      "observed_from_adapter": {
+        "amount0": "34371817334190102",
+        "amount1": "72841301",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    },
+    {
+      "label": "DAI_WETH",
+      "pair": "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
+      "token0": {
+        "symbol": "DAI",
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "WETH",
+        "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "decimals": 18
+      },
+      "state": {
+        "totalSupply": "42141463136922989994002",
+        "reserve0": "4266384178873238544406300",
+        "reserve1": "2014912276979018836820",
+        "kLast": "8595243144053056738816447983195826337842631044",
+        "holderLP": "357754544446275522"
+      },
+      "dilution": {
+        "pendingProtocolMint": "468476215008095737",
+        "effectiveSupply": "42141931613137998089739",
+        "dilutionPctOfSupply_e9": "11116"
+      },
+      "expected": {
+        "amount0": "36218518466527858189",
+        "amount1": "17105149103443307",
+        "amount0_humanized": 36.21851846652786,
+        "amount1_humanized": 0.017105149103443306
+      },
+      "naive_unadjusted": {
+        "amount0": "36218921098832988890",
+        "amount1": "17105339257152093",
+        "delta0_vs_dilution_adjusted": "402632305130701",
+        "delta1_vs_dilution_adjusted": "190153708786"
+      },
+      "observed_from_adapter": {
+        "amount0": "36218518466527858189",
+        "amount1": "17105149103443307",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    },
+    {
+      "label": "WBTC_WETH",
+      "pair": "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940",
+      "token0": {
+        "symbol": "WBTC",
+        "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "decimals": 8
+      },
+      "token1": {
+        "symbol": "WETH",
+        "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "decimals": 18
+      },
+      "state": {
+        "totalSupply": "2496662761488850",
+        "reserve0": "5489292249",
+        "reserve1": "1990980942207281690502",
+        "kLast": "10929054552648029973465918591327",
+        "holderLP": "27225977518"
+      },
+      "dilution": {
+        "pendingProtocolMint": "413125081",
+        "effectiveSupply": "2496663174613931",
+        "dilutionPctOfSupply_e9": "165"
+      },
+      "expected": {
+        "amount0": "59860",
+        "amount1": "21711539995652021",
+        "amount0_humanized": 0.0005986,
+        "amount1_humanized": 0.02171153999565202
+      },
+      "naive_unadjusted": {
+        "amount0": "59860",
+        "amount1": "21711543588280492",
+        "delta0_vs_dilution_adjusted": "0",
+        "delta1_vs_dilution_adjusted": "3592628471"
+      },
+      "observed_from_adapter": {
+        "amount0": "59860",
+        "amount1": "21711539995652021",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    },
+    {
+      "label": "USDC_USDT",
+      "pair": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
+      "token0": {
+        "symbol": "USDC",
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6
+      },
+      "token1": {
+        "symbol": "USDT",
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "decimals": 6
+      },
+      "state": {
+        "totalSupply": "1320325893212",
+        "reserve0": "1766966740090",
+        "reserve1": "1771092143660",
+        "kLast": "3129395832903606990453598",
+        "holderLP": "54175"
+      },
+      "dilution": {
+        "pendingProtocolMint": "2288081",
+        "effectiveSupply": "1320328181293",
+        "dilutionPctOfSupply_e9": "1732"
+      },
+      "expected": {
+        "amount0": "72501",
+        "amount1": "72670",
+        "amount0_humanized": 0.072501,
+        "amount1_humanized": 0.07267
+      },
+      "naive_unadjusted": {
+        "amount0": "72501",
+        "amount1": "72670",
+        "delta0_vs_dilution_adjusted": "0",
+        "delta1_vs_dilution_adjusted": "0"
+      },
+      "observed_from_adapter": {
+        "amount0": "72501",
+        "amount1": "72670",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    },
+    {
+      "label": "DAI_USDC",
+      "pair": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5",
+      "token0": {
+        "symbol": "DAI",
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "USDC",
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6
+      },
+      "state": {
+        "totalSupply": "478938203185215845",
+        "reserve0": "543883002588485504333157",
+        "reserve1": "545130320415",
+        "kLast": "296480131038030343968743552266109580",
+        "holderLP": "10981520318976"
+      },
+      "dilution": {
+        "pendingProtocolMint": "940214338605",
+        "effectiveSupply": "478939143399554450",
+        "dilutionPctOfSupply_e9": "1963"
+      },
+      "expected": {
+        "amount0": "12470607855679992115",
+        "amount1": "12499207",
+        "amount0_humanized": 12.470607855679992,
+        "amount1_humanized": 12.499207
+      },
+      "naive_unadjusted": {
+        "amount0": "12470632337010232744",
+        "amount1": "12499231",
+        "delta0_vs_dilution_adjusted": "24481330240629",
+        "delta1_vs_dilution_adjusted": "24"
+      },
+      "observed_from_adapter": {
+        "amount0": "12470607855679992115",
+        "amount1": "12499207",
+        "captured_at_run": "2026-05-21 forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver"
+      },
+      "delta_observed_minus_expected": {
+        "amount0_gross": "0",
+        "amount1_gross": "0",
+        "amount0_pct": "0.0000",
+        "amount1_pct": "0.0000"
+      }
+    }
+  ],
+  "verification": {
+    "method": "direct-onchain-read",
+    "ground_truth_source": "Uniswap V2 pair contract state (reserves, totalSupply, kLast) at pinned block + dilution math per `_pendingProtocolMint`",
+    "tenderly_burn_simulation": "Optional cross-check. `pair.burn(holder)` simulated at this block would transfer exactly the `expected.amount0` / `expected.amount1` values above for each pool (matches adapter formula when feeTo != 0).",
+    "notes": [
+      "The adapter's formula `_calculateBalance` uses integer division with `(totalSupply + pendingProtocolMint)` as the denominator \u2014 exactly the math reproduced here.",
+      "The dilution branch is active here because factory.feeTo != address(0). pendingProtocolMint contribution is recorded per-pool above.",
+      "Strict-equality test target: adapter `getOracleBalances(holder)` MUST return `expected.amount0` and `expected.amount1` per pool, with `isDebt=false` and `balanceOracle=address(adapter)`."
+    ]
+  }
+}

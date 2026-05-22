@@ -86,7 +86,8 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @inheritdoc IPrices
     function checkL2SequencerUptime() public view returns (bool stale) {
-        return PriceFeedLib.checkSequencerUptime(address(chainlinkL2SequencerUptimeFeed), chainlinkL2SequencerGracePeriod);
+        return
+            PriceFeedLib.checkSequencerUptime(address(chainlinkL2SequencerUptimeFeed), chainlinkL2SequencerGracePeriod);
     }
 
     /// @inheritdoc IPrices

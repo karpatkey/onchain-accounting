@@ -25,10 +25,7 @@ library PriceFeedLib {
 
     /// @notice Selects the freshest non-stale feed for an asset.
     /// @dev Mirrors Prices._selectFeed — see that function's NatSpec for full semantics.
-    function selectFeed(
-        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
-        address token
-    )
+    function selectFeed(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
         external
         view
         returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
@@ -117,9 +114,7 @@ library PriceFeedLib {
 
         int256 answer;
         uint256 startedAt;
-        try AggregatorV3Interface(uptimeFeed).latestRoundData() returns (
-            uint80, int256 a, uint256 s, uint256, uint80
-        ) {
+        try AggregatorV3Interface(uptimeFeed).latestRoundData() returns (uint80, int256 a, uint256 s, uint256, uint80) {
             answer = a;
             startedAt = s;
         } catch {
@@ -175,10 +170,7 @@ library PriceFeedLib {
 
         configs.push(
             IPrices.PriceFeedConfig({
-                priceFeed: priceFeed,
-                priceType: priceType,
-                decimals: dec,
-                chainlinkHeartbeat: heartbeat
+                priceFeed: priceFeed, priceType: priceType, decimals: dec, chainlinkHeartbeat: heartbeat
             })
         );
 
@@ -236,10 +228,7 @@ library PriceFeedLib {
     // Private helpers
     // -------------------------------------------------------------------------
 
-    function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType)
-        private
-        view
-    {
+    function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType) private view {
         if (priceFeed == address(0) || token == address(0)) revert IPrices.InvalidPriceOracle();
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert IPrices.InvalidPriceOracle();
@@ -247,7 +236,9 @@ library PriceFeedLib {
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3
         ) {
-            if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert IPrices.InvalidPriceOracle();
+            if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
+                revert IPrices.InvalidPriceOracle();
+            }
             (,, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(priceFeed).latestRoundData();
             if (updatedAt > block.timestamp || startedAt > block.timestamp) revert IPrices.InvalidPriceOracle();
         } else {

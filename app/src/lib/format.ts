@@ -49,9 +49,17 @@ export function formatAge(updatedAt: bigint): string {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+// Treat any heartbeat larger than 100 years as the "disabled" sentinel. Custom feeds
+// are sometimes registered with `chainlinkHeartbeat = type(uint256).max` to document
+// that staleness is enforced by the feed's internal `getLatestPrice().stale` instead
+// of a wall-clock heartbeat — without this guard, `Number(MAX_UINT256)` overflows to
+// floating-point and the table renders nonsense like "1.3e+72d".
+const HEARTBEAT_DISABLED_THRESHOLD_SECONDS = 100n * 365n * 24n * 3600n
+
 export function formatHeartbeat(seconds: bigint): string {
+  if (seconds === 0n) return '—'
+  if (seconds >= HEARTBEAT_DISABLED_THRESHOLD_SECONDS) return '∞'
   const s = Number(seconds)
-  if (s === 0) return '—'
   if (s < 3600) return `${Math.floor(s / 60)}m`
   if (s < 86400) return `${Math.floor(s / 3600)}h`
   return `${Math.floor(s / 86400)}d`

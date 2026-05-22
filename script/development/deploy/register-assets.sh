@@ -54,8 +54,14 @@ for sym in $LIST; do
     continue
   fi
   if [ -z "$FEED" ] || [ -z "$ADDR" ] || [ "$HB" = "0" ] || [ "$HB" = "null" ]; then
-    printf "  skip   %-12s missing field\n" "$sym"
-    skip=$((skip+1))
+    # Treat missing-field as a FAILURE, not a skip. A skip is reserved for intentional
+    # cases (e.g. Custom-type assets handled by 03_DeployPriceFeeds.s.sol). A missing
+    # field is a config-incomplete state — if we counted it as a skip and `fail` stayed
+    # 0, the script would stamp `assetsRegisteredCount` and `deploy.sh` would never
+    # retry. Bumping it into `fail` keeps the retry loop active until the config is
+    # filled in.
+    printf "  FAIL   %-12s missing field (address/pricefeed/heartbeat)\n" "$sym"
+    fail=$((fail+1))
     continue
   fi
 

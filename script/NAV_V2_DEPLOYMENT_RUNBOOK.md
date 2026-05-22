@@ -456,7 +456,7 @@ Authoritative source: the `_deploy<Chain>PriceAdapters` functions in `03_DeployP
 
 | Location | Used by | What it does |
 |---|---|---|
-| `tokens.<chainId>.<symbol>.heartbeat` (number) | `RegisterAssets.s.sol` → `NAVCalculator.registerAsset(_, _, _, heartbeat)` → stored in `priceOracles[asset].chainlinkHeartbeat` | For `Chainlink`-typed entries: NAV checks `block.timestamp - latestRoundData().updatedAt > heartbeat` and flags `stale` if exceeded (`Prices.sol:75`). For `Custom`-typed entries: stored but **not used** for staleness — the Custom oracle returns its own `stale` bit. |
+| `tokens.<chainId>.<symbol>.heartbeat` (number) | `RegisterAssets.s.sol` → `NAVCalculator.registerAsset(_, _, _, heartbeat)` → stored in `priceOracles[asset].chainlinkHeartbeat` | For `Chainlink`/`Redstone`/`API3`-typed entries: NAV checks `block.timestamp - latestRoundData().updatedAt >= heartbeat` and flags the feed stale if exceeded. For `Custom`-typed entries: the primary gate is `getLatestPrice().stale`; the registered heartbeat is then also applied as an external gate on `latestRoundData().updatedAt` (same `>=` check). |
 | `priceFeeds.<adapter>.<chainId>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom oracle's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_Price.sol:85-90`), so any single feed exceeding its heartbeat marks the whole price stale. |
 
 **Conventions to follow (PR #14 baseline, all aligned to the fund-side):**

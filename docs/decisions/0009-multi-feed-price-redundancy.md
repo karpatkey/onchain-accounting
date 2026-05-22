@@ -70,7 +70,7 @@ A malicious or misconfigured feed could report a `updatedAt` equal to `block.tim
 
 ### Why `updatedAt == 0 → block.timestamp - 1` for Custom feeds?
 
-Some on-chain rate-only adapters (e.g., pure DSR or exchange-rate feeds with no external oracle) have no meaningful "last update time" — the rate is a live storage slot that changes continuously. `latestRoundData()` on these returns `updatedAt = 0`. Treating `0` as literally zero would make the staleness gate reject the feed (`block.timestamp - 0 > heartbeat` is almost always true). Treating it as `block.timestamp` would make it win every tie. `block.timestamp - 1` is a compromise: the feed participates, but yields to any feed with a real on-chain timestamp.
+Some on-chain rate-only adapters (e.g., pure DSR or exchange-rate feeds with no external oracle) have no meaningful "last update time" — the rate is a live storage slot that changes continuously. `latestRoundData()` on these returns `updatedAt = 0`. Treating `0` as literally zero would make the staleness gate reject the feed (`block.timestamp - 0 >= heartbeat` is almost always true). Treating it as `block.timestamp` would make it win every tie. `block.timestamp - 1` is a compromise: the feed participates, but yields to any feed with a real on-chain timestamp.
 
 ---
 

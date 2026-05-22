@@ -279,7 +279,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 4. Use `OracleArgumentChecks` (`src/utils/OracleArgumentChecks.sol`) for constructor validation: `assertERC20Address`, `assertChainlinkOracle`, `assertNotZeroNumber`, `assertNonZeroAddress`.
 5. In `getLatestPrice`:
    - Read Chainlink leg first; bail out with `(0, true)` if `price <= 0`.
-   - Apply heartbeat: if `block.timestamp - updatedAt > heartbeat`, set `stale = true`.
+   - Apply heartbeat: if `block.timestamp - updatedAt >= heartbeat`, set `stale = true`.
    - Read on-chain rate. If non-positive or out-of-range, return `(0, true)`.
    - Combine and rescale to the target decimals (use `RATIO_DECIMALS` constants when the rate has its own scale).
 6. Implement `latestRoundData()` — see §5.1 for what to return. For a single Chainlink dependency: pass through that feed's round data, substituting `answer` with the computed price. For multiple Chainlink feeds: return the tuple with the lowest `updatedAt`, again substituting `answer`.

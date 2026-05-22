@@ -33,7 +33,7 @@ contract sXDAI_PriceOracleTest is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + heartbeat);
         (uint256 price, bool stale) = sXdaiPriceOracle.getLatestPrice();
-        assertEq(price, 112_016_996);
+        assertEq(price, 0);
         assertEq(stale, true);
     }
 

@@ -203,7 +203,7 @@ Cover, with mocked Chainlink + mocked rate provider:
 
 - **Happy path**: known inputs → expected output (compute by hand).
 - **Negative Chainlink price** (`int256(-1)`) → returns `(0, true)`.
-- **Stale heartbeat** (`updatedAt + heartbeat + 1`) → `stale = true`, price still set.
+- **Stale heartbeat** (`updatedAt + heartbeat + 1`) → `(0, true)` — return zero price when stale.
 - **Zero or negative rate** → `(0, true)`.
 - **Constructor zero-address guards** for every immutable.
 - **Constructor zero-heartbeat guard**.

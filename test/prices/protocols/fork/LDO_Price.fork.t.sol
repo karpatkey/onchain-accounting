@@ -31,7 +31,7 @@ contract LDO_PriceOracleTest is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + 3601);
         (uint256 price, bool stale) = ldoPriceOracle.getLatestPrice();
-        assertEq(price, 91_378_889);
+        assertEq(price, 0);
         assertEq(stale, true, "Price should be stale");
     }
 

@@ -10,7 +10,7 @@ import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
 import {ETHPlus_PriceOracle, IBasketHandler, CollateralStatus} from "src/prices/protocols/ETHPlus_Price.sol";
 
 /// @notice Fork test: four redundant price feeds for ETH+ — Custom (basket accounting),
-/// Chainlink, Redstone (stub), and API3 (stub).
+/// Chainlink (stub), Redstone (stub), and API3 (stub).
 ///
 /// Context: the ETHPlus_PriceOracle custom adapter (Reserve Protocol basket accounting)
 /// was the original pricing approach for ETH+. Once a direct Chainlink ETH+/USD feed
@@ -18,19 +18,23 @@ import {ETHPlus_PriceOracle, IBasketHandler, CollateralStatus} from "src/prices/
 /// demonstrating that a basket-IFFY event does not prevent NAV from being read and that
 /// freshest-wins correctly selects the healthy feed.
 ///
-/// Redstone and API3 are stubbed with local AggregatorV3 mocks (same on-chain interface).
-/// Replace with real deployed addresses when confirmed:
-///   Redstone Classic ETH+/USD (Ethereum) — https://app.redstone.finance/ → Classic feeds
-///   API3 ETH+/USD dAPI proxy (Ethereum)  — https://market.api3.org/
+/// All three non-custom feeds are stubbed with local AggregatorV3 mocks (same interface).
+/// The on-chain Chainlink ETH+/USD feed at 0x66Ab900341C98de949EC31d11b3C4180743844F1
+/// reports 18 decimals (ETH-denominated), which would fail the L-4 decimal-consistency
+/// check against the 8-decimal custom adapter, so it is represented here as a stub.
+/// Replace with real 8-decimal deployed addresses when available:
+///   Chainlink ETH+/USD 8-decimal feed (Ethereum)  — confirm via feeds.chain.link
+///   Redstone Classic ETH+/USD (Ethereum)           — https://app.redstone.finance/ → Classic feeds
+///   API3 ETH+/USD dAPI proxy (Ethereum)            — https://market.api3.org/
 ///
 /// Heartbeat design:
 ///   Custom (basket)  = 86 400 s  (24 h — RESERVE_PROTOCOL_HEARTBEAT)
-///   Chainlink        = 86 400 s  (24 h)
+///   Chainlink stub   = 86 400 s  (24 h)
 ///   Redstone stub    =  3 600 s  (1 h — shorter for test differentiation)
 ///   API3 stub        = 172 800 s (48 h — longest, outlasts all others)
 ///
 /// Key scenarios tested:
-///   basket IFFY      → custom skipped; Chainlink wins (direct fallback)
+///   basket IFFY      → custom skipped; Chainlink stub wins (direct fallback)
 ///   +3 601 s warp    → Redstone stub expires; custom + Chainlink + API3 still healthy
 ///   +86 401 s warp   → custom (basket heartbeat) + Chainlink + Redstone stale; API3 wins
 ///   +172 801 s warp  → every feed expires; latestPrice returns stale = true
@@ -39,8 +43,6 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
     address public constant ETHPLUS = 0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8;
 
-    // Chainlink ETH+/USD — Ethereum Mainnet (86 400 s heartbeat)
-    address public constant CHAINLINK_ETHPLUS_USD = 0x66Ab900341C98de949EC31d11b3C4180743844F1;
     uint256 public constant CHAINLINK_HEARTBEAT = 86_400;
 
     uint256 public constant CUSTOM_HEARTBEAT = 86_400;
@@ -53,6 +55,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
     // ─── Feed instances ────────────────────────────────────────────────────────
 
     ETHPlus_PriceOracle public customFeed; // real basket-accounting adapter
+    Mock_PriceOracleChainlink public chainlinkFeed; // AggregatorV3 stub — Chainlink shape (8 dec)
     Mock_PriceOracleChainlink public redstoneFeed; // AggregatorV3 stub — Redstone shape
     Mock_PriceOracleChainlink public api3Feed; // AggregatorV3 stub — API3 shape
 
@@ -71,13 +74,14 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         // Stubs fix _updatedAt = block.timestamp at construction (= fork block timestamp).
         // Staleness is therefore controllable via vm.warp without touching real feeds.
+        chainlinkFeed = new Mock_PriceOracleChainlink("Chainlink ETH+/USD stub", STUB_ETHPLUS_PRICE, 8);
         redstoneFeed = new Mock_PriceOracleChainlink("Redstone ETH+/USD stub", STUB_ETHPLUS_PRICE, 8);
         api3Feed = new Mock_PriceOracleChainlink("API3 ETH+/USD stub", STUB_ETHPLUS_PRICE, 8);
 
         // Primary: custom basket-accounting oracle (original approach)
         nav.registerAsset(ETHPLUS, address(customFeed), IPrices.PriceType.Custom, CUSTOM_HEARTBEAT);
         // Direct Chainlink feed (production choice)
-        nav.addPriceFeed(ETHPLUS, CHAINLINK_ETHPLUS_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
+        nav.addPriceFeed(ETHPLUS, address(chainlinkFeed), IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
         // Redundancy stubs
         nav.addPriceFeed(ETHPLUS, address(redstoneFeed), IPrices.PriceType.Redstone, REDSTONE_HEARTBEAT);
         nav.addPriceFeed(ETHPLUS, address(api3Feed), IPrices.PriceType.API3, API3_HEARTBEAT);
@@ -96,7 +100,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
         assertEq(uint8(feeds[0].priceType), uint8(IPrices.PriceType.Custom));
         assertEq(feeds[0].chainlinkHeartbeat, CUSTOM_HEARTBEAT);
 
-        assertEq(feeds[1].priceFeed, CHAINLINK_ETHPLUS_USD);
+        assertEq(feeds[1].priceFeed, address(chainlinkFeed));
         assertEq(uint8(feeds[1].priceType), uint8(IPrices.PriceType.Chainlink));
         assertEq(feeds[1].chainlinkHeartbeat, CHAINLINK_HEARTBEAT);
 
@@ -158,7 +162,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
 
         assertFalse(stale, "Chainlink must keep the read healthy when basket is IFFY");
         assertTrue(price > 0);
-        assertEq(d.priceFeed, CHAINLINK_ETHPLUS_USD, "Chainlink must win");
+        assertEq(d.priceFeed, address(chainlinkFeed), "Chainlink stub must win");
         assertEq(uint8(d.priceType), uint8(IPrices.PriceType.Chainlink), "priceType must be Chainlink");
 
         console2.log("Winner when basket IFFY:", d.priceFeed);
@@ -223,7 +227,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_cannotRemoveLastFeed() public {
         vm.startPrank(admin);
         nav.removePriceFeed(ETHPLUS, address(customFeed));
-        nav.removePriceFeed(ETHPLUS, CHAINLINK_ETHPLUS_USD);
+        nav.removePriceFeed(ETHPLUS, address(chainlinkFeed));
         nav.removePriceFeed(ETHPLUS, address(redstoneFeed));
 
         vm.expectRevert(); // CannotRemoveLastFeed

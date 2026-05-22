@@ -33,7 +33,7 @@ contract sUSDS_PriceOracleTest is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + heartbeat);
         (uint256 price, bool stale) = sUsdsPriceOracle.getLatestPrice();
-        assertEq(price, 106_311_899);
+        assertEq(price, 0);
         assertEq(stale, true);
     }
 

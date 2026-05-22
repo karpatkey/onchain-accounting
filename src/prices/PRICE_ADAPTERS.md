@@ -290,7 +290,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 - Unit test under `test/prices/protocols/<Asset>_Price.t.sol` with mocked Chainlink + rate provider:
   - Happy path: known inputs → expected output.
   - Negative Chainlink price → `(0, true)`.
-  - Stale heartbeat → `stale = true` but `price` still reflects the last value.
+  - Stale heartbeat → `(0, true)` — return zero price when stale (security invariant I-1).
   - Zero or negative rate → `(0, true)`.
 - Fork test under `test/prices/protocols/fork/<Asset>_Price.fork.t.sol` against the real feed at a pinned block — assert the price is within a reasonable range and not stale.
 

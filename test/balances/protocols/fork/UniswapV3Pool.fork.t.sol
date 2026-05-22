@@ -307,7 +307,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         balances = _deployBalancesForOracle(assets);
 
         // positionId follows the canonical schema from
-        // script/config/adapter-identities.json: `<pool address>` (lower-cased hex).
+        // script/config/adapter-identities.json: `<pool address>` as a hex string.
         // Likewise positionDetail uses the `protocol/product/name` schema; the adapter
         // appends `"type":"Supply"` / `"type":"Fees"` via `PositionType.withType(...)`.
         oUsdcWeth = new UniswapV3PoolBalanceOracle(
@@ -592,26 +592,17 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
     // collect-return value: principal + all fees + settled `tokensOwed`. So strict
     // equality holds iff the adapter's math matches the protocol's settlement math.
 
-    /// @dev NFT-tuple wrapper so the helpers can stay terse.
-    struct NftCase {
-        address holder;
-        uint256 tokenId;
-        UniswapV3PoolBalanceOracle adapter;
-        address token0;
-        address token1;
-    }
-
-    function _simulateDecreaseAndCollect(NftCase memory c) internal returns (uint256 g0, uint256 g1) {
+    function _simulateDecreaseAndCollect(address holder, uint256 tokenId) internal returns (uint256 g0, uint256 g1) {
         // 1. decreaseLiquidity at the full position liquidity. This pulls principal into
         //    `tokensOwed*` on the NPM and zeros out `liquidity`.
         // Read the current liquidity from the NFT (same value the adapter sees).
-        (,,,,,,, uint128 liq,,,,) = INonfungiblePositionManagerMutating(NPM).positions(c.tokenId);
+        (,,,,,,, uint128 liq,,,,) = INonfungiblePositionManagerMutating(NPM).positions(tokenId);
 
-        vm.startPrank(c.holder);
+        vm.startPrank(holder);
         if (liq > 0) {
             INonfungiblePositionManagerMutating.DecreaseLiquidityParams memory dParams =
                 INonfungiblePositionManagerMutating.DecreaseLiquidityParams({
-                    tokenId: c.tokenId, liquidity: liq, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+                    tokenId: tokenId, liquidity: liq, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
                 });
             INonfungiblePositionManagerMutating(NPM).decreaseLiquidity(dParams);
         }
@@ -619,7 +610,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         // 2. collect everything (principal + fees + tokensOwed) to the holder.
         INonfungiblePositionManagerMutating.CollectParams memory cParams =
             INonfungiblePositionManagerMutating.CollectParams({
-                tokenId: c.tokenId, recipient: c.holder, amount0Max: type(uint128).max, amount1Max: type(uint128).max
+                tokenId: tokenId, recipient: holder, amount0Max: type(uint128).max, amount1Max: type(uint128).max
             });
         (uint128 a0, uint128 a1) = INonfungiblePositionManagerMutating(NPM).collect(cParams);
         vm.stopPrank();
@@ -634,10 +625,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         (uint256 adapterToken1,) = oUsdcWeth.getOracleBalanceForAsset(ACCOUNT_12, MAINNET_WETH);
 
         // Ground truth: what NPM would actually pay out on close.
-        NftCase memory c = NftCase({
-            holder: ACCOUNT_12, tokenId: 1_231_724, adapter: oUsdcWeth, token0: MAINNET_USDC, token1: MAINNET_WETH
-        });
-        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
+        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(ACCOUNT_12, 1_231_724);
 
         // ACCOUNT_12 has one other NFT in this pool (#1204560, closed `liquidity=0`)
         // that contributes 0 to both the adapter total and the collect total. So the
@@ -650,10 +638,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         (uint256 adapterToken0,) = oWethUsdt.getOracleBalanceForAsset(ACCOUNT_12, MAINNET_WETH);
         (uint256 adapterToken1,) = oWethUsdt.getOracleBalanceForAsset(ACCOUNT_12, MAINNET_USDT);
 
-        NftCase memory c = NftCase({
-            holder: ACCOUNT_12, tokenId: 1_276_763, adapter: oWethUsdt, token0: MAINNET_WETH, token1: MAINNET_USDT
-        });
-        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
+        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(ACCOUNT_12, 1_276_763);
 
         // ACCOUNT_12 has one other NFT in this pool (#1258127, closed) — same logic.
         assertEq(adapterToken0, g0, "adapter token0 != NPM.collect token0 (WETH)");
@@ -664,10 +649,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         (uint256 adapterToken0,) = oWethUsdt.getOracleBalanceForAsset(HOLDER_B, MAINNET_WETH);
         (uint256 adapterToken1,) = oWethUsdt.getOracleBalanceForAsset(HOLDER_B, MAINNET_USDT);
 
-        NftCase memory c = NftCase({
-            holder: HOLDER_B, tokenId: 1_287_303, adapter: oWethUsdt, token0: MAINNET_WETH, token1: MAINNET_USDT
-        });
-        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
+        (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(HOLDER_B, 1_287_303);
 
         // HOLDER_B has 18 other NFTs in this pool, all closed (`liquidity = 0`,
         // `tokensOwed = 0`). They contribute 0 to the adapter total. The 14 NFTs in

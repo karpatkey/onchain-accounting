@@ -470,10 +470,23 @@ contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterT
         for (uint256 i = 0; i < cases.length; i++) {
             INAVCalculator.PositionBalance[] memory positions = cases[i].adapter.getOraclePositions(HOLDER, address(0));
             assertEq(positions.length, 2, _msg(cases[i].label, "expect 2 positions per pair"));
+            string memory expectedPositionId = vm.toString(cases[i].pair);
+            string memory expectedPositionDetail = string(
+                abi.encodePacked(
+                    "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"",
+                    _humanLabel(cases[i].label),
+                    "\",\"type\":\"Supply\"}"
+                )
+            );
             bool saw0;
             bool saw1;
             for (uint256 j = 0; j < positions.length; j++) {
                 assertEq(positions[j].balanceOracle, address(cases[i].adapter), _msg(cases[i].label, "balanceOracle"));
+                assertEq(positions[j].protocol, "Uniswap V2", _msg(cases[i].label, "protocol"));
+                // positionId + positionDetail are the regression surface the constructor-time
+                // schema asserts: if the adapter ever drops or rewrites these, this test fails.
+                assertEq(positions[j].positionId, expectedPositionId, _msg(cases[i].label, "positionId"));
+                assertEq(positions[j].positionDetail, expectedPositionDetail, _msg(cases[i].label, "positionDetail"));
                 assertFalse(positions[j].isDebt, _msg(cases[i].label, "isDebt"));
                 if (positions[j].underlyingAsset.asset == cases[i].token0) {
                     assertEq(positions[j].amount, cases[i].expected0, _msg(cases[i].label, "token0 via positions"));

@@ -28,7 +28,7 @@ Scope: Ethereum (1), Gnosis (100), Base (8453), Optimism (10), Arbitrum (42161).
 - Does the protocol publish canonical per-chain addresses? Use it verbatim — don't infer from one mainnet example.
 
 **C. Read sibling adapter tests + ADRs + the identity schema.**
-- Open `test/balances/protocols/fork/<Adapter>.fork.t.sol` (and adjacent ones for related adapters). Patterns Santi shipped reveal cadence, fork-block conventions, mock-vs-real-holder choices.
+- Open `test/balances/protocols/fork/<Adapter>.fork.t.sol` (and adjacent ones for related adapters). Existing fork-test patterns reveal cadence, fork-block conventions, and mock-vs-real-holder choices.
 - Search `docs/decisions/` for ADRs naming this adapter — they often document design constraints (immutability, trust-minimisation, math licensing, etc.).
 - Confirm the canonical `positionDetail` schema in `script/config/adapter-identities.json`. Use it verbatim. Don't invent ad-hoc keys (we already shipped a `pool` instead of `product/name` drift on Uni V2 chain config and Copilot caught it).
 
@@ -51,7 +51,7 @@ Drift envelope on the side channel = (now − pinned block timestamp). If you pi
 ### Hard constraints
 
 - **The dev anvil fork block MUST equal the fork test's `FORK_BLOCK`.** If the refork hits the latest block, that block becomes the test's `FORK_BLOCK` — not the other way around. Don't pin the test at one block and the anvil at another.
-- **Augment, don't replace.** Santi's existing fork tests are the regression net. The new test contract goes alongside them in the same file (or a sibling file when the file is already large).
+- **Augment, don't replace.** The existing fork tests are the regression net. The new test contract goes alongside them in the same file (or a sibling file when the file is already large).
 - **Strict equality, not "within tolerance".** Drift is a bug to root-cause, not a tolerance to widen. The only acceptable "delta" in the evidence pack JSON is `0`.
 
 ## Folder shape

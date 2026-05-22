@@ -1,134 +1,185 @@
 # Uniswap V2 — balance-adapter verification
 
-## Adapter under test
+## 1. Adapter under test
 
-`src/balances/protocols/UniswapV2.sol` — one adapter instance per pair (immutable). For multi-pool accounts we deploy one adapter per pool the holder has LP in.
+`src/balances/protocols/UniswapV2.sol` — one adapter instance per pair (immutable). The adapter holds a single LP balance per address and reports the underlying token amounts pro-rata to the holder's share of `totalSupply`, with a dilution adjustment when the factory's `feeTo` is set.
 
-## What Santi's existing fork test already covers
+### Inheritance + per-chain scope
 
-`test/balances/protocols/fork/UniswapV2.fork.t.sol` (commit `eb2c01e` and earlier):
+- **Inheritance:** direct `IBalanceOracleAdapter` implementer. `PancakeSwapV2BalanceOracle` is a constructor-only subclass with no overrides (verified separately as inherited coverage).
+- **Per-chain scope:** Uniswap V2 is deployed on Ethereum and a handful of L2s, but only Ethereum has V2 instances configured in `script/config/chains/1.json`. The adapter has **zero per-chain code branches** — pair ABI/bytecode is identical on every chain. Single-chain (mainnet) fork tests are sufficient.
+- **Math branches:** dilution-inactive (`feeTo == 0`), dilution-active with `kLast > 0` and `rootK > rootKLast`, dilution-active with `kLast == 0` (factory just turned `feeTo` on). All exercised by the multi-pool holder in §5.
+
+## 2. Existing fork test coverage
+
+`test/balances/protocols/fork/UniswapV2.fork.t.sol` →
+`UniswapV2BalanceOracleForkTest_USDC_WETH` (pre-existing):
 
 - USDC/WETH pair on mainnet at block 24,444,658.
-- LP balance is **synthetic** (`deal()`-planted on a `makeAddr("alice")` test address — not a real holder).
+- LP balance is **synthetic** — `deal()`-planted on a `makeAddr("alice")` test address, not a real holder.
 - Pro-rata math correctness against live `getReserves()` / `totalSupply()`.
-- Dilution branch correctness via **mocked** `factory.feeTo()` + **mocked** `pair.kLast()` — the canonical Uniswap V2 factory has `feeTo == address(0)` historically, so the dilution branch is never active on real mainnet pairs.
-- Position aggregation + asset-filter behavior.
+- Dilution branch correctness via **mocked** `factory.feeTo()` + **mocked** `pair.kLast()` — the canonical Uniswap V2 factory had `feeTo == address(0)` historically, so the dilution branch was never active on a real mainnet pair until this PR's holder was selected.
+- Position aggregation + asset-filter behaviour.
 
-This is rigorous **math-correctness** coverage. It does not assert against a real holder or against an external ground truth (Tenderly burn simulation).
+Kept untouched as a regression net for math correctness with mocks.
 
-## What this case adds
+## 3. What this case adds
 
-- **Real holder** with non-zero LP across **multiple canonical V2 pairs** simultaneously.
-- **Strict equality** assertion against `pair.burn(holder)` simulated via Tenderly — the same numbers Uniswap V2 itself would transfer on a real exit, modulo no rounding deviation (the adapter's formula matches `burn()` to the unit when `feeTo == 0`).
-- Coverage of token-decimal heterogeneity (USDC/USDT=6, WBTC=8, WETH/DAI=18).
+- **Real holder** with non-zero LP across **6 canonical V2 pairs** simultaneously.
+- The holder is the **current value of `UniswapV2Factory.feeTo()`** — so the dilution branch is exercised **live** at the pinned block, not via mocks.
+- **Strict equality** against the dilution-adjusted formula in arbitrary precision (Python derivation in `compute-expected.py`), which equals what `pair.burn(holder)` would transfer on a real exit when `feeTo != 0`.
+- Coverage of token-decimal heterogeneity (USDC/USDT = 6, WBTC = 8, WETH/DAI = 18).
 
-## Live verification side channel (user)
+## 4. Adapter formula recap
 
-Local anvil fork of mainnet pinned at the same block. The NAV dashboard renders the account's positions; user cross-checks against Debank. Debank drift is bounded by the gap between the pinned fork block and the moment of the Debank lookup (target: minutes, not hours).
-
-## Adapter formula recap
-
-For a holder of `lp` LP tokens of a V2 pair with reserves `(r0, r1)` and `totalSupply` (and `pendingProtocolMint = 0` when `feeTo == address(0)`):
+For a holder of `lp` LP tokens of a V2 pair with reserves `(r0, r1)`, `totalSupply`, and `kLast`:
 
 ```
-amount0 = (lp * r0) / totalSupply
-amount1 = (lp * r1) / totalSupply
+# Dilution adjustment — pendingProtocolMint, only when feeTo != address(0)
+if feeTo == address(0) or kLast == 0:
+    pendingProtocolMint = 0
+else:
+    rootK     = sqrt(r0 * r1)
+    rootKLast = sqrt(kLast)
+    if rootK > rootKLast:
+        numerator   = totalSupply * (rootK - rootKLast)
+        denominator = rootK * 5 + rootKLast
+        pendingProtocolMint = numerator / denominator
+    else:
+        pendingProtocolMint = 0
+
+# Underlying amounts
+effectiveSupply = totalSupply + pendingProtocolMint
+amount0 = (lp * r0) / effectiveSupply
+amount1 = (lp * r1) / effectiveSupply
 ```
 
-This matches Uniswap V2's `burn()` math exactly modulo the protocol-fee mint sequence inside `_mintFee` — which is a no-op when `feeTo == 0`. So the Tenderly burn simulation IS the ground truth.
+This matches Uniswap V2's `pair.burn()` math exactly modulo the protocol-fee mint sequence inside `_mintFee` — which is a no-op when `feeTo == 0`. So the burn simulation is bit-exact ground truth.
 
-## Case files in this folder
+## 5. Cherry-picked accounts
 
-| File | Purpose |
-|---|---|
-| `case-multi-pool-mainnet.json` | The cherry-picked multi-pool holder + per-pool evidence pack. Filled in incrementally as we collect the numbers. |
+| Holder | Address | Rationale |
+|---|---|---|
+| Fee receiver | `0xf38521f130fcCF29dB1961597bc5d2B60F995f85` | Current value of `UniswapV2Factory.feeTo()` — confirmed at the pinned block. LP positions present in all 6 canonical V2 pairs (selected via Dune query 7553459 ordered by pair count desc). Activates the dilution branch live. |
 
-## Cherry-picked account
+### Setup
 
-`0xf38521f130fccf29db1961597bc5d2b60f995f85` — selected via Dune query 7553459 (top multi-pool Uni V2 LP holders, ordered by pair count desc). LP positions present in all 6 canonical Uni V2 pairs.
-
-**This wallet is the current value of `UniswapV2Factory.feeTo()` — the protocol-fee recipient.** The dilution branch of the adapter (`_pendingProtocolMint`) is therefore exercised **live** at this block — not via the mocks Santi's existing test uses.
-
-| Setup field | Value |
+| Field | Value |
 |---|---|
 | Chain | Ethereum mainnet (chainId 1) |
 | Block | **25,144,444** |
 | Block timestamp | 1779376566 (`0x6a0f21b6`) — **2026-05-21 15:16:06 UTC** |
-| Holder | `0xf38521f130fcCF29dB1961597bc5d2B60F995f85` |
 | Factory | `0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f` |
-| Factory `feeTo` | **= holder** (dilution branch active) |
+| Factory `feeTo` at pinned block | `0xf38521f130fcCF29dB1961597bc5d2B60F995f85` (= holder; dilution branch active) |
 | Adapter under test | `src/balances/protocols/UniswapV2.sol` (one instance per pair) |
 | New fork-test contract | `UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver` in `test/balances/protocols/fork/UniswapV2.fork.t.sol` |
+| Existing fork-test contract (kept) | `UniswapV2BalanceOracleForkTest_USDC_WETH` (block 24,444,658) |
 
-## Expected balances (dilution-adjusted, per pool)
+### Per-pair state at the pinned block
 
-Computed via `_pendingProtocolMint` formula in arbitrary precision from pinned on-chain state. The adapter's `getOracleBalanceForAsset(holder, token)` must return **exactly** these numbers — no drift tolerance.
+Sanity values consumed by the dilution math in §4. Reproduced here for traceability of the §7 expected amounts.
 
-| Pool | Holder LP (raw) | Pending protocol mint | Expected token0 (raw) | Expected token0 (humanized) | Expected token1 (raw) | Expected token1 (humanized) |
-|---|---|---|---|---|---|---|
-| USDC_WETH | 572,118,540,385 | 1,033,333,952 | 74,259,143 | 74.26 USDC | 35,066,111,262,254,964 | 0.03507 WETH |
-| USDT_WETH | 524,231,255,292 | 208,380,389,358 | 34,371,817,334,190,102 | 0.03437 WETH | 72,841,301 | 72.84 USDT |
-| DAI_WETH  | 357,754,544,446,275,522 | 468,476,215,008,095,737 | 36,218,518,466,527,858,189 | 36.22 DAI | 17,105,149,103,443,307 | 0.01711 WETH |
-| WBTC_WETH | 27,225,977,518 | 413,125,081 | 59,860 | 0.000599 WBTC | 21,711,539,995,652,021 | 0.02171 WETH |
-| USDC_USDT | 54,175 | 2,288,081 | 72,501 | 0.07250 USDC | 72,670 | 0.07267 USDT |
-| DAI_USDC  | 10,981,520,318,976 | 940,214,338,605 | 12,470,607,855,679,992,115 | 12.47 DAI | 12,499,207 | 12.50 USDC |
+| Pair | Pair address | totalSupply | reserve0 | reserve1 | kLast | Holder LP | Pending protocol mint |
+|---|---|---|---|---|---|---|---|
+| USDC/WETH | `0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc` | `71524960490263522` | `9283709548424` (USDC) | `4383885649164906350202` (WETH) | `40698714004570785604812811690423272` | `572118540385` | `1033333952` |
+| USDT/WETH | `0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852` | `56039400702797694` | `3674300582886516441277` (WETH) | `7786636206675` (USDT) | `28609165329760219541904241659177024` | `524231255292` | `208380389358` |
+| DAI/WETH | `0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11` | `42141463136922989994002` | `4266384178873238544406300` (DAI) | `2014912276979018836820` (WETH) | `8595243144053056738816447983195826337842631044` | `357754544446275522` | `468476215008095737` |
+| WBTC/WETH | `0xBb2b8038a1640196FbE3e38816F3e67Cba72D940` | `2496662761488850` | `5489292249` (WBTC) | `1990980942207281690502` (WETH) | `10929054552648029973465918591327` | `27225977518` | `413125081` |
+| USDC/USDT | `0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f` | `1320325893212` | `1766966740090` (USDC) | `1771092143660` (USDT) | `3129395832903606990453598` | `54175` | `2288081` |
+| DAI/USDC | `0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5` | `478938203185215845` | `543883002588485504333157` (DAI) | `545130320415` (USDC) | `296480131038030343968743552266109580` | `10981520318976` | `940214338605` |
 
-> Token0 / token1 ordering matches the pair contract's `token0()` / `token1()` (i.e. sorted by address ascending). See `case-multi-pool-mainnet.json` for the full per-token metadata (symbol, address, decimals).
+Token0/token1 ordering is the pair's `token0()` / `token1()` (sorted by address ascending).
 
-## Side-channel: app vs Debank (user's cross-check)
+## 6. Case files in this folder
 
-| Source | Value at this snapshot | Notes |
-|---|---|---|
-| NAV dashboard | _(record after `forge test` passes)_ | Local anvil at the pinned block. http://localhost:3000 → enter holder address. |
-| Debank | _(record when checked)_ | Live data, drift = (now − block timestamp). Bound to a few minutes if checked promptly. |
-| Delta (app − debank) | _(record)_ | Should be ≤ minutes of drift in USD terms. |
+| File | Purpose |
+|---|---|
+| `case-multi-pool-mainnet.json` | Per-pair machine-readable evidence pack with state, dilution intermediates, and expected amounts |
+| `compute-expected.py` | Python derivation of the dilution-adjusted expected amounts (the independent ground truth referenced in §8) |
+| `deploy-uniV2-adapters-mainnet.sh` | Deploy + register the 6 mainnet V2 adapters on the dev mainnet anvil |
 
-Debank does its own LP-underlying derivation; if it doesn't apply the dilution adjustment, expect a sub-basis-point delta vs the app — negligible at the dollar scale of these positions.
+## 7. Expected balances
 
-### Live-vs-fork drift evidence (USDC/WETH spot-check, 2026-05-21)
+Values are pinned at the fork block in §5 as `EXPECTED_*` constants in the test, and independently validated by the ground-truth derivation in §8.
 
-Comparing the holder's USDC/WETH position at our pinned fork block vs live mainnet **31 minutes later** (156 blocks past the fork). One swap moved the reserves; `totalSupply` / `kLast` / holder LP unchanged.
+### 7a. Per-leg detail
 
-| Field | Pinned (25,144,444) | Live (25,144,600) | Δ |
-|---|---|---|---|
-| `reserve0` (USDC) | 9,283,709,548,424 | 9,309,477,230,279 | +25.77M USDC |
-| `reserve1` (WETH) | 4,383,885,649,164,906,350,202 | 4,371,788,523,176,526,737,061 | −12.10 WETH |
-| `totalSupply` | 71,524,960,490,263,522 | 71,524,960,490,263,522 | 0 |
-| `kLast` | 40,698,714,004,570,785,604,812,811,690,423,272 | (same) | 0 |
-| Holder LP | 572,118,540,385 | (same) | 0 |
-| → Holder's USDC | **74.26** | **74.47** | +0.21 (+0.28%) |
-| → Holder's WETH | **0.03507** | **0.034969** | −0.0001 (−0.28%) |
+Uniswap V2 is single-leg per pair (`Supply` from the LP token's pro-rata share). One row per token per pair the holder is in.
 
-The Uniswap web UI's "Remove Liquidity" preview at the live moment showed **74.47 USDC + 0.035 WETH**, matching the live-block math to the cent. Our test's pinned-block values are correct — the gap is just time since the fork, not an adapter bug.
+| Holder | Pair | Leg | Token | Amount (raw) | Amount (humanised) |
+|---|---|---|---|---|---|
+| Fee receiver | USDC/WETH | Supply | USDC | `74259143` | 74.259143 USDC |
+| Fee receiver | USDC/WETH | Supply | WETH | `35066111262254964` | 0.035066 WETH |
+| Fee receiver | USDT/WETH | Supply | WETH | `34371817334190102` | 0.034372 WETH |
+| Fee receiver | USDT/WETH | Supply | USDT | `72841301` | 72.841301 USDT |
+| Fee receiver | DAI/WETH | Supply | DAI | `36218518466527858189` | 36.218518 DAI |
+| Fee receiver | DAI/WETH | Supply | WETH | `17105149103443307` | 0.017105 WETH |
+| Fee receiver | WBTC/WETH | Supply | WBTC | `59860` | 0.0005986 WBTC |
+| Fee receiver | WBTC/WETH | Supply | WETH | `21711539995652021` | 0.021712 WETH |
+| Fee receiver | USDC/USDT | Supply | USDC | `72501` | 0.072501 USDC |
+| Fee receiver | USDC/USDT | Supply | USDT | `72670` | 0.072670 USDT |
+| Fee receiver | DAI/USDC | Supply | DAI | `12470607855679992115` | 12.470608 DAI |
+| Fee receiver | DAI/USDC | Supply | USDC | `12499207` | 12.499207 USDC |
 
-If you observe a Debank delta noticeably larger than what this drift implies, escalate it (could indicate Debank using a different LP-share derivation, or a stale Debank cache, neither of which would impact the adapter).
+Each amount is `(holderLP * reserveX) / (totalSupply + pendingProtocolMint)` from §4, using the per-pair state in §5.
 
-## Wiring the live dev-anvil dashboard
+### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
 
-`deploy-uniV2-adapters-mainnet.sh` deploys + registers all 6 Uni V2 adapters on the local mainnet anvil so the NAV dashboard can render the holder's positions. Run **after** the dev anvil is up + NAV is deployed (i.e. after `bash /tmp/refork.sh`):
+This is what the strict-equality test asserts. For Uniswap V2, single-leg → 7a and 7b are identical row-for-row. The redundant `isDebt` column is shown for structural consistency with multi-leg / debt-carrying adapters (V2 LPs never carry debt).
+
+| Holder | Pair | Token | Total (raw) | Total (humanised) | isDebt |
+|---|---|---|---|---|---|
+| Fee receiver | USDC/WETH | USDC | `74259143` | 74.259143 USDC | false |
+| Fee receiver | USDC/WETH | WETH | `35066111262254964` | 0.035066 WETH | false |
+| Fee receiver | USDT/WETH | WETH | `34371817334190102` | 0.034372 WETH | false |
+| Fee receiver | USDT/WETH | USDT | `72841301` | 72.841301 USDT | false |
+| Fee receiver | DAI/WETH | DAI | `36218518466527858189` | 36.218518 DAI | false |
+| Fee receiver | DAI/WETH | WETH | `17105149103443307` | 0.017105 WETH | false |
+| Fee receiver | WBTC/WETH | WBTC | `59860` | 0.0005986 WBTC | false |
+| Fee receiver | WBTC/WETH | WETH | `21711539995652021` | 0.021712 WETH | false |
+| Fee receiver | USDC/USDT | USDC | `72501` | 0.072501 USDC | false |
+| Fee receiver | USDC/USDT | USDT | `72670` | 0.072670 USDT | false |
+| Fee receiver | DAI/USDC | DAI | `12470607855679992115` | 12.470608 DAI | false |
+| Fee receiver | DAI/USDC | USDC | `12499207` | 12.499207 USDC | false |
+
+## 8. Ground-truth cross-check
+
+The expected amounts in §7 are derived **independently** of the adapter contract by re-running the V2 dilution math in arbitrary precision against the on-chain state at the pinned block:
+
+- `compute-expected.py` reads `totalSupply`, reserves, `kLast`, and `holderLP` per pair, then computes `pendingProtocolMint` and the dilution-adjusted `amount0` / `amount1` as Python integers (no rounding loss vs Solidity's `uint256` math).
+- The strict-equality test asserts the adapter's `getOracleBalanceForAsset(holder, token)` returns exactly these Python-derived values per pair, per token.
+
+Bit-exact equivalence with the protocol settlement path: `pair.burn(holder)` simulated at the pinned block would transfer exactly the §7 amounts when `feeTo != 0`. The Python derivation is the ground truth; the adapter matches it; the protocol matches both.
+
+## 9. Wiring the live dev-anvil dashboard
+
+`deploy-uniV2-adapters-mainnet.sh` deploys + registers all 6 mainnet V2 adapters on the local mainnet anvil so the dashboard renders the holder's positions for a side-channel cross-check. Run after the dev anvil is up and the NAV proxy is deployed:
 
 ```bash
+bash script/development/anvil/start-forks.sh
+bash script/development/deploy/deploy.sh
 bash script/development/test/uniswapV2/deploy-uniV2-adapters-mainnet.sh
+bash script/development/app/sync-app-env.sh
+# then start the Next.js dev server in app/
 ```
 
-Deployed addresses go to `script/development/state/1-uniV2-adapters.json` for cross-reference. This step is separate from the fork test (which deploys its own adapter instances in `setUp()`); it's purely the side-channel app surface.
+Deployed adapter addresses go to `script/development/state/1-uniV2-adapters.json`. This step is separate from the fork test (which deploys its own adapter instances in `setUp()`) — it is purely the dashboard surface.
 
-## Test verdict (2026-05-21)
+## 10. Test verdict (2026-05-21)
 
 | Aspect | Status |
 |---|---|
-| Pre-flight: `holder is factory.feeTo` | ✅ |
-| Pre-flight: dilution branch active in every pool | ✅ |
-| Strict equality: `getOracleBalanceForAsset(token0)` per pool | ✅ |
-| Strict equality: `getOracleBalanceForAsset(token1)` per pool | ✅ |
-| Strict equality: `getOracleBalances()` aggregate per pool | ✅ |
-| Strict equality: `getOraclePositions()` per pool | ✅ |
+| Pre-flight: holder is `factory.feeTo` | ✅ |
+| Pre-flight: dilution branch active in every pair | ✅ |
+| Strict equality: `getOracleBalanceForAsset(token0)` per pair | ✅ |
+| Strict equality: `getOracleBalanceForAsset(token1)` per pair | ✅ |
+| Strict equality: `getOracleBalances()` aggregate per pair | ✅ |
+| Strict equality: `getOraclePositions()` per pair | ✅ |
 
-**6/6 tests pass with zero drift.** Adapter output equals the dilution-adjusted expected amounts to the unit, across all 6 pools and across both token0 and token1 — `getOracleBalanceForAsset` / `getOracleBalances` / `getOraclePositions` surfaces all agree.
+**6 / 6 tests pass with zero drift.** Adapter output equals the dilution-adjusted expected amounts to the unit across all 6 pairs and across both tokens — `getOracleBalanceForAsset` / `getOracleBalances` / `getOraclePositions` surfaces all agree.
 
 Run via:
+
 ```
 FOUNDRY_PROFILE=slow forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver -vv
 ```
-
-`case-multi-pool-mainnet.json`'s `observed_from_adapter` and `delta_observed_minus_expected` fields now mirror the strict-equality result (observed = expected per pool, gross delta 0).

@@ -164,6 +164,43 @@ function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPositio
   return groups
 }
 
+/// Extract the `type` discriminator from a positionDetail JSON — `Supply` / `Borrow` /
+/// `Collateral` / `Staking` / `Rewards` / `Fees` per `src/utils/PositionType.sol`. Adapters
+/// that don't multi-leg their output simply omit `type` from positionDetail, in which case
+/// we keep the entry in a single un-typed bucket and render flat (no inner sub-header).
+function extractType(positionDetail: string): string | null {
+  if (!positionDetail) return null
+  let text = positionDetail.trim()
+  if (!text.endsWith('}')) text += '}'
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown>
+    const t = obj.type as string | undefined
+    return typeof t === 'string' && t.length > 0 ? t : null
+  } catch {
+    return null
+  }
+}
+
+/// Group a pool's positions by the `type` discriminator in `positionDetail`, preserving the
+/// adapter's emission order (which is meaningful — Uniswap V3 emits Supply legs before Fees
+/// legs; Curve/Aura emit Supply → Staking → Rewards). Untyped entries collapse to a single
+/// `null` bucket.
+function groupByType(positions: OnchainPosition[]): Array<{ type: string | null; positions: OnchainPosition[] }> {
+  const groups: Array<{ type: string | null; positions: OnchainPosition[] }> = []
+  const indexByType = new Map<string | null, number>()
+  for (const pos of positions) {
+    const type = extractType(pos.positionDetail)
+    const idx = indexByType.get(type)
+    if (idx !== undefined) {
+      groups[idx].positions.push(pos)
+    } else {
+      indexByType.set(type, groups.length)
+      groups.push({ type, positions: [pos] })
+    }
+  }
+  return groups
+}
+
 function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint; isDebt: boolean }) {
   return (
     <tr>
@@ -171,6 +208,21 @@ function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint;
         <div className="pl-9 pr-4 py-1 bg-neutral-50/60 border-t border-neutral-100 flex items-center justify-between">
           <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</span>
           <span className={`text-[11px] tabular-nums font-medium ${isDebt ? 'text-rose-700' : 'text-neutral-600'}`}>
+            {formatUsd(total)}
+          </span>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function TypeSubHeader({ label, total, isDebt }: { label: string; total: bigint; isDebt: boolean }) {
+  return (
+    <tr>
+      <td colSpan={5} className="p-0">
+        <div className="pl-14 pr-4 py-0.5 flex items-center justify-between">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">{label}</span>
+          <span className={`text-[10px] tabular-nums ${isDebt ? 'text-rose-700' : 'text-neutral-500'}`}>
             {formatUsd(total)}
           </span>
         </div>
@@ -197,10 +249,6 @@ function PositionSection({
   if (positions.length === 0) return null
 
   const oracleGroups = groupByOracle(positions)
-  // When >1 distinct adapter contributes positions to this section (Supply or Borrow), render
-  // each as its own pool sub-group with a small sub-header. Otherwise stay flat to avoid noise
-  // for single-instance protocols (Aave market, Compound comet, Morpho vault, …).
-  const useSubGroups = oracleGroups.size > 1
 
   return (
     <>
@@ -219,22 +267,43 @@ function PositionSection({
           </div>
         </td>
       </tr>
-      {useSubGroups
-        ? Array.from(oracleGroups.entries()).map(([oracle, group]) => {
-            const subTotal = group.reduce((s, p) => s + p.value, 0n)
-            const poolLabel = extractPoolLabel(group[0].positionDetail) ?? `Pool ${oracle.slice(0, 6)}…${oracle.slice(-4)}`
-            return (
-              <Fragment key={oracle}>
-                <PoolSubHeader label={poolLabel} total={subTotal} isDebt={isDebt} />
-                {group.map((pos, i) => (
+      {Array.from(oracleGroups.entries()).map(([oracle, group]) => {
+        const subTotal = group.reduce((s, p) => s + p.value, 0n)
+        const poolLabel = extractPoolLabel(group[0].positionDetail) ?? `Pool ${oracle.slice(0, 6)}…${oracle.slice(-4)}`
+        const typeGroups = groupByType(group)
+        // Render an inner type sub-header (Supply / Fees / Staking / Rewards / …) only when
+        // the pool's entries actually carry >1 distinct `type` discriminator. Single-type
+        // pools (most non-V3 cases) stay flat under the pool sub-header so we don't add
+        // redundant labels like "Supply" inside an already-Supply section.
+        const renderTypeSubHeaders =
+          typeGroups.length > 1 && typeGroups.some((tg) => tg.type !== null)
+        return (
+          <Fragment key={oracle}>
+            <PoolSubHeader label={poolLabel} total={subTotal} isDebt={isDebt} />
+            {renderTypeSubHeaders
+              ? typeGroups.map((tg, ti) => {
+                  const typeTotal = tg.positions.reduce((s, p) => s + p.value, 0n)
+                  const typeLabel = tg.type ?? 'Other'
+                  return (
+                    <Fragment key={`${oracle}-${ti}`}>
+                      <TypeSubHeader label={typeLabel} total={typeTotal} isDebt={isDebt} />
+                      {tg.positions.map((pos, i) => (
+                        <PositionRow
+                          key={`${oracle}-${ti}-${i}`}
+                          pos={pos}
+                          chainId={chainId}
+                          totalPortfolioNav={totalPortfolioNav}
+                        />
+                      ))}
+                    </Fragment>
+                  )
+                })
+              : group.map((pos, i) => (
                   <PositionRow key={`${oracle}-${i}`} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
                 ))}
-              </Fragment>
-            )
-          })
-        : positions.map((pos, i) => (
-            <PositionRow key={i} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
-          ))}
+          </Fragment>
+        )
+      })}
     </>
   )
 }

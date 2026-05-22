@@ -134,7 +134,7 @@ contract ETHPlusMultiFeedForkTest is NAVCalculatorForkHarness {
         assertTrue(d.price > 0);
 
         console2.log("Winning feed addr  :", d.priceFeed);
-        console2.log("Winning PriceType  :", uint8(d.priceType), "(0=CL 1=Custom 2=RS 3=API3)");
+        console2.log("Winning PriceType  :", uint8(d.priceType), "(0=CL 1=RS 2=API3 3=Custom)");
         console2.log("Winning price (USD):", uint256(d.price) / 1e8);
         console2.log("Winning updatedAt  :", d.updatedAt);
         console2.log("block.timestamp    :", block.timestamp);

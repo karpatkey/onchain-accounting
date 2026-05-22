@@ -100,7 +100,7 @@ Defined in `IPrices`.
 | `priceFeed` | `address` | Chainlink aggregator, API3/Redstone feed address, or custom contract (`IPriceFeedCustom`). |
 | `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself. |
 | `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt >= heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
-| `priceType` | `PriceType` | Enum `{ Chainlink, Custom, Redstone, API3 }`. |
+| `priceType` | `PriceType` | Enum `{ Chainlink, Redstone, API3, Custom }`. |
 
 ### 3.2 Custom feed return shape
 

@@ -8,9 +8,9 @@ interface IPrices {
     /// @notice Enum representing the type of price feed.
     enum PriceType {
         Chainlink, // 0 — Chainlink AggregatorV3Interface (on-chain push)
-        Custom, // 1 — custom IPriceFeedCustom adapter (internal staleness logic)
-        Redstone, // 2 — Redstone Classic Push (AggregatorV3-compatible, same read path as Chainlink)
-        API3 // 3 — API3 dAPI via Api3ReaderProxyV1 (AggregatorV3-compatible)
+        Redstone, // 1 — Redstone Classic Push (AggregatorV3-compatible, same read path as Chainlink)
+        API3, // 2 — API3 dAPI via Api3ReaderProxyV1 (AggregatorV3-compatible)
+        Custom // 3 — custom IPriceFeedCustom adapter (internal staleness logic)
     }
 
     /// @notice Struct representing a price feed configuration.

@@ -43,7 +43,7 @@ else:         return (winner.price, winner.decimals, false)
 ### New provider types in `PriceType` enum
 
 ```solidity
-Chainlink, Custom, Redstone, API3
+Chainlink, Redstone, API3, Custom
 ```
 
 Redstone and API3 both implement `AggregatorV3Interface` and share the same read path as Chainlink. The enum values exist for observability and admin-time validation.

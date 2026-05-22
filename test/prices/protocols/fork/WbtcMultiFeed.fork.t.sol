@@ -103,7 +103,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
     }
 
     /// getPriceData returns the full context of the winning feed, including which one it is.
-    /// PriceType enum: 0=Chainlink 1=Custom 2=Redstone 3=API3
+    /// PriceType enum: 0=Chainlink 1=Redstone 2=API3 3=Custom
     function test_getPriceData_logsWinningFeed() public view {
         INAVCalculator.PriceFeedData memory d = nav.getPriceData(WBTC);
 
@@ -112,7 +112,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
         assertTrue(d.price > 0);
 
         console2.log("Winning feed addr  :", d.priceFeed);
-        console2.log("Winning PriceType  :", uint8(d.priceType), "(0=CL 2=RS 3=API3)");
+        console2.log("Winning PriceType  :", uint8(d.priceType), "(0=CL 1=RS 2=API3)");
         console2.log("Winning price (USD):", uint256(d.price) / 1e8);
         console2.log("Winning updatedAt  :", d.updatedAt);
         console2.log("block.timestamp    :", block.timestamp);

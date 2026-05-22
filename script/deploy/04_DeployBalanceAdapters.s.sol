@@ -184,6 +184,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Uniswap V3 (one instance per pool — Mainnet) ---
         _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
+        _deployIfEnabled("UniswapV3_USDC_WETH_500");
+        _deployIfEnabled("UniswapV3_WETH_USDT_3000");
+        _deployIfEnabled("UniswapV3_WETH_COW_3000");
 
         // --- PancakeSwap V2 (one per pair) ---
         _deployIfEnabled("PancakeSwapV2_ETH_COW"); // BSC — Binance-Peg ETH / COW

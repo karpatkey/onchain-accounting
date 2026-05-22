@@ -161,7 +161,7 @@
   ],
   "verification": {
     "method": "decreaseLiquidity-collect-simulation + strict-equality-baseline",
-    "ground_truth_source": "Each of the 3 active NFTs is run through `vm.prank(holder)` + `NPM.decreaseLiquidity(fullLiquidity)` + `NPM.collect(uint128.max)` against the same forked Alchemy archive at block 25,151,399. The collect-return amounts are the canonical Uniswap V3 settlement: principal at current price + accrued fees + settled tokensOwed. The adapter's `getOracleBalanceForAsset(holder, token)` MUST equal that amount.",
+    "ground_truth_source": "Each of the 3 active NFTs is run through `vm.prank(holder)` + `NPM.decreaseLiquidity(fullLiquidity)` + `NPM.collect(uint128.max)` against the same forked Alchemy archive at block 25,151,872. The collect-return amounts are the canonical Uniswap V3 settlement: principal at current price + accrued fees + settled tokensOwed. The adapter's `getOracleBalanceForAsset(holder, token)` MUST equal that amount.",
     "notes": [
       "This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity + collect` simulation — same NPM contract, same archive state, same EVM. No derivation drift possible between adapter math and protocol settlement math.",
       "The 18 strict-equality tests pin the adapter's outputs as regression baselines (catches future drift). The 3 ground-truth tests independently validate those baselines against the protocol itself (catches initial adapter-math bugs).",

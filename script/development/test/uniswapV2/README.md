@@ -8,7 +8,7 @@
 
 - **Inheritance:** direct `IBalanceOracleAdapter` implementer. `PancakeSwapV2BalanceOracle` is a constructor-only subclass with no overrides (verified separately as inherited coverage).
 - **Per-chain scope:** Uniswap V2 is deployed on Ethereum and a handful of L2s, but only Ethereum has V2 instances configured in `script/config/chains/1.json`. The adapter has **zero per-chain code branches** — pair ABI/bytecode is identical on every chain. Single-chain (mainnet) fork tests are sufficient.
-- **Math branches:** dilution-inactive (`feeTo == 0`), dilution-active with `kLast > 0` and `rootK > rootKLast`, dilution-active with `kLast == 0` (factory just turned `feeTo` on). All exercised by the multi-pool holder in §5.
+- **Math branches:** dilution-inactive (`feeTo == 0`, exercised by the existing mock-based test in §2) and dilution-active with `kLast > 0` and `rootK > rootKLast` (the dominant production branch — exercised by the multi-pool holder in §5; the fork test explicitly asserts `kLast > 0` for every pool). The `kLast == 0` sub-branch (factory just turned `feeTo` on, no swaps yet) is **not** covered by either case: catching a pool in the brief window between `feeTo` being set and the next swap would require either a mocked pair state or a synthetic test. Documented here so the next adapter-touching PR has a clear gap to close if it cares about that branch.
 
 ## 2. Existing fork test coverage
 

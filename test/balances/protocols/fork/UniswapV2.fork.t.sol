@@ -270,8 +270,10 @@ contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver is BalanceAdapterT
     PoolCase[6] public cases;
 
     function setUp() public override {
+        // super.setUp() already calls _setupFork() via dynamic dispatch — see
+        // BalanceAdapterTestBase.setUp(). The earlier `_setupFork()` call here was
+        // redundant.
         super.setUp();
-        _setupFork();
         _seedCases();
         _deployAdapters();
     }

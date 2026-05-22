@@ -234,7 +234,7 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
 ///             NFTs (18 closed in our pools, 14 in foreign pools) exercise the
 ///             `(token0, token1, fee)` filter and the bounded iteration loop at scale.
 ///
-///         Pinned at mainnet block 25,151,399 — the dev anvil's mainnet pin at the time
+///         Pinned at mainnet block 25,151,872 — the dev anvil's mainnet pin at the time
 ///         of test writing, matching `script/development/test/uniswapV3/README.md`.
 ///         All assertions are strict equality (delta = 0). Re-derivable independently by
 ///         re-running the Uniswap v3-periphery `PositionValue` math over the pool state
@@ -605,22 +605,23 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         // 1. decreaseLiquidity at the full position liquidity. This pulls principal into
         //    `tokensOwed*` on the NPM and zeros out `liquidity`.
         // Read the current liquidity from the NFT (same value the adapter sees).
-        (,,,,,,, uint128 liq,,,,) = INonfungiblePositionManager(NPM).positions(c.tokenId);
+        (,,,,,,, uint128 liq,,,,) = INonfungiblePositionManagerMutating(NPM).positions(c.tokenId);
 
         vm.startPrank(c.holder);
         if (liq > 0) {
-            INonfungiblePositionManager.DecreaseLiquidityParams memory dParams =
-                INonfungiblePositionManager.DecreaseLiquidityParams({
+            INonfungiblePositionManagerMutating.DecreaseLiquidityParams memory dParams =
+                INonfungiblePositionManagerMutating.DecreaseLiquidityParams({
                     tokenId: c.tokenId, liquidity: liq, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
                 });
-            INonfungiblePositionManager(NPM).decreaseLiquidity(dParams);
+            INonfungiblePositionManagerMutating(NPM).decreaseLiquidity(dParams);
         }
 
         // 2. collect everything (principal + fees + tokensOwed) to the holder.
-        INonfungiblePositionManager.CollectParams memory cParams = INonfungiblePositionManager.CollectParams({
-            tokenId: c.tokenId, recipient: c.holder, amount0Max: type(uint128).max, amount1Max: type(uint128).max
-        });
-        (uint128 a0, uint128 a1) = INonfungiblePositionManager(NPM).collect(cParams);
+        INonfungiblePositionManagerMutating.CollectParams memory cParams =
+            INonfungiblePositionManagerMutating.CollectParams({
+                tokenId: c.tokenId, recipient: c.holder, amount0Max: type(uint128).max, amount1Max: type(uint128).max
+            });
+        (uint128 a0, uint128 a1) = INonfungiblePositionManagerMutating(NPM).collect(cParams);
         vm.stopPrank();
 
         g0 = uint256(a0);
@@ -679,7 +680,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
 
 /// @notice Minimal NPM mutating interface — used only by the ground-truth simulator
 ///         below, NOT by the adapter itself (the adapter is read-only).
-interface INonfungiblePositionManager {
+interface INonfungiblePositionManagerMutating {
     struct DecreaseLiquidityParams {
         uint256 tokenId;
         uint128 liquidity;

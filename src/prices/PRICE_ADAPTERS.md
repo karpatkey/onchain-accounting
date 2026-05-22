@@ -426,6 +426,54 @@ nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
 
 **Browse available dAPIs:** [market.api3.org](https://market.api3.org)
 
+### 11.4 Verifying feed liveness
+
+A computed API3 address (or any new feed address) must be verified as live before being added to the catalogue or registered on-chain. Use `cast call` from Foundry:
+
+```bash
+# Returns 5 values → feed is deployed and responding.
+# Reverts with no output → proxy not deployed on this chain.
+cast call --rpc-url $RPC_URL $PROXY_ADDRESS \
+  "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+```
+
+**Example — ETH/USD on Ethereum mainnet:**
+
+```bash
+cast call \
+  --rpc-url https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_KEY \
+  0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473 \
+  "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+# 18446744073709557506 325032000000000000000 1747917359 1747917359 18446744073709557506
+# ↑ Five values returned — proxy is live.
+```
+
+**Interpreting the result:**
+
+| Result | Meaning |
+|---|---|
+| Five integers printed | Feed is deployed and responding — note `updatedAt` (4th value) to check recency. |
+| `(no output)` / revert | Proxy not deployed on this chain — `"deployed": false` in the catalogue. |
+
+**Check multiple chains in parallel** (replace `$RPC_*` with your RPC env vars):
+
+```bash
+ADDR=0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473
+SIG="latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+
+for rpc in $RPC_MAINNET $RPC_ARBITRUM $RPC_BASE $RPC_OPTIMISM $RPC_GNOSIS $RPC_BSC $RPC_POLYGON; do
+  echo -n "$rpc → "
+  cast call --rpc-url $rpc $ADDR "$SIG" 2>&1 | head -1
+done
+```
+
+**After checking, update the catalogue.** In `script/config/price-feeds-catalogue.json`, set `"deployed": true` or `"deployed": false` on each API3 entry. Update `_meta.api3_liveness_checked` to today's date. Re-run this check whenever:
+- a new chain is added to the catalogue,
+- a new dAPI name is added, or
+- more than ~6 months have passed (API3 deploys proxies progressively and a previously undeployed address may have become live).
+
+This same `cast call` pattern works for Chainlink and Redstone feeds — if the call reverts, the feed is not deployed on that chain.
+
 ---
 
 ## 12. Quick reference

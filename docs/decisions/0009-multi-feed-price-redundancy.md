@@ -22,7 +22,7 @@ for each cfg in _priceOracles[asset]:
     rawPrice, updatedAt = read(cfg)          // per-type dispatch below
     if rawPrice <= 0 or internal stale: skip
     effectiveTime = min(updatedAt, block.timestamp)   // clock-skew normalisation
-    if block.timestamp - effectiveTime > cfg.chainlinkHeartbeat: skip  // staleness gate
+    if block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat: skip  // staleness gate (>= so boundary is stale)
     if effectiveTime > bestTime: update winner
 
 if no winner: return (0, firstFeed.decimals, true)

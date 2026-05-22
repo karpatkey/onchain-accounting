@@ -30,7 +30,7 @@ On every `latestPrice(asset)` call, `Prices._selectFeed` iterates all registered
 1. **Lookup** — `_priceOracles[asset]` is a `PriceFeedConfig[]` array. Reverts with `PriceFeedNotSet` if empty.
 2. **Per-feed read** — non-Custom types call `AggregatorV3Interface.latestRoundData()`. Custom feeds call `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` (skip if stale or price ≤ 0), then `latestRoundData()` for `updatedAt`. All calls are wrapped in try/catch; a reverting feed is skipped rather than propagating.
 3. **Clock-skew normalisation** — `effectiveTime = min(updatedAt, block.timestamp)`. Any feed reporting a future timestamp is clamped to prevent it from systematically winning the freshness race.
-4. **Staleness gate** — skip feed if `block.timestamp - effectiveTime > cfg.chainlinkHeartbeat`.
+4. **Staleness gate** — skip feed if `block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat`.
 5. **Freshest-wins** — among survivors, select the one with the largest `effectiveTime`. Ties go to the feed at the lowest array index.
 6. **All-stale fallback** — if no feed survives, return `(0, firstFeed.decimals, true)`.
 7. **L2 sequencer** — top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down or within the grace period.
@@ -46,7 +46,8 @@ flowchart TD
     B -- yes --> ERR1([revert<br/>PriceFeedNotSet])
     B -- no --> C[_selectFeed]
     C --> D{L2 sequencer<br/>uptime check}
-    D -- sequencer down<br/>or in grace period --> STALE([return price=0<br/>stale=true])
+    D -- sequencer down<br/>or in grace period --> SEQ[stale = true]
+    SEQ --> RET
     D -- ok --> RET([return price, decimals, stale])
 ```
 
@@ -73,7 +74,7 @@ flowchart TD
     AV3 --> CLAMP
 
     CLAMP["effectiveTime =<br/>min(updatedAt, block.timestamp)"]
-    CLAMP --> STALE_GATE{"block.timestamp −<br/>effectiveTime > heartbeat?"}
+    CLAMP --> STALE_GATE{"block.timestamp −<br/>effectiveTime >= heartbeat?"}
     STALE_GATE -- yes --> SKIP
     STALE_GATE -- no --> FRESH{effectiveTime<br/>> winnerTime?}
     FRESH -- yes --> UPDATE[winnerIdx = i<br/>winnerTime = effectiveTime]
@@ -98,7 +99,7 @@ Defined in `IPrices`.
 |---|---|---|
 | `priceFeed` | `address` | Chainlink aggregator, API3/Redstone feed address, or custom contract (`IPriceFeedCustom`). |
 | `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself. |
-| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt > heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
+| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt >= heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
 | `priceType` | `PriceType` | Enum `{ Chainlink, Custom, Redstone, API3 }`. |
 
 ### 3.2 Custom feed return shape
@@ -156,7 +157,7 @@ Conventions:
 
 #### How `Prices.sol` uses Custom feeds in the multi-feed model
 
-`Prices.sol` uses the `bool stale` returned by `getLatestPrice()` as the **primary gate** — if `internalStale = true` or `price == 0`, the feed is skipped. For surviving custom feeds, `latestRoundData()` is then called to obtain `updatedAt`; the same heartbeat gate and freshest-wins logic that applies to Chainlink/Redstone/API3 feeds is applied (`effectiveTime = min(updatedAt, block.timestamp); skip if block.timestamp - effectiveTime > heartbeat`). A custom feed returning `updatedAt == 0` is treated as `block.timestamp - 1` so it participates but yields to any feed with a real push timestamp (ADR 0009 §rationale).
+`Prices.sol` uses the `bool stale` returned by `getLatestPrice()` as the **primary gate** — if `internalStale = true` or `price == 0`, the feed is skipped. For surviving custom feeds, `latestRoundData()` is then called to obtain `updatedAt`; the same heartbeat gate and freshest-wins logic that applies to Chainlink/Redstone/API3 feeds is applied (`effectiveTime = min(updatedAt, block.timestamp); skip if block.timestamp - effectiveTime >= heartbeat`). A custom feed returning `updatedAt == 0` is treated as `block.timestamp - 1` so it participates but yields to any feed with a real push timestamp (ADR 0009 §rationale).
 
 #### Why `getLatestPrice().stale` is the primary staleness signal
 

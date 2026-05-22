@@ -41,8 +41,8 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 
 | Role | Code (constant) | What it gates |
 |---|---|---|
-| `DEFAULT_ADMIN_ROLE` | `0x0000…0000` | UUPS upgrades (`_authorizeUpgrade`), grant/revoke any role |
-| `MANAGER` | `keccak256("MANAGER")` | `registerAsset`, `addPriceFeed`, `removePriceFeedAt`, `removePriceFeed`, `addBalanceOracle`, `removeBalanceOracle`, `unregisterAsset`, `excludeAssetFromDefaultOracle`, `includeAssetInDefaultOracle`, `setChainlinkL2SequencerUptimeFeed`, `setChainlinkL2SequencerGracePeriod` |
+| `DEFAULT_ADMIN_ROLE` | `0x0000…0000` | UUPS upgrades (`_authorizeUpgrade`), grant/revoke any role, `setChainlinkL2SequencerUptimeFeed` |
+| `MANAGER` | `keccak256("MANAGER")` | `registerAsset`, `addPriceFeed`, `removePriceFeedAt`, `removePriceFeed`, `addBalanceOracle`, `removeBalanceOracle`, `unregisterAsset`, `excludeAssetFromDefaultOracle`, `includeAssetInDefaultOracle`, `setChainlinkL2SequencerGracePeriod` |
 
 **How the roles actually get assigned (read `02_DeployProxies.s.sol` + `AtomicProxyDeployer.sol` for the source of truth):**
 

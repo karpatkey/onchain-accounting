@@ -1,0 +1,467 @@
+{
+  "_meta": {
+    "description": "Catalogue of known price feed addresses per chain and token. Covers three on-chain AggregatorV3-compatible push providers: Chainlink, Redstone Classic Push, and API3 dAPI communal proxies.",
+    "last_updated": "2026-05-22",
+    "how_to_use": "See src/prices/PRICE_ADAPTERS.md §11 for provider APIs and how to verify addresses before use. Addresses that need deployment verification are noted. Use alongside script/config/assets.json (which records currently registered feeds per deployment).",
+    "providers": {
+      "Chainlink": {
+        "interface": "AggregatorV3Interface",
+        "decimals": 8,
+        "lookup": "https://docs.chain.link/data-feeds/price-feeds/addresses"
+      },
+      "Redstone": {
+        "interface": "AggregatorV3Interface (Classic Push / relayer-pushed)",
+        "decimals": 8,
+        "lookup": "https://app.redstone.finance/push-feeds",
+        "note": "Deployment manifests live in a private repository. Only addresses verified on-chain at the time of this update are included. Contact Redstone or browse their app for the full current list."
+      },
+      "API3": {
+        "interface": "AggregatorV2V3Interface (communal Api3ReaderProxyV1)",
+        "decimals": 18,
+        "default_heartbeat": 86400,
+        "factory": "0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381",
+        "compute_fn": "computeCommunalApi3ReaderProxyV1Address(chainId, dapiName) — @api3/contracts npm package",
+        "lookup": "https://market.api3.org",
+        "important": "Computed proxy addresses are the same on every chain (chain-agnostic CREATE2). The proxy must actually be deployed on the target chain before use. Verify via the API3 Market UI or call latestRoundData() on-chain before registering."
+      }
+    }
+  },
+  "chains": {
+    "1": {
+      "name": "Ethereum Mainnet",
+      "tokens": {
+        "ETH": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", "pair": "ETH/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "Chainlink": { "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", "pair": "ETH/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0xe6D662150968804DD1656776C3AdA6f43D8d5626", "dapiName": "WETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WBTC": {
+          "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+          "Chainlink": { "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c", "pair": "BTC/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0x041a131Fa91Ad61dD85262A42c04975986580d50", "dapiName": "WBTC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "stETH": {
+          "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+          "Chainlink": { "address": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8", "pair": "stETH/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0xAD806B3BD9cb89C5021CB4f2102258e3DfbB3BD4", "dapiName": "stETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "wstETH": {
+          "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+          "note": "No direct Chainlink wstETH/USD feed on mainnet — use Custom adapter (wstETH_PriceOracle).",
+          "API3": { "address": "0xA6fE3E6E7687e5D082f00106a9E558b5200579b4", "dapiName": "wstETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "rETH": {
+          "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+          "note": "No direct Chainlink rETH/USD feed on mainnet — use Custom adapter (rETH_PriceOracle).",
+          "API3": { "address": "0xc03ac299489e31d507F16E4C0c8379B461Ba986F", "dapiName": "rETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "eETH": {
+          "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+          "note": "No direct Chainlink eETH/USD feed — use Custom adapter (eETH_PriceOracle) which derives price from weETH/ETH × ETH/USD.",
+          "API3": { "address": "0x07e43b1892E67aC5fB7a097d8D61f64C8AEA7a8C", "dapiName": "eETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "weETH": {
+          "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+          "note": "No direct Chainlink weETH/USD feed on mainnet — use Custom adapter or Redstone Classic Push below.",
+          "Redstone": { "address": "0x0c2c7ded01ccdfab16f04aff82af766b23d6be0a", "pair": "weETH/USD", "decimals": 8, "heartbeat": 86400, "contract": "MergedAdapterWithRoundsWeethV1" },
+          "API3": { "address": "0xa000682CBDD1e4026107E0B346009c5D2eF7C6A8", "dapiName": "weETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "ezETH": {
+          "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+          "note": "No direct Chainlink ezETH/USD feed on mainnet — use Custom adapter (ezETH_PriceOracle).",
+          "API3": { "address": "0xAd27a84E654847a4edfCb63Eb995785a4C54954b", "dapiName": "ezETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "rsETH": {
+          "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
+          "note": "No direct Chainlink rsETH/USD feed on mainnet — use Custom adapter (rsETH_PriceOracle).",
+          "API3": { "address": "0xA31cAc1De8DD94b1Cb1c4B5f07b54f10CF8e61Da", "dapiName": "rsETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "ETHx": {
+          "address": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+          "note": "No direct Chainlink ETHx/USD feed on mainnet — use Custom adapter (ETHx_PriceOracle) or Redstone Classic Push below.",
+          "Redstone": { "address": "0x1ba0c3c2db83b34961dfa683038e11852f57920a", "pair": "ETHx/USD", "decimals": 8, "heartbeat": 86400, "contract": "PriceFeedStaderEthxWithoutRoundsV3" },
+          "API3": { "address": "0xd7252ac0AB29EC294260fB043F001377C81e241f", "dapiName": "ETHx/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "ETH+": {
+          "address": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+          "Chainlink": { "address": "0x66Ab900341C98de949EC31d11b3C4180743844F1", "pair": "ETH+/USD", "decimals": 18, "heartbeat": 86400, "note": "18-decimal ETH-denominated feed; use Custom adapter (ETHPlus_PriceOracle) for 8-decimal USD price" }
+        },
+        "USDC": {
+          "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "Chainlink": { "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", "pair": "USDC/USD", "decimals": 8, "heartbeat": 82800 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDT": {
+          "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "Chainlink": { "address": "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D", "pair": "USDT/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "DAI": {
+          "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+          "Chainlink": { "address": "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9", "pair": "DAI/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0x85b6dD270538325A9E0140bd6052Da4ecc18A85c", "dapiName": "DAI/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "GHO": {
+          "address": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
+          "Chainlink": { "address": "0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC", "pair": "GHO/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x186FdC638597B235D1255eEAE1f4f10B60d5685F", "dapiName": "GHO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDe": {
+          "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+          "Chainlink": { "address": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961", "pair": "USDe/USD", "decimals": 8, "heartbeat": 82800 },
+          "API3": { "address": "0x22a35f4BDD167EAF7Cbf0C0Dc0C2001071714cc6", "dapiName": "USDe/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "sUSDe": {
+          "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+          "note": "No direct Chainlink sUSDe/USD feed — use Custom adapter (sUSDe_PriceOracle) which combines USDe/USD × sUSDe/USDe exchange rate.",
+          "API3": { "address": "0x5D403d0C53EE74C938FAC84a21c001889eAeB591", "dapiName": "sUSDe/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDS": {
+          "address": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
+          "Chainlink": { "address": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1", "pair": "USDS/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x6C3C2A615Ea3c592487b3e06ecAF01D9a3181f47", "dapiName": "USDS/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "sUSDS": {
+          "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+          "note": "No direct Chainlink sUSDS/USD feed — use Custom adapter (sUSDS_PriceOracle) which combines USDS/USD × sUSDS/USDS exchange rate.",
+          "API3": { "address": "0xa71D2246409b229dEdaFe45d476f6e5C4017842d", "dapiName": "sUSDS/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "RLUSD": {
+          "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
+          "Chainlink": { "address": "0x26C46B7aD0012cA71F2298ada567dC9Af14E7f2A", "pair": "RLUSD/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x284fACB569ecf313cb2Bb37c9396Fa9f7CDA11F2", "dapiName": "RLUSD/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "crvUSD": {
+          "address": "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E",
+          "Chainlink": { "address": "0xEEf0C605546958c1f899b6fB336C20671f9cD49F", "pair": "crvUSD/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x21234f61bFc55a586D7c28CC1776da35f9936246", "dapiName": "crvUSD/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "EURC": {
+          "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+          "Chainlink": { "address": "0x04F84020Fdf10d9ee64D1dcC2986EDF2F556DA11", "pair": "EURC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x806AE35c5351854a6b1e94a0022bC29796B447DB", "dapiName": "EURC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "syrupUSDC": {
+          "address": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+          "note": "No direct Chainlink or known API3/Redstone feed — use Custom adapter (syrupUSDC_PriceOracle) which combines USDC/USD × syrupUSDC/USDC exchange rate."
+        },
+        "AAVE": {
+          "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+          "Chainlink": { "address": "0x547a514d5e3769680Ce22B2361c10Ea13619e8a9", "pair": "AAVE/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x0CFD951C882dc01DfAB665f3606BF1a3Fa07927a", "dapiName": "AAVE/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "BAL": {
+          "address": "0xba100000625a3754423978a60c9317c58a424e3D",
+          "Chainlink": { "address": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F", "pair": "BAL/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x778673296f409853De85917009046529b3Eef0a7", "dapiName": "BAL/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "CRV": {
+          "address": "0xD533a949740bb3306d119CC777fa900bA034cd52",
+          "Chainlink": { "address": "0xCd627aA160A6fA45Eb793D19Ef54f5062F20f33f", "pair": "CRV/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x94e020b943993Fe2454C5e3e30133DEeAaD47187", "dapiName": "CRV/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "CVX": {
+          "address": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
+          "Chainlink": { "address": "0xd962fC30A72A84cE50161031391756Bf2876Af5D", "pair": "CVX/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x6539790A865bf387Bf816295Ee58569C7805f9F7", "dapiName": "CVX/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "COMP": {
+          "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+          "Chainlink": { "address": "0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5", "pair": "COMP/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d", "dapiName": "COMP/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "RPL": {
+          "address": "0xD33526068D116cE69F19A9ee46F0bd304F21A51f",
+          "Chainlink": { "address": "0x4E155eD98aFE9034b7A5962f6C84c86d869daA9d", "pair": "RPL/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x3Ea9092ceDb54a080c021317cbfb64652652B755", "dapiName": "RPL/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "LDO": {
+          "address": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+          "note": "No direct Chainlink LDO/USD feed — use Custom adapter (LDO_PriceOracle) which chains LDO/ETH × ETH/USD. Not yet registered in assets.json.",
+          "API3": { "address": "0x6305e1C926AcfCfd5f28136C988b17dC8ed26d3e", "dapiName": "LDO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "sDAI": {
+          "address": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+          "note": "Maker DSR vault token. No direct Chainlink sDAI/USD feed — use Custom adapter (sDAI_PriceOracle) which combines DAI/USD × sDAI/DAI chi rate. Not yet registered in assets.json."
+        },
+        "MORPHO": {
+          "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
+          "note": "No Chainlink MORPHO/USD feed available.",
+          "API3": { "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e", "dapiName": "MORPHO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "AURA": {
+          "address": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
+          "note": "No oracle available from any provider at time of this update."
+        },
+        "GEAR": {
+          "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
+          "note": "No oracle available from any provider at time of this update."
+        }
+      }
+    },
+    "42161": {
+      "name": "Arbitrum One",
+      "tokens": {
+        "ETH": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612", "pair": "ETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "Chainlink": { "address": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612", "pair": "ETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xe6D662150968804DD1656776C3AdA6f43D8d5626", "dapiName": "WETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "wstETH": {
+          "address": "0x5979d7b546e38e414f7e9822514be443a4800529",
+          "note": "No direct Chainlink wstETH/USD feed on Arbitrum — use Custom adapter (wstETH_L2_PriceOracle).",
+          "API3": { "address": "0xA6fE3E6E7687e5D082f00106a9E558b5200579b4", "dapiName": "wstETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "weETH": {
+          "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+          "note": "No direct Chainlink weETH/USD feed on Arbitrum — use Custom adapter (weETH_L2_PriceOracle).",
+          "API3": { "address": "0xa000682CBDD1e4026107E0B346009c5D2eF7C6A8", "dapiName": "weETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "ezETH": {
+          "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+          "note": "No direct Chainlink ezETH/USD feed on Arbitrum — use Custom adapter (ezETH_L2_PriceOracle).",
+          "API3": { "address": "0xAd27a84E654847a4edfCb63Eb995785a4C54954b", "dapiName": "ezETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "rsETH": {
+          "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+          "note": "No direct Chainlink rsETH/USD feed on Arbitrum — use Custom adapter (rsETH_L2_PriceOracle).",
+          "API3": { "address": "0xA31cAc1De8DD94b1Cb1c4B5f07b54f10CF8e61Da", "dapiName": "rsETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDC": {
+          "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "Chainlink": { "address": "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDT": {
+          "address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+          "Chainlink": { "address": "0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7", "pair": "USDT/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "GHO": {
+          "address": "0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33",
+          "Chainlink": { "address": "0x3c786e934F23375Ca345C9b8D5aD54838796E8e7", "pair": "GHO/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x186FdC638597B235D1255eEAE1f4f10B60d5685F", "dapiName": "GHO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "syrupUSDC": {
+          "address": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
+          "note": "No direct Chainlink or known API3/Redstone feed — use Custom adapter (syrupUSDC_L2_PriceOracle)."
+        },
+        "COMP": {
+          "address": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
+          "Chainlink": { "address": "0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884", "pair": "COMP/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d", "dapiName": "COMP/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "MORPHO": {
+          "address": "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48",
+          "note": "No Chainlink MORPHO/USD feed on Arbitrum.",
+          "API3": { "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e", "dapiName": "MORPHO/USD", "decimals": 18, "heartbeat": 86400 }
+        }
+      }
+    },
+    "100": {
+      "name": "Gnosis Chain",
+      "tokens": {
+        "xDAI": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x678df3415fc31947dA4324eC63212874be5a82f8", "pair": "DAI/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x7e675dEde21D4AcE5483E393F9F93876202884bc", "dapiName": "xDAI/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WXDAI": {
+          "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+          "Chainlink": { "address": "0x678df3415fc31947dA4324eC63212874be5a82f8", "pair": "DAI/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x7e675dEde21D4AcE5483E393F9F93876202884bc", "dapiName": "xDAI/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
+          "Chainlink": { "address": "0xa767f745331D267c7751297D982b050c93985627", "pair": "ETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "wstETH": {
+          "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
+          "note": "No direct Chainlink wstETH/USD feed on Gnosis — use Custom adapter (wstETH_L2_PriceOracle).",
+          "API3": { "address": "0xA6fE3E6E7687e5D082f00106a9E558b5200579b4", "dapiName": "wstETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDCe": {
+          "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
+          "note": "Bridged USDC on Gnosis (on-chain symbol 'USDC.e').",
+          "Chainlink": { "address": "0x26C31ac71010aF62E6B486D1132E266D6298857D", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "sDAI": {
+          "address": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+          "note": "sDAI on Gnosis (sXDAI). No direct Chainlink sDAI/USD feed — use Custom adapter (sXDAI_PriceOracle) which combines xDAI/USD × sXDAI/xDAI exchange rate."
+        },
+        "GHO": {
+          "address": "0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73",
+          "Chainlink": { "address": "0x855193775eF2ABb12CF95DE3086229a14Ab8E0E3", "pair": "GHO/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x186FdC638597B235D1255eEAE1f4f10B60d5685F", "dapiName": "GHO/USD", "decimals": 18, "heartbeat": 86400 }
+        }
+      }
+    },
+    "8453": {
+      "name": "Base",
+      "tokens": {
+        "ETH": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70", "pair": "ETH/USD", "decimals": 8, "heartbeat": 1200 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0x4200000000000000000000000000000000000006",
+          "Chainlink": { "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70", "pair": "ETH/USD", "decimals": 8, "heartbeat": 1200 },
+          "API3": { "address": "0xe6D662150968804DD1656776C3AdA6f43D8d5626", "dapiName": "WETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "wstETH": {
+          "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+          "note": "No direct Chainlink wstETH/USD feed on Base — use Custom adapter (wstETH_L2_PriceOracle).",
+          "API3": { "address": "0xA6fE3E6E7687e5D082f00106a9E558b5200579b4", "dapiName": "wstETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "weETH": {
+          "address": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+          "note": "No direct Chainlink weETH/USD feed on Base — use Custom adapter (weETH_L2_PriceOracle).",
+          "API3": { "address": "0xa000682CBDD1e4026107E0B346009c5D2eF7C6A8", "dapiName": "weETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "cbETH": {
+          "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+          "note": "No direct Chainlink cbETH/USD feed on Base — use Custom adapter (cbETH_L2_PriceOracle).",
+          "API3": { "address": "0x1de030fc564eFbcACA24441928A7C31E18DDC0c4", "dapiName": "cbETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "MORPHO": {
+          "address": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
+          "Chainlink": { "address": "0xe95e258bb6615d47515Fc849f8542dA651f12bF6", "pair": "MORPHO/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e", "dapiName": "MORPHO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDC": {
+          "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "Chainlink": { "address": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "GHO": {
+          "address": "0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee",
+          "Chainlink": { "address": "0x42868EFcee13C0E71af89c04fF7d96f5bec479b0", "pair": "GHO/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x186FdC638597B235D1255eEAE1f4f10B60d5685F", "dapiName": "GHO/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "COMP": {
+          "address": "0x9e1028F5F1D5EDE59748FFcee5532509976840E0",
+          "Chainlink": { "address": "0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428", "pair": "COMP/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d", "dapiName": "COMP/USD", "decimals": 18, "heartbeat": 86400 }
+        }
+      }
+    },
+    "10": {
+      "name": "Optimism",
+      "tokens": {
+        "ETH": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5", "pair": "ETH/USD", "decimals": 8, "heartbeat": 1200 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0x4200000000000000000000000000000000000006",
+          "Chainlink": { "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5", "pair": "ETH/USD", "decimals": 8, "heartbeat": 1200 },
+          "API3": { "address": "0xe6D662150968804DD1656776C3AdA6f43D8d5626", "dapiName": "WETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "wstETH": {
+          "address": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+          "Chainlink": { "address": "0x698B585CbC4407e2D54aa898B2600B53C68958f7", "pair": "wstETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xA6fE3E6E7687e5D082f00106a9E558b5200579b4", "dapiName": "wstETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDC": {
+          "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+          "Chainlink": { "address": "0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDT": {
+          "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+          "Chainlink": { "address": "0xECef79E109e997bCA29c1c0897ec9d7b03647F5E", "pair": "USDT/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "COMP": {
+          "address": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+          "Chainlink": { "address": "0xe1011160d78a80E2eEBD60C228EEf7af4Dfcd4d7", "pair": "COMP/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d", "dapiName": "COMP/USD", "decimals": 18, "heartbeat": 86400 }
+        }
+      }
+    },
+    "56": {
+      "name": "BNB Chain",
+      "tokens": {
+        "BNB": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE", "pair": "BNB/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0x47D8f697e0219F7897B60717250f35D9E3FE1447", "dapiName": "BNB/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WBNB": {
+          "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+          "Chainlink": { "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE", "pair": "BNB/USD", "decimals": 8, "heartbeat": 3600 },
+          "API3": { "address": "0x5feDdb081E039Aba8900D162f62c55563C4bB6D6", "dapiName": "WBNB/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "ETH": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "note": "Binance-Peg Ethereum Token on BNB Chain.",
+          "Chainlink": { "address": "0x9ef1B8c0E4F7dc8bF5719Ea496883DC6401d5b2e", "pair": "ETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDC": {
+          "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+          "Chainlink": { "address": "0x51597f405303C4377E36123cBc172b13269EA163", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDT": {
+          "address": "0x55d398326f99059fF775485246999027B3197955",
+          "Chainlink": { "address": "0xB97Ad0E74fa7d920791E90258A6E2085088b4320", "pair": "USDT/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "CAKE": {
+          "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+          "Chainlink": { "address": "0xB6064eD41d4f67e353768aA239cA86f4F73665a1", "pair": "CAKE/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x021A9d52DF63b2bBeeF7EC6d600dE56160Ad28dF", "dapiName": "CAKE/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "COW": {
+          "address": "0x5BfdAa3f7C28B9994B56135403bF1aCEA02595b0",
+          "note": "No Chainlink, Redstone, or API3 feed for COW on BNB Chain at time of this update."
+        }
+      }
+    },
+    "137": {
+      "name": "Polygon",
+      "tokens": {
+        "POL": {
+          "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "Chainlink": { "address": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0", "pair": "POL/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x58C78C5EBE21E80FdCA9F44f469Ba83Ca69a9F30", "dapiName": "POL/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WPOL": {
+          "address": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+          "Chainlink": { "address": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0", "pair": "POL/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xfe7D8efD30e696e4E1F6878A809B2fa2A779b376", "dapiName": "WPOL/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "WETH": {
+          "address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+          "Chainlink": { "address": "0xF9680D99D6C9589e2a93a78A04A279e509205945", "pair": "ETH/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473", "dapiName": "ETH/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDC": {
+          "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+          "Chainlink": { "address": "0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7", "pair": "USDC/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "dapiName": "USDC/USD", "decimals": 18, "heartbeat": 86400 }
+        },
+        "USDT": {
+          "address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+          "Chainlink": { "address": "0x0A6513e40db6EB1b165753AD52E80663aeA50545", "pair": "USDT/USD", "decimals": 8, "heartbeat": 86400 },
+          "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400 }
+        }
+      }
+    }
+  }
+}

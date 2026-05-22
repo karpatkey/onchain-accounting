@@ -331,12 +331,110 @@ To add a second (or third) feed for redundancy without removing the existing one
 
 ---
 
-## 11. Quick reference
+## 11. Discovering and verifying feed addresses
+
+All known feed addresses are catalogued in [`script/config/price-feeds-catalogue.json`](../../script/config/price-feeds-catalogue.json), organised by chain → token → provider. The sections below describe how to look up and verify addresses from each provider.
+
+### 11.1 Chainlink
+
+Chainlink maintains a public reference directory for all deployed AggregatorV3 feeds.
+
+**Reference data directory (JSON API):**
+
+```
+# Ethereum Mainnet
+https://reference-data-directory.vercel.app/feeds-mainnet.json
+
+# Arbitrum
+https://reference-data-directory.vercel.app/feeds-arbitrum-mainnet.json
+
+# Optimism
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-optimism-1.json
+
+# Base
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-base-1.json
+
+# Polygon
+https://reference-data-directory.vercel.app/feeds-matic-mainnet.json
+
+# BNB Chain
+https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json
+
+# Gnosis
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-gnosis-1.json
+```
+
+Each JSON entry contains `contractAddress`, `name` (e.g. `"ETH / USD"`), `decimals`, and `heartbeat`. The same addresses are browseable at [docs.chain.link/data-feeds/price-feeds/addresses](https://docs.chain.link/data-feeds/price-feeds/addresses).
+
+**Decimals:** 8 for all USD-denominated feeds (standard). A handful of ETH-denominated feeds (like the ETH+/ETH feed at `0x66Ab9003...`) return 18 decimals — these cannot be registered directly as `PriceType.Chainlink` because `L-4` enforces decimal consistency across all feeds for an asset.
+
+### 11.2 Redstone Classic Push
+
+Redstone Classic Push feeds implement `AggregatorV3Interface` and are updated by Redstone's relayer on-chain (same model as Chainlink). The full list is browseable at [app.redstone.finance/push-feeds](https://app.redstone.finance/push-feeds) (requires JavaScript rendering).
+
+**Deployment manifests:** The canonical source is the private `redstone-monorepo-priv` repository. If you need feeds not listed in the catalogue, contact Redstone via [Discord](https://discord.gg/redstone) or check the app.
+
+**Verified addresses in the catalogue:**
+
+| Feed | Chain | Address | Contract name |
+|---|---|---|---|
+| weETH/USD | 1 | `0x0c2c7ded01ccdfab16f04aff82af766b23d6be0a` | `MergedAdapterWithRoundsWeethV1` |
+| ETHx/USD | 1 | `0x1ba0c3c2db83b34961dfa683038e11852f57920a` | `PriceFeedStaderEthxWithoutRoundsV3` |
+
+**Decimals:** 8. **Heartbeat:** varies per feed.
+
+**Adding new Redstone addresses:** Browse the app or ask Redstone directly, then add the entry under the relevant chain → token in `price-feeds-catalogue.json` with `"Redstone": { "address": "0x...", "pair": "...", "decimals": 8, "heartbeat": <seconds> }`.
+
+### 11.3 API3 dAPI communal proxies
+
+API3 dAPIs use a deterministic CREATE2 factory. The communal `Api3ReaderProxyV1` proxy address depends only on the dAPI name (`bytes32`) — it is the **same address on every chain** where the factory is deployed.
+
+**Factory (same on all chains):** `0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381`
+
+**Compute an address:**
+
+```js
+// npm install @api3/contracts
+const { computeCommunalApi3ReaderProxyV1Address } = require('@api3/contracts');
+
+// Example — same result for chainId 1, 42161, 8453, 10, 56, 100, 137
+const proxy = computeCommunalApi3ReaderProxyV1Address(1, 'ETH/USD');
+// → 0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473
+```
+
+**Or call the factory on-chain:**
+
+```solidity
+IApi3ReaderProxyV1Factory(0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381)
+    .computeApi3ReaderProxyV1Address(
+        bytes32("ETH/USD"),  // right-padded dAPI name
+        1,                   // dappId = 1 for communal proxies
+        ""                   // empty metadata
+    );
+```
+
+**Critical caveat:** A computed address is where the proxy *would* be deployed. It must actually be deployed before `latestRoundData()` responds. Verify via the [API3 Market](https://market.api3.org) (select chain + dAPI → "Skip OEV Rewards") or call `latestRoundData()` on-chain and check for revert.
+
+**Decimals:** 18 (all API3 dAPIs). **Default heartbeat:** 86 400 s (24 h) for managed feeds with 1 % deviation threshold.
+
+**Registering an API3 feed:**
+
+```solidity
+// priceType = PriceType.API3; heartbeat = 86400 (confirm on the Market page first)
+nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
+```
+
+**Browse available dAPIs:** [market.api3.org](https://market.api3.org)
+
+---
+
+## 12. Quick reference
 
 - **Interface:** `src/prices/IPriceFeedCustom.sol`
 - **Registry:** `src/prices/Prices.sol` and `src/prices/IPrices.sol`
 - **Feed configs:** `_priceOracles[asset]` → `PriceFeedConfig[]` (use `getPriceFeedAt`, `getPriceFeedCount`, `getPriceFeeds` to read)
 - **Existing feeds:** `src/prices/protocols/`
+- **Feed address catalogue:** [`script/config/price-feeds-catalogue.json`](../../script/config/price-feeds-catalogue.json)
 - **Walkthrough:** [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md)
 - **Design rationale:** [`docs/decisions/0009-multi-feed-price-redundancy.md`](../../docs/decisions/0009-multi-feed-price-redundancy.md)
 - **Cross-reference:** [`src/balances/BALANCE_ADAPTERS.md`](../balances/BALANCE_ADAPTERS.md) (balance side of the same architecture)

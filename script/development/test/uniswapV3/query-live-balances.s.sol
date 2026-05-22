@@ -56,12 +56,9 @@ contract QueryLiveBalances is Script {
 
         // NPM is a contract — passes the adapter constructor's `code.length > 0` check on
         // navCalculator_. `legAggregates` doesn't read NAVCalculator at all.
-        UniswapV3LegSplit oUsdcWeth =
-            new UniswapV3LegSplit(POOL_USDC_WETH_500, NPM, "Uniswap V3", "{}", "0x0", NPM);
-        UniswapV3LegSplit oWethUsdt =
-            new UniswapV3LegSplit(POOL_WETH_USDT_3000, NPM, "Uniswap V3", "{}", "0x0", NPM);
-        UniswapV3LegSplit oWbtcWeth =
-            new UniswapV3LegSplit(POOL_WBTC_WETH_3000, NPM, "Uniswap V3", "{}", "0x0", NPM);
+        UniswapV3LegSplit oUsdcWeth = new UniswapV3LegSplit(POOL_USDC_WETH_500, NPM, "Uniswap V3", "{}", "0x0", NPM);
+        UniswapV3LegSplit oWethUsdt = new UniswapV3LegSplit(POOL_WETH_USDT_3000, NPM, "Uniswap V3", "{}", "0x0", NPM);
+        UniswapV3LegSplit oWbtcWeth = new UniswapV3LegSplit(POOL_WBTC_WETH_3000, NPM, "Uniswap V3", "{}", "0x0", NPM);
 
         console2.log("\n-- ACCOUNT_12 0x8d27...3af --");
         _dump("USDC/WETH 0.05%", oUsdcWeth, ACCOUNT_12);

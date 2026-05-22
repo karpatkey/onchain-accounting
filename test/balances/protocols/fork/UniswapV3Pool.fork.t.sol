@@ -609,23 +609,16 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
 
         vm.startPrank(c.holder);
         if (liq > 0) {
-            INonfungiblePositionManager.DecreaseLiquidityParams memory dParams = INonfungiblePositionManager
-                .DecreaseLiquidityParams({
-                tokenId: c.tokenId,
-                liquidity: liq,
-                amount0Min: 0,
-                amount1Min: 0,
-                deadline: block.timestamp
-            });
+            INonfungiblePositionManager.DecreaseLiquidityParams memory dParams =
+                INonfungiblePositionManager.DecreaseLiquidityParams({
+                    tokenId: c.tokenId, liquidity: liq, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+                });
             INonfungiblePositionManager(NPM).decreaseLiquidity(dParams);
         }
 
         // 2. collect everything (principal + fees + tokensOwed) to the holder.
         INonfungiblePositionManager.CollectParams memory cParams = INonfungiblePositionManager.CollectParams({
-            tokenId: c.tokenId,
-            recipient: c.holder,
-            amount0Max: type(uint128).max,
-            amount1Max: type(uint128).max
+            tokenId: c.tokenId, recipient: c.holder, amount0Max: type(uint128).max, amount1Max: type(uint128).max
         });
         (uint128 a0, uint128 a1) = INonfungiblePositionManager(NPM).collect(cParams);
         vm.stopPrank();
@@ -641,11 +634,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
 
         // Ground truth: what NPM would actually pay out on close.
         NftCase memory c = NftCase({
-            holder: ACCOUNT_12,
-            tokenId: 1_231_724,
-            adapter: oUsdcWeth,
-            token0: MAINNET_USDC,
-            token1: MAINNET_WETH
+            holder: ACCOUNT_12, tokenId: 1_231_724, adapter: oUsdcWeth, token0: MAINNET_USDC, token1: MAINNET_WETH
         });
         (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
 
@@ -661,11 +650,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         (uint256 adapterToken1,) = oWethUsdt.getOracleBalanceForAsset(ACCOUNT_12, MAINNET_USDT);
 
         NftCase memory c = NftCase({
-            holder: ACCOUNT_12,
-            tokenId: 1_276_763,
-            adapter: oWethUsdt,
-            token0: MAINNET_WETH,
-            token1: MAINNET_USDT
+            holder: ACCOUNT_12, tokenId: 1_276_763, adapter: oWethUsdt, token0: MAINNET_WETH, token1: MAINNET_USDT
         });
         (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
 
@@ -679,11 +664,7 @@ contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP is BalanceAdapterTest
         (uint256 adapterToken1,) = oWethUsdt.getOracleBalanceForAsset(HOLDER_B, MAINNET_USDT);
 
         NftCase memory c = NftCase({
-            holder: HOLDER_B,
-            tokenId: 1_287_303,
-            adapter: oWethUsdt,
-            token0: MAINNET_WETH,
-            token1: MAINNET_USDT
+            holder: HOLDER_B, tokenId: 1_287_303, adapter: oWethUsdt, token0: MAINNET_WETH, token1: MAINNET_USDT
         });
         (uint256 g0, uint256 g1) = _simulateDecreaseAndCollect(c);
 

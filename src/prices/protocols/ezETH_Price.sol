@@ -44,22 +44,31 @@ contract ezETH_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         int256 ethToUsdPrice;
         (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (ethToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (ethToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
         uint256 ezEthRate;
         try RESTAKE_MANAGER.calculateTVLs() returns (uint256[][] memory, uint256[] memory, uint256 totalTVL) {
             uint256 supply = IERC20(EZETH).totalSupply();
-            if (supply == 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+            if (supply == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
             ezEthRate = totalTVL.mulDiv(1e18, supply, Math.Rounding.Floor);
         } catch {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
-        if (ezEthRate == 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (ezEthRate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         // ezETH/ETH rate is 18 decimals, ETH/USD is 8 decimals -> result is 8 decimals
         price = ezEthRate.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
     }

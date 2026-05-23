@@ -73,13 +73,23 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         int256 usdsToUsdPrice;
-        (roundId, usdsToUsdPrice, startedAt, updatedAt, answeredInRound) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (usdsToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        (roundId, usdsToUsdPrice, startedAt, updatedAt, answeredInRound) =
+            USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (usdsToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
         uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** _decimals);
         // sUSDS/USDS price is in 18 decimals, USDS/USD price is in 8 decimals
         // First multiply the prices together (this will have 18 + 8 = 26 decimals)

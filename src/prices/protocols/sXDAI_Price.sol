@@ -71,13 +71,23 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         int256 xDaiToUsdPrice;
-        (roundId, xDaiToUsdPrice, startedAt, updatedAt, answeredInRound) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (xDaiToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        (roundId, xDaiToUsdPrice, startedAt, updatedAt, answeredInRound) =
+            X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (xDaiToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
         uint256 underlyingValue = IERC4626(S_DAI).convertToAssets(10 ** _decimals);
         price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** _decimals, Math.Rounding.Floor);
     }

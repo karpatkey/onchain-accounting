@@ -44,7 +44,14 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         (uint80 r1, int256 syrupUsdcToUsdcRate, uint256 s1, uint256 u1, uint80 ar1) =
             SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.latestRoundData();
@@ -57,14 +64,16 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
             (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        if (syrupUsdcToUsdcRate <= 0 || usdcToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (syrupUsdcToUsdcRate <= 0 || usdcToUsdPrice <= 0) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         uint256 effectiveSyrupUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
         uint256 effectiveUsdcUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
             block.timestamp - effectiveSyrupUpdatedAt >= SYRUP_USDC_TO_USDC_CHAINLINK_HEARTBEAT
                 || block.timestamp - effectiveUsdcUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT
-        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         price = syrupUsdcToUsdcRate.toUint256()
             .mulDiv(

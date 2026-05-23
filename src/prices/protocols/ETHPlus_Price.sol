@@ -57,12 +57,12 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     function _compute() private view returns (uint256 price, bool stale, uint256 updatedAt) {
         IMain main = IRToken(ETHPLUS).main();
         IBasketHandler basketHandler = main.basketHandler();
-        if (basketHandler.status() != CollateralStatus.SOUND) { return (0, true, 0); }
+        if (basketHandler.status() != CollateralStatus.SOUND) return (0, true, 0);
         uint48 minSave = _minBasketLastSave(main, basketHandler);
         updatedAt = uint256(minSave);
-        if (block.timestamp - updatedAt >= RESERVE_PROTOCOL_HEARTBEAT) { return (0, true, updatedAt); }
+        if (block.timestamp - updatedAt >= RESERVE_PROTOCOL_HEARTBEAT) return (0, true, updatedAt);
         uint256 usdPerToken18 = _calculateETHPlusPriceUSD18(basketHandler);
-        if (usdPerToken18 == 0) { return (0, true, updatedAt); }
+        if (usdPerToken18 == 0) return (0, true, updatedAt);
         price = usdPerToken18 / 1e10;
     }
 

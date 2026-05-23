@@ -82,7 +82,14 @@ contract LDO_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         (uint80 r1, int256 ldoToEthPrice, uint256 s1, uint256 u1, uint80 ar1) =
             LDO_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
@@ -95,7 +102,9 @@ contract LDO_PriceOracle is IPriceFeedCustom {
             (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        if (ldoToEthPrice <= 0 || ethToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (ldoToEthPrice <= 0 || ethToUsdPrice <= 0) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         // Check if either price is stale based on their respective heartbeats
         uint256 effectiveLdoUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
@@ -103,7 +112,7 @@ contract LDO_PriceOracle is IPriceFeedCustom {
         if (
             block.timestamp - effectiveLdoUpdatedAt >= LDO_TO_ETH_CHAINLINK_HEARTBEAT
                 || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
-        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // LDO/ETH price is in 18 decimals, ETH/USD price is in 8 decimals
         // First multiply the prices together (this will have 18 + 8 = 26 decimals)

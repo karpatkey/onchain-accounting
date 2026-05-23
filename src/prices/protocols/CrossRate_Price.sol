@@ -53,7 +53,14 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         (uint80 r1, int256 xToUsd, uint256 s1, uint256 u1, uint80 ar1) = X_TO_USD_FEED.latestRoundData();
         (uint80 r2, int256 yToX, uint256 s2, uint256 u2, uint80 ar2) = Y_TO_X_FEED.latestRoundData();
@@ -64,14 +71,14 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
             (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        if (xToUsd <= 0 || yToX <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (xToUsd <= 0 || yToX <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         uint256 effectiveXUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
         uint256 effectiveYUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
             block.timestamp - effectiveXUpdatedAt >= X_TO_USD_HEARTBEAT
                 || block.timestamp - effectiveYUpdatedAt >= Y_TO_X_HEARTBEAT
-        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // Y/USD = (X/USD) * (Y/X) / 10^yToXDecimals
         price = xToUsd.toUint256().mulDiv(yToX.toUint256(), 10 ** Y_TO_X_FEED.decimals(), Math.Rounding.Floor);

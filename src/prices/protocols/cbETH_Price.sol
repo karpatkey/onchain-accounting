@@ -60,15 +60,24 @@ contract cbETH_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         int256 ethToUsdPrice;
         (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (ethToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (ethToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
         uint256 rate = IcbETH(CBETH).exchangeRate();
-        if (rate == 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (rate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         // exchangeRate is 18 decimals, ETH/USD is 8 decimals → result is 8 decimals
         price = rate.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
     }

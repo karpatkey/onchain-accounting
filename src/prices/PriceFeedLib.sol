@@ -239,7 +239,8 @@ library PriceFeedLib {
             if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
                 revert IPrices.InvalidPriceOracle();
             }
-            (,int256 answer, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(priceFeed).latestRoundData();
+            (, int256 answer, uint256 startedAt, uint256 updatedAt,) =
+                AggregatorV3Interface(priceFeed).latestRoundData();
             if (answer <= 0 || updatedAt == 0) revert IPrices.InvalidPriceOracle();
             if (updatedAt > block.timestamp || startedAt > block.timestamp) revert IPrices.InvalidPriceOracle();
         } else {

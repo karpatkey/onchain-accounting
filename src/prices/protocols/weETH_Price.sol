@@ -76,7 +76,14 @@ contract weETH_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         (uint80 r1, int256 weEthToEthRate, uint256 s1, uint256 u1, uint80 ar1) =
             WEETH_TO_ETH_CHAINLINK.latestRoundData();
@@ -89,14 +96,16 @@ contract weETH_PriceOracle is IPriceFeedCustom {
             (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        if (weEthToEthRate <= 0 || ethToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (weEthToEthRate <= 0 || ethToUsdPrice <= 0) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         uint256 effectiveWeEthUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
         uint256 effectiveEthUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
             block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_ETH_HEARTBEAT
                 || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
-        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // weETH/ETH is 18 decimals (Chainlink), ETH/USD is 8 decimals → result is 8 decimals
         price = weEthToEthRate.toUint256()

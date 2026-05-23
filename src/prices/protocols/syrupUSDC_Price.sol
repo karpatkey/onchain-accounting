@@ -71,13 +71,23 @@ contract syrupUSDC_PriceOracle is IPriceFeedCustom {
     function _compute()
         private
         view
-        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         int256 usdcToUsdPrice;
-        (roundId, usdcToUsdPrice, startedAt, updatedAt, answeredInRound) = USDC_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (usdcToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        (roundId, usdcToUsdPrice, startedAt, updatedAt, answeredInRound) =
+            USDC_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (usdcToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        if (block.timestamp - effectiveUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
         uint256 syrupUsdcToUsdcPrice = IERC4626(SYRUP_USDC).convertToAssets(10 ** _decimals);
         price = syrupUsdcToUsdcPrice.mulDiv(usdcToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
     }

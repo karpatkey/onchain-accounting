@@ -784,6 +784,25 @@ contract NAVCalculatorTest is SuperTest {
         nav.setChainlinkL2SequencerGracePeriod(0);
     }
 
+    function test_setChainlinkL2SequencerGracePeriod_belowMinimum() public {
+        vm.prank(admin);
+        nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeed));
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(InvalidArguments.selector);
+        nav.setChainlinkL2SequencerGracePeriod(1 hours - 1);
+    }
+
+    function test_setChainlinkL2SequencerGracePeriod_exactMinimum() public {
+        vm.prank(admin);
+        nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeed));
+
+        vm.prank(navCalculatorManager);
+        nav.setChainlinkL2SequencerGracePeriod(1 hours);
+
+        assertEq(nav.chainlinkL2SequencerGracePeriod(), 1 hours);
+    }
+
     function test_setChainlinkL2SequencerGracePeriod_noUptimeFeed() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(0)); // No uptime feed

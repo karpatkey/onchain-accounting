@@ -237,7 +237,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         if (address(chainlinkL2SequencerUptimeFeed) == address(0)) {
             revert UptimeFeedNotSet();
         }
-        if (newSequencerGracePeriod == 0) {
+        if (newSequencerGracePeriod < 1 hours) {
             revert InvalidArguments();
         }
         uint256 oldSequencerGracePeriod = chainlinkL2SequencerGracePeriod;
@@ -604,7 +604,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         priceFeedData.price = price;
         priceFeedData.decimals = decimals;
         priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
-        priceFeedData.stale = stale || checkL2SequencerUptime();
+        bool sequencerDown = _isSequencerDown();
+        priceFeedData.stale = stale || sequencerDown;
         priceFeedData.healthyFeedCount = healthyFeedCount;
 
         // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
@@ -616,8 +617,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             } catch {} // updatedAt stays 0 if the feed reverts
         }
 
-        // Check L2 sequencer uptime (conditional on L2)
-        priceFeedData.sequencerDown = _isSequencerDown();
+        priceFeedData.sequencerDown = sequencerDown;
     }
 
     /// @inheritdoc INAVCalculator

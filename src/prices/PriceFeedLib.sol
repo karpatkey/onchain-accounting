@@ -126,7 +126,8 @@ library PriceFeedLib {
         } else if (startedAt == 0) {
             stale = true;
         } else {
-            if (block.timestamp - startedAt <= gracePeriod) stale = true;
+            uint256 effectiveStartedAt = startedAt > block.timestamp ? block.timestamp : startedAt;
+            if (block.timestamp - effectiveStartedAt <= gracePeriod) stale = true;
         }
     }
 

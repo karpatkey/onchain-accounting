@@ -21,8 +21,7 @@ import "src/errors.sol";
 ///      - `convertToAssets` uses the vault's decimals; multiplication is scaled via `Math.mulDiv`
 ///        so the returned USD price has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDE_TO_USD_CHAINLINK_HEARTBEAT`.
-///      If the feed is stale, the function still returns the computed `price` with `stale = true`.
-///      If the quoted Chainlink price is non-positive, the function returns `(0, true)`.
+///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sUSDe_PriceOracle is IPriceFeedCustom {
@@ -47,7 +46,7 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
     uint256 public immutable USDE_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -69,23 +68,23 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
     // IPriceFeedCustom
     //
 
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 usdeToUsdPrice;
+        (roundId, usdeToUsdPrice, startedAt, updatedAt, answeredInRound) = USDE_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (usdeToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USDE_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** _decimals);
+        price = sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
+    }
+
     /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 usdeToUsdPrice,, uint256 usdeToUsdUpdatedAt,) = USDE_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (usdeToUsdPrice <= 0) {
-            return (0, true);
-        }
-
-        uint256 effectiveUpdatedAt = usdeToUsdUpdatedAt > block.timestamp ? block.timestamp : usdeToUsdUpdatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= USDE_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true);
-        }
-
-        uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** IERC4626(S_USDE).decimals());
-
-        price =
-            sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** IERC4626(S_USDE).decimals(), Math.Rounding.Floor);
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -105,9 +104,10 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (roundId,, startedAt, updatedAt, answeredInRound) = USDE_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

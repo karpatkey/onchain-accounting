@@ -26,8 +26,8 @@ interface IPrices {
     struct PriceFeedConfig {
         address priceFeed;
         uint8 decimals;
-        uint256 chainlinkHeartbeat;
         PriceType priceType;
+        uint256 chainlinkHeartbeat;
     }
 
     /// @notice Emitted when a price feed is added for a token.

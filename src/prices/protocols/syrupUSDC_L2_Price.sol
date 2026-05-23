@@ -24,7 +24,7 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
     AggregatorV3Interface public immutable USDC_TO_USD_CHAINLINK_ORACLE;
     uint256 public immutable SYRUP_USDC_TO_USDC_CHAINLINK_HEARTBEAT;
     uint256 public immutable USDC_TO_USD_CHAINLINK_HEARTBEAT;
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     constructor(
         address syrupUsdc_,
@@ -41,30 +41,40 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
         _decimals = USDC_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 syrupUsdcToUsdcRate,, uint256 syrupUsdcToUsdcUpdatedAt,) =
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        (uint80 r1, int256 syrupUsdcToUsdcRate, uint256 s1, uint256 u1, uint80 ar1) =
             SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.latestRoundData();
-        (, int256 usdcToUsdPrice,, uint256 usdcToUsdUpdatedAt,) = USDC_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        (uint80 r2, int256 usdcToUsdPrice, uint256 s2, uint256 u2, uint80 ar2) =
+            USDC_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (syrupUsdcToUsdcRate <= 0 || usdcToUsdPrice <= 0) {
-            return (0, true);
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        uint256 effectiveSyrupUpdatedAt =
-            syrupUsdcToUsdcUpdatedAt > block.timestamp ? block.timestamp : syrupUsdcToUsdcUpdatedAt;
-        uint256 effectiveUsdcUpdatedAt = usdcToUsdUpdatedAt > block.timestamp ? block.timestamp : usdcToUsdUpdatedAt;
+        if (syrupUsdcToUsdcRate <= 0 || usdcToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+
+        uint256 effectiveSyrupUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
+        uint256 effectiveUsdcUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
             block.timestamp - effectiveSyrupUpdatedAt >= SYRUP_USDC_TO_USDC_CHAINLINK_HEARTBEAT
                 || block.timestamp - effectiveUsdcUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT
-        ) {
-            return (0, true);
-        }
+        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
 
         price = syrupUsdcToUsdcRate.toUint256()
             .mulDiv(
                 usdcToUsdPrice.toUint256(), 10 ** SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
             );
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -84,15 +94,10 @@ contract syrupUSDC_L2_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = SYRUP_USDC_TO_USDC_CHAINLINK_ORACLE.latestRoundData();
-        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = USDC_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (u1 <= u2) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
-        }
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

@@ -40,7 +40,7 @@ contract ETHx_PriceOracle is IPriceFeedCustom {
     uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -69,27 +69,25 @@ contract ETHx_PriceOracle is IPriceFeedCustom {
     // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (ethToUsdPrice <= 0) {
-            return (0, true);
-        }
-
-        uint256 effectiveUpdatedAt = ethToUsdUpdatedAt > block.timestamp ? block.timestamp : ethToUsdUpdatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true);
-        }
-
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 ethToUsdPrice;
+        (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (ethToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
         uint256 exchangeRate = STAKE_POOLS_MANAGER.getExchangeRate();
-
-        if (exchangeRate == 0) {
-            return (0, true);
-        }
-
+        if (exchangeRate == 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
         // exchangeRate is 18 decimals (ETH per ETHx), ETH/USD is 8 decimals → result is 8 decimals
         price = exchangeRate.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -109,9 +107,10 @@ contract ETHx_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (roundId,, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

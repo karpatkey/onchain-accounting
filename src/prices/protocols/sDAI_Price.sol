@@ -5,6 +5,7 @@ import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title sDAI Custom Price Oracle
 /// @notice Returns the USD price of sDAI by combining Chainlink’s DAI/USD feed with Maker’s DSR “chi” ratio.
@@ -17,6 +18,8 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sDAI_PriceOracle is IPriceFeedCustom {
+    using Math for uint256;
+
     //
     // State
     //
@@ -39,7 +42,7 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     uint256 public immutable DAI_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 private _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -72,26 +75,24 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     // IPriceFeedCustom
     //
 
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 daiToUsdPrice;
+        (roundId, daiToUsdPrice, startedAt, updatedAt, answeredInRound) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (daiToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= DAI_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 chi = RATE_PROVIDER.chi();
+        if (chi == 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        price = uint256(daiToUsdPrice).mulDiv(chi, 10 ** uint256(RATIO_DECIMALS), Math.Rounding.Floor);
+    }
+
     /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 daiToUsdPrice,, uint256 daiToUsdUpdatedAt,) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (daiToUsdPrice <= 0) {
-            return (0, true);
-        }
-
-        uint256 effectiveUpdatedAt = daiToUsdUpdatedAt > block.timestamp ? block.timestamp : daiToUsdUpdatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= DAI_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true);
-        }
-
-        int256 ratio = int256(RATE_PROVIDER.chi());
-
-        if (ratio <= 0) {
-            return (0, true);
-        } else {
-            price = uint256((daiToUsdPrice * ratio) / int256(10 ** RATIO_DECIMALS));
-        }
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -111,9 +112,10 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (roundId,, startedAt, updatedAt, answeredInRound) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

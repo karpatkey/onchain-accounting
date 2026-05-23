@@ -45,7 +45,7 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
     uint256 public immutable USDS_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -70,28 +70,26 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
     // IBalanceOracleCustom
     //
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 usdsToUsdPrice,, uint256 usdsToUsdUpdatedAt,) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (usdsToUsdPrice <= 0) {
-            return (0, true);
-        }
-
-        // Check if the price is stale based on its heartbeat
-        uint256 effectiveUpdatedAt = usdsToUsdUpdatedAt > block.timestamp ? block.timestamp : usdsToUsdUpdatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true);
-        }
-
-        // Get user
-        uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** IERC4626(S_USDS).decimals());
-
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 usdsToUsdPrice;
+        (roundId, usdsToUsdPrice, startedAt, updatedAt, answeredInRound) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (usdsToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** _decimals);
         // sUSDS/USDS price is in 18 decimals, USDS/USD price is in 8 decimals
         // First multiply the prices together (this will have 18 + 8 = 26 decimals)
         // Then divide by 10^18 to get back to 8 decimals (matching USDS/USD)
-        price =
-            sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** IERC4626(S_USDS).decimals(), Math.Rounding.Floor);
+        price = sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -111,9 +109,10 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (roundId,, startedAt, updatedAt, answeredInRound) = USDS_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

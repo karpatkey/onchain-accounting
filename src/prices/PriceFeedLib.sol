@@ -109,7 +109,6 @@ library PriceFeedLib {
     /// @notice Checks if the L2 sequencer uptime feed reports downtime or the grace period has not elapsed.
     /// @dev Mirrors Prices.checkL2SequencerUptime. Pass address(0) for uptimeFeed on L1 — returns false.
     function checkSequencerUptime(address uptimeFeed, uint256 gracePeriod) external view returns (bool stale) {
-        stale = false;
         if (uptimeFeed == address(0)) return false;
 
         int256 answer;

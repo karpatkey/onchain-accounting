@@ -33,7 +33,7 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
     uint256 public immutable Y_TO_X_HEARTBEAT;
 
     /// @notice Decimals of the returned price (matches X/USD feed).
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     constructor(
         address underlyingAsset_,
@@ -50,26 +50,36 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
         _decimals = X_TO_USD_FEED.decimals();
     }
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 xToUsd,, uint256 xToUsdUpdatedAt,) = X_TO_USD_FEED.latestRoundData();
-        (, int256 yToX,, uint256 yToXUpdatedAt,) = Y_TO_X_FEED.latestRoundData();
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        (uint80 r1, int256 xToUsd, uint256 s1, uint256 u1, uint80 ar1) = X_TO_USD_FEED.latestRoundData();
+        (uint80 r2, int256 yToX, uint256 s2, uint256 u2, uint80 ar2) = Y_TO_X_FEED.latestRoundData();
 
-        if (xToUsd <= 0 || yToX <= 0) {
-            return (0, true);
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
         }
 
-        uint256 effectiveXUpdatedAt = xToUsdUpdatedAt > block.timestamp ? block.timestamp : xToUsdUpdatedAt;
-        uint256 effectiveYUpdatedAt = yToXUpdatedAt > block.timestamp ? block.timestamp : yToXUpdatedAt;
+        if (xToUsd <= 0 || yToX <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+
+        uint256 effectiveXUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
+        uint256 effectiveYUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
             block.timestamp - effectiveXUpdatedAt >= X_TO_USD_HEARTBEAT
                 || block.timestamp - effectiveYUpdatedAt >= Y_TO_X_HEARTBEAT
-        ) {
-            return (0, true);
-        }
+        ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
 
         // Y/USD = (X/USD) * (Y/X) / 10^yToXDecimals
         price = xToUsd.toUint256().mulDiv(yToX.toUint256(), 10 ** Y_TO_X_FEED.decimals(), Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -89,15 +99,10 @@ contract CrossRatePriceAdapter is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = X_TO_USD_FEED.latestRoundData();
-        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = Y_TO_X_FEED.latestRoundData();
-        if (u1 <= u2) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
-        }
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

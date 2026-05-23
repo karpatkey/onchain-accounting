@@ -17,7 +17,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      `assetsPerShare = IERC4626(sDAI).convertToAssets(10**shareDecimals) / 10**shareDecimals`.
 ///      - The xDAI/USD quote comes from `X_DAI_TO_USD_CHAINLINK_ORACLE` and the returned price uses `_decimals`.
 ///      - Freshness of the Chainlink feed is checked against `X_DAI_TO_USD_CHAINLINK_HEARTBEAT`; if exceeded,
-///        the function sets `stale = true` but still returns the computed price.
+///        the function returns `(0, true)`.
 ///      - Multiplication/division is performed via `Math.mulDiv(..., Math.Rounding.Floor)` so the result is
 ///        scaled back to `_decimals` and rounded down.
 /// @author kpk
@@ -44,7 +44,7 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     uint256 public immutable X_DAI_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -68,24 +68,23 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     // IPriceFeedCustom
     //
 
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 xDaiToUsdPrice;
+        (roundId, xDaiToUsdPrice, startedAt, updatedAt, answeredInRound) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        if (xDaiToUsdPrice <= 0) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
+        uint256 underlyingValue = IERC4626(S_DAI).convertToAssets(10 ** _decimals);
+        price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** _decimals, Math.Rounding.Floor);
+    }
+
     /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 xDaiToUsdPrice,, uint256 xDaiToUsdUpdatedAt,) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (xDaiToUsdPrice <= 0) {
-            return (0, true);
-        }
-
-        IERC4626 sDaiVault = IERC4626(S_DAI);
-
-        uint256 effectiveUpdatedAt = xDaiToUsdUpdatedAt > block.timestamp ? block.timestamp : xDaiToUsdUpdatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true);
-        }
-
-        uint256 underlyingValue = sDaiVault.convertToAssets(10 ** sDaiVault.decimals());
-
-        price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** sDaiVault.decimals(), Math.Rounding.Floor);
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -105,9 +104,10 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (roundId,, startedAt, updatedAt, answeredInRound) = X_DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

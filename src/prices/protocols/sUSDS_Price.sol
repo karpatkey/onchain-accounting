@@ -15,11 +15,11 @@ import "src/errors.sol";
 /// @notice Returns the USD price of sUSDS by combining Chainlink’s USDS/USD feed with the
 ///         current sUSDS→USDS exchange rate from the sUSDS ERC-4626 vault.
 /// @dev sUSDS is an ERC-4626 share token. The price is computed as
-///      `price = (USDS/USD) * (sUSDS_per_share / 1e18)`,
-///      where `sUSDS_per_share = IERC4626(sUSDS).convertToAssets(1e18)`.
+///      `price = (USDS/USD) * (sUSDS_per_share / 10**feedDecimals)`,
+///      where `sUSDS_per_share = IERC4626(sUSDS).convertToAssets(10**feedDecimals)`.
 ///      - The USDS/USD quote comes from `USDS_to_USD_chainlinkOracle` and uses `_decimals` decimals.
-///      - `convertToAssets` uses 18 decimals; multiplication is scaled by `10**feedDecimals` via `Math.mulDiv`
-///        so the returned USD price has `_decimals` decimals.
+///      - `convertToAssets` is linear in shares, so dividing by the same `10**_decimals` used as input
+///        yields the exchange rate (totalAssets/totalSupply); the result has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDS_to_USD_chainlinkHeartbeat`.
 ///      If the feed is stale or the quoted price is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author kpk

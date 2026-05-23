@@ -98,12 +98,12 @@ contract ManageAdapters is BaseDeployScript {
             navProxy, 0, abi.encodeCall(NAVCalculator.addPriceFeed, (asset, priceFeed, priceType, heartbeat))
         );
 
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-set-price-feed.json"));
+        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-add-price-feed.json"));
 
         writeSafeTx(
             filename,
-            "Set Price Feed in NAVCalculator",
-            string(abi.encodePacked("Sets price feed for asset ", vm.toString(asset), " to ", vm.toString(priceFeed))),
+            "Add Price Feed to NAVCalculator",
+            string(abi.encodePacked("Adds price feed for asset ", vm.toString(asset), ": ", vm.toString(priceFeed))),
             transactions
         );
 

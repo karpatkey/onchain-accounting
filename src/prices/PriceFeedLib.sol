@@ -55,7 +55,8 @@ library PriceFeedLib {
                     continue;
                 }
                 if (internalStale || customPrice == 0) continue;
-                rawPrice = customPrice.toInt256();
+                if (customPrice > uint256(type(int256).max)) continue;
+                rawPrice = int256(customPrice);
                 uint256 lrdUpdatedAt;
                 try IPriceFeedCustom(cfg.priceFeed).latestRoundData() returns (
                     uint80, int256, uint256, uint256 u, uint80

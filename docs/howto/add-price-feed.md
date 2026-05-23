@@ -289,10 +289,6 @@ Expect `(price > 0, decimals, false)` at a fresh block.
 
 ---
 
-## B.6 Open the PR
-
----
-
 ## C. Adding a redundant feed to an existing asset
 
 Use this path when an asset is already registered and you want to add a second (or third) feed for redundancy — e.g., adding a Redstone or API3 feed alongside an existing Chainlink feed.
@@ -315,7 +311,7 @@ This appends the feed to the asset's array. On the next read, `Prices._selectFee
 
 ```bash
 cast call $NAV_CALCULATOR "getPriceFeedCount(address)(uint256)" $ASSET --rpc-url $RPC
-cast call $NAV_CALCULATOR "getPriceFeedAt(address,uint256)(address,uint8,uint256,uint8)" $ASSET 1 --rpc-url $RPC
+cast call $NAV_CALCULATOR "getPriceFeedAt(address,uint256)(address,uint8,uint8,uint256)" $ASSET 1 --rpc-url $RPC
 ```
 
 ### C.4 Remove a superseded feed

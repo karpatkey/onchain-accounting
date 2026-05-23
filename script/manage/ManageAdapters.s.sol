@@ -87,7 +87,7 @@ contract ManageAdapters is BaseDeployScript {
     /// @notice Adds a price feed for an asset in NAVCalculator
     /// @param asset The asset address
     /// @param priceFeed The price feed adapter address
-    /// @param priceType The price type (0 = Chainlink, 1 = Custom, 2 = Redstone, 3 = API3)
+    /// @param priceType The price type (0 = Chainlink, 1 = Redstone, 2 = API3, 3 = Custom)
     /// @param heartbeat The heartbeat in seconds
     function _addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 heartbeat) internal {
         address navProxy = readDeployedAddress("NAVCalculatorProxy");

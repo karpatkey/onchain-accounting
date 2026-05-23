@@ -614,6 +614,7 @@ DEFAULT_ADMIN_ROLE (0x00)
 ├─ Can authorize/revoke bridge adapters
 ├─ Can pause/unpause BridgeEscrow
 ├─ Can emergency withdraw from BridgeEscrow
+├─ setChainlinkL2SequencerUptimeFeed() (NAVCalculator)
 └─ Typically assigned to: Safe Multisig
 
 MANAGER (keccak256("MANAGER"))
@@ -627,7 +628,6 @@ MANAGER (keccak256("MANAGER"))
 │  ├─ removeBalanceOracle()
 │  ├─ includeAssetInDefaultOracle()
 │  ├─ excludeAssetFromDefaultOracle()
-│  ├─ setChainlinkL2SequencerUptimeFeed()
 │  └─ setChainlinkL2SequencerGracePeriod()
 │
 ├─ BridgeEscrow:

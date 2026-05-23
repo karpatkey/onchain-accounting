@@ -828,7 +828,7 @@ cast send $NAV_PROXY \
   --account $DEPLOYER_NAME
 ```
 
-(PriceType: 0 = Chainlink, 1 = Custom, 2 = Redstone, 3 = API3)
+(PriceType: 0 = Chainlink, 1 = Redstone, 2 = API3, 3 = Custom)
 
 ---
 

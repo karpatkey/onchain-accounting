@@ -609,8 +609,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
         if (config.priceType != IPrices.PriceType.Custom) {
-            (,,, uint256 roundUpdatedAt,) = AggregatorV3Interface(config.priceFeed).latestRoundData();
-            priceFeedData.updatedAt = roundUpdatedAt;
+            try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
+                uint80, int256, uint256, uint256 roundUpdatedAt, uint80
+            ) {
+                priceFeedData.updatedAt = roundUpdatedAt;
+            } catch {} // updatedAt stays 0 if the feed reverts
         }
 
         // Check L2 sequencer uptime (conditional on L2)

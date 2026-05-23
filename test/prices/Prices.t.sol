@@ -256,15 +256,11 @@ contract PricesTest is Test {
     // Edge Cases Tests
     // ============================================
 
-    function test_latestPrice_zeroPrice() public {
-        // Create a mock oracle that returns zero price
+    function test_setPriceFeed_zeroPrice_reverts() public {
+        // A zero-price feed is rejected at registration time
         Mock_PriceOracleChainlink zeroPriceOracle = new Mock_PriceOracleChainlink("Zero", 0, 8);
+        vm.expectRevert(IPrices.InvalidPriceOracle.selector);
         manager.setPriceFeed(buidl, address(zeroPriceOracle), type(uint256).max, IPrices.PriceType.Chainlink);
-
-        (int256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
-        assertEq(price, 0);
-        assertEq(decimals, 8);
-        assertTrue(stale); // Zero price should be marked as stale
     }
 
     function test_checkL2SequencerUptime_noFeed() public view {

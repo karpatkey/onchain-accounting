@@ -15,9 +15,8 @@ import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.
 ///   Redstone  BTC/USD  — 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc  (24h heartbeat, 0.5% deviation)
 ///
 /// API3 WBTC/USD (0x041a131Fa91Ad61dD85262A42c04975986580d50) is omitted: the communal proxy
-/// is not yet deployed on Ethereum mainnet and returns 18 decimals (incompatible with the 8-decimal
-/// Chainlink/Redstone feeds — would fail the decimal-consistency guard at registration time).
-/// Register when a deployed 8-decimal proxy becomes available.
+/// is not yet deployed on Ethereum mainnet. Register when it becomes live (PriceType.API3 handles
+/// the 18-dec→8-dec normalisation automatically — no decimal-consistency conflict).
 ///
 /// Staleness cascade:
 ///   +3 601 s  → Chainlink (1h) expires; Redstone (24h) survives and serves the real BTC price.

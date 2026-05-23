@@ -366,7 +366,7 @@ https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-gnosis-1.json
 
 Each JSON entry contains `contractAddress`, `name` (e.g. `"ETH / USD"`), `decimals`, and `heartbeat`. The same addresses are browseable at [docs.chain.link/data-feeds/price-feeds/addresses](https://docs.chain.link/data-feeds/price-feeds/addresses).
 
-**Decimals:** 8 for all USD-denominated feeds (standard). A handful of ETH-denominated feeds (like the ETH+/ETH feed at `0x66Ab9003...`) return 18 decimals — these cannot be registered directly as `PriceType.Chainlink` because `L-4` enforces decimal consistency across all feeds for an asset.
+**Decimals:** 8 for all USD-denominated feeds (standard). A handful of Chainlink feeds return 18 decimals (e.g. the ETH+/USD feed at `0x66Ab9003...`) — these cannot be registered directly as `PriceType.Chainlink` alongside 8-dec feeds because `L-4` enforces decimal consistency across all feeds for an asset. Note: `PriceType.API3` feeds also return 18 decimals from the proxy but are normalised to 8-dec automatically by `PriceFeedLib` — see §11.3.
 
 ### 11.2 Redstone Classic Push
 

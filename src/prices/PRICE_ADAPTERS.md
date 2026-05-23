@@ -415,13 +415,16 @@ IApi3ReaderProxyV1Factory(0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381)
 
 **Critical caveat:** A computed address is where the proxy *would* be deployed. It must actually be deployed before `latestRoundData()` responds. Verify via the [API3 Market](https://market.api3.org) (select chain + dAPI → "Skip OEV Rewards") or call `latestRoundData()` on-chain and check for revert.
 
-**Decimals:** 18 (all API3 dAPIs). **Default heartbeat:** 86 400 s (24 h) for managed feeds with 1 % deviation threshold.
+**Decimals:** All API3 communal proxies return **18 decimals** — this is a protocol-level invariant of the communal proxy factory, not a per-feed choice. `PriceFeedLib` handles the scaling automatically: at registration time it asserts `decimals() == 18` (reverts `InvalidPriceOracle` otherwise) and stores `decimals = 8` in `PriceFeedConfig`; at read time it divides the raw 18-dec answer by `1e10` before returning it. Callers always receive 8-decimal USD prices, consistent with Chainlink and Redstone feeds.
+
+**Default heartbeat:** 86 400 s (24 h) for managed feeds with 1 % deviation threshold.
 
 **Registering an API3 feed:**
 
 ```solidity
 // priceType = PriceType.API3; heartbeat = 86400 (confirm on the Market page first)
 nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
+// The proxy must return 18 decimals; non-18-dec proxies revert with InvalidPriceOracle.
 ```
 
 **Browse available dAPIs:** [market.api3.org](https://market.api3.org)

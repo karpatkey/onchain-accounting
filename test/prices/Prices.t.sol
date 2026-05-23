@@ -433,6 +433,50 @@ contract PricesTest is Test {
         assertFalse(stale);
     }
 
+    // ============================================
+    // API3 Feed Tests
+    // ============================================
+
+    function test_registerAPI3_storesEightDecimals() public {
+        // API3 proxy returns 18 decimals; PriceFeedLib must store 8 in the config.
+        Mock_PriceOracleChainlink api3Feed = new Mock_PriceOracleChainlink("ETH/USD API3", 3000e18, 18);
+        manager.setPriceFeed(buidl, address(api3Feed), type(uint256).max, IPrices.PriceType.API3);
+
+        IPrices.PriceFeedConfig memory cfg = manager.getPriceFeedAt(buidl, 0);
+        assertEq(cfg.decimals, 8, "API3 feed must be stored with 8 output decimals");
+        assertEq(uint8(cfg.priceType), uint8(IPrices.PriceType.API3));
+    }
+
+    function test_registerAPI3_nonStandardDecimalsReverts() public {
+        // Only 18-dec proxies are valid API3 feeds; 8-dec must revert.
+        Mock_PriceOracleChainlink badFeed = new Mock_PriceOracleChainlink("bad API3", 3000e8, 8);
+        vm.expectRevert(IPrices.InvalidPriceOracle.selector);
+        manager.setPriceFeed(buidl, address(badFeed), type(uint256).max, IPrices.PriceType.API3);
+    }
+
+    function test_registerAPI3_thenChainlink_decimalConsistencyPasses() public {
+        // API3 stored as 8-dec → adding an 8-dec Chainlink feed must succeed.
+        Mock_PriceOracleChainlink api3Feed = new Mock_PriceOracleChainlink("ETH/USD API3", 3000e18, 18);
+        manager.setPriceFeed(buidl, address(api3Feed), type(uint256).max, IPrices.PriceType.API3);
+
+        manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        assertEq(manager.getPriceFeedCount(buidl), 2);
+        assertEq(manager.getPriceFeedAt(buidl, 0).decimals, 8);
+        assertEq(manager.getPriceFeedAt(buidl, 1).decimals, 8);
+    }
+
+    function test_latestPrice_API3_scaledCorrectly() public {
+        // Proxy returns 3000e18 (18-dec); latestPrice must return 3000e8 (8-dec).
+        Mock_PriceOracleChainlink api3Feed = new Mock_PriceOracleChainlink("ETH/USD API3", 3000e18, 18);
+        manager.setPriceFeed(buidl, address(api3Feed), type(uint256).max, IPrices.PriceType.API3);
+
+        (int256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
+        assertEq(price, 3000e8, "18-dec API3 price must be scaled to 8-dec");
+        assertEq(decimals, 8);
+        assertFalse(stale);
+    }
+
     function test_multiFeed_clockSkewNormalization() public {
         // A feed whose updatedAt > block.timestamp (future-dated timestamp)
         // must be clamped to block.timestamp and NOT systematically beat a normally-timed feed.

@@ -79,6 +79,9 @@ library PriceFeedLib {
                 }
                 if (answer <= 0) continue;
                 rawPrice = answer;
+                if (cfg.priceType == IPrices.PriceType.API3) {
+                    rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
+                }
                 updatedAt = lrdUpdatedAt;
             }
 
@@ -161,6 +164,10 @@ library PriceFeedLib {
         uint8 dec;
         if (priceType == IPrices.PriceType.Custom) {
             dec = IPriceFeedCustom(priceFeed).decimals();
+        } else if (priceType == IPrices.PriceType.API3) {
+            uint8 sourceDec = AggregatorV3Interface(priceFeed).decimals();
+            if (sourceDec != 18) revert IPrices.InvalidPriceOracle();
+            dec = 8;
         } else {
             dec = AggregatorV3Interface(priceFeed).decimals();
         }

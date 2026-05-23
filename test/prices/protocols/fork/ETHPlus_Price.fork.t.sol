@@ -7,10 +7,9 @@ import {ETHPlus_PriceOracle, IBasketHandler, CollateralStatus} from "src/prices/
 /// Note on multi-feed redundancy for ETH+:
 /// The only available 8-decimal USD price source for ETH+ is the custom basket oracle
 /// (ETHPlus_PriceOracle). The Chainlink ETH+/USD feed (0x66Ab900341C98de949EC31d11b3C4180743844F1)
-/// is ETH-denominated with 18 decimals and cannot be registered alongside an 8-decimal feed
-/// (decimal-consistency guard). No Redstone or API3 ETH+/USD feed with 8 decimals exists on
-/// Ethereum Mainnet as of 2026-05. A multi-feed redundancy test will be added when an
-/// 8-decimal compatible feed is available.
+/// has 18 decimals and cannot be registered alongside an 8-decimal feed (decimal-consistency guard).
+/// No Redstone or API3 ETH+/USD feed with 8 decimals exists on Ethereum Mainnet as of 2026-05.
+/// A multi-feed redundancy test will be added when an 8-decimal compatible feed is available.
 contract ETHPlus_PriceOracleForkTest is TestEnvConfigurator {
     ETHPlus_PriceOracle oracle;
 

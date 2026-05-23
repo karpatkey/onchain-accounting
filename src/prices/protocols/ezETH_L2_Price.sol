@@ -12,6 +12,11 @@ import "src/errors.sol";
 /// @title ezETH L2 Custom Price Oracle
 /// @notice Returns the USD price of ezETH on L2 using Renzo xRenzoDeposit.getRate() x Chainlink ETH/USD.
 /// @dev price = xRenzoDeposit.getRate() * (ETH/USD) / 1e18. ETH/USD heartbeat checked.
+/// @dev Staleness gap: xRenzoDeposit.getRate() returns a cross-chain rate relayed from L1 by a keeper.
+///      Only the ETH/USD Chainlink heartbeat is verified here; the ezETH/ETH rate has no independent
+///      age check. If Renzo's L1→L2 keeper lags (e.g., during sequencer downtime recovery) the returned
+///      rate may be stale without this adapter detecting it. This is an architectural constraint of
+///      xRenzoDeposit not exposing a rate timestamp; the L1 adapter carries an analogous limitation.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ezETH_L2_PriceOracle is IPriceFeedCustom {

@@ -113,7 +113,7 @@ Defined in `IPrices`.
 `Prices` is an abstract contract used by NAVCalculator. It maintains:
 
 - **Per-asset feed configs:** `mapping(address => PriceFeedConfig[]) internal _priceOracles`. Each asset has a dynamic array of feeds.
-- **L2 sequencer state:** `chainlinkL2SequencerUptimeFeed` and `chainlinkL2SequencerGracePeriod` (default 1 hour). Set once via `__Prices_init` at NAV initialization.
+- **L2 sequencer state:** `chainlinkL2SequencerUptimeFeed` and `chainlinkL2SequencerGracePeriod` (default 1 hour, minimum 1 hour enforced on-chain). Set once via `__Prices_init` at NAV initialization; grace period adjustable by MANAGER via `setChainlinkL2SequencerGracePeriod` (floor: `>= 1 hours`).
 
 Internal API (used by NAVCalculator):
 
@@ -205,7 +205,7 @@ Every Chainlink heartbeat used in an adapter's staleness check is pinned as an i
 
 **Threshold for external callers of multi-feed adapters**: an external caller checking `block.timestamp − updatedAt > H` should use `H = min(H1, H2, …)` — the smallest heartbeat among constituent feeds. Using a larger value can silently miss the faster feed going stale.
 
-**`answer` field**: always the current computed price, even when stale. This follows Chainlink convention — callers use `updatedAt` to decide freshness, not a zero `answer`. The only time `answer = 0` is when the underlying prices are invalid (non-positive), which signals "do not use this price" independently of staleness.
+**`answer` field**: returns the computed price when healthy, `0` when stale or when underlying prices are invalid (non-positive). Do not infer freshness from a non-zero `answer` alone — always check `updatedAt` or call `getLatestPrice()` directly.
 
 #### The registered `chainlinkHeartbeat` for custom feeds
 

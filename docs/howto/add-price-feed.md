@@ -287,6 +287,19 @@ cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool)" $myAsset --rp
 
 Expect `(price > 0, decimals, false)` at a fresh block.
 
+## B.6 Open the PR
+
+PR checklist:
+
+- [ ] `forge build` clean
+- [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
+- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
+- [ ] `assets.json` updated for every chain where the feed applies (`tokens` + `priceFeeds` constructor sections)
+- [ ] `_symbolsForChain` updated in **both** `script/manage/RegisterAssets.s.sol` and `test/integration/IntegrationFromConfigBase.fork.sol`
+- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `IntegrationFromConfigBase.fork.sol`
+- [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
+- [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations
+
 ---
 
 ## C. Adding a redundant feed to an existing asset
@@ -317,16 +330,3 @@ cast call $NAV_CALCULATOR "getPriceFeedAt(address,uint256)(address,uint8,uint8,u
 ### C.4 Remove a superseded feed
 
 To remove an old feed: `NAVCalculator.removePriceFeed(asset, oldFeedAddress)` (MANAGER). Cannot remove the last remaining feed — add the replacement first.
-
-## B.6 Open the PR
-
-PR checklist:
-
-- [ ] `forge build` clean
-- [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
-- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
-- [ ] `assets.json` updated for every chain where the feed applies (`tokens` + `priceFeeds` constructor sections)
-- [ ] `_symbolsForChain` updated in **both** `script/manage/RegisterAssets.s.sol` and `test/integration/IntegrationFromConfigBase.fork.sol`
-- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `IntegrationFromConfigBase.fork.sol`
-- [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
-- [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations

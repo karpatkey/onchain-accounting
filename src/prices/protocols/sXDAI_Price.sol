@@ -46,6 +46,9 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
     /// @notice Number of decimals the returned price is represented with.
     uint8 private immutable _decimals;
 
+    /// @notice Decimals of the sDAI vault share token (used for convertToAssets scaling).
+    uint8 private immutable _vaultDecimals;
+
     //
     // Constructor
     //
@@ -62,6 +65,7 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
         X_DAI_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(xDaiToUsdChainlinkHeartbeat_);
 
         _decimals = X_DAI_TO_USD_CHAINLINK_ORACLE.decimals();
+        _vaultDecimals = IERC4626(sDai_).decimals();
     }
 
     //
@@ -88,8 +92,8 @@ contract sDAI_PriceOracle is IPriceFeedCustom {
         if (block.timestamp - effectiveUpdatedAt >= X_DAI_TO_USD_CHAINLINK_HEARTBEAT) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
-        uint256 underlyingValue = IERC4626(S_DAI).convertToAssets(10 ** _decimals);
-        price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** _decimals, Math.Rounding.Floor);
+        uint256 underlyingValue = IERC4626(S_DAI).convertToAssets(10 ** _vaultDecimals);
+        price = xDaiToUsdPrice.toUint256().mulDiv(underlyingValue, 10 ** _vaultDecimals, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

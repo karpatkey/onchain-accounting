@@ -48,6 +48,9 @@ contract syrupUSDC_PriceOracle is IPriceFeedCustom {
     /// @notice Number of decimals the returned price is represented with.
     uint8 private immutable _decimals;
 
+    /// @notice Decimals of the syrupUSDC vault share token (used for convertToAssets scaling).
+    uint8 private immutable _vaultDecimals;
+
     //
     // Constructor
     //
@@ -62,6 +65,7 @@ contract syrupUSDC_PriceOracle is IPriceFeedCustom {
         USDC_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(usdcToUsdChainlinkAddress_);
         USDC_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(usdcToUsdChainlinkHeartbeat_);
         _decimals = USDC_TO_USD_CHAINLINK_ORACLE.decimals();
+        _vaultDecimals = IERC4626(syrupUsdc_).decimals();
     }
 
     //
@@ -88,8 +92,8 @@ contract syrupUSDC_PriceOracle is IPriceFeedCustom {
         if (block.timestamp - effectiveUpdatedAt >= USDC_TO_USD_CHAINLINK_HEARTBEAT) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
-        uint256 syrupUsdcToUsdcPrice = IERC4626(SYRUP_USDC).convertToAssets(10 ** _decimals);
-        price = syrupUsdcToUsdcPrice.mulDiv(usdcToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
+        uint256 syrupUsdcToUsdcPrice = IERC4626(SYRUP_USDC).convertToAssets(10 ** _vaultDecimals);
+        price = syrupUsdcToUsdcPrice.mulDiv(usdcToUsdPrice.toUint256(), 10 ** _vaultDecimals, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

@@ -47,6 +47,9 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
     /// @notice Number of decimals the returned price is represented with.
     uint8 private immutable _decimals;
 
+    /// @notice Decimals of the sUSDS vault share token (used for convertToAssets scaling).
+    uint8 private immutable _vaultDecimals;
+
     //
     // Constructor
     //
@@ -64,6 +67,7 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
         USDS_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(usdsToUsdChainlinkHeartbeat_);
 
         _decimals = USDS_TO_USD_CHAINLINK_ORACLE.decimals();
+        _vaultDecimals = IERC4626(sUsds_).decimals();
     }
 
     //
@@ -90,11 +94,8 @@ contract sUSDS_PriceOracle is IPriceFeedCustom {
         if (block.timestamp - effectiveUpdatedAt >= USDS_TO_USD_CHAINLINK_HEARTBEAT) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
-        uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** _decimals);
-        // sUSDS/USDS price is in 18 decimals, USDS/USD price is in 8 decimals
-        // First multiply the prices together (this will have 18 + 8 = 26 decimals)
-        // Then divide by 10^18 to get back to 8 decimals (matching USDS/USD)
-        price = sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
+        uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** _vaultDecimals);
+        price = sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** _vaultDecimals, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

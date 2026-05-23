@@ -48,6 +48,9 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
     /// @notice Number of decimals the returned price is represented with.
     uint8 private immutable _decimals;
 
+    /// @notice Decimals of the sUSDe vault share token (used for convertToAssets scaling).
+    uint8 private immutable _vaultDecimals;
+
     //
     // Constructor
     //
@@ -62,6 +65,7 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
         USDE_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(usdeToUsdChainlinkAddress_);
         USDE_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(usdeToUsdChainlinkHeartbeat_);
         _decimals = USDE_TO_USD_CHAINLINK_ORACLE.decimals();
+        _vaultDecimals = IERC4626(sUsde_).decimals();
     }
 
     //
@@ -88,8 +92,8 @@ contract sUSDe_PriceOracle is IPriceFeedCustom {
         if (block.timestamp - effectiveUpdatedAt >= USDE_TO_USD_CHAINLINK_HEARTBEAT) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
-        uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** _decimals);
-        price = sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** _decimals, Math.Rounding.Floor);
+        uint256 sUsdeToUsdePrice = IERC4626(S_USDE).convertToAssets(10 ** _vaultDecimals);
+        price = sUsdeToUsdePrice.mulDiv(usdeToUsdPrice.toUint256(), 10 ** _vaultDecimals, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

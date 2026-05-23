@@ -105,9 +105,9 @@ contract LDO_PriceOracle is IPriceFeedCustom {
                 || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
         ) { return (0, true, roundId, startedAt, updatedAt, answeredInRound); }
 
-        // LDO/ETH price is in 8 decimals, ETH/USD price is in 8 decimals
-        // First multiply the prices together (this will have 8 + 8 = 16 decimals)
-        // Then divide by 10^8 to get back to 8 decimals (matching ETH/USD)
+        // LDO/ETH price is in 18 decimals, ETH/USD price is in 8 decimals
+        // First multiply the prices together (this will have 18 + 8 = 26 decimals)
+        // Then divide by 10^18 to get back to 8 decimals (matching ETH/USD)
         price = ldoToEthPrice.toUint256()
             .mulDiv(ethToUsdPrice.toUint256(), 10 ** LDO_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor);
     }

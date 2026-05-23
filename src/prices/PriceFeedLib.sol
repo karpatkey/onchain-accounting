@@ -81,6 +81,7 @@ library PriceFeedLib {
                 rawPrice = answer;
                 if (cfg.priceType == IPrices.PriceType.API3) {
                     rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
+                    if (rawPrice == 0) continue;
                 }
                 updatedAt = lrdUpdatedAt;
             }
@@ -91,7 +92,7 @@ library PriceFeedLib {
 
             ++healthyFeedCount;
 
-            if (effectiveTime > bestTime) {
+            if (winnerIdx == type(uint256).max || effectiveTime > bestTime) {
                 bestTime = effectiveTime;
                 bestPrice = rawPrice;
                 bestDecimals = cfg.decimals;

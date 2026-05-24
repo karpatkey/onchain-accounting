@@ -123,6 +123,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         fork = createSelectForkWithCadence(getAlchemyUrl(_forkNetwork), _forkBlock);
 
+        // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
+        // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
+        address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
+        vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
 

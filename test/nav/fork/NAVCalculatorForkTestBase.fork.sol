@@ -91,6 +91,11 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     function setupNavCalculator() internal {
         vm.selectFork(fork);
 
+        // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
+        // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
+        address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
+        vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+
         vm.startPrank(admin);
         nav = NAVCalculator(
             Upgrades.deployUUPSProxy(

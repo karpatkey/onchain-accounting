@@ -79,9 +79,8 @@ contract DeployImplementations is BaseDeployScript {
 
     function _deployIfNeeded(ImplPlan memory plan) internal {
         if (plan.priceFeedLib.code.length == 0) {
-            (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(
-                abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode)
-            );
+            (bool ok,) =
+                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode));
             require(ok, "PriceFeedLib deploy failed");
             console2.log("[OK] PriceFeedLib deployed at:", plan.priceFeedLib);
         } else {

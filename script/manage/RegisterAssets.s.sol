@@ -104,9 +104,8 @@ contract RegisterAssets is BaseDeployScript {
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
                 // Asset is registered. Check whether it already has a price feed wired.
-                (bool okCount, bytes memory countData) = navProxy.staticcall(
-                    abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset)
-                );
+                (bool okCount, bytes memory countData) =
+                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
                 if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) {
                     console2.log("  SKIP (already wired):", symbol);
                     skipAlreadyWired++;
@@ -177,9 +176,8 @@ contract RegisterAssets is BaseDeployScript {
 
             // Skip assets that already have at least one feed wired — they are fully registered.
             if (preRegistered) {
-                (bool okCount, bytes memory countData) = navProxy.staticcall(
-                    abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset)
-                );
+                (bool okCount, bytes memory countData) =
+                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
                 if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) continue;
             }
 

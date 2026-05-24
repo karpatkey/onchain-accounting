@@ -50,6 +50,15 @@ interface IPrices {
     /// @param index The former index of the removed feed.
     event PriceFeedRemoved(address indexed underlyingAsset, address indexed priceFeed, uint256 index);
 
+    /// @notice Emitted when swap-and-pop relocates the last feed into a vacated slot.
+    /// @param underlyingAsset The address of the token.
+    /// @param priceFeed The address of the feed that was moved.
+    /// @param fromIndex The former index (len-1 before the pop).
+    /// @param toIndex The new index (the slot vacated by the removed feed).
+    event PriceFeedIndexChanged(
+        address indexed underlyingAsset, address indexed priceFeed, uint256 fromIndex, uint256 toIndex
+    );
+
     /// @notice Emitted when all price feeds are cleared for a token (asset unregistration).
     /// @param underlyingAsset The address of the token.
     event PriceFeedUnset(address indexed underlyingAsset);

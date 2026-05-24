@@ -53,6 +53,7 @@ contract RegisterAssets is BaseDeployScript {
         uint256 skipNoOracle;
         uint256 skipMissingAddress;
         uint256 skipNoContract;
+        uint256 skipAlreadyWired; // registered + feed already present — idempotent re-run skip
         uint256 toRegisterCount;
 
         // First pass: report each token and count how many need registration / price-feed set
@@ -102,6 +103,15 @@ contract RegisterAssets is BaseDeployScript {
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
+                // Asset is registered. Check whether it already has a price feed wired.
+                (bool okCount, bytes memory countData) = navProxy.staticcall(
+                    abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset)
+                );
+                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) {
+                    console2.log("  SKIP (already wired):", symbol);
+                    skipAlreadyWired++;
+                    continue;
+                }
                 // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need addPriceFeed
                 // to wire the configured oracle.
                 console2.log("  TO SET PRICE FEED (pre-registered):", symbol);
@@ -125,6 +135,7 @@ contract RegisterAssets is BaseDeployScript {
         console2.log("  Skipped (no oracle):", skipNoOracle);
         console2.log("  Skipped (missing/invalid address):", skipMissingAddress);
         console2.log("  Skipped (no contract at address):", skipNoContract);
+        console2.log("  Skipped (already wired):", skipAlreadyWired);
         console2.log("  To register:", toRegisterCount);
         console2.log("  Total actions:", totalActions);
 
@@ -163,6 +174,14 @@ contract RegisterAssets is BaseDeployScript {
                 navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
             bool preRegistered = ok && data.length > 0 && abi.decode(data, (bool));
             if (!preRegistered && _hasNoCode(asset)) continue;
+
+            // Skip assets that already have at least one feed wired — they are fully registered.
+            if (preRegistered) {
+                (bool okCount, bytes memory countData) = navProxy.staticcall(
+                    abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset)
+                );
+                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) continue;
+            }
 
             string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
             IPrices.PriceType priceType;

@@ -62,9 +62,7 @@ library PriceFeedLib {
                     uint80, int256, uint256, uint256 u, uint80
                 ) {
                     lrdUpdatedAt = u;
-                } catch {
-                    continue;
-                }
+                } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
                 updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
             } else {
                 int256 answer;
@@ -201,7 +199,9 @@ library PriceFeedLib {
         address removedFeed = configs[index].priceFeed;
 
         if (index != len - 1) {
+            address movedFeed = configs[len - 1].priceFeed;
             configs[index] = configs[len - 1];
+            emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, index);
         }
         configs.pop();
 
@@ -222,7 +222,9 @@ library PriceFeedLib {
                 // inline removeFeedAt to avoid a second delegatecall
                 if (len == 1) revert IPrices.CannotRemoveLastFeed(asset);
                 if (i != len - 1) {
+                    address movedFeed = configs[len - 1].priceFeed;
                     configs[i] = configs[len - 1];
+                    emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, i);
                 }
                 configs.pop();
                 emit IPrices.PriceFeedRemoved(asset, priceFeed, i);

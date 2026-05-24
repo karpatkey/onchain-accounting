@@ -75,6 +75,11 @@ abstract contract SuperTest is Test {
     }
 
     function setupNav() internal {
+        // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
+        // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
+        address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
+        vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+
         vm.warp(block.timestamp + 2 hours); // To pass the L2 sequencer default grace period set at deployment
         usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);
         daiOracle = new Mock_PriceOracleChainlink("DAI", 100_000_000, 8);
@@ -100,7 +105,7 @@ abstract contract SuperTest is Test {
         vm.startPrank(navCalculatorManager);
 
         // Native is pre-registered in initialize; set price feed only
-        nav.setPriceFeed(
+        nav.addPriceFeed(
             address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
         );
         // Note: The native address balance oracle is handled by ERC20DefaultOracle which is set up in initialize()

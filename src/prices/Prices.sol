@@ -2,25 +2,25 @@
 pragma solidity ^0.8;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {IPrices} from "./IPrices.sol";
-import {IPriceFeedCustom} from "./IPriceFeedCustom.sol";
+import {PriceFeedLib} from "./PriceFeedLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title Prices
-/// @notice This contract manages the price feeds for different tokens.
+/// @notice Manages multiple price feeds per asset, returning the freshest non-stale value on each read.
+/// @dev The read path applies a per-feed staleness gate and then picks the feed with the largest
+/// effectiveUpdatedAt (clamped to block.timestamp to avoid upstream-clock bias). stale=true
+/// is returned only when every registered feed fails the staleness gate.
 /// @author kpk
 abstract contract Prices is IPrices, Initializable {
     //
     // Libraries
     //
-    using ERC165Checker for address;
-    using SafeCast for uint256;
+    using PriceFeedLib for mapping(address => PriceFeedConfig[]);
 
     /// @notice Grace period for L2 sequencer downtime
     uint256 public chainlinkL2SequencerGracePeriod;
@@ -28,8 +28,12 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Uptime feed for L2 sequencer
     AggregatorV3Interface public chainlinkL2SequencerUptimeFeed;
 
-    /// @notice Price feed configurations by asset address
-    mapping(address asset => PriceFeedConfig config) public priceOracles;
+    /// @notice Price feed configurations per asset (multiple feeds supported for redundancy)
+    mapping(address asset => PriceFeedConfig[] feeds) internal _priceOracles;
+
+    /// @dev Reserved storage gap for future Prices expansions (50 slots).
+    // solhint-disable-next-line var-name-mixedcase
+    uint256[50] private __pricesGap;
 
     /// @notice Initializer for UUPS proxy
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the Chainlink feed for the L2 sequencer
@@ -44,111 +48,79 @@ abstract contract Prices is IPrices, Initializable {
 
     /// @inheritdoc IPrices
     function latestPrice(address token) external view returns (int256 price, uint8 decimals, bool stale) {
-        (price, decimals, stale) = _latestPrice(token);
-
+        (price, decimals, stale,,) = _selectFeed(token);
         stale = checkL2SequencerUptime() || stale;
     }
 
-    /// @notice Returns the latest price for a given token without checking the uptime of the sequencer.
-    /// @param token The address of the token.
-    /// @return price The latest price of the token (int256; Chainlink returned as-is, custom cast from uint256).
-    /// @return decimals The amount of decimal places the price is represented with
-    /// @return stale Whether the price is considered stale.
+    /// @inheritdoc IPrices
+    function getPriceFeeds(address asset) external view returns (PriceFeedConfig[] memory) {
+        return _priceOracles[asset];
+    }
+
+    /// @inheritdoc IPrices
+    function getPriceFeedCount(address asset) external view returns (uint256) {
+        return _priceOracles[asset].length;
+    }
+
+    /// @inheritdoc IPrices
+    function getPriceFeedAt(address asset, uint256 index) external view returns (PriceFeedConfig memory) {
+        if (index >= _priceOracles[asset].length) revert PriceFeedIndexOutOfBounds(asset, index);
+        return _priceOracles[asset][index];
+    }
+
+    /// @notice Returns the latest price for a given token without checking the L2 sequencer uptime.
     function _latestPrice(address token) internal view returns (int256 price, uint8 decimals, bool stale) {
-        PriceFeedConfig storage config = priceOracles[token];
+        (price, decimals, stale,,) = _selectFeed(token);
+    }
 
-        if (config.priceFeed == address(0)) {
-            revert PriceFeedNotSet(token);
-        }
-
-        decimals = config.decimals;
-
-        if (config.priceType == PriceType.Chainlink) {
-            AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
-            (, int256 chainlinkPrice,, uint256 updatedAt,) = chainlinkFeed.latestRoundData();
-
-            if (chainlinkPrice <= 0) {
-                return (0, decimals, true);
-            }
-
-            price = chainlinkPrice;
-            stale = block.timestamp - updatedAt > config.chainlinkHeartbeat;
-        } else {
-            uint256 customPrice;
-            (customPrice, stale) = IPriceFeedCustom(config.priceFeed).getLatestPrice();
-
-            if (customPrice == 0) return (0, decimals, true);
-
-            price = customPrice.toInt256();
-        }
+    /// @notice Selects the freshest non-stale feed for an asset.
+    /// @dev Delegates to PriceFeedLib.selectFeed via DELEGATECALL to keep NAVCalculator under EIP-170.
+    /// See PriceFeedLib.selectFeed for full semantics.
+    function _selectFeed(address token)
+        internal
+        view
+        returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
+    {
+        return _priceOracles.selectFeed(token);
     }
 
     /// @inheritdoc IPrices
     function checkL2SequencerUptime() public view returns (bool stale) {
-        stale = false;
-
-        if (address(chainlinkL2SequencerUptimeFeed) != address(0)) {
-            (, int256 answer, uint256 startedAt,,) = chainlinkL2SequencerUptimeFeed.latestRoundData();
-
-            if (answer != 0) {
-                stale = true;
-            } else if (startedAt == 0) {
-                // Arbitrum uptime feeds can return startedAt == 0 before initialization.
-                stale = true;
-            } else {
-                // Make sure the grace period has passed after the
-                // sequencer is back up.
-                uint256 timeSinceUp = block.timestamp - startedAt;
-
-                if (timeSinceUp <= chainlinkL2SequencerGracePeriod) stale = true;
-            }
-        }
+        return
+            PriceFeedLib.checkSequencerUptime(address(chainlinkL2SequencerUptimeFeed), chainlinkL2SequencerGracePeriod);
     }
 
     /// @inheritdoc IPrices
     function checkPriceOracleSupport(address token, address priceFeed, PriceType priceType) public view {
-        if (priceFeed == address(0) || token == address(0)) revert InvalidPriceOracle();
-        if (priceType == PriceType.Custom) {
-            if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
-        } else if (priceType == PriceType.Chainlink) {
-            // Reject contracts that explicitly identify as IPriceFeedCustom — Chainlink and Custom are mutually exclusive.
-            // ERC165Checker.supportsInterface() returns false (not revert) when the feed doesn't implement ERC165,
-            // so this is safe to call on real Chainlink oracles.
-            if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert InvalidPriceOracle();
-            AggregatorV3Interface(priceFeed).latestRoundData();
-        } else {
-            revert InvalidPriceOracleType();
-        }
+        PriceFeedLib.validateFeedSupport(token, priceFeed, priceType);
     }
 
-    /// @notice Sets the price feed for a given token.
-    /// @param token The address of the token.
-    /// @param priceFeed The address of the price feed.
-    /// @param chainlinkHeartbeat The heartbeat interval in seconds. Required non-zero for all feeds.
-    /// @param priceType The type of the price feed.
-    function _setPriceFeed(address token, address priceFeed, uint256 chainlinkHeartbeat, PriceType priceType) internal {
-        checkPriceOracleSupport(token, priceFeed, priceType);
-
-        if (chainlinkHeartbeat == 0) revert InvalidPriceOracle();
-
-        uint8 decimals;
-        if (priceType == PriceType.Chainlink) {
-            decimals = AggregatorV3Interface(priceFeed).decimals();
-        } else {
-            decimals = IPriceFeedCustom(priceFeed).decimals();
-        }
-
-        priceOracles[token] = PriceFeedConfig({
-            priceFeed: priceFeed, priceType: priceType, decimals: decimals, chainlinkHeartbeat: chainlinkHeartbeat
-        });
-
-        emit PriceFeedSet(token, priceFeed, chainlinkHeartbeat, priceType);
+    /// @notice Adds a price feed for an asset. The asset must be registered at the caller level.
+    /// @dev Delegates to PriceFeedLib.addFeed via DELEGATECALL to keep NAVCalculator under EIP-170.
+    function _addPriceFeed(address asset, address priceFeed, uint256 heartbeat, PriceType priceType) internal {
+        _priceOracles.addFeed(asset, priceFeed, heartbeat, priceType);
     }
 
-    /// @notice Unsets the price feed for a given token.
-    /// @param token The address of the token.
-    function _unsetPriceFeed(address token) internal {
-        delete priceOracles[token];
-        emit PriceFeedUnset(token);
+    /// @notice Removes the feed at `index` for an asset. Reverts if it is the last feed.
+    /// @dev Delegates to PriceFeedLib.removeFeedAt via DELEGATECALL.
+    function _removePriceFeedAt(address asset, uint256 index) internal {
+        _priceOracles.removeFeedAt(asset, index);
+    }
+
+    /// @notice Removes the feed with address `priceFeed` for an asset. Reverts if not found or last feed.
+    /// @dev Delegates to PriceFeedLib.removeFeed via DELEGATECALL.
+    function _removePriceFeed(address asset, address priceFeed) internal {
+        _priceOracles.removeFeed(asset, priceFeed);
+    }
+
+    /// @notice Removes all price feeds for an asset (called on full asset unregistration).
+    function _removeAllPriceFeeds(address asset) internal {
+        delete _priceOracles[asset];
+        emit PriceFeedUnset(asset);
+    }
+
+    /// @notice Returns the number of feeds registered for an asset.
+    function _priceFeedCount(address asset) internal view returns (uint256) {
+        return _priceOracles[asset].length;
     }
 }

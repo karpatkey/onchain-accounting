@@ -90,6 +90,9 @@ interface INAVCalculator is IBalances {
     /// @param timestamp Block timestamp of the reading.
     /// @param stalePriceAssets Assets whose prices were stale at query time.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
+    /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
+    ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
+    ///        interpreting value as being in the requested quote currency.
     // forge-lint: disable-next-line(pascal-case-struct)
     struct NAV {
         int256 value;
@@ -97,17 +100,23 @@ interface INAVCalculator is IBalances {
         uint64 timestamp;
         Asset[] stalePriceAssets;
         bool sequencerDown;
+        bool quoteAssetStale;
     }
 
-    /// @notice Detailed price feed data for a single asset.
-    /// @param priceFeed Address of the price feed contract.
-    /// @param priceType Chainlink or Custom.
-    /// @param price Current price (e.g. USD per unit).
-    /// @param decimals Decimals of the price.
-    /// @param chainlinkHeartbeat Heartbeat for staleness (Chainlink only).
-    /// @param updatedAt Last update timestamp (Chainlink: from latestRoundData; Custom: 0).
-    /// @param stale True if price is stale (heartbeat or custom logic).
+    /// @notice Price data for the freshest non-stale feed selected for an asset.
+    /// @dev When multiple feeds are registered, these fields describe the winning (freshest) feed.
+    /// When all feeds are stale, fields describe the first registered feed and stale == true.
+    /// @param priceFeed Address of the selected price feed contract.
+    /// @param priceType Feed type (Chainlink, Custom, Redstone, or API3).
+    /// @param price Current price (e.g. USD per unit); 0 when stale.
+    /// @param decimals Decimals of the selected feed's output.
+    /// @param chainlinkHeartbeat Staleness window of the selected feed in seconds.
+    /// @param updatedAt Last update timestamp from latestRoundData (AggregatorV3-shaped feeds only; 0 for Custom).
+    /// @param stale True if all feeds are stale or the L2 sequencer is down.
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
+    /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
+    ///        A value below the total registered feed count signals partial redundancy collapse and
+    ///        should trigger off-chain alerting.
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
@@ -117,6 +126,7 @@ interface INAVCalculator is IBalances {
         uint256 updatedAt;
         bool stale;
         bool sequencerDown;
+        uint256 healthyFeedCount;
     }
 
     //
@@ -162,12 +172,13 @@ interface INAVCalculator is IBalances {
     function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Sets or replaces the price feed for an already registered asset.
+    /// @notice Adds an additional price feed for an already registered asset.
+    /// @dev Reverts with PriceFeedAlreadyRegistered if the feed address is already registered for this asset.
     /// @param asset Registered asset address.
-    /// @param priceFeed New price feed address (cannot be zero).
-    /// @param priceType Chainlink or Custom.
-    /// @param chainlinkHeartbeat Heartbeat for Chainlink feeds (must be non-zero); unused for Custom feeds.
-    function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    /// @param priceFeed Price feed address (cannot be zero).
+    /// @param priceType Chainlink, Custom, Redstone, or API3.
+    /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero for all types).
+    function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
     /// @notice Registers a balance oracle in the global registry.
@@ -175,9 +186,15 @@ interface INAVCalculator is IBalances {
     /// @param oracle Oracle address (must implement IBalanceOracleAdapter).
     function addBalanceOracle(address oracle) external;
 
-    /// @notice Removes the price feed for an asset; asset remains registered.
-    /// @param underlyingAsset Registered asset address.
-    function unsetPriceFeed(address underlyingAsset) external;
+    /// @notice Removes the price feed at the given index. Reverts if it is the last feed (CannotRemoveLastFeed).
+    /// @param asset Registered asset address.
+    /// @param index Index into the asset's feed array.
+    function removePriceFeedAt(address asset, uint256 index) external;
+
+    /// @notice Removes the price feed with the given address. Reverts if not found or last feed.
+    /// @param asset Registered asset address.
+    /// @param priceFeed Feed address to remove.
+    function removePriceFeed(address asset, address priceFeed) external;
 
     /// @notice Removes a balance oracle from the global registry.
     /// @param oracle Oracle address to remove (cannot be the default ERC20 oracle).
@@ -196,6 +213,8 @@ interface INAVCalculator is IBalances {
     function unregisterAsset(address underlyingAsset) external;
 
     /// @notice Sets the Chainlink L2 sequencer uptime feed (use address(0) on L1).
+    /// @dev Requires DEFAULT_ADMIN_ROLE (same privilege level as upgrades). Disabling sequencer-uptime
+    ///      detection on an L2 is equivalent in impact to an upgrade, so MANAGER access is not sufficient.
     /// @param newChainlinkL2UptimeFeed New uptime feed address.
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
 

@@ -195,24 +195,27 @@ contract NAVCalculatorErrorTest is SuperTest {
     // Price Oracle Revert Handling
     // ============================================
 
-    /// @notice Test that price oracle reverts are handled properly
+    /// @notice Test that a reverting price oracle is skipped and marked stale (not propagated).
     function test_RevertWhen_priceOracleReverts() public {
-        // Create reverting price oracle
         Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle();
-
-        // Create new token
         Mock_ERC20 token = new Mock_ERC20("REVERT", 18);
 
         vm.startPrank(navCalculatorManager);
-        // Register with reverting price oracle
         nav.registerAsset(address(token), address(revertingPriceOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         token.mint(safe, 10 ** 18);
 
-        // Getting NAV should revert with proper error
-        vm.expectRevert();
-        nav.getAccountNav(safe, address(0));
+        // A reverting feed is caught by try/catch and treated as stale; call must not revert.
+        INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
+        bool tokenIsStale = false;
+        for (uint256 i; i < navResult.stalePriceAssets.length; i++) {
+            if (navResult.stalePriceAssets[i].asset == address(token)) {
+                tokenIsStale = true;
+                break;
+            }
+        }
+        assertTrue(tokenIsStale, "reverting feed should mark token stale");
     }
 
     /// @notice Test that malformed price oracle responses are handled
@@ -283,10 +286,17 @@ contract NAVCalculatorErrorTest is SuperTest {
         // Should get NAV from valid assets
         assertGe(navResult.value, 0, "Should work despite concurrent failures");
 
-        // But querying the failing asset should revert
+        // The failing asset is skipped (try/catch); call must not revert; token appears as stale.
         token.mint(safe, 10 ** 18);
-        vm.expectRevert();
-        nav.getAccountNav(safe, address(0));
+        INAVCalculator.NAV memory navResult2 = nav.getAccountNav(safe, address(0));
+        bool tokenIsStale = false;
+        for (uint256 i; i < navResult2.stalePriceAssets.length; i++) {
+            if (navResult2.stalePriceAssets[i].asset == address(token)) {
+                tokenIsStale = true;
+                break;
+            }
+        }
+        assertTrue(tokenIsStale, "reverting feed should mark token stale");
     }
 
     // ============================================

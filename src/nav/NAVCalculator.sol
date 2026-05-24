@@ -92,7 +92,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the chainlink feed for the sequencer uptime
     /// @param nativeTokenSymbol_ The native token symbol (e.g. "ETH", "xDAI") — fixed at init
     function initialize(address admin_, address chainlinkL2SequencerUptimeFeed_, string memory nativeTokenSymbol_)
-        public
+        external
         initializer
     {
         __AccessControl_init();
@@ -135,8 +135,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Register asset in NAV/Pricing registry; fetches decimals/symbol from ERC20 (or native); reverts if not ERC20 compatible
         _registerAsset(asset);
 
-        // Set price feed as part of registration
-        _setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
+        // Register first price feed as part of asset registration
+        _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
 
         // Add asset to default oracle's inclusion list so wallet balances are reported
         ERC20DefaultOracle(erc20DefaultOracle).addSupportedAsset(asset);
@@ -145,7 +145,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function setPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+    function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external
     {
         _requireManager();
@@ -155,7 +155,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(asset);
 
-        _setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
+        _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
     }
 
     /// @inheritdoc INAVCalculator
@@ -169,13 +169,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function unsetPriceFeed(address underlyingAsset) external {
+    function removePriceFeedAt(address asset, uint256 index) external {
         _requireManager();
+        _requireAssetExists(asset);
+        _removePriceFeedAt(asset, index);
+    }
 
-        _requireAssetExists(underlyingAsset);
-        _requirePriceFeedExists(underlyingAsset);
-
-        _unsetPriceFeed(underlyingAsset);
+    /// @inheritdoc INAVCalculator
+    function removePriceFeed(address asset, address priceFeed) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _removePriceFeed(asset, priceFeed);
     }
 
     /// @inheritdoc INAVCalculator
@@ -205,9 +209,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         _requireAssetExists(underlyingAsset);
 
-        // Unset price feed if it exists
-        if (priceOracles[underlyingAsset].priceFeed != address(0)) {
-            _unsetPriceFeed(underlyingAsset);
+        // Remove all price feeds if any exist
+        if (_priceFeedCount(underlyingAsset) > 0) {
+            _removeAllPriceFeeds(underlyingAsset);
         }
 
         // Remove from default oracle's inclusion list (idempotent if not present)
@@ -221,7 +225,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2SequencerUptimeFeed) external {
-        _requireManager();
+        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) revert NotAuthorized();
         address oldChainlinkL2SequencerUptimeFeed = address(chainlinkL2SequencerUptimeFeed);
         chainlinkL2SequencerUptimeFeed = AggregatorV3Interface(newChainlinkL2SequencerUptimeFeed);
         emit ChainlinkUptimeFeedUpdated(oldChainlinkL2SequencerUptimeFeed, newChainlinkL2SequencerUptimeFeed);
@@ -233,7 +237,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         if (address(chainlinkL2SequencerUptimeFeed) == address(0)) {
             revert UptimeFeedNotSet();
         }
-        if (newSequencerGracePeriod == 0) {
+        if (newSequencerGracePeriod < 1 hours) {
             revert InvalidArguments();
         }
         uint256 oldSequencerGracePeriod = chainlinkL2SequencerGracePeriod;
@@ -258,6 +262,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         nav.timestamp = uint64(block.timestamp);
         QuoteAssetInfo memory quoteInfo = _getQuoteAssetInfo(quoteAsset);
         nav.quoteAsset = quoteInfo.assetStruct;
+        nav.quoteAssetStale = quoteInfo.stale;
 
         uint256 length = getAssetCount();
 
@@ -459,6 +464,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         int256 price;
         uint8 priceDecimals;
         uint8 assetDecimals;
+        bool stale;
     }
 
     /// @notice Finds price feed for an asset in the cache array
@@ -520,7 +526,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             info.assetDecimals = NAV_DECIMALS;
         } else {
             _requirePriceFeedExists(quoteAsset);
-            (info.price, info.priceDecimals,) = _latestPrice(quoteAsset);
+            (info.price, info.priceDecimals, info.stale) = _latestPrice(quoteAsset);
             INAVCalculator.Asset memory reg = _getRegisteredAsset(quoteAsset);
             info.assetStruct = INAVCalculator.Asset({
                 asset: quoteAsset,
@@ -583,28 +589,35 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.PriceFeedData memory priceFeedData)
     {
         _requireAssetExists(underlyingAsset);
-
-        IPrices.PriceFeedConfig storage config = priceOracles[underlyingAsset];
         _requirePriceFeedExists(underlyingAsset);
 
-        (int256 price, uint8 decimals, bool stale) = _latestPrice(underlyingAsset);
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
+            _selectFeed(underlyingAsset);
+
+        // Report the selected (freshest non-stale) feed's config.
+        // When all feeds are stale winnerIdx == type(uint256).max; fall back to the first feed for config.
+        uint256 configIdx = winnerIdx == type(uint256).max ? 0 : winnerIdx;
+        IPrices.PriceFeedConfig storage config = _priceOracles[underlyingAsset][configIdx];
 
         priceFeedData.priceFeed = config.priceFeed;
         priceFeedData.priceType = config.priceType;
         priceFeedData.price = price;
         priceFeedData.decimals = decimals;
         priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
-        priceFeedData.stale = stale;
+        bool sequencerDown = _isSequencerDown();
+        priceFeedData.stale = stale || sequencerDown;
+        priceFeedData.healthyFeedCount = healthyFeedCount;
 
-        // Get Chainlink-specific data
-        if (config.priceType == IPrices.PriceType.Chainlink) {
-            AggregatorV3Interface chainlinkFeed = AggregatorV3Interface(config.priceFeed);
-            (,,, uint256 roundUpdatedAt,) = chainlinkFeed.latestRoundData();
-            priceFeedData.updatedAt = roundUpdatedAt;
+        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
+        if (config.priceType != IPrices.PriceType.Custom) {
+            try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
+                uint80, int256, uint256, uint256 roundUpdatedAt, uint80
+            ) {
+                priceFeedData.updatedAt = roundUpdatedAt;
+            } catch {} // updatedAt stays 0 if the feed reverts
         }
 
-        // Check L2 sequencer uptime (conditional on L2)
-        priceFeedData.sequencerDown = _isSequencerDown();
+        priceFeedData.sequencerDown = sequencerDown;
     }
 
     /// @inheritdoc INAVCalculator
@@ -797,10 +810,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
     }
 
-    /// @notice Validates that a price feed exists for an asset, reverts if not
+    /// @notice Validates that at least one price feed exists for an asset, reverts if not
     /// @param underlyingAsset The asset to validate
     function _requirePriceFeedExists(address underlyingAsset) internal view {
-        if (priceOracles[underlyingAsset].priceFeed == address(0)) {
+        if (_priceFeedCount(underlyingAsset) == 0) {
             revert PriceFeedNotSet(underlyingAsset);
         }
     }

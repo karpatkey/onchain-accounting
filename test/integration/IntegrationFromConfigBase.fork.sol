@@ -123,6 +123,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         fork = createSelectForkWithCadence(getAlchemyUrl(_forkNetwork), _forkBlock);
 
+        // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
+        // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
+        address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
+        vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
 
@@ -895,12 +900,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
-        // pre-registered asset) use setPriceFeed instead of registerAsset.
+        // pre-registered asset) add the first price feed via addPriceFeed.
         if (nav.isAssetRegistered(asset)) {
-            try nav.setPriceFeed(asset, oracle, pt, heartbeat) {
-                console2.log("[asset/setFeed]", symbol, asset);
+            try nav.addPriceFeed(asset, oracle, pt, heartbeat) {
+                console2.log("[asset/addFeed]", symbol, asset);
             } catch (bytes memory err) {
-                console2.log("[asset/setFeed]", symbol, "FAILED");
+                console2.log("[asset/addFeed]", symbol, "FAILED");
                 console2.logBytes(err);
             }
             return;

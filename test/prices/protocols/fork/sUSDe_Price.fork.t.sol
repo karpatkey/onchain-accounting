@@ -31,7 +31,7 @@ contract sUSDe_PriceOracleForkTest is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + HEARTBEAT + 1);
         (uint256 price, bool stale) = sUsdePriceOracle.getLatestPrice();
-        assertGt(price, 0, "Price should still be returned when stale");
+        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked as stale");
     }
 

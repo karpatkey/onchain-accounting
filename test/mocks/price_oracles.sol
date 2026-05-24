@@ -91,6 +91,10 @@ contract Mock_PriceOracleChainlink is AggregatorV3Interface {
         // forge-lint: disable-next-line(unsafe-typecast)
         return (0, int256(price), 0, _updatedAt, 0);
     }
+
+    function setUpdatedAt(uint256 updatedAt_) external {
+        _updatedAt = updatedAt_;
+    }
 }
 
 contract Mock_ChainlinkL2SequencerUptimeFeed is Mock_PriceOracleChainlink {

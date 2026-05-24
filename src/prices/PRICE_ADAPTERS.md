@@ -6,39 +6,86 @@ This is the price-side counterpart to [`src/balances/BALANCE_ADAPTERS.md`](../ba
 
 ## 1. Overview
 
-The price system gives `NAVCalculator` a single price for any asset, in some "USD-like" unit. There are two kinds of feeds:
+The price system gives `NAVCalculator` a price for any asset, in some "USD-like" unit. Each asset can have **multiple registered feeds** for redundancy; on every read, `Prices` picks the **freshest non-stale feed** (freshest-wins selector). Stale is only returned when every feed has failed.
 
-- **Chainlink**: `priceType = Chainlink`. Direct read of `AggregatorV3Interface.latestRoundData()`. Staleness = `block.timestamp - updatedAt > chainlinkHeartbeat`.
-- **Custom**: `priceType = Custom`. A standalone contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI` → `(DAI/USD) × (sDAI/DAI)`; `wstETH` → `(stETH-per-wstETH) × (stETH/USD)`). The contract is responsible for its own staleness logic (and typically piggy-backs on its underlying Chainlink feeds for it).
+Four `PriceType` variants are supported:
 
-Both kinds register through the same path on `NAVCalculator`. Both are subject to the **L2 sequencer uptime** check when a sequencer feed is set on `Prices`.
+| `PriceType` | Read path | Notes |
+|---|---|---|
+| `Chainlink` | `AggregatorV3Interface.latestRoundData()` | On-chain push feed. |
+| `Custom` | `IPriceFeedCustom.getLatestPrice()` for price + stale; `latestRoundData()` for freshness timestamp | Custom adapters encode per-feed heartbeat logic internally. |
+| `Redstone` | `AggregatorV3Interface.latestRoundData()` | Redstone Classic Push; same read path as Chainlink. |
+| `API3` | `AggregatorV3Interface.latestRoundData()` | `Api3ReaderProxyV1` implements `AggregatorV2V3Interface`; only `latestRoundData` is used. |
 
-So: **`Prices` is the registry; per-asset custom contracts are the building blocks.**
+All are subject to the **L2 sequencer uptime** check when a sequencer feed is set on `Prices`.
+
+**`Prices` is the registry; per-asset custom contracts are the building blocks.**
 
 ---
 
 ## 2. Price flow: from asset to price
 
+On every `latestPrice(asset)` call, `Prices._selectFeed` iterates all registered feeds for the asset and selects the **freshest non-stale survivor**:
+
+1. **Lookup** — `_priceOracles[asset]` is a `PriceFeedConfig[]` array. Reverts with `PriceFeedNotSet` if empty.
+2. **Per-feed read** — non-Custom types call `AggregatorV3Interface.latestRoundData()`. Custom feeds call `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` (skip if stale or price ≤ 0), then `latestRoundData()` for `updatedAt`. All calls are wrapped in try/catch; a reverting feed is skipped rather than propagating.
+3. **Clock-skew normalisation** — `effectiveTime = min(updatedAt, block.timestamp)`. Any feed reporting a future timestamp is clamped to prevent it from systematically winning the freshness race.
+4. **Staleness gate** — skip feed if `block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat`.
+5. **Freshest-wins** — among survivors, select the one with the largest `effectiveTime`. Ties go to the feed at the lowest array index.
+6. **All-stale fallback** — if no feed survives, return `(0, firstFeed.decimals, true)`.
+7. **L2 sequencer** — top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down or within the grace period.
+8. **Return** — `(int256 price, uint8 decimals, bool stale)`.
+
+Special case for Custom `updatedAt == 0`: treated as `block.timestamp - 1` (no trackable oracle — feed survives the staleness gate but yields to any feed with a real timestamp). See ADR 0009 for rationale.
+
+### 2.1 `latestPrice(asset)` — top-level flow
+
 ```mermaid
-flowchart LR
-    A[asset address] --> P[Prices._latestPrice]
-    P --> C{priceType}
-    C -->|Chainlink| CL[AggregatorV3.latestRoundData]
-    C -->|Custom| IF[IPriceFeedCustom.getLatestPrice]
-    CL --> SCL[block.timestamp − updatedAt > heartbeat]
-    IF --> SCU[propagate stale flag from adapter]
-    SCL --> SQ[L2 sequencer uptime + grace]
-    SCU --> SQ
-    SQ --> R[(price, decimals, stale)]
+flowchart TD
+    A([latestPrice<br/>asset]) --> B{_priceOracles<br/>array empty?}
+    B -- yes --> ERR1([revert<br/>PriceFeedNotSet])
+    B -- no --> C[_selectFeed]
+    C --> D{L2 sequencer<br/>uptime check}
+    D -- sequencer down<br/>or in grace period --> SEQ[stale = true]
+    SEQ --> RET
+    D -- ok --> RET([return price, decimals, stale])
 ```
 
-Steps in code (`src/prices/Prices.sol`):
+### 2.2 `_selectFeed` — per-feed iteration and freshest-wins selection
 
-1. **Lookup** — `priceOracles[asset]` returns `PriceFeedConfig { priceFeed, decimals, chainlinkHeartbeat, priceType }`. Reverts if unset.
-2. **Fetch** — Chainlink branch reads `latestRoundData()` for both price and `updatedAt`. Custom branch calls `getLatestPrice()` for both price and the stale flag.
-3. **Freshness** — Chainlink: `stale = block.timestamp - updatedAt > chainlinkHeartbeat`. Custom: `stale` is the bool returned directly by `getLatestPrice()` — each adapter encodes its own per-feed heartbeat logic (see §5.1). A non-positive or zero price short-circuits to `(0, stale=true)` in both branches.
-4. **L2 sequencer** — Top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down, within `chainlinkL2SequencerGracePeriod` (default 1 hour) of recovery, or the uptime feed reports `startedAt == 0` (Chainlink documents this as an Arbitrum pre-initialization edge case). On L1, the sequencer feed is the zero address and this check is a no-op.
-5. **Return** — `(int256 price, uint8 decimals, bool stale)`. Sign is positive in practice (Chainlink prices are positive; custom feeds cast from `uint256`).
+```mermaid
+flowchart TD
+    START([_selectFeed]) --> INIT[winnerIdx = none<br/>winnerTime = 0]
+    INIT --> LOOP[for each feed i<br/>in _priceOracles]
+
+    LOOP --> TRY{try read feed i}
+    TRY -- revert --> SKIP[skip feed i]
+    SKIP --> NEXT
+
+    TRY -- ok --> CUSTOM{priceType<br/>== Custom?}
+
+    CUSTOM -- yes --> CG[getLatestPrice<br/>→ price, internalStale]
+    CG --> CK1{internalStale<br/>or price ≤ 0?}
+    CK1 -- yes --> SKIP
+    CK1 -- no --> CLR[latestRoundData<br/>→ updatedAt]
+    CLR --> CLAMP
+
+    CUSTOM -- no --> AV3[latestRoundData<br/>→ price, updatedAt]
+    AV3 --> CLAMP
+
+    CLAMP["effectiveTime =<br/>min(updatedAt, block.timestamp)"]
+    CLAMP --> STALE_GATE{"block.timestamp −<br/>effectiveTime >= heartbeat?"}
+    STALE_GATE -- yes --> SKIP
+    STALE_GATE -- no --> FRESH{effectiveTime<br/>> winnerTime?}
+    FRESH -- yes --> UPDATE[winnerIdx = i<br/>winnerTime = effectiveTime]
+    UPDATE --> NEXT
+    FRESH -- no --> NEXT[next feed]
+    NEXT --> LOOP
+
+    LOOP -- done --> WINNER{any winner?}
+    WINNER -- no --> ALLSTALE([return price=0<br/>firstFeed.decimals<br/>stale=true])
+    WINNER -- yes --> RETURN([return winner price<br/>winner decimals<br/>stale=false])
+```
 
 ---
 
@@ -50,14 +97,14 @@ Defined in `IPrices`.
 
 | Field | Type | Description |
 |---|---|---|
-| `priceFeed` | `address` | Chainlink aggregator or custom contract (`IPriceFeedCustom`). |
+| `priceFeed` | `address` | Chainlink aggregator, API3/Redstone feed address, or custom contract (`IPriceFeedCustom`). |
 | `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself. |
-| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feeds. For **Chainlink** feeds `Prices.sol` checks `block.timestamp − latestRoundData().updatedAt > heartbeat`. For **Custom** feeds it is stored for reference and external callers but is not used by `Prices.sol` — staleness is determined by `getLatestPrice().stale` (see §5.1). |
-| `priceType` | `PriceType` | Enum `{ Chainlink, Custom }`. |
+| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt >= heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
+| `priceType` | `PriceType` | Enum `{ Chainlink, Redstone, API3, Custom }`. |
 
 ### 3.2 Custom feed return shape
 
-`IPriceFeedCustom.getLatestPrice()` returns `(uint256 price, bool stale)`. **`Prices.sol` propagates `stale` directly** — it is the sole staleness signal for Custom feeds. The convention of returning `(0, true)` on any failure still applies: a zero price also short-circuits to stale in `Prices.sol`, so it is a reliable fallback signal even if the caller ignores the bool.
+`IPriceFeedCustom.getLatestPrice()` returns `(uint256 price, bool stale)`. `Prices.sol` uses the `stale` bool as the primary gate: if `internalStale = true` or `price == 0`, the feed is skipped entirely. Among surviving custom feeds, `latestRoundData().updatedAt` is also read for the heartbeat gate and freshness ranking in the freshest-wins selection (see §2). The convention of returning `(0, true)` on any failure still applies.
 
 ---
 
@@ -65,16 +112,25 @@ Defined in `IPrices`.
 
 `Prices` is an abstract contract used by NAVCalculator. It maintains:
 
-- **Per-asset feed config:** `mapping(address => PriceFeedConfig) public priceOracles`.
-- **L2 sequencer state:** `chainlinkL2SequencerUptimeFeed` and `chainlinkL2SequencerGracePeriod` (default 1 hour). Set once via `__Prices_init` at NAV initialization.
+- **Per-asset feed configs:** `mapping(address => PriceFeedConfig[]) internal _priceOracles`. Each asset has a dynamic array of feeds.
+- **L2 sequencer state:** `chainlinkL2SequencerUptimeFeed` and `chainlinkL2SequencerGracePeriod` (default 1 hour, minimum 1 hour enforced on-chain). Set once via `__Prices_init` at NAV initialization; grace period adjustable by MANAGER via `setChainlinkL2SequencerGracePeriod` (floor: `>= 1 hours`).
 
 Internal API (used by NAVCalculator):
 
-- `_setPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType)` — checks support, reads decimals from the feed, stores `PriceFeedConfig`. Heartbeat must be non-zero for all feed types.
-- `_unsetPriceFeed(asset)` — removes entry; subsequent `latestPrice` reverts with `PriceFeedNotSet`.
-- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; ERC165 check for custom, sanity round-data fetch for Chainlink.
+- `_addPriceFeed(asset, priceFeed, heartbeat, priceType)` — checks support via `checkPriceOracleSupport`, reads decimals from the feed, appends `PriceFeedConfig` to the array. Rejects duplicates (`PriceFeedAlreadyRegistered`). Heartbeat must be non-zero.
+- `_removePriceFeedAt(asset, index)` — swap-with-last + pop. Reverts with `CannotRemoveLastFeed` when only one feed remains.
+- `_removePriceFeed(asset, priceFeed)` — locates feed by address, calls `_removePriceFeedAt`. Reverts with `PriceFeedNotFound` if not registered.
+- `_removeAllPriceFeeds(asset)` — `delete _priceOracles[asset]`, used by `unregisterAsset` only.
+- `_priceFeedCount(asset)` — returns array length.
+- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; ERC165 check for Custom; for Chainlink/Redstone/API3: rejects `IPriceFeedCustom`-shaped feeds and calls `latestRoundData()` as a sanity check.
 
-`NAVCalculator` exposes `registerAsset(asset, oracle, priceType, chainlinkHeartbeat)` (MANAGER) which combines `_setPriceFeed` with adding the asset to the Balances asset registry.
+External view API:
+
+- `getPriceFeedCount(asset)` — number of registered feeds.
+- `getPriceFeedAt(asset, index)` — `PriceFeedConfig` at that index (reverts with `PriceFeedIndexOutOfBounds`).
+- `getPriceFeeds(asset)` — full array.
+
+`NAVCalculator` exposes `registerAsset(asset, oracle, priceType, heartbeat)` (MANAGER) which combines `_addPriceFeed` with adding the asset to the Balances asset registry. Additional feeds are registered via `addPriceFeed(asset, oracle, priceType, heartbeat)`.
 
 ---
 
@@ -84,8 +140,8 @@ Every custom feed must implement this interface (and ERC165).
 
 | Method | Purpose |
 |---|---|
-| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. The `stale` flag is ignored by `Prices.sol`; a zero price is the reliable signal. |
-| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` does not read this.** It exists purely for external observability: monitoring tools, dashboards, or other protocols that want to inspect the freshness of the underlying Chainlink data. See §5.1 for what to return. |
+| `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. |
+| `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` calls this** to obtain `updatedAt` for the heartbeat gate and freshness ranking among surviving Custom feeds. See §5.1 for what to return. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |
 | `supportsInterface(bytes4)` | Must return `true` for `type(IPriceFeedCustom).interfaceId` and `IERC165`. |
@@ -99,11 +155,13 @@ Conventions:
 
 ### 5.1 Staleness design for custom feeds
 
-#### Why `getLatestPrice().stale` — not `latestRoundData()` — is the staleness signal
+#### How `Prices.sol` uses Custom feeds in the multi-feed model
 
-`Prices.sol` propagates the `bool stale` returned by `getLatestPrice()` directly. `latestRoundData()` is not called by `Prices.sol` at all for custom feeds.
+`Prices.sol` uses the `bool stale` returned by `getLatestPrice()` as the **primary gate** — if `internalStale = true` or `price == 0`, the feed is skipped. For surviving custom feeds, `latestRoundData()` is then called to obtain `updatedAt`; the same heartbeat gate and freshest-wins logic that applies to Chainlink/Redstone/API3 feeds is applied (`effectiveTime = min(updatedAt, block.timestamp); skip if block.timestamp - effectiveTime >= heartbeat`). A custom feed returning `updatedAt == 0` is treated as `block.timestamp - 1` so it participates but yields to any feed with a real push timestamp (ADR 0009 §rationale).
 
-The key reason: **multi-feed adapters have multiple Chainlink feeds, each with its own heartbeat.** The correct staleness condition is:
+#### Why `getLatestPrice().stale` is the primary staleness signal
+
+**Multi-feed adapters have multiple Chainlink feeds, each with its own heartbeat.** The correct staleness condition is:
 
 ```
 stale = block.timestamp − u1 > H1  OR  block.timestamp − u2 > H2
@@ -134,32 +192,30 @@ Every Chainlink heartbeat used in an adapter's staleness check is pinned as an i
 | Gnosis | 100 | https://reference-data-directory.vercel.app/feeds-xdai-mainnet.json |
 | BNB Chain | 56 | https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json |
 
-#### What `latestRoundData()` must return (for external callers)
+#### What `latestRoundData()` must return
 
-`latestRoundData()` is kept on all custom feeds so external tools can inspect freshness via the standard Chainlink interface. `Prices.sol` never reads it.
+`latestRoundData()` is called by `Prices.sol` for `updatedAt` (heartbeat gate + freshness ranking) and is also available to external monitoring tools via the standard Chainlink interface.
 
 | Feed type | `updatedAt` | `answer` |
 |---|---|---|
 | Single Chainlink feed + on-chain rate | Pass through the Chainlink feed's `updatedAt` directly. The on-chain rate (exchange ratio, DSR chi, etc.) has no heartbeat — it updates with protocol interactions and is never the staleness bottleneck. | Computed price from `getLatestPrice()`. |
 | Multiple Chainlink feeds | `min(updatedAt_1, updatedAt_2, …)` — the oldest timestamp across all constituent feeds. This reflects worst-case freshness. | Computed price from `getLatestPrice()`. |
 | Indirect oracle (e.g. ETHPlus via Reserve Protocol) | `min(IAsset.lastSave())` across prime basket components — the Reserve Protocol equivalent of `updatedAt`. | Computed price from `getLatestPrice()`. |
-| No trackable oracle dependency | `0` (return `(0, 0, 0, 0, 0)`). | — |
+| No trackable oracle dependency | `0` (return `(0, 0, 0, 0, 0)`). `Prices.sol` treats this as `block.timestamp - 1` so the feed participates but yields to any feed with a real timestamp. | — |
 
 **Threshold for external callers of multi-feed adapters**: an external caller checking `block.timestamp − updatedAt > H` should use `H = min(H1, H2, …)` — the smallest heartbeat among constituent feeds. Using a larger value can silently miss the faster feed going stale.
 
-**`answer` field**: always the current computed price, even when stale. This follows Chainlink convention — callers use `updatedAt` to decide freshness, not a zero `answer`. The only time `answer = 0` is when the underlying prices are invalid (non-positive), which signals "do not use this price" independently of staleness.
+**`answer` field**: returns the computed price when healthy, `0` when stale or when underlying prices are invalid (non-positive). Do not infer freshness from a non-zero `answer` alone — always check `updatedAt` or call `getLatestPrice()` directly.
 
 #### The registered `chainlinkHeartbeat` for custom feeds
 
-`_setPriceFeed()` requires a non-zero heartbeat for all feed types. For custom feeds this value is not used by `Prices.sol` but it:
-- documents the expected update cadence of the adapter,
-- can be used by external callers as the threshold for `latestRoundData().updatedAt` checks (use `min(individual heartbeats)` for multi-feed adapters).
+`_addPriceFeed()` requires a non-zero heartbeat for all feed types. For custom feeds this value is used by `Prices.sol` as the heartbeat gate on `latestRoundData().updatedAt` (after the primary `getLatestPrice().stale` gate). Set it to the slowest constituent Chainlink heartbeat for the adapter — i.e. `max(H1, H2, …)` — so the external heartbeat gate does not fire before the internal staleness check would.
 
 For feeds backed by Reserve Protocol (ETHPlus): set this to the slowest Chainlink heartbeat among the basket's underlying feeds — 86 400 s for the current ETH+ basket. Re-evaluate if basket composition changes.
 
 ---
 
-## 6. How NAVCalculator uses prices
+## 7. How NAVCalculator uses prices
 
 For each `PositionBalance` returned by an oracle, NAVCalculator:
 
@@ -172,7 +228,7 @@ So custom feeds are **building blocks** for value computation. Their staleness f
 
 ---
 
-## 7. Implemented custom feeds
+## 8. Implemented custom feeds
 
 All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific variants get a `_L2_` infix.
 
@@ -211,11 +267,11 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 ---
 
-## 8. How to create a new custom price feed
+## 9. How to create a new custom price feed
 
 Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md). Quick checklist:
 
-### 8.1 Contract layout
+### 9.1 Contract layout
 
 1. Create `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
 2. Implement `IPriceFeedCustom` and `IERC165`.
@@ -223,31 +279,31 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 4. Use `OracleArgumentChecks` (`src/utils/OracleArgumentChecks.sol`) for constructor validation: `assertERC20Address`, `assertChainlinkOracle`, `assertNotZeroNumber`, `assertNonZeroAddress`.
 5. In `getLatestPrice`:
    - Read Chainlink leg first; bail out with `(0, true)` if `price <= 0`.
-   - Apply heartbeat: if `block.timestamp - updatedAt > heartbeat`, set `stale = true`.
+   - Apply heartbeat: if `block.timestamp - updatedAt >= heartbeat`, set `stale = true`.
    - Read on-chain rate. If non-positive or out-of-range, return `(0, true)`.
    - Combine and rescale to the target decimals (use `RATIO_DECIMALS` constants when the rate has its own scale).
-6. Implement `latestRoundData()` — see §5.1 for what to return. `Prices.sol` does not call this; it exists for external observability. For a single Chainlink dependency: pass through that feed's round data, substituting `answer` with the computed price. For multiple Chainlink feeds: return the tuple with the lowest `updatedAt`, again substituting `answer`. Don't skip it; it's required by `IPriceFeedCustom`.
+6. Implement `latestRoundData()` — see §5.1 for what to return. For a single Chainlink dependency: pass through that feed's round data, substituting `answer` with the computed price. For multiple Chainlink feeds: return the tuple with the lowest `updatedAt`, again substituting `answer`.
 7. `decimals()` returns the pinned decimals (typically the Chainlink feed's decimals).
 8. `underlyingAssetSupported()` returns the token address.
 
-### 8.2 Tests
+### 9.2 Tests
 
 - Unit test under `test/prices/protocols/<Asset>_Price.t.sol` with mocked Chainlink + rate provider:
   - Happy path: known inputs → expected output.
   - Negative Chainlink price → `(0, true)`.
-  - Stale heartbeat → `stale = true` but `price` still reflects the last value.
+  - Stale heartbeat → `(0, true)` — return zero price when stale (security invariant I-1).
   - Zero or negative rate → `(0, true)`.
 - Fork test under `test/prices/protocols/fork/<Asset>_Price.fork.t.sol` against the real feed at a pinned block — assert the price is within a reasonable range and not stale.
 
-### 8.3 Registration
+### 9.3 Registration
 
-Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, 0)` (MANAGER role). The chain config under `script/config/chains/<chainId>.json` should hold the asset entry; `script/deploy/03_RegisterAssets.s.sol` reads it and calls `registerAsset`.
+Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (MANAGER role). The chain config under `script/config/chains/<chainId>.json` should hold the asset entry; `script/deploy/03_RegisterAssets.s.sol` reads it and calls `registerAsset`.
 
 ---
 
-## 9. Configuration and use
+## 10. Configuration and use
 
-### 9.1 Asset registration
+### 10.1 Asset registration
 
 Per-chain config lives at `script/config/chains/<chainId>.json` under the `assets` and `priceFeeds` blocks (see [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) for the schema). For a custom feed, the entry typically looks like:
 
@@ -257,27 +313,179 @@ Per-chain config lives at `script/config/chains/<chainId>.json` under the `asset
   "symbol": "sDAI",
   "priceFeed": "0x...sDAI_PriceOracle",
   "priceType": "Custom",
-  "chainlinkHeartbeat": 0
+  "chainlinkHeartbeat": 86400
 }
 ```
 
 `03_RegisterAssets.s.sol` reads these and calls `NAVCalculator.registerAsset`.
 
-### 9.2 Adding the same asset on multiple chains
+### 10.2 Adding the same asset on multiple chains
 
 Each chain has its own `priceFeed` deployment. L2 variants use `*_L2_Price` so the L1 rate provider isn't called from the wrong chain. Pick the right variant based on where the rate canonically lives.
 
-### 9.3 Updating a feed
+### 10.3 Updating a feed / adding redundancy
 
-Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy and call `NAVCalculator.setPriceFeed(asset, newFeed, ...)`. Old feed stays on-chain; nothing references it after the switch.
+Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
+
+To add a second (or third) feed for redundancy without removing the existing one, just call `addPriceFeed`. Both feeds participate in the freshest-wins selection from that point on.
 
 ---
 
-## 10. Quick reference
+## 11. Discovering and verifying feed addresses
+
+All known feed addresses are catalogued in [`script/config/price-feeds-catalogue.json`](../../script/config/price-feeds-catalogue.json), organised by chain → token → provider. The sections below describe how to look up and verify addresses from each provider.
+
+### 11.1 Chainlink
+
+Chainlink maintains a public reference directory for all deployed AggregatorV3 feeds.
+
+**Reference data directory (JSON API):**
+
+```
+# Ethereum Mainnet
+https://reference-data-directory.vercel.app/feeds-mainnet.json
+
+# Arbitrum
+https://reference-data-directory.vercel.app/feeds-arbitrum-mainnet.json
+
+# Optimism
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-optimism-1.json
+
+# Base
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-base-1.json
+
+# Polygon
+https://reference-data-directory.vercel.app/feeds-matic-mainnet.json
+
+# BNB Chain
+https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json
+
+# Gnosis
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-gnosis-1.json
+```
+
+Each JSON entry contains `contractAddress`, `name` (e.g. `"ETH / USD"`), `decimals`, and `heartbeat`. The same addresses are browseable at [docs.chain.link/data-feeds/price-feeds/addresses](https://docs.chain.link/data-feeds/price-feeds/addresses).
+
+**Decimals:** 8 for all USD-denominated feeds (standard). A handful of Chainlink feeds return 18 decimals (e.g. the ETH+/USD feed at `0x66Ab9003...`) — these cannot be registered directly as `PriceType.Chainlink` alongside 8-dec feeds because `L-4` enforces decimal consistency across all feeds for an asset. Note: `PriceType.API3` feeds also return 18 decimals from the proxy but are normalised to 8-dec automatically by `PriceFeedLib` — see §11.3.
+
+### 11.2 Redstone Classic Push
+
+Redstone Classic Push feeds implement `AggregatorV3Interface` and are updated by Redstone's relayer on-chain (same model as Chainlink). The full list is browseable at [app.redstone.finance/push-feeds](https://app.redstone.finance/push-feeds) (requires JavaScript rendering).
+
+**Deployment manifests:** The canonical source is the private `redstone-monorepo-priv` repository. If you need feeds not listed in the catalogue, contact Redstone via [Discord](https://discord.gg/redstone) or check the app.
+
+**Verified addresses in the catalogue:**
+
+| Feed | Chain | Address | Contract name |
+|---|---|---|---|
+| weETH/USD | 1 | `0x0c2c7ded01ccdfab16f04aff82af766b23d6be0a` | `MergedAdapterWithRoundsWeethV1` |
+| ETHx/USD | 1 | `0x1ba0c3c2db83b34961dfa683038e11852f57920a` | `PriceFeedStaderEthxWithoutRoundsV3` |
+
+**Decimals:** 8. **Heartbeat:** varies per feed.
+
+**Adding new Redstone addresses:** Browse the app or ask Redstone directly, then add the entry under the relevant chain → token in `price-feeds-catalogue.json` with `"Redstone": { "address": "0x...", "pair": "...", "decimals": 8, "heartbeat": <seconds> }`.
+
+### 11.3 API3 dAPI communal proxies
+
+API3 dAPIs use a deterministic CREATE2 factory. The communal `Api3ReaderProxyV1` proxy address depends only on the dAPI name (`bytes32`) — it is the **same address on every chain** where the factory is deployed.
+
+**Factory (same on all chains):** `0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381`
+
+**Compute an address:**
+
+```js
+// npm install @api3/contracts
+const { computeCommunalApi3ReaderProxyV1Address } = require('@api3/contracts');
+
+// Example — same result for chainId 1, 42161, 8453, 10, 56, 100, 137
+const proxy = computeCommunalApi3ReaderProxyV1Address(1, 'ETH/USD');
+// → 0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473
+```
+
+**Or call the factory on-chain:**
+
+```solidity
+IApi3ReaderProxyV1Factory(0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381)
+    .computeApi3ReaderProxyV1Address(
+        bytes32("ETH/USD"),  // right-padded dAPI name
+        1,                   // dappId = 1 for communal proxies
+        ""                   // empty metadata
+    );
+```
+
+**Critical caveat:** A computed address is where the proxy *would* be deployed. It must actually be deployed before `latestRoundData()` responds. Verify via the [API3 Market](https://market.api3.org) (select chain + dAPI → "Skip OEV Rewards") or call `latestRoundData()` on-chain and check for revert.
+
+**Decimals:** All API3 communal proxies return **18 decimals** — this is a protocol-level invariant of the communal proxy factory, not a per-feed choice. `PriceFeedLib` handles the scaling automatically: at registration time it asserts `decimals() == 18` (reverts `InvalidPriceOracle` otherwise) and stores `decimals = 8` in `PriceFeedConfig`; at read time it divides the raw 18-dec answer by `1e10` before returning it. Callers always receive 8-decimal USD prices, consistent with Chainlink and Redstone feeds.
+
+**Default heartbeat:** 86 400 s (24 h) for managed feeds with 1 % deviation threshold.
+
+**Registering an API3 feed:**
+
+```solidity
+// priceType = PriceType.API3; heartbeat = 86400 (confirm on the Market page first)
+nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
+// The proxy must return 18 decimals; non-18-dec proxies revert with InvalidPriceOracle.
+```
+
+**Browse available dAPIs:** [market.api3.org](https://market.api3.org)
+
+### 11.4 Verifying feed liveness
+
+A computed API3 address (or any new feed address) must be verified as live before being added to the catalogue or registered on-chain. Use `cast call` from Foundry:
+
+```bash
+# Returns 5 values → feed is deployed and responding.
+# Reverts with no output → proxy not deployed on this chain.
+cast call --rpc-url $RPC_URL $PROXY_ADDRESS \
+  "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+```
+
+**Example — ETH/USD on Ethereum mainnet:**
+
+```bash
+cast call \
+  --rpc-url https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_KEY \
+  0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473 \
+  "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+# 18446744073709557506 325032000000000000000 1747917359 1747917359 18446744073709557506
+# ↑ Five values returned — proxy is live.
+```
+
+**Interpreting the result:**
+
+| Result | Meaning |
+|---|---|
+| Five integers printed | Feed is deployed and responding — note `updatedAt` (4th value) to check recency. |
+| `(no output)` / revert | Proxy not deployed on this chain — `"deployed": false` in the catalogue. |
+
+**Check multiple chains in parallel** (replace `$RPC_*` with your RPC env vars):
+
+```bash
+ADDR=0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473
+SIG="latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+
+for rpc in $RPC_MAINNET $RPC_ARBITRUM $RPC_BASE $RPC_OPTIMISM $RPC_GNOSIS $RPC_BSC $RPC_POLYGON; do
+  echo -n "$rpc → "
+  cast call --rpc-url $rpc $ADDR "$SIG" 2>&1 | head -1
+done
+```
+
+**After checking, update the catalogue.** In `script/config/price-feeds-catalogue.json`, set `"deployed": true` or `"deployed": false` on each API3 entry. Update `_meta.api3_liveness_checked` to today's date. Re-run this check whenever:
+- a new chain is added to the catalogue,
+- a new dAPI name is added, or
+- more than ~6 months have passed (API3 deploys proxies progressively and a previously undeployed address may have become live).
+
+This same `cast call` pattern works for Chainlink and Redstone feeds — if the call reverts, the feed is not deployed on that chain.
+
+---
+
+## 12. Quick reference
 
 - **Interface:** `src/prices/IPriceFeedCustom.sol`
 - **Registry:** `src/prices/Prices.sol` and `src/prices/IPrices.sol`
-- **Config:** `priceOracles[asset]` → `PriceFeedConfig`
+- **Feed configs:** `_priceOracles[asset]` → `PriceFeedConfig[]` (use `getPriceFeedAt`, `getPriceFeedCount`, `getPriceFeeds` to read)
 - **Existing feeds:** `src/prices/protocols/`
+- **Feed address catalogue:** [`script/config/price-feeds-catalogue.json`](../../script/config/price-feeds-catalogue.json)
 - **Walkthrough:** [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md)
+- **Design rationale:** [`docs/decisions/0009-multi-feed-price-redundancy.md`](../../docs/decisions/0009-multi-feed-price-redundancy.md)
 - **Cross-reference:** [`src/balances/BALANCE_ADAPTERS.md`](../balances/BALANCE_ADAPTERS.md) (balance side of the same architecture)

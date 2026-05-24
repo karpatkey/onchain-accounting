@@ -46,7 +46,7 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     ///      the heartbeat of each new collateral's underlying Chainlink feed at:
     ///      https://data.chain.link/ or https://reference-data-directory.vercel.app/feeds-mainnet.json
     uint256 public immutable RESERVE_PROTOCOL_HEARTBEAT;
-    uint8 private _decimals;
+    uint8 private immutable _decimals;
 
     constructor(address ethPlus_, uint256 reserveProtocolHeartbeat_) {
         ETHPLUS = OracleArgumentChecks.assertERC20Address(ethPlus_);
@@ -54,22 +54,23 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
         _decimals = 8;
     }
 
+    function _compute() private view returns (uint256 price, bool stale, uint256 updatedAt) {
+        IMain main = IRToken(ETHPLUS).main();
+        IBasketHandler basketHandler = main.basketHandler();
+        if (basketHandler.status() != CollateralStatus.SOUND) return (0, true, 0);
+        uint48 minSave = _minBasketLastSave(main, basketHandler);
+        updatedAt = uint256(minSave);
+        if (block.timestamp - updatedAt >= RESERVE_PROTOCOL_HEARTBEAT) return (0, true, updatedAt);
+        uint256 usdPerToken18 = _calculateETHPlusPriceUSD18(basketHandler);
+        if (usdPerToken18 == 0) return (0, true, updatedAt);
+        price = usdPerToken18 / 1e10;
+    }
+
     /// @inheritdoc IPriceFeedCustom
     /// @dev Returns stale=true when the basket is IFFY or DISABLED, or when the worst-case
     ///      collateral plugin refresh time exceeds RESERVE_PROTOCOL_HEARTBEAT.
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        IMain main = IRToken(ETHPLUS).main();
-        IBasketHandler basketHandler = main.basketHandler();
-        if (basketHandler.status() != CollateralStatus.SOUND) {
-            return (0, true);
-        }
-        uint48 minSave = _minBasketLastSave(main, basketHandler);
-        if (block.timestamp - uint256(minSave) > RESERVE_PROTOCOL_HEARTBEAT) {
-            return (0, true);
-        }
-        uint256 usdPerToken18 = _calculateETHPlusPriceUSD18(basketHandler);
-        if (usdPerToken18 == 0) return (0, true);
-        price = usdPerToken18 / 1e10;
+        (price, stale,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -88,10 +89,8 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     ///      (Reserve Protocol has no round concept). Exposed for external observability;
     ///      staleness is handled internally in getLatestPrice().
     function latestRoundData() external view override returns (uint80, int256, uint256, uint256, uint80) {
-        IMain main = IRToken(ETHPLUS).main();
-        uint48 minSave = _minBasketLastSave(main, main.basketHandler());
-        (uint256 price,) = this.getLatestPrice();
-        return (0, int256(price), 0, uint256(minSave), 0);
+        (uint256 price, bool stale, uint256 upd) = _compute();
+        return (0, stale ? int256(0) : int256(price), 0, upd, 0);
     }
 
     /// @inheritdoc IERC165

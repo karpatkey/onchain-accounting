@@ -36,7 +36,7 @@ import {ETHPlus_PriceOracle} from "../../src/prices/protocols/ETHPlus_Price.sol"
 
 /// @title DeployPriceFeeds
 /// @notice Deploys custom price feed adapters for NAVCalculator
-/// @dev Price feeds are NOT upgradeable - they can be swapped via setPriceFeed
+/// @dev Price feeds are NOT upgradeable — add new ones via addPriceFeed, remove old via removePriceFeed
 contract DeployPriceFeeds is BaseDeployScript {
     function run() public override {
         setUp();

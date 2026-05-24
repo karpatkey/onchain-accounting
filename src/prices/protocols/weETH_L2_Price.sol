@@ -24,7 +24,7 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
     AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
     uint256 public immutable WEETH_TO_EETH_HEARTBEAT;
     uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     constructor(
         address weEth_,
@@ -41,24 +41,47 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
         _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 weEthToEethRate,, uint256 weEthToEethUpdatedAt,) = WEETH_TO_EETH_CHAINLINK.latestRoundData();
-        (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+    function _compute()
+        private
+        view
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
+    {
+        (uint80 r1, int256 weEthToEethRate, uint256 s1, uint256 u1, uint80 ar1) =
+            WEETH_TO_EETH_CHAINLINK.latestRoundData();
+        (uint80 r2, int256 ethToUsdPrice, uint256 s2, uint256 u2, uint80 ar2) =
+            ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
+        }
 
         if (weEthToEethRate <= 0 || ethToUsdPrice <= 0) {
-            return (0, true);
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 
+        uint256 effectiveWeEthUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
+        uint256 effectiveEthUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
         if (
-            block.timestamp - weEthToEethUpdatedAt > WEETH_TO_EETH_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
-        ) {
-            stale = true;
-        }
+            block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_EETH_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         price = weEthToEethRate.toUint256()
             .mulDiv(ethToUsdPrice.toUint256(), 10 ** WEETH_TO_EETH_CHAINLINK.decimals(), Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -78,15 +101,10 @@ contract weETH_L2_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = WEETH_TO_EETH_CHAINLINK.latestRoundData();
-        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (u1 <= u2) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
-        }
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

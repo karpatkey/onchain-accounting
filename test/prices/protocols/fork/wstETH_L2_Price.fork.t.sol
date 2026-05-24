@@ -34,7 +34,7 @@ contract wstETH_L2_PriceOracleForkTest_Arbitrum is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + ETH_TO_USD_HEARTBEAT + 1);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertGt(price, 0, "Price should still be returned when stale");
+        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked as stale");
     }
 
@@ -77,7 +77,7 @@ contract wstETH_L2_PriceOracleForkTest_Base is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + ETH_TO_USD_HEARTBEAT + 1);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertGt(price, 0, "Price should still be returned when stale");
+        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked as stale");
     }
 
@@ -121,7 +121,7 @@ contract wstETH_L2_PriceOracleForkTest_Optimism is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + ETH_TO_USD_HEARTBEAT + 1);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertGt(price, 0, "Price should still be returned when stale");
+        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked as stale");
     }
 
@@ -165,7 +165,7 @@ contract wstETH_L2_PriceOracleForkTest_Gnosis is TestEnvConfigurator {
     function test_getLatestPriceStale() public {
         vm.warp(block.timestamp + WETH_TO_USD_HEARTBEAT + 1);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertGt(price, 0, "Price should still be returned when stale");
+        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked as stale");
     }
 

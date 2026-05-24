@@ -159,7 +159,7 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 | Field | Type | Description |
 |-------|------|-------------|
 | `address` | string | Token contract address on that chain |
-| `type` | string | `"Chainlink"`, `"Custom"`, or `"None"` |
+| `type` | string | `"Chainlink"`, `"Custom"`, `"Redstone"`, `"API3"`, or `"None"` |
 | `pricefeed` | string | Chainlink or custom price feed address (empty if None) |
 | `heartbeat` | number | Oracle heartbeat in seconds |
 | `note` | string | Optional (e.g. "No oracle available", "Native USDC (BridgeEscrow/CCTP)") |
@@ -614,19 +614,20 @@ DEFAULT_ADMIN_ROLE (0x00)
 ├─ Can authorize/revoke bridge adapters
 ├─ Can pause/unpause BridgeEscrow
 ├─ Can emergency withdraw from BridgeEscrow
+├─ setChainlinkL2SequencerUptimeFeed() (NAVCalculator)
 └─ Typically assigned to: Safe Multisig
 
 MANAGER (keccak256("MANAGER"))
 ├─ NAVCalculator:
 │  ├─ registerAsset()
 │  ├─ unregisterAsset()
-│  ├─ setPriceFeed()
-│  ├─ unsetPriceFeed()
+│  ├─ addPriceFeed()
+│  ├─ removePriceFeedAt()
+│  ├─ removePriceFeed()
 │  ├─ addBalanceOracle()
 │  ├─ removeBalanceOracle()
 │  ├─ includeAssetInDefaultOracle()
 │  ├─ excludeAssetFromDefaultOracle()
-│  ├─ setChainlinkL2SequencerUptimeFeed()
 │  └─ setChainlinkL2SequencerGracePeriod()
 │
 ├─ BridgeEscrow:

@@ -107,7 +107,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
         // Only register assets that have a matching price feed (custom or Chainlink from above).
         // xDAI / native — pre-registered in initialize; set price feed only
-        nav.setPriceFeed(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
+        nav.addPriceFeed(address(xdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(address(wxdai), address(daiToUsdChainlink), IPrices.PriceType.Chainlink, heartbeat);
         // sXDAI — custom (uses daiToUsdChainlink)
         nav.registerAsset(address(savingsXDaiContract), address(savingsXdaiPrice), IPrices.PriceType.Custom, heartbeat);

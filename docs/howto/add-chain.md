@@ -62,7 +62,7 @@ Edit the new file:
 
 Notes:
 
-- **`chainlinkSequencerFeed`** is critical for L2s. Without it, the sequencer-uptime check is a no-op and you lose downtime protection. L1s leave it as zero.
+- **`chainlinkSequencerFeed`** is critical for L2s. Without it, the sequencer-uptime check is a no-op and you lose downtime protection. L1s leave it as zero. The default grace period is 1 hour (Chainlink's recommended minimum); `setChainlinkL2SequencerGracePeriod` enforces a floor of `>= 1 hours` — you cannot set it lower.
 - **Roles:** `safeMultisig` is the deploy authority. `admin` (DEFAULT_ADMIN_ROLE) and `manager` (MANAGER) are NAVCalculator roles. On most chains all three point to the same Safe (currently `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every live chain).
 - **`deployed`** starts empty; deploy scripts write into it.
 - **`balanceAdapters`** starts with just `ERC20Default`; add per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)).
@@ -73,13 +73,13 @@ Notes:
 
 Edit `script/config/assets.json` (single file, all chains):
 
-1. Add tokens under `tokens.<newChainId>` for every asset you want priced on this chain. Each needs `address`, `type` (`Chainlink` / `Custom` / `None`), `oracle` (Chainlink aggregator or custom feed deployed on this chain), and optionally `heartbeat`.
+1. Add tokens under `tokens.<newChainId>` for every asset you want priced on this chain. Each needs `address`, `type` (`Chainlink` / `Custom` / `Redstone` / `API3` / `None`), `pricefeed` (Chainlink aggregator, Redstone/API3 push feed, or custom feed deployed on this chain), and optionally `heartbeat`.
 
 ```json
 "tokens": {
   "<newChainId>": {
-    "ETH": { "address": "0xEee...EEeE", "type": "Chainlink", "oracle": "0x...", "heartbeat": 3600 },
-    "USDC": { "address": "0x...", "type": "Chainlink", "oracle": "0x...", "heartbeat": 86400 }
+    "ETH": { "address": "0xEee...EEeE", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 3600 },
+    "USDC": { "address": "0x...", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 86400 }
   }
 }
 ```

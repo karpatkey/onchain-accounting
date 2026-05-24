@@ -21,7 +21,7 @@ import {console2} from "forge-std/console2.sol";
 ///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
 ///     reports status but refuses to write the Safe tx file.
 ///   - Pre-registered assets (notably the NATIVE_ADDRESS sentinel inserted by NAVCalculator.initialize)
-///     are wired up with setPriceFeed instead of registerAsset, so the configured oracle is applied
+///     are wired up with addPriceFeed instead of registerAsset, so the configured oracle is applied
 ///     without reverting on duplicate registration.
 ///   - Output: safe-transactions/{chainId}-register-assets.json
 ///   - With --broadcast, tx(s) are sent from the keystore signer (--account $DEPLOYER_NAME). registerAsset checks MANAGER on-chain (msg.sender).
@@ -49,10 +49,11 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs setPriceFeed
+        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs addPriceFeed
         uint256 skipNoOracle;
         uint256 skipMissingAddress;
         uint256 skipNoContract;
+        uint256 skipAlreadyWired; // registered + feed already present — idempotent re-run skip
         uint256 toRegisterCount;
 
         // First pass: report each token and count how many need registration / price-feed set
@@ -102,9 +103,16 @@ contract RegisterAssets is BaseDeployScript {
                 console2.log("  TO REGISTER:", symbol);
                 toRegisterCount++;
             } else if (abi.decode(data, (bool))) {
-                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need setPriceFeed
-                // to wire the configured oracle. Emitting setPriceFeed unconditionally is idempotent;
-                // if the configured oracle already matches on-chain, the tx is a no-op overwrite.
+                // Asset is registered. Check whether it already has a price feed wired.
+                (bool okCount, bytes memory countData) =
+                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
+                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) {
+                    console2.log("  SKIP (already wired):", symbol);
+                    skipAlreadyWired++;
+                    continue;
+                }
+                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need addPriceFeed
+                // to wire the configured oracle.
                 console2.log("  TO SET PRICE FEED (pre-registered):", symbol);
                 toSetPriceFeed++;
             } else {
@@ -126,6 +134,7 @@ contract RegisterAssets is BaseDeployScript {
         console2.log("  Skipped (no oracle):", skipNoOracle);
         console2.log("  Skipped (missing/invalid address):", skipMissingAddress);
         console2.log("  Skipped (no contract at address):", skipNoContract);
+        console2.log("  Skipped (already wired):", skipAlreadyWired);
         console2.log("  To register:", toRegisterCount);
         console2.log("  Total actions:", totalActions);
 
@@ -150,7 +159,7 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        // Second pass: build Safe tx batch — registerAsset for new ones, setPriceFeed for pre-registered ones
+        // Second pass: build Safe tx batch — registerAsset for new ones, addPriceFeed for pre-registered ones
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](totalActions);
         uint256 j = 0;
         for (uint256 i = 0; i < symbols.length; i++) {
@@ -165,21 +174,31 @@ contract RegisterAssets is BaseDeployScript {
             bool preRegistered = ok && data.length > 0 && abi.decode(data, (bool));
             if (!preRegistered && _hasNoCode(asset)) continue;
 
+            // Skip assets that already have at least one feed wired — they are fully registered.
+            if (preRegistered) {
+                (bool okCount, bytes memory countData) =
+                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
+                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) continue;
+            }
+
             string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
-            if (!_equals(priceTypeStr, "Chainlink") && !_equals(priceTypeStr, "Custom")) continue;
+            IPrices.PriceType priceType;
+            if (_equals(priceTypeStr, "Chainlink")) priceType = IPrices.PriceType.Chainlink;
+            else if (_equals(priceTypeStr, "Custom")) priceType = IPrices.PriceType.Custom;
+            else if (_equals(priceTypeStr, "Redstone")) priceType = IPrices.PriceType.Redstone;
+            else if (_equals(priceTypeStr, "API3")) priceType = IPrices.PriceType.API3;
+            else continue;
             string memory oracleStr = ConfigReader.readTokenOracle(vm, currentChainId, symbol);
             if (bytes(oracleStr).length == 0) continue;
             address oracle = vm.parseAddress(oracleStr);
             if (oracle == address(0)) continue;
 
             uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
-            IPrices.PriceType priceType =
-                _equals(priceTypeStr, "Chainlink") ? IPrices.PriceType.Chainlink : IPrices.PriceType.Custom;
 
-            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need setPriceFeed,
+            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need addPriceFeed,
             // not registerAsset (which would revert with InvalidArguments — already registered).
             bytes memory callData = preRegistered
-                ? abi.encodeCall(NAVCalculator.setPriceFeed, (asset, oracle, priceType, heartbeat))
+                ? abi.encodeCall(NAVCalculator.addPriceFeed, (asset, oracle, priceType, heartbeat))
                 : abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat));
             transactions[j] = SafeTxBuilder.call(navProxy, 0, callData);
             j++;

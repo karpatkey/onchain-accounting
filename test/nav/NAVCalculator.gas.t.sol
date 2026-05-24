@@ -224,9 +224,11 @@ contract NAVCalculatorGasTest is SuperTest {
         Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1e8, 8);
 
         vm.startPrank(navCalculatorManager);
-        // Set stale oracle for the test asset (one from generated portfolio that has balance)
-        // Use heartbeat of 1 second so it becomes stale quickly
-        nav.setPriceFeed(testAsset, address(staleOracle), IPrices.PriceType.Chainlink, 1);
+        // Add stale oracle then remove the original so only staleOracle remains.
+        // Use heartbeat of 1 second so it becomes stale quickly.
+        address originalFeed = nav.getPriceFeedAt(testAsset, 0).priceFeed;
+        nav.addPriceFeed(testAsset, address(staleOracle), IPrices.PriceType.Chainlink, 1);
+        nav.removePriceFeed(testAsset, originalFeed);
         vm.stopPrank();
 
         // Make price stale by warping time past the heartbeat

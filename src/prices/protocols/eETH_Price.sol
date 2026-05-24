@@ -49,7 +49,7 @@ contract eETH_PriceOracle is IPriceFeedCustom {
     uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
-    uint8 internal _decimals;
+    uint8 private immutable _decimals;
 
     //
     // Constructor
@@ -82,33 +82,53 @@ contract eETH_PriceOracle is IPriceFeedCustom {
     // IPriceFeedCustom
     //
 
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (, int256 weEthToEthRate,, uint256 weEthToEthUpdatedAt,) = WEETH_TO_ETH_CHAINLINK.latestRoundData();
-        (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+    function _compute()
+        private
+        view
+        returns (
+            uint256 price,
+            bool stale,
+            uint80 roundId,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
+    {
+        (uint80 r1, int256 weEthToEthRate, uint256 s1, uint256 u1, uint80 ar1) =
+            WEETH_TO_ETH_CHAINLINK.latestRoundData();
+        (uint80 r2, int256 ethToUsdPrice, uint256 s2, uint256 u2, uint80 ar2) =
+            ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+
+        if (u1 <= u2) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
+        }
 
         if (weEthToEthRate <= 0 || ethToUsdPrice <= 0) {
-            return (0, true);
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
+
+        uint256 effectiveWeEthUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
+        uint256 effectiveEthUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
+        if (
+            block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_ETH_HEARTBEAT
+                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
+        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         uint256 weEthToEEthRate = IweETH(WEETH).getRate();
-
-        if (weEthToEEthRate == 0) {
-            return (0, true);
-        }
-
-        if (
-            block.timestamp - weEthToEthUpdatedAt > WEETH_TO_ETH_HEARTBEAT
-                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
-        ) {
-            stale = true;
-        }
+        if (weEthToEEthRate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // eETH/ETH = weETH/ETH ÷ eETH/weETH (both 18 dec → result 18 dec)
         uint256 eEthToEthRate = weEthToEthRate.toUint256().mulDiv(1e18, weEthToEEthRate, Math.Rounding.Floor);
 
         // eETH/ETH (18 dec) * ETH/USD (8 dec) / 1e18 = 8 dec
         price = eEthToEthRate.mulDiv(ethToUsdPrice.toUint256(), 1e18, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IPriceFeedCustom
+    function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
     }
 
     /// @inheritdoc IPriceFeedCustom
@@ -128,15 +148,10 @@ contract eETH_PriceOracle is IPriceFeedCustom {
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        (uint80 r1,, uint256 s1, uint256 u1, uint80 ar1) = WEETH_TO_ETH_CHAINLINK.latestRoundData();
-        (uint80 r2,, uint256 s2, uint256 u2, uint80 ar2) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (u1 <= u2) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
-        }
-        (uint256 price,) = this.getLatestPrice();
-        answer = int256(price);
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     /// @inheritdoc IERC165

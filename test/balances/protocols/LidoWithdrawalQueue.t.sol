@@ -28,6 +28,10 @@ contract MockLidoWithdrawalQueue {
         });
     }
 
+    function balanceOf(address owner) external view returns (uint256) {
+        return _ids[owner].length;
+    }
+
     function getWithdrawalRequests(address owner) external view returns (uint256[] memory) {
         return _ids[owner];
     }
@@ -150,13 +154,24 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(amount, 3e18, "Claimed request must be excluded");
     }
 
-    function test_getOracleBalanceForAsset_capsAtMaxRequestsProbed() public {
+    function test_getOracleBalanceForAsset_sumsUpToCap() public {
         uint256 cap = oracle.MAX_REQUESTS_PROBED();
-        for (uint256 i = 0; i < cap + 5; i++) {
+        for (uint256 i = 0; i < cap; i++) {
             queue.pushRequest(alice, i + 1, 1e18, false);
         }
         (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
-        assertEq(amount, cap * 1e18, "Should sum exactly MAX_REQUESTS_PROBED requests");
+        assertEq(amount, cap * 1e18, "Exactly MAX_REQUESTS_PROBED open requests: all summed");
+    }
+
+    function test_getOracleBalanceForAsset_skipsWhenAboveCap() public {
+        // Lido's queue is not ERC721Enumerable, so an account with more open requests than the cap
+        // is skipped (return 0) rather than materialising an unbounded, attacker-inflatable id list.
+        uint256 cap = oracle.MAX_REQUESTS_PROBED();
+        for (uint256 i = 0; i < cap + 1; i++) {
+            queue.pushRequest(alice, i + 1, 1e18, false);
+        }
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 0, "Above cap: skipped to bound gas");
     }
 
     // ---- getOracleBalances ----

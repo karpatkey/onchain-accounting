@@ -21,10 +21,13 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     // Constants
     //
 
-    /// @notice Hard cap on the number of request ids probed per account.
-    /// @dev Bounds gas so a pathological account with many open requests can't make NAV reads run
-    ///      out of gas (an out-of-gas revert is NOT caught by NAVCalculator's try/catch, so it would
-    ///      DoS the whole NAV call). In practice an account never has more than a handful of requests.
+    /// @notice Hard cap on the number of open requests an account may have for this adapter to read it.
+    /// @dev Bounds gas: an account whose open-request count (`balanceOf`) exceeds this is skipped
+    ///      (reported as 0) so a pathological account can't make NAV reads run out of gas — an
+    ///      out-of-gas revert is NOT caught by NAVCalculator's try/catch, so it would DoS the whole
+    ///      NAV call. The check is on `balanceOf` rather than the returned id array because Lido's
+    ///      queue is not `ERC721Enumerable`, so `getWithdrawalRequests` can only return the full set.
+    ///      In practice an account never has more than a handful of requests.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
     //
@@ -85,28 +88,26 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @notice Sums `amountOfStETH` across all of `account`'s open (un-claimed) withdrawal requests.
-    /// @dev Enumerates request ids via `getWithdrawalRequests` (capped at `MAX_REQUESTS_PROBED`),
-    ///      reads their status via `getWithdrawalStatus`, and skips claimed requests. `amountOfStETH`
-    ///      is the stETH locked at request time; pre/post finalization it is the value owed.
+    /// @dev Reads `balanceOf` (the count of open request NFTs — claiming burns the NFT) FIRST, in
+    ///      O(1), so the unbounded id list is never materialised when the count is pathological.
+    ///      Lido's `WithdrawalQueueERC721` is NOT `ERC721Enumerable` (no `tokenOfOwnerByIndex`) and
+    ///      `getWithdrawalRequests` returns the *entire* id set, so there is no way to read a bounded
+    ///      slice. If the count exceeds `MAX_REQUESTS_PROBED` we skip (return 0) rather than risk
+    ///      OOG'ing the NAV read on a list an attacker can inflate by transferring withdrawal NFTs in
+    ///      — an OOG is NOT caught by NAVCalculator's try/catch. A real account never approaches the
+    ///      cap; the per-adapter fork test covers the live path. Claimed requests are skipped via
+    ///      `isClaimed`. `amountOfStETH` is the stETH locked at request time (the value owed).
     function _stEthOwed(address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
         }
 
-        uint256[] memory ids = WITHDRAWAL_QUEUE.getWithdrawalRequests(account);
-        if (ids.length == 0) {
+        uint256 count = WITHDRAWAL_QUEUE.balanceOf(account);
+        if (count == 0 || count > MAX_REQUESTS_PROBED) {
             return 0;
         }
 
-        // Bound the scan; if the account has more requests than the cap, probe the first MAX.
-        if (ids.length > MAX_REQUESTS_PROBED) {
-            uint256[] memory capped = new uint256[](MAX_REQUESTS_PROBED);
-            for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
-                capped[i] = ids[i];
-            }
-            ids = capped;
-        }
-
+        uint256[] memory ids = WITHDRAWAL_QUEUE.getWithdrawalRequests(account);
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(ids);
         for (uint256 i = 0; i < statuses.length; i++) {
             if (!statuses[i].isClaimed) {
@@ -232,6 +233,10 @@ interface ILidoWithdrawalQueue {
         bool isFinalized;
         bool isClaimed;
     }
+
+    /// @notice ERC721 balance = number of the account's open (un-claimed) request NFTs.
+    /// @dev O(1); used to bound work before calling `getWithdrawalRequests` (which returns the full set).
+    function balanceOf(address owner) external view returns (uint256);
 
     /// @notice Returns all request ids owned by `_owner` (full on-chain enumeration).
     function getWithdrawalRequests(address _owner) external view returns (uint256[] memory requestsIds);

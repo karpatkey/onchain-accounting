@@ -20,6 +20,18 @@ import {PositionType} from "src/utils/PositionType.sol";
 ///      rather than hardcoded, mirroring the dynamic-discovery pattern in `AaveUmbrella.sol`.
 contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
+    // Constants
+    //
+
+    /// @notice Hard cap on the number of open requests summed per (asset, account).
+    /// @dev Bounds gas so a pathological account with many open requests can't make NAV reads run
+    ///      out of gas (an out-of-gas revert is NOT caught by NAVCalculator's try/catch, so it would
+    ///      DoS the whole NAV call). Mirrors `StaderWithdrawalQueue` and the queue-family note in
+    ///      `docs/roadmap/balance-adapter-coverage.md`. In practice an account never has more than a
+    ///      handful of pending requests per asset.
+    uint256 public constant MAX_REQUESTS_PROBED = 256;
+
+    //
     // State
     //
 
@@ -74,13 +86,18 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     ///      number of open requests is `end - begin`. `getUserWithdrawalRequest(asset, account, i)`
     ///      resolves to the deque's `.at(i)` for `i ∈ [0, end-begin)` — claimed requests are popped
     ///      off the front, so this only ever counts live claims. No out-of-bounds probing is needed.
+    ///      The scan is capped at `MAX_REQUESTS_PROBED` to bound gas (see that constant's NatSpec).
     function _owedForAsset(address asset, address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
         }
 
         (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account);
-        for (uint256 i = 0; i < end - begin; i++) {
+        uint256 count = end - begin;
+        if (count > MAX_REQUESTS_PROBED) {
+            count = MAX_REQUESTS_PROBED;
+        }
+        for (uint256 i = 0; i < count; i++) {
             (, uint256 expectedAssetAmount,,) = WITHDRAWAL_MANAGER.getUserWithdrawalRequest(asset, account, i);
             total += expectedAssetAmount;
         }

@@ -174,6 +174,17 @@ contract KelpWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(amount, 3.15e18);
     }
 
+    function test_getOracleBalanceForAsset_capsAtMaxRequestsProbed() public {
+        // A pathological account with more open requests than the cap must not iterate unbounded:
+        // the adapter sums only the first MAX_REQUESTS_PROBED and never reverts/OOGs.
+        uint256 cap = oracle.MAX_REQUESTS_PROBED();
+        for (uint256 i = 0; i < cap + 5; i++) {
+            manager.pushRequest(address(steth), alice, 1e18);
+        }
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(steth));
+        assertEq(amount, cap * 1e18, "Should sum exactly MAX_REQUESTS_PROBED requests");
+    }
+
     function test_getOracleBalanceForAsset_skipsClaimedFront() public {
         manager.pushRequest(address(steth), alice, 1e18);
         manager.pushRequest(address(steth), alice, 2e18);

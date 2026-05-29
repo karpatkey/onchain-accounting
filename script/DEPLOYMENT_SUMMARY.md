@@ -355,6 +355,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `GearboxMarketBalanceOracle` - Gearbox kpk-curated markets
 - `StakeWiseV3OsTokenBalanceOracle`, `StakeWiseV3VaultBalanceOracle` - StakeWise V3 osToken + Genesis Vault
 - `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
+- `KelpWithdrawalQueueBalanceOracle` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `UniswapV2BalanceOracle`, `UniswapV3BalanceOracle` - Uni V2 pairs / V3 pools
 - `PancakeSwapV2`, `PancakeSwapV3` - PancakeSwap variants
 - `MerklRewardsBalanceOracle` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)

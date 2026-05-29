@@ -655,25 +655,18 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    /// @dev Reuses `_getAllPositionBalancesForAccount`, which already (a) filters to registered
+    ///      assets and (b) wraps every per-oracle call in try/catch via `_getOraclePositionsView`,
+    ///      so a single reverting oracle cannot DoS the scan (fail-open). This also keeps
+    ///      `hasPositions` consistent with `getAccountPositions`/`getAssetsWithPositions`, which read
+    ///      the same positions path.
     function hasPositions(address account) external view override returns (bool has) {
-        address[] memory allOracles = getAllOracles();
-        uint256 totalOracles = allOracles.length;
-        // Oracle‑centric scan: any non‑zero balance from any oracle on a registered asset counts as "has positions"
-        for (uint256 i = 0; i < totalOracles; i++) {
-            (address[] memory assetsList, uint256[] memory amounts,) =
-                IBalanceOracleAdapter(allOracles[i]).getOracleBalances(account);
-            for (uint256 j = 0; j < assetsList.length; j++) {
-                // Skip unregistered assets
-                if (!isAssetRegistered(assetsList[j])) {
-                    continue;
-                }
-
-                if (amounts[j] != 0) {
-                    return true;
-                }
+        INAVCalculator.PositionBalance[] memory positions = _getAllPositionBalancesForAccount(account);
+        for (uint256 i = 0; i < positions.length; i++) {
+            if (positions[i].amount != 0) {
+                return true;
             }
         }
-
         return false;
     }
 

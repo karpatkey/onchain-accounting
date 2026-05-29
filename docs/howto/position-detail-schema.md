@@ -54,6 +54,7 @@ specific **market or instance**, using the name shown in the protocol's own UI.
 | StakeWise V3 vault | `"Staking"` | vault name (e.g. `"Genesis Vault"`) |
 | StakeWise V3 osToken | `"Staking"` | token symbol (e.g. `"osETH"`) |
 | Stader withdrawal queue | `"Staking"` | `"ETH Withdrawal Queue"` |
+| Kelp rsETH withdrawal queue | `"Staking"` | `"rsETH Withdrawal Queue"` |
 | Merkl rewards | `"Rewards"` | `"Unclaimed Rewards"` |
 | Uniswap V3 pool | `"LP"` | pair + fee (e.g. `"WBTC/WETH 0.3%"`) |
 | Uniswap V2 pair | `"LP"` | pair (e.g. `"ETH/COW"`) |
@@ -88,6 +89,7 @@ the position type). It is the most specific immutable address pinned by the adap
 | StakeWise V3 Vault | `vault` address |
 | StakeWise V3 osToken | `osToken` address |
 | Stader | `userWithdrawalManager` address |
+| Kelp | `LRTWithdrawalManager` address |
 | Merkl Rewards | `distributor` address |
 | Uniswap V3 / PancakeSwap V3 | `pool` address |
 | Uniswap V2 / PancakeSwap V2 | `pair` address |

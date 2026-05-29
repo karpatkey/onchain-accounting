@@ -154,6 +154,13 @@
     "positionId": "<UserWithdrawManager address>"
   },
 
+  "KelpWithdrawalQueue": {
+    "$perPositionFields": "type: Staking; one position per NAV-registered payout asset (stETH, ETHx, native ETH) discovered at runtime",
+    "protocol": "Kelp",
+    "positionDetail": { "protocol": "Kelp", "product": "Staking", "name": "rsETH Withdrawal Queue" },
+    "positionId": "<LRTWithdrawalManager address>"
+  },
+
   "MerklRewards": {
     "$perPositionFields": "type: Rewards",
     "protocol": "Merkl",

@@ -91,11 +91,16 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         return ILRTConfig(WITHDRAWAL_MANAGER.lrtConfig()).getSupportedAssetList();
     }
 
-    /// @notice Looks up `asset` in NAVCalculator's registered-asset set.
+    /// @notice Looks up `asset` in a pre-fetched NAVCalculator registered-asset set.
+    /// @dev Pure in-memory search: the caller fetches `getRegisteredAssets()` once and reuses it
+    ///      across every supported asset, rather than re-fetching per lookup (cf. `AaveUmbrella`).
     /// @return found Whether the asset is registered (and therefore priced) in NAV.
     /// @return info The registered Asset tuple (zeroed if not found).
-    function _registeredAsset(address asset) internal view returns (bool found, INAVCalculator.Asset memory info) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+    function _findRegisteredAsset(INAVCalculator.Asset[] memory reg, address asset)
+        internal
+        pure
+        returns (bool found, INAVCalculator.Asset memory info)
+    {
         for (uint256 i = 0; i < reg.length; i++) {
             if (reg[i].asset == asset) {
                 return (true, reg[i]);
@@ -124,7 +129,9 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         override
         returns (uint256 amount, bool isDebt)
     {
-        if (asset == address(0) || !_isSupported(asset)) {
+        // No explicit supported-asset guard needed: for any asset this queue does not track, the
+        // `userAssociatedNonces` deque is empty, so `_owedForAsset` returns 0.
+        if (asset == address(0)) {
             return (0, false);
         }
         return (_owedForAsset(asset, account), false);
@@ -179,6 +186,8 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         }
 
         address[] memory supported = _supportedAssets();
+        // Fetch the NAV registry once and reuse it for every supported asset.
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](supported.length);
         uint256 count;
 
@@ -188,7 +197,7 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
                 continue;
             }
 
-            (bool registered, INAVCalculator.Asset memory underlying) = _registeredAsset(asset);
+            (bool registered, INAVCalculator.Asset memory underlying) = _findRegisteredAsset(reg, asset);
             if (!registered) {
                 continue;
             }
@@ -213,17 +222,6 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         for (uint256 i = 0; i < count; i++) {
             positions[i] = tmp[i];
         }
-    }
-
-    /// @notice True iff `asset` is in Kelp's supported-asset list.
-    function _isSupported(address asset) internal view returns (bool) {
-        address[] memory supported = _supportedAssets();
-        for (uint256 i = 0; i < supported.length; i++) {
-            if (supported[i] == asset) {
-                return true;
-            }
-        }
-        return false;
     }
 }
 

@@ -15,8 +15,9 @@ contract NAVCalculatorHarness is NAVCalculator {
     }
 }
 
-/// @notice Balance oracle whose `getOracleBalances` always reverts.
+/// @notice Balance oracle whose read methods always revert.
 /// @dev Used to prove `hasPositions` is fail-open: a single misbehaving oracle must not DoS the scan.
+///      Reverts on both `getOraclePositions` (the path `hasPositions` reads) and `getOracleBalances`.
 contract RevertingBalanceOracle is IBalanceOracleAdapter {
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
@@ -45,7 +46,7 @@ contract RevertingBalanceOracle is IBalanceOracleAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        return new INAVCalculator.PositionBalance[](0);
+        revert("boom");
     }
 }
 

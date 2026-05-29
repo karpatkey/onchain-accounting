@@ -54,6 +54,32 @@ contract LidoWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
     }
 
+    // ---- Real FINALIZED position: exercises the getClaimableEther path against the live contract ----
+
+    /// @dev At block 25_200_000, holder 0xF74B44… has exactly one request (id 125680→125186) that is
+    ///      finalized AND un-claimed, with `amountOfStETH == getClaimableEther == 4.871…` ETH. This is
+    ///      the only durable way to cover the finalized branch (findCheckpointHints + getClaimableEther)
+    ///      against the real WithdrawalQueue — the holder used above is still pending.
+    function test_getOracleBalanceForAsset_finalizedHolder_usesClaimableEther() public {
+        address finalizedHolder = 0xF74B44b06Eda33803f04839E66737Cc49b8ad72d;
+        uint256 expectedClaimableEth = 4_871_995_176_133_048_140;
+
+        // Roll to a block where the request is finalized-but-unclaimed (keep the test-deployed
+        // adapter + Balances harness alive across the roll).
+        vm.makePersistent(address(oracle));
+        vm.makePersistent(address(balances));
+        vm.rollFork(25_200_000);
+
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(finalizedHolder, NATIVE_ETH);
+        assertEq(amount, expectedClaimableEth, "Finalized request must be valued via getClaimableEther");
+        assertFalse(isDebt);
+
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(finalizedHolder, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].underlyingAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].amount, expectedClaimableEth);
+    }
+
     // ---- Real open position ----
 
     function test_getOracleBalanceForAsset_realHolder() public view {

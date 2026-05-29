@@ -660,17 +660,24 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 totalOracles = allOracles.length;
         // Oracle‑centric scan: any non‑zero balance from any oracle on a registered asset counts as "has positions"
         for (uint256 i = 0; i < totalOracles; i++) {
-            (address[] memory assetsList, uint256[] memory amounts,) =
-                IBalanceOracleAdapter(allOracles[i]).getOracleBalances(account);
-            for (uint256 j = 0; j < assetsList.length; j++) {
-                // Skip unregistered assets
-                if (!isAssetRegistered(assetsList[j])) {
-                    continue;
-                }
+            // A reverting oracle must not DoS the whole scan; skip it (fail-open), mirroring the
+            // try/catch around getOraclePositions in _getOraclePositionsView and around
+            // underlyingAssetsSupported in Balances.getOraclesForAsset.
+            try IBalanceOracleAdapter(allOracles[i]).getOracleBalances(account) returns (
+                address[] memory assetsList, uint256[] memory amounts, bool[] memory
+            ) {
+                for (uint256 j = 0; j < assetsList.length; j++) {
+                    // Skip unregistered assets
+                    if (!isAssetRegistered(assetsList[j])) {
+                        continue;
+                    }
 
-                if (amounts[j] != 0) {
-                    return true;
+                    if (amounts[j] != 0) {
+                        return true;
+                    }
                 }
+            } catch {
+                continue;
             }
         }
 

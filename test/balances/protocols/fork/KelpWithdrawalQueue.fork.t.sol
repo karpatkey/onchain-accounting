@@ -26,7 +26,7 @@ contract KelpWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     uint256 public constant TEST_USER_EXPECTED_STETH = 160_441_554_282_426_606_450;
 
     string internal constant POSITION_DETAIL_FULL =
-        "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\",\"type\":\"Staking\"}";
+        "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\",\"type\":\"Staking\"}";
 
     KelpWithdrawalQueueBalanceOracle public oracle;
 
@@ -41,7 +41,7 @@ contract KelpWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         oracle = new KelpWithdrawalQueueBalanceOracle(
             WITHDRAWAL_MANAGER,
             "Kelp",
-            "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\"",
+            "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\"",
             "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
             address(balances)
         );

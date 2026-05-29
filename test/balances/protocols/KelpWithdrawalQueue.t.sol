@@ -64,9 +64,9 @@ contract MockLRTWithdrawalManager {
 /// @title KelpWithdrawalQueueBalanceOracle unit tests
 contract KelpWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     string internal constant POSITION_DETAIL_BASE =
-        "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\"";
+        "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\"";
     string internal constant POSITION_DETAIL_FULL =
-        "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\",\"type\":\"Staking\"}";
+        "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\",\"type\":\"Staking\"}";
 
     KelpWithdrawalQueueBalanceOracle public oracle;
     MockLRTWithdrawalManager public manager;

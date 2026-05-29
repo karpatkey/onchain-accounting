@@ -651,7 +651,7 @@
       "constructor": {
         "withdrawalManager": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
         "protocol": "Kelp",
-        "positionDetail": "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\"",
+        "positionDetail": "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\"",
         "positionId": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16"
       },
       "deployed": "",

@@ -6,11 +6,46 @@ import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
         this.initialize(admin, chainlinkUptimeFeed, nativeTokenSymbol);
+    }
+}
+
+/// @notice Balance oracle whose `getOracleBalances` always reverts.
+/// @dev Used to prove `hasPositions` is fail-open: a single misbehaving oracle must not DoS the scan.
+contract RevertingBalanceOracle is IBalanceOracleAdapter {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function getOracleBalanceForAsset(address, address) external pure override returns (uint256, bool) {
+        return (0, false);
+    }
+
+    function getOracleBalances(address)
+        external
+        pure
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        revert("boom");
+    }
+
+    function getOraclePositions(address, address)
+        external
+        pure
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        return new INAVCalculator.PositionBalance[](0);
     }
 }
 
@@ -1658,6 +1693,20 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(nav.hasPositions(safe));
         INAVCalculator.Position[] memory withPositions = nav.getAccountPositions(safe, address(0));
         assertTrue(withPositions.length > 0);
+    }
+
+    // Test 26b: hasPositions is fail-open — a reverting oracle must not DoS the scan.
+    function test_hasPositions_resilientToRevertingOracle() public {
+        RevertingBalanceOracle reverter = new RevertingBalanceOracle();
+        vm.prank(navCalculatorManager);
+        nav.addBalanceOracle(address(reverter));
+
+        // Empty account: the reverting oracle is skipped, hasPositions returns false (no revert).
+        assertFalse(nav.hasPositions(safe));
+
+        // Real wallet position via the default oracle is still detected despite the reverting oracle.
+        usdc.mint(safe, 10 ** usdc.decimals());
+        assertTrue(nav.hasPositions(safe));
     }
 
     // ============================================

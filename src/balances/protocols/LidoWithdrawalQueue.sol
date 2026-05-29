@@ -9,13 +9,18 @@ import {PositionType} from "src/utils/PositionType.sol";
 
 /// @title Lido Withdrawal Queue Balance Oracle
 /// @author kpk
-/// @notice Reports stETH owed to an account from open requests in Lido's `WithdrawalQueueERC721`.
-/// @dev When a user requests an unstake, stETH is locked and an ERC721 request id is minted. Until
-///      claimed, the value lives as stETH owed by the queue and is invisible to wallet/receipt-token
-///      oracles. This oracle enumerates the account's request ids (`getWithdrawalRequests`), reads
-///      their status (`getWithdrawalStatus`), and sums `amountOfStETH` across all **un-claimed**
-///      requests into a single position denominated in `UNDERLYING_TOKEN` (stETH). `amountOfStETH`
-///      is fixed at request time; NAVCalculator prices it via the registered stETH feed.
+/// @notice Reports the ETH owed to an account from open requests in Lido's `WithdrawalQueueERC721`.
+/// @dev When a user requests an unstake, stETH is locked and an ERC721 request id is minted. The
+///      claim pays out **native ETH** (the stETH is burned), so the position is denominated in ETH —
+///      not stETH — matching what the account actually receives (and pricing it via ETH/USD rather
+///      than stETH/USD, so a stETH depeg can't mis-value a claim that settles in full ETH). While
+///      queued the value is invisible to wallet/receipt-token oracles. This oracle enumerates the
+///      account's request ids (`getWithdrawalRequests`), reads their status (`getWithdrawalStatus`),
+///      and sums `amountOfStETH` across all **un-claimed** requests into a single position
+///      denominated in `UNDERLYING_TOKEN` (native ETH). `amountOfStETH` is fixed at request time and
+///      equals the ETH paid on claim (verified on-chain; it can differ only on a negative rebase
+///      between request and finalization, where Lido caps the payout). NAVCalculator prices it via
+///      the registered ETH feed.
 contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
     // Constants
@@ -37,8 +42,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @notice Lido WithdrawalQueueERC721 contract.
     ILidoWithdrawalQueue public immutable WITHDRAWAL_QUEUE;
 
-    /// @notice The asset under which positions are reported (stETH).
-    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed.
+    /// @notice The asset under which positions are reported — the asset Lido pays on claim (native ETH).
+    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed (ETH/USD).
     address public immutable UNDERLYING_TOKEN;
 
     /// @notice Reference to NAVCalculator for asset registry access.
@@ -56,7 +61,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @param withdrawalQueue_ Address of Lido's WithdrawalQueueERC721 contract.
-    /// @param underlyingToken_ Address of the asset positions are denominated in (stETH).
+    /// @param underlyingToken_ Address of the asset positions are denominated in — what Lido pays on
+    ///        claim (native ETH; the ERC-7528 sentinel on mainnet).
     /// @param protocol_ Protocol identifier (e.g. "Lido").
     /// @param positionDetail_ JSON metadata base without closing `}`.
     /// @param positionId_ Stable hex identifier for this adapter instance (withdrawalQueue address).
@@ -87,7 +93,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     // Balance computation
     //
 
-    /// @notice Sums `amountOfStETH` across all of `account`'s open (un-claimed) withdrawal requests.
+    /// @notice Sums `amountOfStETH` (= the ETH owed) across `account`'s open (un-claimed) requests.
     /// @dev Reads `balanceOf` (the count of open request NFTs — claiming burns the NFT) FIRST, in
     ///      O(1), so the unbounded id list is never materialised when the count is pathological.
     ///      Lido's `WithdrawalQueueERC721` is NOT `ERC721Enumerable` (no `tokenOfOwnerByIndex`) and
@@ -97,7 +103,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     ///      — an OOG is NOT caught by NAVCalculator's try/catch. A real account never approaches the
     ///      cap; the per-adapter fork test covers the live path. Claimed requests are skipped via
     ///      `isClaimed`. `amountOfStETH` is the stETH locked at request time (the value owed).
-    function _stEthOwed(address account) internal view returns (uint256 total) {
+    function _ethOwed(address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
         }
@@ -142,7 +148,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         if (asset == address(0) || asset != UNDERLYING_TOKEN) {
             return (0, false);
         }
-        return (_stEthOwed(account), false);
+        return (_ethOwed(account), false);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -156,7 +162,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
             return (new address[](0), new uint256[](0), new bool[](0));
         }
 
-        uint256 total = _stEthOwed(account);
+        uint256 total = _ethOwed(account);
         if (total == 0) {
             return (new address[](0), new uint256[](0), new bool[](0));
         }
@@ -170,7 +176,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     }
 
     /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Returns the account's open withdrawal-queue position as a single stETH credit.
+    /// @notice Returns the account's open withdrawal-queue position as a single ETH credit.
     /// @dev Dropped if the underlying asset is not registered in NAVCalculator.
     function getOraclePositions(address account, address assetFilter)
         external
@@ -198,7 +204,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 total = _stEthOwed(account);
+        uint256 total = _ethOwed(account);
         if (total == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }

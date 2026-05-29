@@ -73,8 +73,12 @@ contract MockLidoWithdrawalQueue {
         returns (uint256[] memory hints)
     {
         hints = new uint256[](requestIds.length);
+        uint256 prev = 0;
         for (uint256 i = 0; i < requestIds.length; i++) {
-            // mirror Lido: a hint exists only for finalized requests, else 0
+            // mirror Lido: reverts unless the id array is ascending-sorted
+            require(requestIds[i] >= prev, "RequestIdsNotSorted");
+            prev = requestIds[i];
+            // a hint exists only for finalized requests, else 0
             if (_status[requestIds[i]].isFinalized) hints[i] = 1;
         }
     }
@@ -199,6 +203,16 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         queue.pushRequest(alice, 2, 1e18, false); // pending: valued at amountOfStETH
         (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
         assertEq(amount, 2.9e18 + 1e18, "finalized uses claimable ETH; pending uses amountOfStETH");
+    }
+
+    function test_getOracleBalanceForAsset_finalizedRequestsUnsortedOrder() public {
+        // getWithdrawalRequests can return ids in non-ascending order (Lido's EnumerableSet does
+        // swap-and-pop on claim). Lido's findCheckpointHints reverts on an unsorted batch, so the
+        // adapter must resolve each finalized request's claimable ETH per-request. ids = [30, 20].
+        queue.pushFinalizedRequest(alice, 30, 3e18, 2.95e18);
+        queue.pushFinalizedRequest(alice, 20, 2e18, 2e18);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 2.95e18 + 2e18, "per-request hint lookup avoids the sorted-batch revert");
     }
 
     function test_getOracleBalanceForAsset_skipsClaimed() public {

@@ -107,8 +107,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     ///        here would overstate NAV.
     ///      - **not yet finalized** → fall back to `amountOfStETH` (the redemption rate isn't fixed
     ///        until finalization; never invent one). It equals the ETH paid in the normal case.
-    ///      `getClaimableEther` returns 0 for not-finalized/claimed requests, so the per-request
-    ///      `isFinalized` switch selects the right source. Claimed requests are skipped.
+    ///      The claimable lookup is done per request (single-element arrays) — see the inline note on
+    ///      `findCheckpointHints`'s ascending-sorted requirement. Claimed requests are skipped.
     function _ethOwed(address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
@@ -121,22 +121,23 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         uint256[] memory ids = WITHDRAWAL_QUEUE.getWithdrawalRequests(account);
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(ids);
-
-        // Exact claimable ETH for finalized requests; `claimable[i]` is 0 for not-finalized/claimed.
-        // Skipped only if Lido has no checkpoints yet (no request can be finalized then).
         uint256 lastCheckpoint = WITHDRAWAL_QUEUE.getLastCheckpointIndex();
-        uint256[] memory claimable;
-        if (lastCheckpoint != 0) {
-            uint256[] memory hints = WITHDRAWAL_QUEUE.findCheckpointHints(ids, 1, lastCheckpoint);
-            claimable = WITHDRAWAL_QUEUE.getClaimableEther(ids, hints);
-        }
 
         for (uint256 i = 0; i < statuses.length; i++) {
             if (statuses[i].isClaimed) {
                 continue;
             }
-            if (statuses[i].isFinalized && claimable.length != 0) {
-                total += claimable[i];
+            if (statuses[i].isFinalized && lastCheckpoint != 0) {
+                // Resolve the exact claimable ETH one request at a time. `findCheckpointHints`
+                // reverts (`RequestIdsNotSorted`) unless its id array is ascending-sorted, and
+                // `getWithdrawalRequests` returns the owner's EnumerableSet order — NOT guaranteed
+                // sorted (a claim does swap-and-pop, reordering the set). A single-element array is
+                // trivially sorted, so this sidesteps the requirement without sorting in-contract;
+                // it also avoids the hint/claimable calls entirely for not-yet-finalized requests.
+                uint256[] memory one = new uint256[](1);
+                one[0] = ids[i];
+                uint256[] memory hint = WITHDRAWAL_QUEUE.findCheckpointHints(one, 1, lastCheckpoint);
+                total += WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
             } else {
                 total += statuses[i].amountOfStETH;
             }

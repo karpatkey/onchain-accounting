@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
+import {LidoWithdrawalQueueBalanceOracle, ILidoWithdrawalQueue} from "src/balances/protocols/LidoWithdrawalQueue.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
+
+/// @notice Minimal mock of Lido's WithdrawalQueueERC721.
+/// @dev Mirrors the two view methods the adapter relies on: `getWithdrawalRequests(owner)` and
+///      `getWithdrawalStatus(ids)`.
+contract MockLidoWithdrawalQueue {
+    mapping(address => uint256[]) private _ids;
+    mapping(uint256 => ILidoWithdrawalQueue.WithdrawalRequestStatus) private _status;
+
+    function pushRequest(address owner, uint256 id, uint256 amountOfStETH, bool isClaimed) external {
+        _ids[owner].push(id);
+        _status[id] = ILidoWithdrawalQueue.WithdrawalRequestStatus({
+            amountOfStETH: amountOfStETH,
+            amountOfShares: amountOfStETH, // shares ~ stETH for the mock; unused by the adapter
+            owner: owner,
+            timestamp: 0,
+            isFinalized: false,
+            isClaimed: isClaimed
+        });
+    }
+
+    function getWithdrawalRequests(address owner) external view returns (uint256[] memory) {
+        return _ids[owner];
+    }
+
+    function getWithdrawalStatus(uint256[] calldata requestIds)
+        external
+        view
+        returns (ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory statuses)
+    {
+        statuses = new ILidoWithdrawalQueue.WithdrawalRequestStatus[](requestIds.length);
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            statuses[i] = _status[requestIds[i]];
+        }
+    }
+}
+
+/// @title LidoWithdrawalQueueBalanceOracle unit tests
+contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
+    string internal constant POSITION_DETAIL_BASE =
+        "{\"protocol\":\"Lido\",\"product\":\"Staking\",\"name\":\"stETH Withdrawal Queue\"";
+    string internal constant POSITION_DETAIL_FULL =
+        "{\"protocol\":\"Lido\",\"product\":\"Staking\",\"name\":\"stETH Withdrawal Queue\",\"type\":\"Staking\"}";
+
+    LidoWithdrawalQueueBalanceOracle public oracle;
+    MockLidoWithdrawalQueue public queue;
+
+    // `weth` (registered in the base) stands in for stETH as the underlying.
+    function setUp() public override {
+        super.setUp();
+        queue = new MockLidoWithdrawalQueue();
+        oracle = new LidoWithdrawalQueueBalanceOracle(
+            address(queue),
+            address(weth),
+            "Lido",
+            POSITION_DETAIL_BASE,
+            "0x0000000000000000000000000000000000000001",
+            address(balances)
+        );
+    }
+
+    // ---- Constructor ----
+
+    function test_constructor_revertsOnZeroQueue() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new LidoWithdrawalQueueBalanceOracle(
+            address(0), address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
+        );
+    }
+
+    function test_constructor_revertsOnZeroUnderlying() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new LidoWithdrawalQueueBalanceOracle(
+            address(queue), address(0), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
+        );
+    }
+
+    function test_constructor_revertsWhenQueueNotContract() public {
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(bytes("WithdrawalQueue must be a contract"));
+        new LidoWithdrawalQueueBalanceOracle(
+            eoa, address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
+        );
+    }
+
+    function test_constructor_revertsWhenNAVNotContract() public {
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        new LidoWithdrawalQueueBalanceOracle(address(queue), address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", eoa);
+    }
+
+    // ---- Interface ----
+
+    function test_supportsInterface() public view {
+        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(oracle.supportsInterface(0xdeadbeef));
+    }
+
+    function test_underlyingAssetsSupported() public view {
+        address[] memory assets = oracle.underlyingAssetsSupported();
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(weth));
+    }
+
+    // ---- getOracleBalanceForAsset ----
+
+    function test_getOracleBalanceForAsset_zeroAsset() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(0));
+        assertEq(amount, 0);
+    }
+
+    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 0);
+    }
+
+    function test_getOracleBalanceForAsset_zeroAccount() public view {
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(weth));
+        assertEq(amount, 0);
+    }
+
+    function test_getOracleBalanceForAsset_singleOpenRequest() public {
+        queue.pushRequest(alice, 1, 2.5e18, false);
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 2.5e18);
+        assertFalse(isDebt);
+    }
+
+    function test_getOracleBalanceForAsset_multipleRequestsSummed() public {
+        queue.pushRequest(alice, 1, 2.5e18, false);
+        queue.pushRequest(alice, 2, 1.1e18, false);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 3.6e18);
+    }
+
+    function test_getOracleBalanceForAsset_skipsClaimed() public {
+        queue.pushRequest(alice, 1, 2e18, true); // claimed
+        queue.pushRequest(alice, 2, 3e18, false);
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 3e18, "Claimed request must be excluded");
+    }
+
+    function test_getOracleBalanceForAsset_capsAtMaxRequestsProbed() public {
+        uint256 cap = oracle.MAX_REQUESTS_PROBED();
+        for (uint256 i = 0; i < cap + 5; i++) {
+            queue.pushRequest(alice, i + 1, 1e18, false);
+        }
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, cap * 1e18, "Should sum exactly MAX_REQUESTS_PROBED requests");
+    }
+
+    // ---- getOracleBalances ----
+
+    function test_getOracleBalances_zeroAccount() public view {
+        (address[] memory assets,,) = oracle.getOracleBalances(address(0));
+        assertEq(assets.length, 0);
+    }
+
+    function test_getOracleBalances_emptyForNoRequests() public view {
+        (address[] memory assets,,) = oracle.getOracleBalances(alice);
+        assertEq(assets.length, 0);
+    }
+
+    function test_getOracleBalances_singlePosition() public {
+        queue.pushRequest(alice, 1, 4e18, false);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(weth));
+        assertEq(amounts[0], 4e18);
+        assertFalse(isDebt[0]);
+    }
+
+    // ---- getOraclePositions ----
+
+    function test_getOraclePositions_zeroBalanceProducesEmpty() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+        assertEq(positions.length, 0);
+    }
+
+    function test_getOraclePositions_filtersByAsset() public {
+        queue.pushRequest(alice, 1, 5e18, false);
+
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(usdc));
+        assertEq(positions.length, 0, "Filter mismatch should produce empty");
+
+        positions = oracle.getOraclePositions(alice, address(weth));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].underlyingAsset.asset, address(weth));
+        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].amount, 5e18);
+        assertFalse(positions[0].isDebt);
+        assertEq(positions[0].protocol, "Lido");
+        assertEq(positions[0].positionDetail, POSITION_DETAIL_FULL);
+    }
+
+    function test_getOraclePositions_emptyWhenAssetUnregistered() public {
+        address unregistered = makeAddr("unregisteredAsset");
+        LidoWithdrawalQueueBalanceOracle freshOracle = new LidoWithdrawalQueueBalanceOracle(
+            address(queue), unregistered, "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
+        );
+        queue.pushRequest(alice, 1, 5e18, false);
+
+        INAVCalculator.PositionBalance[] memory positions = freshOracle.getOraclePositions(alice, address(0));
+        assertEq(positions.length, 0, "Unregistered underlying should not produce positions");
+    }
+}

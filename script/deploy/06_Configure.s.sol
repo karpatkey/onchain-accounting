@@ -135,7 +135,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](50);
+        names = new string[](51);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -196,6 +196,8 @@ contract Configure is BaseDeployScript {
         names[i++] = "StaderWithdrawalQueue";
         // Kelp DAO (Mainnet)
         names[i++] = "KelpWithdrawalQueue";
+        // Lido (Mainnet)
+        names[i++] = "LidoWithdrawalQueue";
         // StakeWise V3 (Mainnet)
         names[i++] = "StakeWiseV3OsToken_ETH";
         names[i++] = "StakeWiseV3Vault_Genesis";

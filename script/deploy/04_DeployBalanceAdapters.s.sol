@@ -27,6 +27,7 @@ import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/Stak
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
+import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
@@ -161,6 +162,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
         _deployIfEnabled("StaderWithdrawalQueue");
+
+        // --- Kelp DAO (Mainnet only) — rsETH exit-queue balance oracle ---
+        _deployIfEnabled("KelpWithdrawalQueue");
 
         // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
         _deployIfEnabled("StakeWiseV3OsToken_ETH");
@@ -338,6 +342,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Stader withdrawal queue
         if (_equals(adapterName, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(adapterName, navCalculator);
+        }
+
+        // Kelp DAO rsETH exit queue
+        if (_equals(adapterName, "KelpWithdrawalQueue")) {
+            return _deployKelpWithdrawalQueue(adapterName, navCalculator);
         }
 
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
@@ -754,6 +763,26 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         StaderWithdrawalQueueBalanceOracle adapter = new StaderWithdrawalQueueBalanceOracle(
             userWithdrawalManager, underlyingToken, protocol, positionDetail, positionId, navCalculator
+        );
+        return address(adapter);
+    }
+
+    function _deployKelpWithdrawalQueue(string memory adapterName, address navCalculator) internal returns (address) {
+        // The set of payout assets (stETH, ETHx, native ETH) is discovered at runtime from
+        // `withdrawalManager.lrtConfig().getSupportedAssetList()`, so only the manager + identity
+        // strings are read from config.
+        address withdrawalManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalManager")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+        string memory positionId =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
+
+        KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(
+            withdrawalManager, protocol, positionDetail, positionId, navCalculator
         );
         return address(adapter);
     }

@@ -646,6 +646,17 @@
       },
       "deployed": ""
     },
+    "KelpWithdrawalQueue": {
+      "enabled": true,
+      "constructor": {
+        "withdrawalManager": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
+        "protocol": "Kelp",
+        "positionDetail": "{\"protocol\":\"Kelp\",\"product\":\"Withdrawal Queue\",\"name\":\"rsETH\"",
+        "positionId": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16"
+      },
+      "deployed": "",
+      "comment": "Kelp DAO rsETH exit queue (LRTWithdrawalManager). Multi-asset: supported payout assets (stETH, ETHx, native ETH) discovered at runtime via lrtConfig().getSupportedAssetList(); positions emitted only for NAV-registered assets."
+    },
     "MerklRewards": {
       "enabled": false,
       "constructor": {

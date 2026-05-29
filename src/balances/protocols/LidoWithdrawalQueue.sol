@@ -93,16 +93,22 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     // Balance computation
     //
 
-    /// @notice Sums `amountOfStETH` (= the ETH owed) across `account`'s open (un-claimed) requests.
+    /// @notice Sums the ETH owed across `account`'s open (un-claimed) withdrawal requests.
     /// @dev Reads `balanceOf` (the count of open request NFTs — claiming burns the NFT) FIRST, in
     ///      O(1), so the unbounded id list is never materialised when the count is pathological.
     ///      Lido's `WithdrawalQueueERC721` is NOT `ERC721Enumerable` (no `tokenOfOwnerByIndex`) and
     ///      `getWithdrawalRequests` returns the *entire* id set, so there is no way to read a bounded
     ///      slice. If the count exceeds `MAX_REQUESTS_PROBED` we skip (return 0) rather than risk
     ///      OOG'ing the NAV read on a list an attacker can inflate by transferring withdrawal NFTs in
-    ///      — an OOG is NOT caught by NAVCalculator's try/catch. A real account never approaches the
-    ///      cap; the per-adapter fork test covers the live path. Claimed requests are skipped via
-    ///      `isClaimed`. `amountOfStETH` is the stETH locked at request time (the value owed).
+    ///      — an OOG is NOT caught by NAVCalculator's try/catch. A real account never approaches the cap.
+    /// @dev Per request (since the position is denominated in ETH):
+    ///      - **finalized** → use Lido's exact claimable ETH (`getClaimableEther`). Finalization can
+    ///        lock in *less* than `amountOfStETH` after a negative rebase, so using `amountOfStETH`
+    ///        here would overstate NAV.
+    ///      - **not yet finalized** → fall back to `amountOfStETH` (the redemption rate isn't fixed
+    ///        until finalization; never invent one). It equals the ETH paid in the normal case.
+    ///      `getClaimableEther` returns 0 for not-finalized/claimed requests, so the per-request
+    ///      `isFinalized` switch selects the right source. Claimed requests are skipped.
     function _ethOwed(address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
@@ -115,8 +121,23 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         uint256[] memory ids = WITHDRAWAL_QUEUE.getWithdrawalRequests(account);
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(ids);
+
+        // Exact claimable ETH for finalized requests; `claimable[i]` is 0 for not-finalized/claimed.
+        // Skipped only if Lido has no checkpoints yet (no request can be finalized then).
+        uint256 lastCheckpoint = WITHDRAWAL_QUEUE.getLastCheckpointIndex();
+        uint256[] memory claimable;
+        if (lastCheckpoint != 0) {
+            uint256[] memory hints = WITHDRAWAL_QUEUE.findCheckpointHints(ids, 1, lastCheckpoint);
+            claimable = WITHDRAWAL_QUEUE.getClaimableEther(ids, hints);
+        }
+
         for (uint256 i = 0; i < statuses.length; i++) {
-            if (!statuses[i].isClaimed) {
+            if (statuses[i].isClaimed) {
+                continue;
+            }
+            if (statuses[i].isFinalized && claimable.length != 0) {
+                total += claimable[i];
+            } else {
                 total += statuses[i].amountOfStETH;
             }
         }
@@ -252,4 +273,19 @@ interface ILidoWithdrawalQueue {
         external
         view
         returns (WithdrawalRequestStatus[] memory statuses);
+
+    /// @notice Index of the last finalization checkpoint (0 if none yet).
+    function getLastCheckpointIndex() external view returns (uint256);
+
+    /// @notice Per-request checkpoint hint for `getClaimableEther`; 0 for requests not yet finalized.
+    function findCheckpointHints(uint256[] calldata _requestIds, uint256 _firstIndex, uint256 _lastIndex)
+        external
+        view
+        returns (uint256[] memory hintIds);
+
+    /// @notice Exact ETH claimable per request given its checkpoint hint; 0 for not-finalized/claimed.
+    function getClaimableEther(uint256[] calldata _requestIds, uint256[] calldata _hints)
+        external
+        view
+        returns (uint256[] memory claimableEthValues);
 }

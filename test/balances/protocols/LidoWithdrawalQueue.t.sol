@@ -15,7 +15,9 @@ import "src/errors.sol";
 contract MockLidoWithdrawalQueue {
     mapping(address => uint256[]) private _ids;
     mapping(uint256 => ILidoWithdrawalQueue.WithdrawalRequestStatus) private _status;
+    mapping(uint256 => uint256) private _claimable; // exact claimable ETH for finalized requests
 
+    /// @notice Push a not-yet-finalized request (adapter values it via amountOfStETH).
     function pushRequest(address owner, uint256 id, uint256 amountOfStETH, bool isClaimed) external {
         _ids[owner].push(id);
         _status[id] = ILidoWithdrawalQueue.WithdrawalRequestStatus({
@@ -26,6 +28,20 @@ contract MockLidoWithdrawalQueue {
             isFinalized: false,
             isClaimed: isClaimed
         });
+    }
+
+    /// @notice Push a finalized, un-claimed request whose exact claimable ETH may differ from amountOfStETH.
+    function pushFinalizedRequest(address owner, uint256 id, uint256 amountOfStETH, uint256 claimableEth) external {
+        _ids[owner].push(id);
+        _status[id] = ILidoWithdrawalQueue.WithdrawalRequestStatus({
+            amountOfStETH: amountOfStETH,
+            amountOfShares: amountOfStETH,
+            owner: owner,
+            timestamp: 0,
+            isFinalized: true,
+            isClaimed: false
+        });
+        _claimable[id] = claimableEth;
     }
 
     function balanceOf(address owner) external view returns (uint256) {
@@ -44,6 +60,35 @@ contract MockLidoWithdrawalQueue {
         statuses = new ILidoWithdrawalQueue.WithdrawalRequestStatus[](requestIds.length);
         for (uint256 i = 0; i < requestIds.length; i++) {
             statuses[i] = _status[requestIds[i]];
+        }
+    }
+
+    function getLastCheckpointIndex() external pure returns (uint256) {
+        return 1; // non-zero so the adapter takes the claimable-ETH path
+    }
+
+    function findCheckpointHints(uint256[] calldata requestIds, uint256, uint256)
+        external
+        view
+        returns (uint256[] memory hints)
+    {
+        hints = new uint256[](requestIds.length);
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            // mirror Lido: a hint exists only for finalized requests, else 0
+            if (_status[requestIds[i]].isFinalized) hints[i] = 1;
+        }
+    }
+
+    function getClaimableEther(uint256[] calldata requestIds, uint256[] calldata)
+        external
+        view
+        returns (uint256[] memory claimableEthValues)
+    {
+        claimableEthValues = new uint256[](requestIds.length);
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            ILidoWithdrawalQueue.WithdrawalRequestStatus storage s = _status[requestIds[i]];
+            // mirror Lido: claimable only for finalized & un-claimed requests
+            if (s.isFinalized && !s.isClaimed) claimableEthValues[i] = _claimable[requestIds[i]];
         }
     }
 }
@@ -145,6 +190,15 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         queue.pushRequest(alice, 2, 1.1e18, false);
         (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
         assertEq(amount, 3.6e18);
+    }
+
+    function test_getOracleBalanceForAsset_finalizedUsesClaimableEth() public {
+        // Finalized below amountOfStETH (e.g. after a negative rebase): the adapter must use the
+        // exact claimable ETH for the finalized request, and amountOfStETH for the pending one.
+        queue.pushFinalizedRequest(alice, 1, 3e18, 2.9e18); // finalized: claimable 2.9 < 3.0 stETH
+        queue.pushRequest(alice, 2, 1e18, false); // pending: valued at amountOfStETH
+        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        assertEq(amount, 2.9e18 + 1e18, "finalized uses claimable ETH; pending uses amountOfStETH");
     }
 
     function test_getOracleBalanceForAsset_skipsClaimed() public {

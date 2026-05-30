@@ -181,8 +181,32 @@
       },
       "deployed": ""
     },
-    "MorphoMarket_wstETH_USDC": {
+    "MorphoMarketsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. The active marketId set lives on NAVCalculator (setMetaInstances, from metaInstancesRaw below). Supersedes the per-market MorphoMarket_* adapters, which are disabled below.",
       "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "protocol": "Morpho"
+      },
+      "metaInstancesRaw": [
+        "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+        "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+        "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
+        "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
+        "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+        "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
+        "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+        "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
+        "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
+        "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
+        "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
+        "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942"
+      ],
+      "deployed": ""
+    },
+    "MorphoMarket_wstETH_USDC": {
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
@@ -192,7 +216,8 @@
       "deployed": "0x4A68C3dA533fF7527CD67390f80d87ca6a95551d"
     },
     "MorphoMarket_cbBTC_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
@@ -202,7 +227,8 @@
       "deployed": "0x8b0F047127D58692C869033a551872c4Fe55e758"
     },
     "MorphoMarket_wstUSR_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
@@ -212,7 +238,8 @@
       "deployed": "0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42"
     },
     "MorphoMarket_ETHPlus_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
@@ -222,7 +249,8 @@
       "deployed": "0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2"
     },
     "MorphoMarket_WBTC_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
@@ -232,7 +260,8 @@
       "deployed": "0xe1CE19c8C668cD3659f2AE64E2C9D078c71Ef8F6"
     },
     "MorphoMarket_RLP_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
@@ -242,7 +271,8 @@
       "deployed": "0x9970D0D8932051d21883C854fC42eb67a54348FF"
     },
     "MorphoMarket_syrupUSDC_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
@@ -252,7 +282,8 @@
       "deployed": "0x7A7e9F5562C0126fb2bCC2f29D1098b60A452431"
     },
     "MorphoMarket_sUSDS_USDT": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
@@ -262,7 +293,8 @@
       "deployed": "0x6837d6a2F1335fffBb6B21b51d24D34F12a02DaA"
     },
     "MorphoMarket_ETHPlus_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
@@ -272,7 +304,8 @@
       "deployed": "0x618207B0650cE45C241760CE0b6E560167EcC1AA"
     },
     "MorphoMarket_wstETH_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
@@ -282,7 +315,8 @@
       "deployed": "0xAF28F8E8E24B6B23f6BB667f868b9bAFFBEfd8B6"
     },
     "MorphoMarket_weETH_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
@@ -292,7 +326,8 @@
       "deployed": "0x537E83dc59b2Ee2C7bD46B2f4801c5DF3B3f8aD1"
     },
     "MorphoMarket_rsETH_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by MorphoMarketsMeta (ADR 0010). Market still queried via metaInstancesRaw.",
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",

@@ -150,7 +150,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](51);
+        names = new string[](52);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -171,6 +171,8 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
         // Morpho Vaults meta-adapter (ADR 0010): instance set configured via setMetaInstances
         names[i++] = "MorphoVaultsMeta";
+        // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
+        names[i++] = "MorphoMarketsMeta";
         // Morpho Markets
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";
@@ -285,14 +287,23 @@ contract Configure is BaseDeployScript {
         return txIndex;
     }
 
-    /// @notice Reads a meta-adapter's `metaInstances` address list from config and widens each to bytes32.
+    /// @notice Reads a meta-adapter's configured instance coordinates from config: `metaInstances` (address list,
+    ///         widened to bytes32 — for vault/pool-address adapters) unioned with `metaInstancesRaw` (raw bytes32
+    ///         list — for marketId-keyed adapters like MorphoMarketsMeta). An adapter uses one or the other.
     /// @return instances The instance coordinates (empty for non-meta adapters or when unset).
     function _readMetaInstances(string memory adapterName) internal view returns (bytes32[] memory instances) {
         address[] memory addrs =
             ConfigReader.readAdapterAddressArray(vm, currentChainId, "balanceAdapters", adapterName, "metaInstances");
-        instances = new bytes32[](addrs.length);
+        bytes32[] memory raw = ConfigReader.readAdapterBytes32Array(
+            vm, currentChainId, "balanceAdapters", adapterName, "metaInstancesRaw"
+        );
+
+        instances = new bytes32[](addrs.length + raw.length);
         for (uint256 i = 0; i < addrs.length; i++) {
             instances[i] = bytes32(uint256(uint160(addrs[i])));
+        }
+        for (uint256 i = 0; i < raw.length; i++) {
+            instances[addrs.length + i] = raw[i];
         }
     }
 

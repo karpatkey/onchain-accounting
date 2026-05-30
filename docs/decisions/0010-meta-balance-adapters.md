@@ -31,7 +31,11 @@ Adopt route 2. Introduce a second adapter class alongside `IBalanceOracleAdapter
   - **The NAVCalculator read path is unchanged**: it calls `getOraclePositions(account, assetFilter)` on every oracle as before. Meta-adapters pull their own set inside that call, so there is no meta-specific branch (and no per-oracle ERC165 flag) in the hot path. This also keeps `NAVCalculator` under the EIP-170 code-size limit, which a routing branch would have exceeded.
 - Per-instance identity (`positionId`, `positionDetail`) is **derived on-chain** from the instance coordinate (e.g. `positionId = vaultAddress.toHexString()`, `name` read from the vault's ERC20 `name()`). Nothing instance-specific is stored in config.
 
-The pilot is **`MorphoVaultsMetaBalanceOracle`** (`src/balances/protocols/MorphoVaultsMeta.sol`): one adapter for *every* Morpho ERC4626 vault, with the active vault set configured on NAVCalculator.
+The first two concrete adapters:
+- **`MorphoVaultsMetaBalanceOracle`** (`src/balances/protocols/MorphoVaultsMeta.sol`): one adapter for *every* Morpho ERC4626 vault. Instance coordinate = vault address (widened to bytes32). Config: `metaInstances` (address array).
+- **`MorphoMarketsMetaBalanceOracle`** (`src/balances/protocols/MorphoMarketsMeta.sol`): one adapter for *every* Morpho Blue market. Instance coordinate = the **`bytes32` marketId, used directly** (the case the bytes32 coordinate was chosen for). Emits up to three gross legs per market (collateral / loan-supply / loan-borrow), matching the per-market `MorphoMarket` adapter. Config: `metaInstancesRaw` (raw bytes32 array). Because a single asset filter can match two legs (loan-token supply + borrow), `NAVCalculator._getPositionBalances` sizes its buffer as `(oracles + metaInstanceTotal) × assetCount` in both the filtered and unfiltered cases.
+
+Both migrate their per-instance predecessors (`MorphoVault_*`, `MorphoMarket_*`) in the mainnet config + integration suite; NAV value is unchanged (verified: position-level delta = 0).
 
 ## Consequences
 

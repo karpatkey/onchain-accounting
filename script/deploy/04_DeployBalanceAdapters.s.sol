@@ -15,6 +15,7 @@ import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
 import {MorphoVaultsMetaBalanceOracle} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceOracle} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
@@ -94,6 +95,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVault_kpkEURC_V1"); // Mainnet — EUR Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
+        _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
 
         // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
         _deployIfEnabled("MorphoMarket_wstETH_USDC");
@@ -259,6 +261,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // SparkLend adapters (bare name for single-instance, prefix for future multi-market)
         if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
             return _deploySparkLend(adapterName, navCalculator);
+        }
+
+        // Morpho Markets meta-adapter (one adapter for all markets; marketId set lives on NAVCalculator — ADR 0010)
+        if (_equals(adapterName, "MorphoMarketsMeta")) {
+            return _deployMorphoMarketsMeta(adapterName, navCalculator);
         }
 
         // MorphoBlue adapters
@@ -466,6 +473,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         MorphoMarketBalanceOracle adapter =
             new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Morpho Markets meta-adapter. Constructor takes (morpho, protocol, navCalculator); the
+    ///         set of markets to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployMorphoMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address morpho = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        MorphoMarketsMetaBalanceOracle adapter = new MorphoMarketsMetaBalanceOracle(morpho, protocol, navCalculator);
         return address(adapter);
     }
 

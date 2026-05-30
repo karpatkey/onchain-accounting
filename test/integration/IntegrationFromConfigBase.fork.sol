@@ -20,6 +20,7 @@ import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
 import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceOracle} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
@@ -496,6 +497,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             return _deploySparkLend(name, navAddr);
         }
+        if (_equals(name, "MorphoMarketsMeta")) {
+            return _deployMorphoMarketsMeta(name, navAddr);
+        }
         if (_startsWith(name, "MorphoMarket_")) {
             return _deployMorphoMarket(name, navAddr);
         }
@@ -616,6 +620,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new MorphoVaultsMetaBalanceOracle(protocol, navAddr));
+    }
+
+    function _deployMorphoMarketsMeta(string memory name, address navAddr) internal returns (address) {
+        address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new MorphoMarketsMetaBalanceOracle(morpho, protocol, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
@@ -954,21 +964,27 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _configureMetaInstances() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
+            string memory name = _deployedBalanceAdapterNames[i];
 
-            address[] memory addrs = ConfigReader.readAdapterAddressArray(
-                vm, _chainId, "balanceAdapters", _deployedBalanceAdapterNames[i], "metaInstances"
-            );
-            if (addrs.length == 0) continue;
+            // Union address-keyed (`metaInstances`, widened) + raw bytes32 (`metaInstancesRaw`, e.g. marketIds).
+            address[] memory addrs =
+                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "metaInstances");
+            bytes32[] memory raw =
+                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "metaInstancesRaw");
+            if (addrs.length + raw.length == 0) continue;
 
-            bytes32[] memory instances = new bytes32[](addrs.length);
+            bytes32[] memory instances = new bytes32[](addrs.length + raw.length);
             for (uint256 j = 0; j < addrs.length; j++) {
                 instances[j] = bytes32(uint256(uint160(addrs[j])));
             }
+            for (uint256 j = 0; j < raw.length; j++) {
+                instances[addrs.length + j] = raw[j];
+            }
 
             try nav.setMetaInstances(a, instances) {
-                console2.log("[meta] setMetaInstances", _deployedBalanceAdapterNames[i], instances.length);
+                console2.log("[meta] setMetaInstances", name, instances.length);
             } catch (bytes memory err) {
-                console2.log("[meta] setMetaInstances FAILED for", _deployedBalanceAdapterNames[i]);
+                console2.log("[meta] setMetaInstances FAILED for", name);
                 console2.logBytes(err);
             }
         }

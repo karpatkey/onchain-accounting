@@ -12,8 +12,9 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///         protocol. Concrete adapters implement two hooks (`_instancePositions`, `_instanceAssets`); this base
 ///         provides the ERC165 wiring, the empty no-arg `IBalanceOracleAdapter` methods, the per-instance fan-out
 ///         with revert isolation, and shared NAVCalculator registry helpers.
-/// @dev Instances are passed in by NAVCalculator at query time (see IMetaBalanceOracleAdapter). The adapter holds
-///      no instance set and no admin functions — it stays immutable.
+/// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
+///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
+///      own — it stays immutable. `getOraclePositionsForInstances` is also exposed for explicit/off-chain queries.
 abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
     //
     // State
@@ -48,21 +49,23 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
     }
 
     //
-    // IBalanceOracleAdapter — no-arg variants
+    // IBalanceOracleAdapter
     //
-    // A meta-adapter holds no instance set locally, so the no-arg methods return empty. NAVCalculator detects the
-    // meta interface at registration and always routes through the instance-aware methods below.
+    // NAVCalculator calls getOraclePositions(account, assetFilter) on every oracle uniformly. A meta-adapter
+    // services it by reading its NAV-configured instance set and fanning out — no special routing in NAV.
+    // getOracleBalances / getOracleBalanceForAsset are not used by the NAV path and return empty.
     //
 
     /// @inheritdoc IBalanceOracleAdapter
-    function getOraclePositions(address, address)
+    /// @dev Reads the NAV-configured instance set for this adapter and fans out over it (ADR 0010).
+    function getOraclePositions(address account, address assetFilter)
         external
         view
         virtual
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        return new INAVCalculator.PositionBalance[](0);
+        return _positionsForInstances(account, NAV_CALCULATOR.getMetaInstances(address(this)), assetFilter);
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -83,7 +86,7 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view virtual override returns (address[] memory) {
-        return new address[](0);
+        return _assetsForInstances(NAV_CALCULATOR.getMetaInstances(address(this)));
     }
 
     //
@@ -95,9 +98,31 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
         external
         view
         override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        return _positionsForInstances(account, instances, assetFilter);
+    }
+
+    /// @inheritdoc IMetaBalanceOracleAdapter
+    function underlyingAssetsSupportedForInstances(bytes32[] calldata instances)
+        external
+        view
+        override
+        returns (address[] memory)
+    {
+        return _assetsForInstances(instances);
+    }
+
+    //
+    // Internal fan-out
+    //
+
+    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the batch.
+    function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
+        internal
+        view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        // Gather per-instance results first, isolating a faulty instance so it cannot zero out the whole batch.
         INAVCalculator.PositionBalance[][] memory perInstance = new INAVCalculator.PositionBalance[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {
@@ -120,13 +145,8 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
         }
     }
 
-    /// @inheritdoc IMetaBalanceOracleAdapter
-    function underlyingAssetsSupportedForInstances(bytes32[] calldata instances)
-        external
-        view
-        override
-        returns (address[] memory assets)
-    {
+    /// @notice Aggregates the underlying assets across `instances`.
+    function _assetsForInstances(bytes32[] memory instances) internal view returns (address[] memory assets) {
         address[][] memory perInstance = new address[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {

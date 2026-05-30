@@ -92,12 +92,8 @@ contract BalancesHarness is Balances {
         _setMetaInstances(oracle, instances);
     }
 
-    function addMetaInstanceDirect(address oracle, bytes32 instance) public {
-        _addMetaInstance(oracle, instance);
-    }
-
-    function removeMetaInstanceDirect(address oracle, bytes32 instance) public {
-        _removeMetaInstance(oracle, instance);
+    function metaInstanceTotalForTest() public view returns (uint256) {
+        return _metaInstanceTotal;
     }
 }
 
@@ -457,19 +453,6 @@ contract BalancesTest is Test {
         balances.addBalanceOracleDirect(address(0), address(meta), IBalances.OracleType.Custom);
     }
 
-    function test_meta_flagSetOnRegistration() public {
-        Mock_MetaOracle meta = _registerMeta();
-        assertTrue(balances.isMetaOracle(address(meta)), "meta flag should be set");
-        // A plain oracle is not flagged as meta.
-        assertFalse(balances.isMetaOracle(address(customOracle)), "plain oracle must not be meta");
-    }
-
-    function test_meta_plainOracleNotMeta_afterAdd() public {
-        vm.prank(admin);
-        balances.addBalanceOracleDirect(address(0), address(customOracle), IBalances.OracleType.Custom);
-        assertFalse(balances.isMetaOracle(address(customOracle)));
-    }
-
     function test_meta_setInstances() public {
         Mock_MetaOracle meta = _registerMeta();
         bytes32[] memory instances = new bytes32[](2);
@@ -497,31 +480,18 @@ contract BalancesTest is Test {
         assertEq(got[0], bytes32(uint256(3)));
     }
 
-    function test_meta_addAndRemoveInstance() public {
+    function test_meta_instanceTotal_tracksAcrossOracles() public {
         Mock_MetaOracle meta = _registerMeta();
-        balances.addMetaInstanceDirect(address(meta), bytes32(uint256(7)));
-        balances.addMetaInstanceDirect(address(meta), bytes32(uint256(7))); // idempotent
-        assertEq(balances.getMetaInstances(address(meta)).length, 1);
+        bytes32[] memory two = new bytes32[](2);
+        two[0] = bytes32(uint256(1));
+        two[1] = bytes32(uint256(2));
+        balances.setMetaInstancesDirect(address(meta), two);
+        assertEq(balances.metaInstanceTotalForTest(), 2);
 
-        balances.removeMetaInstanceDirect(address(meta), bytes32(uint256(7)));
-        assertEq(balances.getMetaInstances(address(meta)).length, 0);
-    }
-
-    function test_meta_setInstances_zeroReverts() public {
-        Mock_MetaOracle meta = _registerMeta();
-        bytes32[] memory instances = new bytes32[](1);
-        instances[0] = bytes32(0);
-        vm.expectRevert(InvalidArguments.selector);
-        balances.setMetaInstancesDirect(address(meta), instances);
-    }
-
-    function test_meta_setInstances_onNonMetaReverts() public {
-        vm.prank(admin);
-        balances.addBalanceOracleDirect(address(0), address(customOracle), IBalances.OracleType.Custom);
-        bytes32[] memory instances = new bytes32[](1);
-        instances[0] = bytes32(uint256(1));
-        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
-        balances.setMetaInstancesDirect(address(customOracle), instances);
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = bytes32(uint256(3));
+        balances.setMetaInstancesDirect(address(meta), one);
+        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects replacement");
     }
 
     function test_meta_setInstances_onUnregisteredReverts() public {
@@ -530,19 +500,5 @@ contract BalancesTest is Test {
         instances[0] = bytes32(uint256(1));
         vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
         balances.setMetaInstancesDirect(address(meta), instances);
-    }
-
-    function test_meta_removeOracle_clearsState() public {
-        Mock_MetaOracle meta = _registerMeta();
-        bytes32[] memory instances = new bytes32[](2);
-        instances[0] = bytes32(uint256(1));
-        instances[1] = bytes32(uint256(2));
-        balances.setMetaInstancesDirect(address(meta), instances);
-
-        vm.prank(admin);
-        balances.unsetBalanceOracle(address(0), address(meta));
-
-        assertFalse(balances.isMetaOracle(address(meta)), "meta flag cleared on removal");
-        assertEq(balances.getMetaInstances(address(meta)).length, 0, "instances cleared on removal");
     }
 }

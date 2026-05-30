@@ -96,8 +96,7 @@ contract MorphoVaultsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
     }
 
-    function test_metaFlagAndInstances_registered() public view {
-        assertTrue(nav.isMetaOracle(address(oracle)), "adapter registered as meta");
+    function test_metaInstances_registered() public view {
         assertEq(nav.getMetaInstances(address(oracle)).length, 2);
     }
 

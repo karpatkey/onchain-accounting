@@ -24,11 +24,11 @@ Adopt route 2. Introduce a second adapter class alongside `IBalanceOracleAdapter
   - `getOraclePositionsForInstances(account, bytes32[] instances, assetFilter)`
   - `underlyingAssetsSupportedForInstances(bytes32[] instances)`
   The inherited no-arg methods return **empty** on a meta-adapter (it holds no instance set locally).
-- **`MetaBalanceOracle`** (`src/balances/MetaBalanceOracle.sol`) — abstract base providing ERC165 (advertising both interfaces), the empty no-arg methods, per-instance fan-out with **per-instance revert isolation** (a bad instance cannot zero out the batch), and the shared registered-asset helper. Concrete adapters implement two hooks: `_instancePositions` and `_instanceAssets`.
+- **`MetaBalanceOracle`** (`src/balances/MetaBalanceOracle.sol`) — abstract base providing ERC165 (advertising both interfaces), per-instance fan-out with **per-instance revert isolation** (a bad instance cannot zero out the batch), and the shared registered-asset helper. Concrete adapters implement two hooks: `_instancePositions` and `_instanceAssets`. Its `getOraclePositions(account, assetFilter)` reads its own NAV-configured set via `NAV_CALCULATOR.getMetaInstances(address(this))` and fans out over it.
 - **`NAVCalculator` / `Balances`** gain a per-oracle instance registry:
-  - the meta flag is resolved **once at registration** (`_addBalanceOracle` probes `IMetaBalanceOracleAdapter` via ERC165), so the read hot path is a single SLOAD, not an ERC165 probe per query;
-  - `setMetaInstances` / `addMetaInstance` / `removeMetaInstance` are gated by the existing `MANAGER` role — the same privilege that already governs `addBalanceOracle`;
-  - `_getOraclePositionsView` routes meta-oracles through the instance-aware method with the configured set; all other oracles are untouched.
+  - `_metaInstances` (a plain `bytes32[]` per oracle) holds the configured set; `getMetaInstances(oracle)` exposes it; `_metaInstanceTotal` is a running count used only to size the NAV read buffer.
+  - `setMetaInstances` is gated by the existing `MANAGER` role — the same privilege that already governs `addBalanceOracle`. It applies to any registered oracle; only meta-adapters read the set, so it is inert for others.
+  - **The NAVCalculator read path is unchanged**: it calls `getOraclePositions(account, assetFilter)` on every oracle as before. Meta-adapters pull their own set inside that call, so there is no meta-specific branch (and no per-oracle ERC165 flag) in the hot path. This also keeps `NAVCalculator` under the EIP-170 code-size limit, which a routing branch would have exceeded.
 - Per-instance identity (`positionId`, `positionDetail`) is **derived on-chain** from the instance coordinate (e.g. `positionId = vaultAddress.toHexString()`, `name` read from the vault's ERC20 `name()`). Nothing instance-specific is stored in config.
 
 The pilot is **`MorphoVaultsMetaBalanceOracle`** (`src/balances/protocols/MorphoVaultsMeta.sol`): one adapter for *every* Morpho ERC4626 vault, with the active vault set configured on NAVCalculator.

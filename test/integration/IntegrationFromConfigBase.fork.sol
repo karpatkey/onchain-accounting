@@ -19,6 +19,7 @@ import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
+import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
@@ -103,6 +104,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Config names parallel to `_deployedBalanceAdapters` (used to read per-adapter config such as
+    ///         a meta-adapter's `metaInstances` list after registration).
+    string[] internal _deployedBalanceAdapterNames;
+
     /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
     ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
     ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
@@ -149,6 +154,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         _registerAllAssets();
         _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
+        _configureMetaInstances();
         _seedMerklProofs();
         vm.stopPrank();
     }
@@ -474,6 +480,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 continue;
             }
             _deployedBalanceAdapters.push(adapter);
+            _deployedBalanceAdapterNames.push(n);
             console2.log("[balanceAdapter]", n, adapter);
         }
     }
@@ -491,6 +498,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_startsWith(name, "MorphoMarket_")) {
             return _deployMorphoMarket(name, navAddr);
+        }
+        if (_equals(name, "MorphoVaultsMeta")) {
+            return _deployMorphoVaultsMeta(name, navAddr);
         }
         if (_startsWith(name, "MorphoVault_")) {
             return _deployMorphoVault(name, navAddr);
@@ -601,6 +611,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory positionDetail =
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navAddr));
+    }
+
+    function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new MorphoVaultsMetaBalanceOracle(protocol, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
@@ -927,6 +942,33 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             }
             catch (bytes memory err) {
                 console2.log("[oracle] addBalanceOracle FAILED for", a);
+                console2.logBytes(err);
+            }
+        }
+    }
+
+    /// @notice Applies each meta-adapter's `metaInstances` config to NAVCalculator (ADR 0010). This is how the
+    ///         NAV calculator is told which instances of a protocol to query — e.g. the Morpho-vault universe.
+    /// @dev Runs after registration (setMetaInstances requires the oracle to be registered) and within the same
+    ///      `admin` prank that holds MANAGER. Adapters with no `metaInstances` config are skipped.
+    function _configureMetaInstances() internal {
+        for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
+            address a = _deployedBalanceAdapters[i];
+
+            address[] memory addrs = ConfigReader.readAdapterAddressArray(
+                vm, _chainId, "balanceAdapters", _deployedBalanceAdapterNames[i], "metaInstances"
+            );
+            if (addrs.length == 0) continue;
+
+            bytes32[] memory instances = new bytes32[](addrs.length);
+            for (uint256 j = 0; j < addrs.length; j++) {
+                instances[j] = bytes32(uint256(uint160(addrs[j])));
+            }
+
+            try nav.setMetaInstances(a, instances) {
+                console2.log("[meta] setMetaInstances", _deployedBalanceAdapterNames[i], instances.length);
+            } catch (bytes memory err) {
+                console2.log("[meta] setMetaInstances FAILED for", _deployedBalanceAdapterNames[i]);
                 console2.logBytes(err);
             }
         }

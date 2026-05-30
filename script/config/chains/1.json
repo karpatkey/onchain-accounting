@@ -101,7 +101,8 @@
       "deployed": "0xb812cc304Cb417B635470681160e75CfFb0006b0"
     },
     "MorphoVault_kpkETHPrime_V1": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
         "protocol": "Morpho",
@@ -111,7 +112,8 @@
       "deployed": "0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7"
     },
     "MorphoVault_kpkETHPrime_V2": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
         "protocol": "Morpho",
@@ -121,7 +123,8 @@
       "deployed": "0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512"
     },
     "MorphoVault_kpkUSDCPrime_V1": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
         "protocol": "Morpho",
@@ -131,7 +134,8 @@
       "deployed": "0x07978693C01f70373e89d196DfcfcA18a6C02d6C"
     },
     "MorphoVault_kpkUSDCPrime_V2": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
         "protocol": "Morpho",
@@ -141,8 +145,8 @@
       "deployed": "0xBF19e8568cbA837d3922a987f9E001787385575f"
     },
     "MorphoVault_kpkEURC_V1": {
-      "$comment": "kpk EURC vault (MetaMorpho ERC4626). Adapter not deployed to mainnet yet \u2014 integration test uses the ephemeral fallback path. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
-      "enabled": true,
+      "$comment": "kpk EURC vault (MetaMorpho ERC4626). Superseded by MorphoVaultsMeta (ADR 0010); vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
         "protocol": "Morpho",
@@ -152,8 +156,8 @@
       "deployed": ""
     },
     "MorphoVaultsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via setMetaInstances in 06_Configure (from `metaInstances` below). Disabled for now — superseding the per-vault MorphoVault_* adapters is a follow-up migration PR; left off here so integration snapshots are undisturbed.",
-      "enabled": false,
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via setMetaInstances in 06_Configure (from `metaInstances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below — the NAV calculator now learns the Morpho-vault universe from this list.",
+      "enabled": true,
       "constructor": {
         "protocol": "Morpho"
       },

@@ -32,11 +32,6 @@ interface IBalances {
     /// @param oracle The address of the balance oracle being removed.
     event BalanceOracleRemoved(address indexed underlyingAsset, address oracle);
 
-    /// @notice Emitted when a meta-oracle's configured instance set changes.
-    /// @param oracle The meta-oracle whose instance set changed.
-    /// @param instances The full instance set after the update.
-    event MetaInstancesUpdated(address indexed oracle, bytes32[] instances);
-
     //
     // Errors
     //
@@ -86,16 +81,11 @@ interface IBalances {
     function getOraclesForAsset(address asset) external view returns (address[] memory oracles);
 
     //
-    // Meta-oracle instance registry
+    // Meta-oracle instance registry (ADR 0010)
     //
 
-    /// @notice Returns whether a registered oracle is a meta-adapter (implements IMetaBalanceOracleAdapter).
-    /// @param oracle The oracle address to check.
-    /// @return isMeta True if the oracle is a registered meta-oracle.
-    function isMetaOracle(address oracle) external view returns (bool isMeta);
-
-    /// @notice Returns the configured instance coordinates for a meta-oracle.
-    /// @param oracle The meta-oracle address.
+    /// @notice Returns the configured meta-adapter instance coordinates for an oracle (empty for non-meta oracles).
+    /// @param oracle The oracle address.
     /// @return instances The instance coordinates currently configured for the oracle.
     function getMetaInstances(address oracle) external view returns (bytes32[] memory instances);
 }

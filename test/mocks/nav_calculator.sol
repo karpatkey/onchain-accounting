@@ -127,23 +127,11 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new address[](0);
     }
 
-    function isMetaOracle(address) external pure override returns (bool) {
-        return false;
-    }
-
     function getMetaInstances(address) external pure override returns (bytes32[] memory) {
         return new bytes32[](0);
     }
 
     function setMetaInstances(address, bytes32[] calldata) external pure override {
-        revert("Not implemented in mock");
-    }
-
-    function addMetaInstance(address, bytes32) external pure override {
-        revert("Not implemented in mock");
-    }
-
-    function removeMetaInstance(address, bytes32) external pure override {
         revert("Not implemented in mock");
     }
 

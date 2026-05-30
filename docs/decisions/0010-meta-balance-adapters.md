@@ -35,7 +35,11 @@ The first two concrete adapters:
 - **`MorphoVaultsMetaBalanceOracle`** (`src/balances/protocols/MorphoVaultsMeta.sol`): one adapter for *every* Morpho ERC4626 vault. Instance coordinate = vault address (widened to bytes32). Config: `metaInstances` (address array).
 - **`MorphoMarketsMetaBalanceOracle`** (`src/balances/protocols/MorphoMarketsMeta.sol`): one adapter for *every* Morpho Blue market. Instance coordinate = the **`bytes32` marketId, used directly** (the case the bytes32 coordinate was chosen for). Emits up to three gross legs per market (collateral / loan-supply / loan-borrow), matching the per-market `MorphoMarket` adapter. Config: `metaInstancesRaw` (raw bytes32 array). Because a single asset filter can match two legs (loan-token supply + borrow), `NAVCalculator._getPositionBalances` sizes its buffer as `(oracles + metaInstanceTotal) × assetCount` in both the filtered and unfiltered cases.
 
-Both migrate their per-instance predecessors (`MorphoVault_*`, `MorphoMarket_*`) in the mainnet config + integration suite; NAV value is unchanged (verified: position-level delta = 0).
+- **`AaveV3InstancesMetaBalanceOracle`** (`src/balances/protocols/AaveV3InstancesMeta.sol`): one adapter for *every* Aave V3 instance (Core, Prime, …). Instance coordinate = the instance's **ProtocolDataProvider address** (widened to bytes32); reserves are enumerated trustlessly inside each instance via `getAllReservesTokens()` (not separate coordinates). Emits up to two legs per reserve (Supply/Collateral + Borrow), matching `AaveV3Instance`. Config: `metaInstances` (address array of DataProviders). Identity derived on-chain: positionId = the instance Pool (`ADDRESSES_PROVIDER.getPool()` — matches the per-instance adapter), name = `ADDRESSES_PROVIDER.getMarketId()`.
+
+These migrate their per-instance predecessors (`MorphoVault_*`, `MorphoMarket_*`, `AaveV3_*`) in the mainnet config + integration suite; NAV value is unchanged (verified: position-level delta = 0).
+
+**NAV read-buffer sizing.** Each meta-instance is budgeted `assetCount` rows — exactly the budget the single per-instance oracle it replaces received (`(oracles + metaInstanceTotal) × assetCount`). Multi-leg adapters (Aave supply+borrow on one reserve; a market's loan supply+borrow) rely on the global sum across the many registered oracles, the same way the per-instance `AaveV3Instance`/`MorphoMarket` adapters always have — the meta-adapters add no new buffer-overflow risk over the contracts they replace.
 
 ## Consequences
 

@@ -21,6 +21,7 @@ import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
 import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceOracle} from "src/balances/protocols/MorphoMarketsMeta.sol";
+import {AaveV3InstancesMetaBalanceOracle} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
@@ -488,6 +489,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployBalanceAdapter(string memory name) internal returns (address) {
         address navAddr = address(nav);
+        if (_equals(name, "AaveV3InstancesMeta")) {
+            return _deployAaveV3InstancesMeta(name, navAddr);
+        }
         if (_startsWith(name, "AaveV3_")) {
             return _deployAaveV3(name, navAddr);
         }
@@ -626,6 +630,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new MorphoMarketsMetaBalanceOracle(morpho, protocol, navAddr));
+    }
+
+    function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new AaveV3InstancesMetaBalanceOracle(protocol, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {

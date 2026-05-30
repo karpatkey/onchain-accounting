@@ -357,10 +357,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         address[] memory allOracles = getAllOracles();
         uint256 totalOracles = allOracles.length;
 
-        // Upper bound on emitted rows. A plain oracle emits up to one per asset; a meta-oracle fans out over its
-        // configured instances (each instance may emit multiple legs — e.g. a Morpho market emits collateral +
-        // loan-supply + loan-borrow, and a single asset filter can match two of them). (oracles + metaInstanceTotal)
-        // × assetCount bounds the row count safely in both the filtered and unfiltered cases.
+        // Upper bound on emitted rows. Each meta-instance is budgeted one asset-slot set (assetCount), exactly as
+        // the single per-instance oracle it replaces — a meta-adapter with K instances gets the same K·assetCount
+        // budget that K per-instance adapters got. Multi-leg adapters (Aave supply+borrow on one reserve, a Morpho
+        // market's loan supply+borrow) rely, as the per-instance adapters always have, on the global sum across the
+        // many registered oracles rather than a per-oracle cap. (oracles + metaInstanceTotal) × assetCount.
         uint256 maxPositions = (totalOracles + _metaInstanceTotal) * getAssetCount();
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);

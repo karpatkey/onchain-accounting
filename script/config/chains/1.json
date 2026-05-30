@@ -36,8 +36,21 @@
       "deployed": "",
       "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, so the V2 adapter is a thin subclass of AaveV3InstanceBalanceOracle (see src/balances/protocols/AaveV2Instance.sol). Stable-debt positions are not reported \u2014 V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
     },
-    "AaveV3_Core": {
+    "AaveV3InstancesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
       "enabled": true,
+      "constructor": {
+        "protocol": "Aave V3"
+      },
+      "metaInstances": [
+        "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
+        "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5"
+      ],
+      "deployed": ""
+    },
+    "AaveV3_Core": {
+      "$superseded": "Disabled \u2014 superseded by AaveV3InstancesMeta (ADR 0010). Instance still queried via metaInstances (its DataProvider).",
+      "enabled": false,
       "constructor": {
         "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
         "protocol": "Aave V3",
@@ -47,7 +60,8 @@
       "deployed": "0x1aee401c41bAE2a02aE39d9c969De44dbD8ca449"
     },
     "AaveV3_Prime": {
-      "enabled": true,
+      "$superseded": "Disabled \u2014 superseded by AaveV3InstancesMeta (ADR 0010). Instance still queried via metaInstances (its DataProvider).",
+      "enabled": false,
       "constructor": {
         "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
         "protocol": "Aave V3",

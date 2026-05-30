@@ -25,6 +25,13 @@
     "positionId": "<Pool address>"
   },
 
+  "AaveV3InstancesMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V3 instances. Constructor takes only (protocol, navCalculator). The active instance set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.AaveV3InstancesMeta.metaInstances — each entry is the instance's ProtocolDataProvider address). Reserves within an instance are enumerated trustlessly via getAllReservesTokens(); reserve tokens are NOT separate coordinates. Identity derived on-chain: positionId = the instance Pool (ADDRESSES_PROVIDER.getPool()); name = ADDRESSES_PROVIDER.getMarketId().",
+    "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — same shape as AaveV3Instance).",
+    "protocol": "Aave V3",
+    "positionDetail": { "protocol": "Aave V3", "product": "Lending", "name": "<derived: getMarketId()>" }
+  },
+
   "AaveV3SafetyModule": {
     "$perPositionFields": "type: Staking | Reward (underlyingAsset distinguishes the stake token; stkAAVE has two AAVE legs told apart by type alone)",
     "protocol": "Aave V3",

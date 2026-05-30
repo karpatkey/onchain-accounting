@@ -8,6 +8,7 @@ import {console2} from "forge-std/console2.sol";
 // Import balance adapters
 import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstancesMetaBalanceOracle} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
@@ -54,6 +55,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // include cross-chain entries safely.
 
         // --- Aave V3 (one instance per Aave market) ---
+        _deployIfEnabled("AaveV3InstancesMeta"); // Meta-adapter: all Aave V3 instances; DataProvider set on NAV (ADR 0010)
         _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
         _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
         _deployIfEnabled("AaveV3_Arbitrum");
@@ -249,6 +251,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // AaveV3 adapters
+        // Aave V3 instances meta-adapter (one adapter for all instances; DataProvider set lives on NAV — ADR 0010)
+        if (_equals(adapterName, "AaveV3InstancesMeta")) {
+            return _deployAaveV3InstancesMeta(adapterName, navCalculator);
+        }
+
         if (_startsWith(adapterName, "AaveV3_")) {
             return _deployAaveV3(adapterName, navCalculator);
         }
@@ -418,6 +425,15 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         AaveV3InstanceBalanceOracle adapter =
             new AaveV3InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    ///         instance DataProviders to query is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployAaveV3InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        AaveV3InstancesMetaBalanceOracle adapter = new AaveV3InstancesMetaBalanceOracle(protocol, navCalculator);
         return address(adapter);
     }
 

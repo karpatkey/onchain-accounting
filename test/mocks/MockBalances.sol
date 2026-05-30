@@ -59,6 +59,14 @@ contract MockBalances is IBalances {
         return new address[](0);
     }
 
+    function isMetaOracle(address) external pure returns (bool) {
+        return false;
+    }
+
+    function getMetaInstances(address) external pure returns (bytes32[] memory) {
+        return new bytes32[](0);
+    }
+
     function isAssetRegistered(address) external pure returns (bool) {
         return false;
     }

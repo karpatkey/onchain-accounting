@@ -72,9 +72,11 @@ contract Configure is BaseDeployScript {
             txCount++;
         }
 
-        // 2. Add balance oracles to NAVCalculator (from deployed adapters)
+        // 2. Add balance oracles to NAVCalculator (from deployed adapters), plus one setMetaInstances TX per
+        //    deployed meta-adapter that has a configured instance set (ADR 0010).
         uint256 balanceOracleCount = _countDeployedBalanceAdapters();
         txCount += balanceOracleCount;
+        txCount += _countMetaInstanceTransactions();
 
         // 3. Authorize bridge adapters in BridgeEscrow
         uint256 bridgeAdapterCount = _countDeployedBridgeAdapters();
@@ -130,12 +132,25 @@ contract Configure is BaseDeployScript {
         }
     }
 
+    /// @notice Counts the extra setMetaInstances transactions needed (one per deployed meta-adapter with instances).
+    function _countMetaInstanceTransactions() internal view returns (uint256 count) {
+        string[] memory adapterNames = _balanceAdapterNames();
+        for (uint256 i = 0; i < adapterNames.length; i++) {
+            if (ConfigReader.isAdapterEnabled(vm, currentChainId, "balanceAdapters", adapterNames[i])) {
+                address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
+                if (deployed != address(0) && _readMetaInstances(adapterNames[i]).length > 0) {
+                    count++;
+                }
+            }
+        }
+    }
+
     /// @notice Shared adapter name list — kept in sync with `04_DeployBalanceAdapters.s.sol.run()`.
     /// Each chain's config enables the subset that applies; entries not in a chain's config just
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](50);
+        names = new string[](51);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -154,6 +169,8 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVault_kpkUSDCPrime_V1";
         names[i++] = "MorphoVault_kpkUSDCPrime_V2";
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
+        // Morpho Vaults meta-adapter (ADR 0010): instance set configured via setMetaInstances
+        names[i++] = "MorphoVaultsMeta";
         // Morpho Markets
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";
@@ -246,11 +263,37 @@ contract Configure is BaseDeployScript {
                     });
                     txIndex++;
                     console2.log("Added transaction: Add balance oracle", adapterNames[i], "at", deployed);
+
+                    // Meta-adapters (ADR 0010): configure their instance set on NAVCalculator in the same bundle.
+                    bytes32[] memory instances = _readMetaInstances(adapterNames[i]);
+                    if (instances.length > 0) {
+                        bytes memory setData =
+                            abi.encodeWithSignature("setMetaInstances(address,bytes32[])", deployed, instances);
+                        transactions[txIndex] = SafeTxBuilder.Transaction({
+                            to: navProxy,
+                            value: 0,
+                            data: setData,
+                            operation: 0 // CALL
+                        });
+                        txIndex++;
+                        console2.log("Added transaction: Set meta instances for", adapterNames[i]);
+                    }
                 }
             }
         }
 
         return txIndex;
+    }
+
+    /// @notice Reads a meta-adapter's `metaInstances` address list from config and widens each to bytes32.
+    /// @return instances The instance coordinates (empty for non-meta adapters or when unset).
+    function _readMetaInstances(string memory adapterName) internal view returns (bytes32[] memory instances) {
+        address[] memory addrs =
+            ConfigReader.readAdapterAddressArray(vm, currentChainId, "balanceAdapters", adapterName, "metaInstances");
+        instances = new bytes32[](addrs.length);
+        for (uint256 i = 0; i < addrs.length; i++) {
+            instances[i] = bytes32(uint256(uint160(addrs[i])));
+        }
     }
 
     function _addBridgeAdapterTransactions(

@@ -14,6 +14,7 @@ import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
+import {MorphoVaultsMetaBalanceOracle} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
@@ -92,6 +93,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
         _deployIfEnabled("MorphoVault_kpkEURC_V1"); // Mainnet — EUR Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
+        _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
 
         // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
         _deployIfEnabled("MorphoMarket_wstETH_USDC");
@@ -272,6 +274,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Sky Savings USDS
         if (_equals(adapterName, "SkySavingsUsds")) {
             return _deploySkySavingsUsds(navCalculator);
+        }
+
+        // Morpho Vaults meta-adapter (one adapter for all vaults; instance set lives on NAVCalculator — ADR 0010)
+        if (_equals(adapterName, "MorphoVaultsMeta")) {
+            return _deployMorphoVaultsMeta(adapterName, navCalculator);
         }
 
         // Morpho Vault adapters
@@ -508,6 +515,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         MorphoVaultBalanceOracle adapter =
             new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (protocol, navCalculator); the set of
+    ///         vaults to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployMorphoVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        MorphoVaultsMetaBalanceOracle adapter = new MorphoVaultsMetaBalanceOracle(protocol, navCalculator);
         return address(adapter);
     }
 

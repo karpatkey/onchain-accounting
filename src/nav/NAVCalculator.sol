@@ -10,6 +10,7 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -190,6 +191,24 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function setMetaInstances(address oracle, bytes32[] calldata instances) external {
+        _requireManager();
+        _setMetaInstances(oracle, instances);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function addMetaInstance(address oracle, bytes32 instance) external {
+        _requireManager();
+        _addMetaInstance(oracle, instance);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function removeMetaInstance(address oracle, bytes32 instance) external {
+        _requireManager();
+        _removeMetaInstance(oracle, instance);
+    }
+
+    /// @inheritdoc INAVCalculator
     function excludeAssetFromDefaultOracle(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
@@ -323,11 +342,25 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @notice Calls adapter via interface; returns INAVCalculator.PositionBalance[] (same layout as INAVCalculator structs).
+    /// @dev Meta-oracles are queried through their instance-aware method with the NAV-configured instance set;
+    ///      all other oracles use the standard no-arg method. The meta flag is a single SLOAD (resolved at
+    ///      registration), so non-meta oracles incur no extra cost.
     function _getOraclePositionsView(address oracle, address account, address assetFilter)
         internal
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
+        if (isMetaOracle(oracle)) {
+            try IMetaBalanceOracleAdapter(oracle)
+                .getOraclePositionsForInstances(account, getMetaInstances(oracle), assetFilter) returns (
+                INAVCalculator.PositionBalance[] memory pos
+            ) {
+                return pos;
+            } catch {
+                return _emptyPositionBalanceArray();
+            }
+        }
+
         try IBalanceOracleAdapter(oracle).getOraclePositions(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
@@ -348,7 +381,20 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         address[] memory allOracles = getAllOracles();
         uint256 totalOracles = allOracles.length;
-        uint256 maxPositions = assetFilter == address(0) ? totalOracles * getAssetCount() : totalOracles;
+        uint256 assetCount = getAssetCount();
+
+        // Upper bound on positions: a plain oracle can emit up to one per asset (or one when filtered); a
+        // meta-oracle fans out over its configured instances, so it can emit up to instances * assets.
+        uint256 maxPositions = 0;
+        for (uint256 i = 0; i < totalOracles; i++) {
+            if (isMetaOracle(allOracles[i])) {
+                uint256 instanceCount = getMetaInstances(allOracles[i]).length;
+                maxPositions += assetFilter == address(0) ? instanceCount * assetCount : instanceCount;
+            } else {
+                maxPositions += assetFilter == address(0) ? assetCount : 1;
+            }
+        }
+
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
         uint256 count = 0;
 

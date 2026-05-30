@@ -160,6 +160,17 @@ Every balance oracle must implement this interface and ERC165.
 
 Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: same oracle list, same `getOraclePositions`, with additional filtering (range or single asset).
 
+### 6.1 Meta-adapters (multi-instance) — `IMetaBalanceOracleAdapter`
+
+Most adapters pin a single instance (one vault, one pool, one market) in their constructor. A **meta-adapter** instead serves *every* instance of a protocol from one immutable contract, and the set of instances to actually query is held on **NAVCalculator** — not in the adapter. See [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md).
+
+- **Interface:** `IMetaBalanceOracleAdapter` extends `IBalanceOracleAdapter` and adds `getOraclePositionsForInstances(account, bytes32[] instances, assetFilter)` and `underlyingAssetsSupportedForInstances(bytes32[])`. The instance coordinate is `bytes32` (an address widened to bytes32 for vault/pool/instance-address protocols; raw bytes32 for e.g. Morpho market ids). The inherited no-arg methods return **empty** on a meta-adapter.
+- **Base:** `MetaBalanceOracle` (abstract) supplies ERC165, the empty no-arg methods, the per-instance fan-out (with per-instance revert isolation), and the registered-asset helper. A concrete meta-adapter implements just `_instancePositions` and `_instanceAssets`.
+- **Immutability preserved.** Meta-adapters have **no `Ownable`, no write functions** — they stay immutable like every other adapter. The mutable, governed instance set lives on NAVCalculator (UUPS-upgradeable, `MANAGER`-gated). No new mutable-adapter ADR is needed.
+- **Identity is derived on-chain** per instance (e.g. `positionId` = vault address hex, `name` from `vault.name()`) — nothing instance-specific is stored in config.
+- **NAVCalculator routing.** The meta flag is resolved once at `addBalanceOracle` (ERC165 probe) and stored, so the read path is a single SLOAD. `_getOraclePositionsView` calls `getOraclePositionsForInstances(account, getMetaInstances(oracle), assetFilter)` for meta-oracles; all other oracles are unchanged.
+- **Configuring the instance set:** `MANAGER` calls `setMetaInstances(oracle, bytes32[])` / `addMetaInstance` / `removeMetaInstance` on NAVCalculator. In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array); `06_Configure` emits the `setMetaInstances` Safe TX automatically.
+
 ---
 
 ## 7. Implemented adapters
@@ -185,7 +196,8 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Sums each account's open requests' `expectedAssetAmount` per payout asset and emits one credit position per asset. Payout-asset set discovered at runtime via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH); positions emitted only for NAV-registered assets. | Mainnet only. Constructor: `(withdrawalManager, protocol, positionDetail, positionId, navCalculator)`. Protocol `"Kelp"`, product `"Staking"`, name `"rsETH Withdrawal Queue"`. |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. | Mutable per-(user, token) cache, `onlyOwner` writes, proofs verified against the live Distributor root. The framework's documented mutable-adapter exception. See `docs/decisions/0007-merkl-trust-minimized-cache.md`. |
 | **MorphoMarket** | Morpho market positions emitted **gross** by `getOraclePositions`: up to 3 rows per call — collateral, loan-token supply (`isDebt=false`), loan-token borrow (`isDebt=true`) — each guarded by `> 0`. Same `(positionDetail.type ∈ {Supply, Borrow, Collateral})` discriminators. Simple getters `getOracleBalanceForAsset` / `getOracleBalances` keep netting the loan token (one signed entry per asset), matching Aave V2/V3's simple-getter convention. `positionId` derived automatically from `marketId` via `Strings.toHexString` — no separate constructor param needed. | |
-| **MorphoVault** | Morpho ERC4626 vault (MetaMorpho) share balance converted to underlying. | |
+| **MorphoVault** | Morpho ERC4626 vault (MetaMorpho) share balance converted to underlying. One adapter per vault. | |
+| **MorphoVaultsMeta** | **Meta-adapter** (§6.1): one immutable contract for *all* Morpho ERC4626 vaults. Active vault set configured on NAVCalculator via `setMetaInstances`. Identity derived on-chain (positionId = vault address, name = `vault.name()`). | Constructor: `(protocol, navCalculator)`. Chain config key: `MorphoVaultsMeta`; vaults under `metaInstances`. See `docs/decisions/0010-meta-balance-adapters.md`. |
 | **SkySavingsUsds** | Sky savings USDS. | |
 | **SparkLend** | Spark lending positions (subclass of AaveV3Instance). | |
 | **StakeWiseV3OsToken** | StakeWise V3 osToken wallet balance converted to underlying via `OsTokenVaultController.convertToAssets`. Same contract serves osETH (Mainnet) and osGNO (Gnosis). | Mainnet: `StakeWiseV3OsToken_ETH` (osETH → ETH-sentinel). |

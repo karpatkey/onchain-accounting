@@ -62,6 +62,14 @@
     "positionId": "<vault address>"
   },
 
+  "MorphoVaultsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho ERC4626 vaults. Constructor takes only (protocol, navCalculator) — there are no per-vault constructor args. The active vault set lives on NAVCalculator (set via setMetaInstances, configured under balanceAdapters.MorphoVaultsMeta.metaInstances in the chain config). positionDetail and positionId are derived on-chain per instance: positionId = vault address as hex, name = vault.name().",
+    "$perPositionFields": "type: Supply",
+    "protocol": "Morpho",
+    "positionDetail": { "protocol": "Morpho", "product": "Vault", "name": "<derived from vault.name()>" },
+    "positionId": "<derived: vault address>"
+  },
+
   "ERC4626Wrap": {
     "$perPositionFields": "type: Supply",
     "$comment": "Generic ERC-4626 unwrap balance oracle. Constructor checks the wrapper's `asset()` is NAV-registered (reverts otherwise). Reports `convertToAssets(balanceOf(account))` denominated in the underlying. Used for Aave V3 stata-tokens (waEth*) and any other thin ERC-4626 wrapper where the share price is derivable purely from convertToAssets. Per-instance constructor args set the protocol/product/name shown in PositionBalance metadata (e.g. for waEthLidoGHO: protocol=\"Aave V3\", product=\"Lending\", name=\"Prime Instance (LidoGHO stata wrap)\"). positionId is the wrapper address.",

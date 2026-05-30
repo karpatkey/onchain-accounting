@@ -200,6 +200,22 @@ interface INAVCalculator is IBalances {
     /// @param oracle Oracle address to remove (cannot be the default ERC20 oracle).
     function removeBalanceOracle(address oracle) external;
 
+    /// @notice Replaces the full set of instance coordinates queried for a registered meta-oracle.
+    /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable.
+    /// @param oracle Registered meta-oracle address.
+    /// @param instances Instance coordinates (e.g. vault addresses widened to bytes32; non-zero).
+    function setMetaInstances(address oracle, bytes32[] calldata instances) external;
+
+    /// @notice Adds a single instance coordinate to a registered meta-oracle's set (idempotent).
+    /// @param oracle Registered meta-oracle address.
+    /// @param instance Instance coordinate to add (non-zero).
+    function addMetaInstance(address oracle, bytes32 instance) external;
+
+    /// @notice Removes a single instance coordinate from a registered meta-oracle's set (idempotent).
+    /// @param oracle Registered meta-oracle address.
+    /// @param instance Instance coordinate to remove.
+    function removeMetaInstance(address oracle, bytes32 instance) external;
+
     /// @notice Excludes an asset from the default oracle so wallet balances are not reported for it.
     /// @param asset Registered asset address.
     function excludeAssetFromDefaultOracle(address asset) external;

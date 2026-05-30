@@ -16,11 +16,18 @@ Before writing code, answer:
 |---|---|
 | Which **assets** does this adapter report on? | Drives `underlyingAssetsSupported()`. List them as token addresses. |
 | For each asset, is the position a **credit** (supply, stake, LP) or **debt** (borrow)? | Drives `isDebt`. Each `PositionBalance` is "asset + amount + isDebt". |
-| Does the protocol have **multiple instances** (one per pool/market/vault)? | If yes, expect one adapter instance per pool — make the adapter parametric, not global. |
+| Does the protocol have **multiple instances** (one per pool/market/vault)? | Two routes — see "Single-instance vs meta-adapter" below. |
 | Is there a **canonical underlying asset** (e.g., what the position is denominated in when valued)? | Adapters return amounts in the underlying token's decimals. The price registry will price the underlying. |
 | Are there **rewards** that should count toward NAV? | If yes, the adapter must include them as additional `PositionBalance` entries with the reward token as the underlying asset. |
 
 **Rule of thumb:** the adapter is a *view*. It reads protocol state and translates it into `PositionBalance[]`. It does not price, sign, or aggregate; NAVCalculator does that.
+
+### Single-instance vs meta-adapter
+
+If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools, Aave instances), prefer a **meta-adapter** over one contract per instance:
+
+- **Single-instance** (the default skeleton below): pin the pool/market/vault in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue) or when there is exactly one instance you care about.
+- **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`; derive identity on-chain from the instance coordinate. Adding a pool/vault later is a config TX, not a deploy. See `MorphoVaultsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
 
 ---
 

@@ -151,6 +151,21 @@
       },
       "deployed": ""
     },
+    "MorphoVaultsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via setMetaInstances in 06_Configure (from `metaInstances` below). Disabled for now — superseding the per-vault MorphoVault_* adapters is a follow-up migration PR; left off here so integration snapshots are undisturbed.",
+      "enabled": false,
+      "constructor": {
+        "protocol": "Morpho"
+      },
+      "metaInstances": [
+        "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
+        "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
+        "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+        "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
+        "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
+      ],
+      "deployed": ""
+    },
     "ERC4626Wrap_waEthLidoGHO": {
       "$comment": "Aave V3 Lido instance stata-token wrap of aEthLidoGHO. waEthLidoGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. ACCOUNT_11 holds ~$233 of this token. Production adapter not deployed yet \u2014 integration test deploys it ephemerally from this config block. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
       "enabled": true,

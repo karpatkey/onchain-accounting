@@ -6,6 +6,10 @@ Operational checklist for the deploy + Safe TX work that follows PR #35's merge.
 
 **Companion docs:** [`NAV_V2_DEPLOYMENT_RUNBOOK.md`](NAV_V2_DEPLOYMENT_RUNBOOK.md) (operational playbook), [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md) (current production state), [`config/CONFIG_GUIDE.md`](config/CONFIG_GUIDE.md) (chain config schema).
 
+> **Addendum 2026-05-30 (not yet in the dated tables below — re-run §6 to regenerate):**
+> - **`KelpWithdrawalQueue`** (Mainnet, PR #44 merged) and **`LidoWithdrawalQueue`** (Mainnet, PR #45) are wired with `deployed: ""` — pending `04_DeployBalanceAdapters` + `addBalanceOracle` registration (both are already in the `_balanceAdapterNames()` lists in `06_Configure.s.sol` / `06_2_AddBalanceOracles.s.sol`). They bump the Mainnet pending balance-adapter count accordingly.
+> - **Pending NAVCalculator implementation upgrade:** PR #44 changed `NAVCalculator.hasPositions` (fail-open via the positions path). Shipping it requires deploying a new NAVCalculator implementation and a UUPS upgrade (`UpgradeNAVCalculator.s.sol` + Safe TX) — a new pending item beyond the adapter deploys.
+
 ---
 
 ## 1. Inventory — what's pending across all chains

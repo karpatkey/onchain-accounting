@@ -28,6 +28,7 @@ import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
+import {LidoWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
@@ -165,6 +166,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Kelp DAO (Mainnet only) — rsETH exit-queue balance oracle ---
         _deployIfEnabled("KelpWithdrawalQueue");
+
+        // --- Lido (Mainnet only) — stETH withdrawal-queue balance oracle ---
+        _deployIfEnabled("LidoWithdrawalQueue");
 
         // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
         _deployIfEnabled("StakeWiseV3OsToken_ETH");
@@ -347,6 +351,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Kelp DAO rsETH exit queue
         if (_equals(adapterName, "KelpWithdrawalQueue")) {
             return _deployKelpWithdrawalQueue(adapterName, navCalculator);
+        }
+
+        // Lido stETH withdrawal queue
+        if (_equals(adapterName, "LidoWithdrawalQueue")) {
+            return _deployLidoWithdrawalQueue(adapterName, navCalculator);
         }
 
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
@@ -783,6 +792,26 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(
             withdrawalManager, protocol, positionDetail, positionId, navCalculator
+        );
+        return address(adapter);
+    }
+
+    function _deployLidoWithdrawalQueue(string memory adapterName, address navCalculator) internal returns (address) {
+        address withdrawalQueue = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalQueue")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+        string memory positionId =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
+
+        LidoWithdrawalQueueBalanceOracle adapter = new LidoWithdrawalQueueBalanceOracle(
+            withdrawalQueue, underlyingToken, protocol, positionDetail, positionId, navCalculator
         );
         return address(adapter);
     }

@@ -10,16 +10,19 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         for an arbitrary number of instances of one protocol (e.g. every Morpho vault, every Balancer pool).
 /// @dev A meta-adapter is universal and instance-stateless — it holds no list of "active" instances and has no
 ///      admin/write functions. The set of instances to actually query lives on NAVCalculator (per-oracle,
-///      MANAGER-gated) and is passed in at query time. This keeps adapters immutable while making the
-///      governed "which instances" set mutable in the upgradeable, AccessControl-gated NAVCalculator.
+///      MANAGER-gated). This keeps adapters immutable while making the governed "which instances" set mutable in
+///      the upgradeable, AccessControl-gated NAVCalculator.
 ///
 ///      Instances are identified by a `bytes32` coordinate. For most protocols this is an address widened to
-///      bytes32 (vault / pool / market-instance address); the wider type also accommodates protocols whose
+///      bytes32 (vault / pool / instance-DataProvider address); the wider type also accommodates protocols whose
 ///      instance key is itself a bytes32 (e.g. Morpho market ids).
 ///
-///      Because the inherited no-arg `IBalanceOracleAdapter` methods cannot know the instance set, a
-///      meta-adapter returns EMPTY results from them. NAVCalculator detects the meta interface via ERC165 at
-///      registration time and always routes through the instance-aware methods below.
+///      Call path: NAVCalculator calls the inherited `getOraclePositions(account, assetFilter)` on every oracle
+///      uniformly (no ERC165 routing). A meta-adapter services it by reading its own NAV-configured set via
+///      `getMetaInstances(address(this))` and fanning out over it — see `MetaBalanceOracle`. The instance-aware
+///      methods below take an explicit instance list for off-chain/explicit queries and per-instance breakdowns.
+///      (The other no-arg `IBalanceOracleAdapter` methods — `getOracleBalances`/`getOracleBalanceForAsset` —
+///      are not used by the NAV path and return empty.)
 interface IMetaBalanceOracleAdapter is IBalanceOracleAdapter {
     /// @notice Get all positions for an account across the supplied instances.
     /// @param account The account to query.

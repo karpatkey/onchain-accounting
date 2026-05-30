@@ -205,8 +205,12 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
     // Shared helpers
     //
 
-    /// @notice Decodes a bytes32 instance coordinate into an address (vault / pool / instance address).
+    /// @notice Decodes an address-keyed bytes32 instance coordinate into an address (vault / pool / DataProvider).
+    /// @dev Reverts if the high 96 bits are non-zero rather than silently truncating, so a malformed coordinate
+    ///      surfaces as an error (isolated per-instance by the fan-out) instead of querying a different address.
+    ///      Adapters whose coordinate is a raw bytes32 (e.g. Morpho market ids) do not use this helper.
     function _toAddress(bytes32 instance) internal pure returns (address) {
+        require(uint256(instance) >> 160 == 0, "instance: not an address");
         return address(uint160(uint256(instance)));
     }
 

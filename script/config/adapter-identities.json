@@ -99,7 +99,24 @@
     "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<derived: collateralSym/loanSym>" }
   },
 
+  "BalancerPoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) AMM liquidity of ALL Balancer V3 pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.BalancerPoolsMeta.metaInstances — each entry is the pool/BPT address). Identity derived on-chain: positionId = pool address hex; name = BPT token name(). Supersedes the per-pool BalancerV3 adapter's Supply legs.",
+    "$perPositionFields": "type: Supply (one leg per underlying pool token; wallet BPT share only)",
+    "protocol": "Balancer V3",
+    "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<derived: BPT name()>" },
+    "positionId": "<derived: pool address>"
+  },
+
+  "BalancerGaugesMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + BAL/extra rewards of ALL Balancer V3 gauges. Constructor takes (balancerMinter, protocol, navCalculator). The active gauge set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.BalancerGaugesMeta.metaInstances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3 adapter's Staking + rewards legs.",
+    "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from staked BPT share; Rewards=one leg per reward token, BAL via the minter + extra gauge reward tokens)",
+    "protocol": "Balancer V3",
+    "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<derived: BPT name()>" },
+    "positionId": "<derived: gauge address>"
+  },
+
   "BalancerV3": {
+    "$superseded": "Superseded by BalancerPoolsMeta (Supply legs) + BalancerGaugesMeta (Staking + Rewards legs) per ADR 0010. Retained for historical reference; per-pool deploys are disabled in chain config.",
     "$perPositionFields": "type: Supply | Staking (Supply=wallet LP, Staking=gauge-staked LP + gauge rewards; one pair per underlying pool token)",
     "protocol": "Balancer V3",
     "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<pool token pair>" },

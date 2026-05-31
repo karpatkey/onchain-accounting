@@ -24,6 +24,8 @@ import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
+import {BalancerPoolsMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerPoolsMeta.sol";
+import {BalancerGaugesMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerGaugesMeta.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
@@ -121,7 +123,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("GearboxMarket_kpkWETH");
         _deployIfEnabled("GearboxMarket_kpkwstETH");
 
-        // --- Balancer V3 (one per pool) ---
+        // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
+        _deployIfEnabled("BalancerPoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
+        _deployIfEnabled("BalancerGaugesMeta"); // Meta-adapter: all Balancer V3 gauges (staked LP + rewards); gauge set on NAV
+
+        // --- Balancer V3 (one per pool — superseded by the meta-adapters above) ---
         _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
         _deployIfEnabled("BalancerV3_GHO_USDT_USDC"); // Mainnet — USD Alpha (Boosted GHO/USDT/USDC underlying; Aura adapter wraps it)
         _deployIfEnabled("BalancerV3_GHO_USDC_USDT"); // Arbitrum — USD Alpha (Boosted GHO/USDC/USDT underlying)
@@ -328,6 +334,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Aave Umbrella: a single multi-token adapter per chain (ADR 0007).
         if (_equals(adapterName, "AaveUmbrella")) {
             return _deployAaveUmbrella(adapterName, navCalculator);
+        }
+
+        // Balancer V3 meta-adapters (one adapter for all pools / all gauges; instance set lives on NAV — ADR 0010)
+        if (_equals(adapterName, "BalancerPoolsMeta")) {
+            return _deployBalancerPoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerGaugesMeta")) {
+            return _deployBalancerGaugesMeta(adapterName, navCalculator);
         }
 
         // Balancer V3 adapters
@@ -677,6 +691,30 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
         AaveUmbrellaBalanceOracle adapter =
             new AaveUmbrellaBalanceOracle(rewardsController, navCalculator, protocol, positionDetail, positionId);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    ///         pools to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployBalancerPoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerPoolsMetaBalanceOracle adapter = new BalancerPoolsMetaBalanceOracle(protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, protocol, navCalculator);
+    ///         the set of gauges to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployBalancerGaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address balancerMinter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerGaugesMetaBalanceOracle adapter =
+            new BalancerGaugesMetaBalanceOracle(balancerMinter, protocol, navCalculator);
         return address(adapter);
     }
 

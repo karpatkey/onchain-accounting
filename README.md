@@ -62,7 +62,7 @@ test/
   - `underlyingAssetsSupported()` → which assets this oracle reports on
 - **Protocol adapters** in `src/balances/protocols/`:
   - **ERC20DefaultOracle**: Plain ERC20 and native token balances.
-  - Protocol-specific positions (supply, borrow, LP, rewards, lockups, withdrawal queues): **AaveV3Instance**, **AaveV3SafetyModule**, **AaveV2Instance**, **AaveUmbrella**, **CompoundV3Comet**, **MorphoMarket**, **MorphoVault**, **SparkLend**, **BalancerV3**, **Aura**, **Curve**, **Convex**, **Cap**, **DaiDsr**, **SkySavingsUsds**, **FluidFToken**, **FluidVault**, **GearboxMarket**, **StakeWiseV3OsToken**, **StakeWiseV3Vault**, **StaderWithdrawalQueue**, **UniswapV2**, **UniswapV3**, **PancakeSwapV2**, **PancakeSwapV3**, **MerklRewards**. Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
+  - Protocol-specific positions (supply, borrow, LP, rewards, lockups, withdrawal queues): **AaveV3Instance**, **AaveV3SafetyModule**, **AaveV2Instance**, **AaveUmbrella**, **CompoundV3Comet**, **MorphoMarket**, **MorphoVault**, **SparkLend**, **BalancerV3**, **Aura**, **Curve**, **Convex**, **Cap**, **DaiDsr**, **SkySavingsUsds**, **FluidFToken**, **FluidVault**, **GearboxMarket**, **StakeWiseV3OsToken**, **StakeWiseV3Vault**, **StaderWithdrawalQueue**, **KelpWithdrawalQueue**, **LidoWithdrawalQueue**, **UniswapV2**, **UniswapV3**, **PancakeSwapV2**, **PancakeSwapV3**, **MerklRewards**. Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
 
 Balance oracles return **PositionBalance** (asset, amount, isDebt, protocol, positionDetail). The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale).
 

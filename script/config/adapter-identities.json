@@ -200,6 +200,13 @@
     "positionId": "<LRTWithdrawalManager address>"
   },
 
+  "LidoWithdrawalQueue": {
+    "$perPositionFields": "type: Staking",
+    "protocol": "Lido",
+    "positionDetail": { "protocol": "Lido", "product": "Staking", "name": "stETH Withdrawal Queue" },
+    "positionId": "<WithdrawalQueueERC721 address>"
+  },
+
   "MerklRewards": {
     "$perPositionFields": "type: Rewards",
     "protocol": "Merkl",

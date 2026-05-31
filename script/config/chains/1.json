@@ -752,6 +752,18 @@
       "deployed": "",
       "comment": "Kelp DAO rsETH exit queue (LRTWithdrawalManager). Multi-asset: supported payout assets (stETH, ETHx, native ETH) discovered at runtime via lrtConfig().getSupportedAssetList(); positions emitted only for NAV-registered assets."
     },
+    "LidoWithdrawalQueue": {
+      "enabled": true,
+      "constructor": {
+        "withdrawalQueue": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1",
+        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "protocol": "Lido",
+        "positionDetail": "{\"protocol\":\"Lido\",\"product\":\"Staking\",\"name\":\"stETH Withdrawal Queue\"",
+        "positionId": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
+      },
+      "deployed": "",
+      "comment": "Lido WithdrawalQueueERC721. Single-asset, denominated in native ETH (the asset Lido pays on claim; priced via ETH/USD). Per open (un-claimed) request: finalized -> exact claimable ETH (getClaimableEther); not-yet-finalized -> amountOfStETH (estimate until finalization). underlyingToken is the ERC-7528 native sentinel."
+    },
     "MerklRewards": {
       "enabled": false,
       "constructor": {

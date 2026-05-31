@@ -8,7 +8,13 @@ import {Options} from "openzeppelin-foundry-upgrades/Options.sol";
 
 /// @custom:oz-upgrades-from NAVCalculator
 contract NAVCalculatorV2 is NAVCalculator {
-    uint256 public foo;
+    // A distinguishing member proving the upgrade swapped the implementation. Implemented as a pure function
+    // rather than a `uint256 public foo` storage var: the storage-var form perturbs the via_ir optimizer into a
+    // pathologically larger contract (~320 bytes over EIP-170 on the CI toolchain, while NAVCalculator itself
+    // fits). A pure function adds no storage slot and keeps the same surface the test asserts (`foo() == 0`).
+    function foo() external pure returns (uint256) {
+        return 0;
+    }
 }
 
 contract NAVCalculatorUpgradeTest is SuperTest {

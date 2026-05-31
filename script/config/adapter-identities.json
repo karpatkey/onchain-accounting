@@ -93,7 +93,7 @@
   },
 
   "MorphoMarketsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho Blue markets. Constructor takes only (morpho, navCalculator). The active marketId set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.MorphoMarketsMeta.metaInstancesRaw — raw bytes32 marketIds, NOT addresses). Identity is derived on-chain: positionId = marketId hex (Strings.toHexString(uint256(marketId), 32)); name = collateralSymbol/loanSymbol read from the tokens.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho Blue markets. Constructor takes (morpho, protocol, navCalculator). The active marketId set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.MorphoMarketsMeta.metaInstancesRaw — raw bytes32 marketIds, NOT addresses). Identity is derived on-chain: positionId = marketId hex (Strings.toHexString(uint256(marketId), 32)); name = collateralSymbol/loanSymbol read from the tokens.",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 3 gross rows per market — same shape as MorphoMarket).",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<derived: collateralSym/loanSym>" }

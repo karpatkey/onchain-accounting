@@ -202,9 +202,12 @@ interface INAVCalculator is IBalances {
 
     /// @notice Replaces the full set of instance coordinates queried for a registered meta-oracle.
     /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable. The
-    ///      caller must supply a deduplicated, non-zero list (a duplicate would double-count NAV).
+    ///      caller should supply a **deduplicated** list (a duplicate would double-count NAV); the setter does not
+    ///      enforce this — dedup is the MANAGER's responsibility. An **empty** list is accepted and clears the
+    ///      oracle's set. Individual coordinates are not validated here; a malformed/unknown coordinate is isolated
+    ///      per-instance by the adapter's fan-out (it cannot zero out the batch).
     /// @param oracle Registered meta-oracle address.
-    /// @param instances Instance coordinates (e.g. vault addresses widened to bytes32; non-zero).
+    /// @param instances Instance coordinates (e.g. vault addresses widened to bytes32). May be empty (clears the set).
     function setMetaInstances(address oracle, bytes32[] calldata instances) external;
 
     /// @notice Excludes an asset from the default oracle so wallet balances are not reported for it.

@@ -158,7 +158,16 @@
     "positionId": "<vault address>"
   },
 
+  "GearboxMarketsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Gearbox V3 ERC4626 farming pools. Constructor takes (protocol, navCalculator). The active market set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.GearboxMarketsMeta.metaInstances — market addresses). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket adapter.",
+    "$perPositionFields": "type: Supply (one leg per market in its underlying)",
+    "protocol": "Gearbox",
+    "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<derived: market name()>" },
+    "positionId": "<derived: market address>"
+  },
+
   "GearboxMarket": {
+    "$superseded": "Superseded by GearboxMarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply",
     "protocol": "Gearbox",
     "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<market name>" },

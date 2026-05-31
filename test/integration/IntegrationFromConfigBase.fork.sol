@@ -24,6 +24,7 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMark
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
+import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
@@ -523,6 +524,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "ERC4626Wrap_")) {
             return _deployERC4626Wrap(name, navAddr);
         }
+        if (_equals(name, "GearboxMarketsMeta")) {
+            return _deployGearboxMarketsMeta(name, navAddr);
+        }
         if (_startsWith(name, "GearboxMarket_")) {
             return _deployGearboxMarket(name, navAddr);
         }
@@ -700,6 +704,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
         return address(new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new GearboxMarketsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployCap(address navAddr) internal returns (address) {

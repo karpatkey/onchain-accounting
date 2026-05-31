@@ -18,6 +18,7 @@ import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
+import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
@@ -130,8 +131,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoMarket_cbETH_USDC"); // Base — USD Alpha
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
-        _deployIfEnabled("GearboxMarket_kpkWETH");
-        _deployIfEnabled("GearboxMarket_kpkwstETH");
+        _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
+        _deployIfEnabled("GearboxMarket_kpkWETH"); // per-market — superseded by GearboxMarketsMeta
+        _deployIfEnabled("GearboxMarket_kpkwstETH"); // per-market — superseded by GearboxMarketsMeta
 
         // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
         _deployIfEnabled("BalancerV3PoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
@@ -324,6 +326,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // Gearbox Market adapters
+        if (_equals(adapterName, "GearboxMarketsMeta")) {
+            return _deployGearboxMarketsMeta(adapterName, navCalculator);
+        }
         if (_startsWith(adapterName, "GearboxMarket_")) {
             return _deployGearboxMarket(adapterName, navCalculator);
         }
@@ -627,6 +632,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         GearboxMarketBalanceOracle adapter =
             new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (protocol, navCalculator); the market
+    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployGearboxMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        GearboxMarketsMetaBalanceAdapter adapter = new GearboxMarketsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 

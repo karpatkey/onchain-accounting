@@ -8,15 +8,15 @@ import {console2} from "forge-std/console2.sol";
 // Import balance adapters
 import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
-import {AaveV3InstancesMetaBalanceOracle} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
 import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
-import {MorphoVaultsMetaBalanceOracle} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
-import {MorphoMarketsMetaBalanceOracle} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
@@ -24,8 +24,8 @@ import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
-import {BalancerV3PoolsMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
-import {BalancerV3GaugesMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
+import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
@@ -35,8 +35,16 @@ import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/S
 import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
+import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
 import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
+import {
+    PancakeSwapV2PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
+import {
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -185,14 +193,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
 
-        // --- Uniswap V3 (one instance per pool — Mainnet) ---
-        _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
+        // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
+        _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
+        _deployIfEnabled("UniswapV3_WBTC_WETH_3000"); // per-pool — superseded by UniswapV3PoolsMeta
 
-        // --- PancakeSwap V2 (one per pair) ---
-        _deployIfEnabled("PancakeSwapV2_ETH_COW"); // BSC — Binance-Peg ETH / COW
+        // --- PancakeSwap V2 (meta-adapter + per-pair) ---
+        _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
+        _deployIfEnabled("PancakeSwapV2_ETH_COW"); // per-pair — superseded by PancakeSwapV2PoolsMeta
 
-        // --- PancakeSwap V3 (one per pool) ---
-        _deployIfEnabled("PancakeSwapV3_WETH_COW"); // Base — WETH / COW 0.25%
+        // --- PancakeSwap V3 (meta-adapter + per-pool) ---
+        _deployIfEnabled("PancakeSwapV3PoolsMeta"); // Base — meta-adapter: all PancakeSwap V3 pools
+        _deployIfEnabled("PancakeSwapV3_WETH_COW"); // per-pool — superseded by PancakeSwapV3PoolsMeta
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
@@ -389,6 +400,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMerklRewards(adapterName, navCalculator);
         }
 
+        // Uniswap/PancakeSwap meta-adapters (one adapter for all pools/pairs; instance set lives on NAV — ADR 0010)
+        if (_equals(adapterName, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "UniswapV2PoolsMeta") || _equals(adapterName, "PancakeSwapV2PoolsMeta")) {
+            return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
+        }
+
         // Uniswap V3 adapters (one instance per pool)
         if (_startsWith(adapterName, "UniswapV3_")) {
             return _deployUniswapV3(adapterName, navCalculator);
@@ -447,7 +469,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     function _deployAaveV3InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        AaveV3InstancesMetaBalanceOracle adapter = new AaveV3InstancesMetaBalanceOracle(protocol, navCalculator);
+        AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
@@ -515,7 +537,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        MorphoMarketsMetaBalanceOracle adapter = new MorphoMarketsMetaBalanceOracle(morpho, protocol, navCalculator);
+        MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -574,7 +596,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        MorphoVaultsMetaBalanceOracle adapter = new MorphoVaultsMetaBalanceOracle(protocol, navCalculator);
+        MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
@@ -700,7 +722,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        BalancerV3PoolsMetaBalanceOracle adapter = new BalancerV3PoolsMetaBalanceOracle(protocol, navCalculator);
+        BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
@@ -713,8 +735,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        BalancerV3GaugesMetaBalanceOracle adapter =
-            new BalancerV3GaugesMetaBalanceOracle(balancerMinter, protocol, navCalculator);
+        BalancerV3GaugesMetaBalanceAdapter adapter =
+            new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -926,6 +948,50 @@ contract DeployBalanceAdapters is BaseDeployScript {
         UniswapV3PoolBalanceOracle adapter =
             new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navCalculator);
         return address(adapter);
+    }
+
+    /// @notice Deploys the Uniswap V3 pools meta-adapter. Constructor takes (positionManager, protocol,
+    ///         navCalculator); the pool set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        UniswapV3PoolsMetaBalanceAdapter adapter =
+            new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the PancakeSwap V3 pools meta-adapter (subclass of the Uniswap V3 meta with the uint32
+    ///         feeProtocol slot0 override). Same constructor shape as the Uniswap V3 pools meta.
+    function _deployPancakeSwapV3PoolsMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        PancakeSwapV3PoolsMetaBalanceAdapter adapter =
+            new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Uniswap V2 pools meta-adapter. Serves PancakeSwap V2 too (same contract via the
+    ///         PancakeSwapV2PoolsMeta thin subclass when keyed "PancakeSwapV2PoolsMeta"). Constructor takes
+    ///         (protocol, navCalculator); the pair set is configured on NAVCalculator (ADR 0010).
+    function _deployUniswapV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        if (_equals(adapterName, "PancakeSwapV2PoolsMeta")) {
+            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
+        }
+        return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
     }
 
     function _deployPancakeSwapV2(string memory adapterName, address navCalculator) internal returns (address) {

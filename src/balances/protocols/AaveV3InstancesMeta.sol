@@ -17,7 +17,7 @@ interface IAavePoolAddressesProvider {
     function getMarketId() external view returns (string memory);
 }
 
-/// @title Aave V3 Instances Meta Balance Oracle
+/// @title Aave V3 Instances Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's lending positions across *any* Aave V3 instance (Core,
 ///         Prime, an L2 market, …). The set of instances to query is configured on NAVCalculator and passed as
@@ -25,7 +25,7 @@ interface IAavePoolAddressesProvider {
 ///         to bytes32). Within an instance, reserves are enumerated trustlessly via `getAllReservesTokens()`, so
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
 ///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
-contract AaveV3InstancesMetaBalanceOracle is MetaBalanceOracle {
+contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     using Strings for address;
 
     /// @param protocol_ Protocol identifier (e.g. "Aave V3").

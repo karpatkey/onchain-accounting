@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {MorphoMarketsMetaBalanceOracle} from "src/balances/protocols/MorphoMarketsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {MockMorpho} from "test/balances/protocols/MorphoMarket.t.sol";
 import {Id, MarketParams} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
@@ -11,9 +11,9 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-/// @title MorphoMarketsMetaBalanceOracle unit tests (MockMorpho, no fork)
+/// @title MorphoMarketsMetaBalanceAdapter unit tests (MockMorpho, no fork)
 contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
-    MorphoMarketsMetaBalanceOracle public oracle;
+    MorphoMarketsMetaBalanceAdapter public oracle;
     MockMorpho public mockMorpho;
     bytes32 public marketId;
 
@@ -33,7 +33,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         mockMorpho = new MockMorpho(params);
         mockMorpho.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
 
-        oracle = new MorphoMarketsMetaBalanceOracle(address(mockMorpho), "Morpho", address(balances));
+        oracle = new MorphoMarketsMetaBalanceAdapter(address(mockMorpho), "Morpho", address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {

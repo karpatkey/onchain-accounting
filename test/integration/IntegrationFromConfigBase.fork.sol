@@ -19,9 +19,9 @@ import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
-import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
-import {MorphoMarketsMetaBalanceOracle} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {AaveV3InstancesMetaBalanceOracle} from "src/balances/protocols/AaveV3InstancesMeta.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
@@ -30,8 +30,8 @@ import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
-import {BalancerV3PoolsMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
-import {BalancerV3GaugesMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
+import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
 import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
@@ -41,8 +41,12 @@ import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
+import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
 import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
+import {PancakeSwapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
+import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
@@ -569,6 +573,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "StakeWiseV3Vault_")) {
             return _deployStakeWiseV3Vault(name, navAddr);
         }
+        if (_equals(name, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(name, navAddr);
+        }
+        if (_equals(name, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(name, navAddr);
+        }
+        if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
+            return _deployUniswapV2PoolsMeta(name, navAddr);
+        }
         if (_startsWith(name, "UniswapV2_")) {
             return _deployUniswapV2(name, navAddr);
         }
@@ -631,30 +644,30 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new MorphoVaultsMetaBalanceOracle(protocol, navAddr));
+        return address(new MorphoVaultsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployBalancerV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new BalancerV3PoolsMetaBalanceOracle(protocol, navAddr));
+        return address(new BalancerV3PoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployBalancerV3GaugesMeta(string memory name, address navAddr) internal returns (address) {
         address balancerMinter =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new BalancerV3GaugesMetaBalanceOracle(balancerMinter, protocol, navAddr));
+        return address(new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navAddr));
     }
 
     function _deployMorphoMarketsMeta(string memory name, address navAddr) internal returns (address) {
         address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new MorphoMarketsMetaBalanceOracle(morpho, protocol, navAddr));
+        return address(new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navAddr));
     }
 
     function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveV3InstancesMetaBalanceOracle(protocol, navAddr));
+        return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
@@ -901,6 +914,28 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(
             new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navAddr)
         );
+    }
+
+    function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
+    }
+
+    function _deployPancakeSwapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        address positionManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
+    }
+
+    function _deployUniswapV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        if (_equals(name, "PancakeSwapV2PoolsMeta")) {
+            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navAddr));
+        }
+        return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
     // -----------------------------------------------------------------------

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -22,11 +22,11 @@ contract TestUsdcVault is ERC4626 {
     constructor(IERC20 asset_) ERC20("Test USDC Vault", "tUSDCv") ERC4626(asset_) {}
 }
 
-/// @title MorphoVaultsMetaBalanceOracle fork tests
+/// @title MorphoVaultsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho ERC4626 vaults, routed through a real NAVCalculator that holds
 ///         the configured instance set (setMetaInstances). Uses the real kpkUSDC V1 vault + a second ERC4626 over
 ///         real USDC at a pinned block.
-contract MorphoVaultsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
+contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     using Strings for address;
 
     // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml). Etch its runtime code on the
@@ -42,7 +42,7 @@ contract MorphoVaultsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    MorphoVaultsMetaBalanceOracle public oracle;
+    MorphoVaultsMetaBalanceAdapter public oracle;
     TestUsdcVault public vault2;
 
     function setUp() public override {
@@ -86,7 +86,7 @@ contract MorphoVaultsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         // Deploy the meta-adapter and register it on NAV with both vaults as instances.
-        oracle = new MorphoVaultsMetaBalanceOracle("Morpho", address(nav));
+        oracle = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
         vm.startPrank(manager);
         nav.addBalanceOracle(address(oracle));
         bytes32[] memory instances = new bytes32[](2);

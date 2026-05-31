@@ -9,13 +9,13 @@ import {PositionType} from "src/utils/PositionType.sol";
 import {IStablePool} from "../BalancerV3.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
-/// @title Balancer V3 Pools Meta Balance Oracle
+/// @title Balancer V3 Pools Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V3 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only, no gauge staking and no rewards (those are the separate
-///         BalancerV3GaugesMetaBalanceOracle). The instance coordinate is the pool (BPT) address, widened to bytes32.
+///         BalancerV3GaugesMetaBalanceAdapter). The instance coordinate is the pool (BPT) address, widened to bytes32.
 ///         Emits one `Supply` leg per registered underlying pool token. See ADR 0010.
-contract BalancerV3PoolsMetaBalanceOracle is MetaBalanceOracle {
+contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
     using Strings for address;
     using BalancerV3PoolLib for IStablePool;
 

@@ -10,14 +10,14 @@ import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IM
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {PositionType} from "src/utils/PositionType.sol";
 
-/// @title Morpho Markets Meta Balance Oracle
+/// @title Morpho Markets Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
 ///         markets to query is configured on NAVCalculator (per-oracle, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an
 ///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow), matching
 ///         the per-market `MorphoMarket` adapter. See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
-contract MorphoMarketsMetaBalanceOracle is MetaBalanceOracle {
+contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
     using Math for uint256;
     using Strings for uint256;
     using MorphoBalancesLib for IMorpho;

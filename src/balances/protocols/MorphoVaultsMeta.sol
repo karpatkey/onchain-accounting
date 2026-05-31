@@ -7,7 +7,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PositionType} from "src/utils/PositionType.sol";
 
-/// @title Morpho Vaults Meta Balance Oracle
+/// @title Morpho Vaults Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports the underlying-asset balance for an account's position in *any*
 ///         Morpho ERC4626 vault. The set of vaults to query is configured on NAVCalculator (per-oracle,
@@ -15,7 +15,7 @@ import {PositionType} from "src/utils/PositionType.sol";
 /// @dev Per-instance identity is derived on-chain: `positionId` is the vault address as hex, and the
 ///      `positionDetail` name is read from the vault's ERC20 `name()`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
-contract MorphoVaultsMetaBalanceOracle is MetaBalanceOracle {
+contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
     using Strings for address;
 
     /// @param protocol_ Protocol identifier (e.g. "Morpho").

@@ -12,14 +12,14 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
 // solhint-disable func-name-mixedcase
 
-/// @title Balancer V3 Gauges Meta Balance Oracle
+/// @title Balancer V3 Gauges Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's **gauge-staked** Balancer V3 LP plus claimable rewards
 ///         across *any* gauge — the staked liquidity (valued via the gauge's LP token / pool) and BAL + extra
-///         gauge rewards. Wallet-held (unstaked) LP is the separate BalancerV3PoolsMetaBalanceOracle. The instance
+///         gauge rewards. Wallet-held (unstaked) LP is the separate BalancerV3PoolsMetaBalanceAdapter. The instance
 ///         coordinate is the gauge address, widened to bytes32. Emits `Staking` legs per pool token and `Rewards`
 ///         legs per reward token. See ADR 0010.
-contract BalancerV3GaugesMetaBalanceOracle is MetaBalanceOracle {
+contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     using SafeCast for uint256;
     using SafeCast for int128;
     using Strings for address;

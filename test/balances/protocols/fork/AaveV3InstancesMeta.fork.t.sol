@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {AaveV3InstancesMetaBalanceOracle} from "src/balances/protocols/AaveV3InstancesMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -13,11 +13,11 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
-/// @title AaveV3InstancesMetaBalanceOracle fork tests
+/// @title AaveV3InstancesMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving Aave V3 instances, routed through a real NAVCalculator that holds the
 ///         configured DataProvider set (setMetaInstances). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
-contract AaveV3InstancesMetaBalanceOracleForkTest is BalanceAdapterTestBase {
+contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address constant PRICE_FEED_LIB = 0xf6cb8f59B182B7BdefC6975874419028034f9379;
 
     // Aave V3 Core (mainnet) ProtocolDataProvider — the instance coordinate.
@@ -33,7 +33,7 @@ contract AaveV3InstancesMetaBalanceOracleForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    AaveV3InstancesMetaBalanceOracle public oracle;
+    AaveV3InstancesMetaBalanceAdapter public oracle;
     AaveV3InstanceBalanceOracle public perInstance;
 
     function setUp() public override {
@@ -73,7 +73,7 @@ contract AaveV3InstancesMetaBalanceOracleForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        oracle = new AaveV3InstancesMetaBalanceOracle("Aave V3", address(nav));
+        oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         perInstance = new AaveV3InstanceBalanceOracle(
             CORE_DATA_PROVIDER,
             "Aave V3",

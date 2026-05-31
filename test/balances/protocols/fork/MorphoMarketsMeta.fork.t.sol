@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {MorphoMarketsMetaBalanceOracle} from "src/balances/protocols/MorphoMarketsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -13,12 +13,12 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
-/// @title MorphoMarketsMetaBalanceOracle fork tests
+/// @title MorphoMarketsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho Blue markets, routed through a real NAVCalculator that holds
 ///         the configured marketId set (setMetaInstances). Uses the apxUSD/apyUSD market at a pinned block where
 ///         the account holds all three legs (supply + borrow + collateral), and asserts parity with the
 ///         per-market MorphoMarket adapter.
-contract MorphoMarketsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
+contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address constant PRICE_FEED_LIB = 0xf6cb8f59B182B7BdefC6975874419028034f9379;
 
     address public constant MORPHO = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
@@ -34,7 +34,7 @@ contract MorphoMarketsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    MorphoMarketsMetaBalanceOracle public oracle;
+    MorphoMarketsMetaBalanceAdapter public oracle;
     MorphoMarketBalanceOracle public perMarket;
 
     function setUp() public override {
@@ -77,7 +77,7 @@ contract MorphoMarketsMetaBalanceOracleForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        oracle = new MorphoMarketsMetaBalanceOracle(MORPHO, "Morpho", address(nav));
+        oracle = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
         perMarket = new MorphoMarketBalanceOracle(
             MORPHO,
             MARKET_ID,

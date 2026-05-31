@@ -207,7 +207,40 @@
     "positionId": "<Distributor address>"
   },
 
+  "UniswapV3PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V3 pools. Constructor takes (positionManager, protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.UniswapV3PoolsMeta.metaInstances — pool addresses). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier (e.g. WBTC/WETH 0.3%). Supersedes the per-pool UniswapV3Pool adapter.",
+    "$perPositionFields": "type: Supply | Fees (up to 4 legs: token0/token1 liquidity + token0/token1 fees)",
+    "protocol": "Uniswap V3",
+    "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<derived: sym0/sym1 feeTier>" },
+    "positionId": "<derived: pool address>"
+  },
+
+  "UniswapV2PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V2 pairs (also serves PancakeSwap V2 via the PancakeSwapV2PoolsMeta thin subclass / a separate deployment with protocol set accordingly). Constructor takes (protocol, navCalculator). The active pair set lives on NAVCalculator (metaInstances — pair addresses). Identity derived on-chain: positionId = pair address; name = sym0/sym1 LP. Supersedes the per-pair UniswapV2 adapter.",
+    "$perPositionFields": "type: Supply (one leg per pool token)",
+    "protocol": "Uniswap V2",
+    "positionDetail": { "protocol": "Uniswap V2", "product": "LP", "name": "<derived: sym0/sym1 LP>" },
+    "positionId": "<derived: pair address>"
+  },
+
+  "PancakeSwapV3PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): subclass of UniswapV3PoolsMeta overriding the slot0 read (uint32 feeProtocol). Constructor takes (positionManager, protocol, navCalculator). Pool set on NAVCalculator (metaInstances).",
+    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3PoolsMeta behaviour.",
+    "protocol": "PancakeSwap V3",
+    "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<derived: sym0/sym1 feeTier>" },
+    "positionId": "<derived: pool address>"
+  },
+
+  "PancakeSwapV2PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): thin subclass of UniswapV2PoolsMeta. Constructor takes (protocol, navCalculator). Pair set on NAVCalculator (metaInstances).",
+    "$perPositionFields": "type: Supply (one leg per pool token). Inherits UniswapV2PoolsMeta behaviour.",
+    "protocol": "PancakeSwap V2",
+    "positionDetail": { "protocol": "PancakeSwap V2", "product": "LP", "name": "<derived: sym0/sym1 LP>" },
+    "positionId": "<derived: pair address>"
+  },
+
   "UniswapV3Pool": {
+    "$superseded": "Superseded by UniswapV3PoolsMeta (ADR 0010); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Fees",
     "protocol": "Uniswap V3",
     "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<token0/token1 fee%>" },
@@ -215,6 +248,7 @@
   },
 
   "UniswapV2": {
+    "$superseded": "Superseded by UniswapV2PoolsMeta (ADR 0010).",
     "$perPositionFields": "type: Supply (one position per pool token)",
     "protocol": "Uniswap V2",
     "positionDetail": { "protocol": "Uniswap V2", "product": "LP", "name": "<token0/token1>" },
@@ -222,6 +256,7 @@
   },
 
   "PancakeSwapV3Pool": {
+    "$superseded": "Superseded by PancakeSwapV3PoolsMeta (ADR 0010).",
     "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3Pool behaviour.",
     "protocol": "PancakeSwap V3",
     "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<token0/token1 fee%>" },
@@ -229,6 +264,7 @@
   },
 
   "PancakeSwapV2": {
+    "$superseded": "Superseded by PancakeSwapV2PoolsMeta (ADR 0010).",
     "$perPositionFields": "type: Supply (one position per pool token). Inherits UniswapV2 behaviour.",
     "protocol": "PancakeSwap V2",
     "positionDetail": { "protocol": "PancakeSwap V2", "product": "LP", "name": "<token0/token1>" },

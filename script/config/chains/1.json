@@ -763,8 +763,23 @@
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     },
-    "UniswapV3_WBTC_WETH_3000": {
+    "UniswapV3PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "protocol": "Uniswap V3"
+      },
+      "metaInstances": [
+        "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+        "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+        "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
+      ],
+      "deployed": ""
+    },
+    "UniswapV3_WBTC_WETH_3000": {
+      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -787,7 +802,8 @@
       "comment": "Disabled: COW has no Chainlink price feed on Mainnet, so the COW leg of any in-range position would be silently dropped, understating NAV by ~half. Re-enable once a COW price feed is registered in assets.json."
     },
     "UniswapV3_USDC_WETH_500": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
@@ -798,7 +814,8 @@
       "deployed": ""
     },
     "UniswapV3_WETH_USDT_3000": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
         "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",

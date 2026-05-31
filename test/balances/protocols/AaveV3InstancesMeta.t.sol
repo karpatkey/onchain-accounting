@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {AaveV3InstancesMetaBalanceOracle} from "src/balances/protocols/AaveV3InstancesMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {IProtocolDataProvider} from "src/balances/protocols/AaveV3Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
@@ -70,11 +70,11 @@ contract MockAaveDataProvider {
     }
 }
 
-/// @title AaveV3InstancesMetaBalanceOracle unit tests (mocks, no fork)
+/// @title AaveV3InstancesMetaBalanceAdapter unit tests (mocks, no fork)
 contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
     using Strings for address;
 
-    AaveV3InstancesMetaBalanceOracle public oracle;
+    AaveV3InstancesMetaBalanceAdapter public oracle;
     MockAaveDataProvider public dp;
     MockAaveAddressesProvider public addrProvider;
     address public constant pool = 0x1111111111111111111111111111111111111111;
@@ -85,7 +85,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         dp = new MockAaveDataProvider(address(addrProvider));
         dp.addReserve("USDC", address(usdc));
         dp.addReserve("WETH", address(weth));
-        oracle = new AaveV3InstancesMetaBalanceOracle("Aave V3", address(balances));
+        oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {

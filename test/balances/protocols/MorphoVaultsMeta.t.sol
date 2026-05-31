@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {MorphoVaultsMetaBalanceOracle} from "src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
@@ -48,12 +48,12 @@ contract MockToken {
     }
 }
 
-/// @title MorphoVaultsMetaBalanceOracle unit tests (no fork)
-contract MorphoVaultsMetaBalanceOracleTest is Test {
+/// @title MorphoVaultsMetaBalanceAdapter unit tests (no fork)
+contract MorphoVaultsMetaBalanceAdapterTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    MorphoVaultsMetaBalanceOracle oracle;
+    MorphoVaultsMetaBalanceAdapter oracle;
 
     MockToken usdc;
     MockToken weth;
@@ -72,7 +72,7 @@ contract MorphoVaultsMetaBalanceOracleTest is Test {
         vaultA = new MockMetaVault("Steakhouse USDC", address(usdc), 1e18);
         vaultB = new MockMetaVault("kpk ETH Prime", address(weth), 2e18);
 
-        oracle = new MorphoVaultsMetaBalanceOracle("Morpho", address(nav));
+        oracle = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

@@ -211,7 +211,20 @@
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     },
+    "PancakeSwapV3PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+      "enabled": false,
+      "constructor": {
+        "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+        "protocol": "PancakeSwap V3"
+      },
+      "metaInstances": [
+        "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
+      ],
+      "deployed": ""
+    },
     "PancakeSwapV3_WETH_COW": {
+      "$superseded": "Disabled — superseded by PancakeSwapV3PoolsMeta (ADR 0010), and independently gated on a Base COW price feed (see comment below).",
       "enabled": false,
       "constructor": {
         "pool": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF",

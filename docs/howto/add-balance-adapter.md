@@ -24,7 +24,7 @@ Before writing code, answer:
 
 ### Single-instance vs meta-adapter
 
-If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools, Aave instances), prefer a **meta-adapter** over one contract per instance:
+If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 & PancakeSwap pools), prefer a **meta-adapter** over one contract per instance:
 
 - **Single-instance** (the default skeleton below): pin the pool/market/vault in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue) or when there is exactly one instance you care about.
 - **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`; derive identity on-chain from the instance coordinate. Adding a pool/vault later is a config TX, not a deploy. See `MorphoVaultsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.

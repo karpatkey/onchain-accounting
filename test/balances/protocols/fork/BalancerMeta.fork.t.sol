@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
-import {MetaBalancerV3PoolBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3PoolBalanceAdapter.sol";
-import {MetaBalancerV3GaugeBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3GaugeBalanceAdapter.sol";
+import {BalancerV3PoolsMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV3GaugesMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title BalancerMetaParityForkTest
-/// @notice Proves the split (BalancerPoolsMeta = wallet LP, BalancerGaugesMeta = staked LP + rewards) reproduces the
+/// @notice Proves the split (BalancerV3PoolsMeta = wallet LP, BalancerV3GaugesMeta = staked LP + rewards) reproduces the
 ///         original combined BalancerV3PoolBalanceOracle per token, against the real mainnet Aave GHO/USDT/USDC pool
 ///         + gauge. All three adapters share one BalancesHarnessForFork registry (which implements
 ///         getRegisteredAssets), so per-token amounts are directly comparable. The combined adapter does a single
@@ -35,8 +35,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
     address public constant MAINNET_WHALE_USER = 0xaF52695E1bB01A16D33D7194C28C42b10e0Dbec2;
 
     BalancerV3PoolBalanceOracle public combined;
-    MetaBalancerV3PoolBalanceAdapter public pools;
-    MetaBalancerV3GaugeBalanceAdapter public gauges;
+    BalancerV3PoolsMetaBalanceOracle public pools;
+    BalancerV3GaugesMetaBalanceOracle public gauges;
 
     function setUp() public override {
         super.setUp();
@@ -61,8 +61,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
             POOL.toHexString(),
             address(balances)
         );
-        pools = new MetaBalancerV3PoolBalanceAdapter("Balancer V3", address(balances));
-        gauges = new MetaBalancerV3GaugeBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
+        pools = new BalancerV3PoolsMetaBalanceOracle("Balancer V3", address(balances));
+        gauges = new BalancerV3GaugesMetaBalanceOracle(BALANCER_MINTER, "Balancer V3", address(balances));
     }
 
     function _supportedAssets() internal pure returns (address[] memory assets) {

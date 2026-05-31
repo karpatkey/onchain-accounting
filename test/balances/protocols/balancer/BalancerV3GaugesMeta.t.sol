@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {MetaBalancerV3GaugeBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3GaugeBalanceAdapter.sol";
+import {BalancerV3GaugesMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
@@ -11,15 +11,15 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {MockStablePool, MockBalToken, MockBalancerMinter, MockBalancerGauge} from "./BalancerMetaMocks.sol";
 
-/// @title MetaBalancerV3GaugeBalanceAdapter unit tests (no fork)
+/// @title BalancerV3GaugesMetaBalanceOracle unit tests (no fork)
 /// @notice Exercises the meta-framework behaviour, the staked-BPT pool-share Staking legs, and the extra-reward
 ///         Rewards legs. BAL claimable relies on the gauge inflation surface (omitted by the mock → reverts → 0),
 ///         so the BAL leg is fork-tested; here only the extra reward token produces a Rewards leg.
-contract MetaBalancerV3GaugeBalanceAdapterTest is Test {
+contract BalancerV3GaugesMetaBalanceOracleTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    MetaBalancerV3GaugeBalanceAdapter oracle;
+    BalancerV3GaugesMetaBalanceOracle oracle;
 
     MockBalToken tokenX;
     MockBalToken tokenY;
@@ -51,7 +51,7 @@ contract MetaBalancerV3GaugeBalanceAdapterTest is Test {
         gauge = new MockBalancerGauge(address(pool));
         gauge.addRewardToken(address(extraReward));
 
-        oracle = new MetaBalancerV3GaugeBalanceAdapter(address(minter), "Balancer V3", address(nav));
+        oracle = new BalancerV3GaugesMetaBalanceOracle(address(minter), "Balancer V3", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

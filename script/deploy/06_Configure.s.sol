@@ -194,8 +194,8 @@ contract Configure is BaseDeployScript {
         names[i++] = "GearboxMarket_kpkWETH";
         names[i++] = "GearboxMarket_kpkwstETH";
         // Balancer V3 meta-adapters (ADR 0010): pool / gauge sets configured via setMetaInstances
-        names[i++] = "BalancerPoolsMeta";
-        names[i++] = "BalancerGaugesMeta";
+        names[i++] = "BalancerV3PoolsMeta";
+        names[i++] = "BalancerV3GaugesMeta";
         // Balancer V3 (per-pool — superseded by the meta-adapters above)
         names[i++] = "BalancerV3_rETH_WETH";
         names[i++] = "BalancerV3_GHO_USDT_USDC"; // Mainnet — USD Alpha

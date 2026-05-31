@@ -370,8 +370,8 @@
       },
       "deployed": "0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941"
     },
-    "BalancerPoolsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerGaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "BalancerV3PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "protocol": "Balancer V3"
@@ -382,8 +382,8 @@
       ],
       "deployed": ""
     },
-    "BalancerGaugesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerPoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "BalancerV3GaugesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
@@ -396,7 +396,7 @@
       "deployed": ""
     },
     "BalancerV3_rETH_WETH": {
-      "$superseded": "Disabled — superseded by BalancerPoolsMeta + BalancerGaugesMeta (ADR 0010). Pool still queried via BalancerPoolsMeta.metaInstances; gauge via BalancerGaugesMeta.metaInstances.",
+      "$superseded": "Disabled — superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
@@ -409,7 +409,7 @@
       "deployed": "0x854BC9A5445495396De4cc228A5f945C680c2d4A"
     },
     "BalancerV3_GHO_USDT_USDC": {
-      "$superseded": "Disabled — superseded by BalancerPoolsMeta + BalancerGaugesMeta (ADR 0010). Pool still queried via BalancerPoolsMeta.metaInstances; gauge via BalancerGaugesMeta.metaInstances.",
+      "$superseded": "Disabled — superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",

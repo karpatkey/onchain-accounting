@@ -62,17 +62,20 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         address bpt = gauge.lp_token();
-        bytes32 poolId = IBalancerV2Pool(bpt).getPoolId();
         string memory positionId = address(gauge).toHexString();
         string memory base = _detailBase(bpt);
 
         uint256 rewardCount = _rewardCount(gauge);
 
-        // Staking legs: account's staked-BPT share of each underlying pool token (via the Vault).
+        // Staking legs: account's staked-BPT share of each underlying pool token (via the Vault). The poolId is only
+        // needed to read the Vault balances, so resolve it lazily inside the staked branch (skips the read at 0 stake).
         uint256 staked = gauge.balanceOf(account);
         address[] memory tokens;
         uint256[] memory amounts;
-        if (staked != 0) (tokens, amounts) = BalancerV2PoolLib.shares(VAULT, poolId, bpt, staked);
+        if (staked != 0) {
+            bytes32 poolId = IBalancerV2Pool(bpt).getPoolId();
+            (tokens, amounts) = BalancerV2PoolLib.shares(VAULT, poolId, bpt, staked);
+        }
 
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](tokens.length + rewardCount + 1);

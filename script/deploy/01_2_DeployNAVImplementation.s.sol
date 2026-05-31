@@ -69,6 +69,11 @@ contract DeployNAVImplementation is BaseDeployScript {
         plan.priceFeedLib =
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltPriceFeedLib, plan.priceFeedLibBytecode);
 
+        // NOTE: NavRegistryLib is DELEGATECALL'd by NAVCalculator during initialize() (registerAsset), so the
+        // address NAVCalculator is linked against (the foundry.toml `libraries` pin) MUST equal the CREATE2 address
+        // computed here, or NAV init reverts on-chain. Same requirement as PriceFeedLib. Before signing the Safe
+        // batch, confirm `plan.navRegistryLib` (logged below) matches the foundry.toml pin; if they diverge (e.g.
+        // after a library source change shifts the bytecode), update the pin and rebuild so the link is consistent.
         plan.saltNavRegistryLib = generateSalt("NavRegistryLib", 1);
         plan.navRegistryLibBytecode = type(NavRegistryLib).creationCode;
         plan.navRegistryLib =

@@ -144,6 +144,10 @@ contract BalancesTest is Test {
     address public admin = makeAddr("admin");
 
     function setUp() public {
+        // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml). In tests there's no
+        // chain state, so etch its runtime code there so the DELEGATECALL from _addBalanceOracle/_removeBalanceOracle
+        // succeeds.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         vm.startPrank(admin);
         balances = new BalancesHarness();
         balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());

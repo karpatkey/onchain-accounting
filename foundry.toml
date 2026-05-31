@@ -19,12 +19,18 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
-# Pre-link PriceFeedLib at its deterministic CREATE2 address so type(NAVCalculator).creationCode
-# contains the real library address rather than __$...$__ placeholders.  The address is derived
-# from the canonical CREATE2 factory (0x4e59...956C) with salt keccak256("PriceFeedLib" ++ uint256(1)).
-# Deploy script 01_2_DeployNAVImplementation.s.sol deploys the library to this address before
-# deploying NAVCalculator, so the Safe TX batch is self-contained.
-libraries = ["src/prices/PriceFeedLib.sol:PriceFeedLib:0xf6cb8f59B182B7BdefC6975874419028034f9379"]
+# Pre-link the external libraries at their deterministic CREATE2 addresses so type(NAVCalculator).creationCode
+# contains the real library addresses rather than __$...$__ placeholders.  Each address is derived from the
+# canonical CREATE2 factory (0x4e59...956C) with salt keccak256("<LibName>" ++ uint256(1)).
+# Deploy script 01_2_DeployNAVImplementation.s.sol deploys both libraries to these addresses before deploying
+# NAVCalculator, so the Safe TX batch is self-contained.
+#   - PriceFeedLib   : price-feed selection/management (extracted from Prices).
+#   - NavRegistryLib : asset-registry + balance-oracle-registry storage mutations (extracted from NAVCalculator /
+#                      Balances) to keep NAVCalculator under EIP-170. See ADR 0010.
+libraries = [
+  "src/prices/PriceFeedLib.sol:PriceFeedLib:0xf6cb8f59B182B7BdefC6975874419028034f9379",
+  "src/nav/NavRegistryLib.sol:NavRegistryLib:0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A",
+]
 
 # Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.
 # See: https://book.getfoundry.sh/reference/config/solidity-compiler

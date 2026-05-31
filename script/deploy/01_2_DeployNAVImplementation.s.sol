@@ -5,6 +5,7 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
+import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployNAVImplementation
@@ -22,6 +23,9 @@ contract DeployNAVImplementation is BaseDeployScript {
         address priceFeedLib;
         bytes priceFeedLibBytecode;
         bytes32 saltPriceFeedLib;
+        address navRegistryLib;
+        bytes navRegistryLibBytecode;
+        bytes32 saltNavRegistryLib;
         address navImpl;
         bytes navImplBytecode;
         bytes32 saltNavImpl;
@@ -33,19 +37,22 @@ contract DeployNAVImplementation is BaseDeployScript {
 
         ImplPlan memory plan = _computeImplPlan();
 
-        SafeTxBuilder.Transaction[] memory txs = new SafeTxBuilder.Transaction[](2);
+        SafeTxBuilder.Transaction[] memory txs = new SafeTxBuilder.Transaction[](3);
         txs[0] = SafeTxBuilder.call(
             CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode)
         );
-        txs[1] =
+        txs[1] = SafeTxBuilder.call(
+            CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode)
+        );
+        txs[2] =
             SafeTxBuilder.call(CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
 
         string memory filename =
             string(abi.encodePacked(vm.toString(currentChainId), "-deploy-nav-implementation.json"));
         writeSafeTx(
             filename,
-            "Deploy PriceFeedLib + NAVCalculator implementation (CREATE2)",
-            "Deploy PriceFeedLib external library then NAVCalculator implementation via canonical CREATE2 deployer. Both at the same address on all chains. Run once, then run 02_2_DeployNAVProxy.s.sol per chain.",
+            "Deploy PriceFeedLib + NavRegistryLib + NAVCalculator implementation (CREATE2)",
+            "Deploy the PriceFeedLib and NavRegistryLib external libraries then the NAVCalculator implementation via the canonical CREATE2 deployer. All at the same address on all chains. Run once, then run 02_2_DeployNAVProxy.s.sol per chain.",
             txs
         );
 
@@ -53,7 +60,7 @@ contract DeployNAVImplementation is BaseDeployScript {
         _deployIfNeeded(plan);
         vm.stopBroadcast();
 
-        _saveAndLog(plan.priceFeedLib, plan.navImpl, filename);
+        _saveAndLog(plan, filename);
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {
@@ -61,6 +68,11 @@ contract DeployNAVImplementation is BaseDeployScript {
         plan.priceFeedLibBytecode = type(PriceFeedLib).creationCode;
         plan.priceFeedLib =
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltPriceFeedLib, plan.priceFeedLibBytecode);
+
+        plan.saltNavRegistryLib = generateSalt("NavRegistryLib", 1);
+        plan.navRegistryLibBytecode = type(NavRegistryLib).creationCode;
+        plan.navRegistryLib =
+            computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavRegistryLib, plan.navRegistryLibBytecode);
 
         plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", 2);
         plan.navImplBytecode = type(NAVCalculator).creationCode;
@@ -77,6 +89,15 @@ contract DeployNAVImplementation is BaseDeployScript {
             console2.log("[SKIP] PriceFeedLib already at:", plan.priceFeedLib);
         }
 
+        if (plan.navRegistryLib.code.length == 0) {
+            (bool ok,) =
+                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode));
+            require(ok, "NavRegistryLib deploy failed");
+            console2.log("[OK] NavRegistryLib deployed at:", plan.navRegistryLib);
+        } else {
+            console2.log("[SKIP] NavRegistryLib already at:", plan.navRegistryLib);
+        }
+
         if (plan.navImpl.code.length == 0) {
             (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
             require(ok, "NAV impl deploy failed");
@@ -86,15 +107,17 @@ contract DeployNAVImplementation is BaseDeployScript {
         }
     }
 
-    function _saveAndLog(address priceFeedLib, address navImpl, string memory filename) internal {
-        saveDeployedAddress("PriceFeedLib", priceFeedLib);
-        saveDeployedAddress("NAVCalculatorImplementation", navImpl);
+    function _saveAndLog(ImplPlan memory plan, string memory filename) internal {
+        saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
+        saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
+        saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);
 
         console2.log("\n=== NAV Implementation Deployment ===");
         console2.log("Chain ID:", currentChainId);
         console2.log("Generated:", filename);
-        console2.log("  PriceFeedLib:", priceFeedLib);
-        console2.log("  NAV Implementation:", navImpl);
+        console2.log("  PriceFeedLib:", plan.priceFeedLib);
+        console2.log("  NavRegistryLib:", plan.navRegistryLib);
+        console2.log("  NAV Implementation:", plan.navImpl);
         console2.log("Addresses saved to config. Run 02_2_DeployNAVProxy.s.sol per chain.");
     }
 }

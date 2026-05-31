@@ -6,6 +6,7 @@ import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
+import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployImplementations
@@ -20,12 +21,15 @@ contract DeployImplementations is BaseDeployScript {
 
     struct ImplPlan {
         address priceFeedLib;
+        address navRegistryLib;
         address navImpl;
         address bridgeImpl;
         bytes priceFeedLibBytecode;
+        bytes navRegistryLibBytecode;
         bytes navImplBytecode;
         bytes bridgeImplBytecode;
         bytes32 saltPriceFeedLib;
+        bytes32 saltNavRegistryLib;
         bytes32 saltNavImpl;
         bytes32 saltBridgeImpl;
     }
@@ -36,21 +40,24 @@ contract DeployImplementations is BaseDeployScript {
 
         ImplPlan memory plan = _computeImplPlan();
 
-        SafeTxBuilder.Transaction[] memory txs = new SafeTxBuilder.Transaction[](3);
+        SafeTxBuilder.Transaction[] memory txs = new SafeTxBuilder.Transaction[](4);
         txs[0] = SafeTxBuilder.call(
             CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode)
         );
-        txs[1] =
+        txs[1] = SafeTxBuilder.call(
+            CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode)
+        );
+        txs[2] =
             SafeTxBuilder.call(CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
-        txs[2] = SafeTxBuilder.call(
+        txs[3] = SafeTxBuilder.call(
             CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltBridgeImpl, plan.bridgeImplBytecode)
         );
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-deploy-implementations.json"));
         writeSafeTx(
             filename,
-            "Deploy PriceFeedLib + NAVCalculator + BridgeEscrow implementations (CREATE2)",
-            "Deploy PriceFeedLib external library, NAVCalculator, and BridgeEscrow implementations via canonical CREATE2 deployer. Same addresses on all chains. Run once (e.g. on mainnet), then run 02 per chain for proxies + init.",
+            "Deploy PriceFeedLib + NavRegistryLib + NAVCalculator + BridgeEscrow implementations (CREATE2)",
+            "Deploy the PriceFeedLib and NavRegistryLib external libraries, the NAVCalculator, and the BridgeEscrow implementations via the canonical CREATE2 deployer. Same addresses on all chains. Run once (e.g. on mainnet), then run 02 per chain for proxies + init.",
             txs
         );
 
@@ -58,7 +65,7 @@ contract DeployImplementations is BaseDeployScript {
         _deployIfNeeded(plan);
         vm.stopBroadcast();
 
-        _saveAndLog(plan.priceFeedLib, plan.navImpl, plan.bridgeImpl, filename);
+        _saveAndLog(plan, filename);
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {
@@ -66,6 +73,11 @@ contract DeployImplementations is BaseDeployScript {
         plan.priceFeedLibBytecode = type(PriceFeedLib).creationCode;
         plan.priceFeedLib =
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltPriceFeedLib, plan.priceFeedLibBytecode);
+
+        plan.saltNavRegistryLib = generateSalt("NavRegistryLib", 1);
+        plan.navRegistryLibBytecode = type(NavRegistryLib).creationCode;
+        plan.navRegistryLib =
+            computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavRegistryLib, plan.navRegistryLibBytecode);
 
         plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", 1);
         plan.navImplBytecode = type(NAVCalculator).creationCode;
@@ -87,6 +99,15 @@ contract DeployImplementations is BaseDeployScript {
             console2.log("[SKIP] PriceFeedLib already at:", plan.priceFeedLib);
         }
 
+        if (plan.navRegistryLib.code.length == 0) {
+            (bool ok,) =
+                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode));
+            require(ok, "NavRegistryLib deploy failed");
+            console2.log("[OK] NavRegistryLib deployed at:", plan.navRegistryLib);
+        } else {
+            console2.log("[SKIP] NavRegistryLib already at:", plan.navRegistryLib);
+        }
+
         if (plan.navImpl.code.length == 0) {
             (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
             require(ok, "NAV impl deploy failed");
@@ -105,17 +126,19 @@ contract DeployImplementations is BaseDeployScript {
     }
 
     /// @dev Saves implementation addresses to config and logs the deployment summary.
-    function _saveAndLog(address priceFeedLib, address navImpl, address bridgeImpl, string memory filename) internal {
-        saveDeployedAddress("PriceFeedLib", priceFeedLib);
-        saveDeployedAddress("NAVCalculatorImplementation", navImpl);
-        saveDeployedAddress("BridgeEscrowImplementation", bridgeImpl);
+    function _saveAndLog(ImplPlan memory plan, string memory filename) internal {
+        saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
+        saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
+        saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);
+        saveDeployedAddress("BridgeEscrowImplementation", plan.bridgeImpl);
 
         console2.log("\n=== Implementation Deployment ===");
         console2.log("Chain ID:", currentChainId);
         console2.log("Generated:", filename);
-        console2.log("  PriceFeedLib:", priceFeedLib);
-        console2.log("  NAV Implementation:", navImpl);
-        console2.log("  Bridge Implementation:", bridgeImpl);
+        console2.log("  PriceFeedLib:", plan.priceFeedLib);
+        console2.log("  NavRegistryLib:", plan.navRegistryLib);
+        console2.log("  NAV Implementation:", plan.navImpl);
+        console2.log("  Bridge Implementation:", plan.bridgeImpl);
         console2.log("Addresses saved to config. Run 02_DeployProxies.s.sol per chain.");
     }
 }

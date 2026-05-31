@@ -12,6 +12,7 @@ import {Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
+import {NavRegistryLib} from "./NavRegistryLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
@@ -753,44 +754,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// Fetches decimals and symbol: for NATIVE_ADDRESS uses 18 and _nativeTokenSymbol;
     /// otherwise requires ERC20-compatible (decimals() and symbol()) and reverts if not.
     function _registerAsset(address asset) internal {
-        if (_assetIndex[asset] != 0) {
-            revert InvalidArguments(); // Asset already registered
-        }
-        uint8 decimals;
-        string memory symbol;
-        if (asset == NATIVE_ADDRESS) {
-            decimals = 18;
-            symbol = _nativeTokenSymbol;
-        } else {
-            try IERC20Metadata(asset).decimals() returns (uint8 d) {
-                decimals = d;
-            } catch {
-                revert InvalidArguments(); // Not ERC20 compatible
-            }
-            try IERC20Metadata(asset).symbol() returns (string memory s) {
-                symbol = s;
-            } catch {
-                revert InvalidArguments(); // Not ERC20 compatible
-            }
-        }
-        _registeredAssets.push(INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals}));
-        _assetIndex[asset] = _registeredAssets.length;
+        NavRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
     }
 
     /// @notice Unregisters an asset from the NAV/Pricing registry
     function _unregisterAsset(address asset) internal {
-        uint256 idx = _assetIndex[asset];
-        if (idx == 0) {
-            revert AssetNotFound();
-        }
-        uint256 lastIdx = _registeredAssets.length;
-        if (idx != lastIdx) {
-            INAVCalculator.Asset memory lastAsset = _registeredAssets[lastIdx - 1];
-            _registeredAssets[idx - 1] = lastAsset;
-            _assetIndex[lastAsset.asset] = idx;
-        }
-        _registeredAssets.pop();
-        delete _assetIndex[asset];
+        NavRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
     }
 
     /// @notice Returns the registered Asset struct from the NAV/Pricing registry (single lookup for decimals + symbol).

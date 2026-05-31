@@ -26,6 +26,8 @@ contract BalanceAdapterInvariantTest is Test {
     address public bob = makeAddr("bob");
 
     function setUp() public {
+        // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultOracle = balances.defaultOracle();
 

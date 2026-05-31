@@ -8,6 +8,7 @@ import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
 
@@ -168,52 +169,22 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Adds a balance oracle globally.
     /// @param oracle The address of the oracle.
     function _addBalanceOracle(address oracle) internal {
-        // Check if oracle is already registered globally
-        if (_isOracleRegistered[oracle]) {
-            revert DuplicateBalanceOracle();
-        }
-
-        OracleType balanceType = OracleType.Custom;
-        checkBalanceOracleSupport(oracle);
-
-        // Add to global oracle registry
-        _globalOracles.push(oracle);
-        _oracleTypes[oracle] = balanceType;
-        _isOracleRegistered[oracle] = true;
+        // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to
+        // keep NAVCalculator under EIP-170; the running count + event stay inline (cheaper than crossing the boundary).
+        NavRegistryLib.addBalanceOracle(_isOracleRegistered, _globalOracles, _oracleTypes, oracle);
         balanceOracleTotalCount++;
 
         // Emit event with address(0) for underlyingAsset since oracles are global
-        emit BalanceOracleAdded(address(0), oracle, balanceType);
+        emit BalanceOracleAdded(address(0), oracle, OracleType.Custom);
     }
 
     /// @notice Removes the oracle from the global registry.
     /// @param oracle The address of the oracle.
     function _removeBalanceOracle(address oracle) internal {
-        if (oracle == erc20DefaultOracle) {
-            revert InvalidArguments(); // Cannot remove ERC20DefaultOracle
-        }
-
-        if (!_isOracleRegistered[oracle]) {
-            revert InvalidBalanceOracle();
-        }
-
-        // Remove from global registry
-        uint256 oracleIndex = _globalOracles.length;
-        for (uint256 i = 0; i < _globalOracles.length; i++) {
-            if (_globalOracles[i] == oracle) {
-                oracleIndex = i;
-                break;
-            }
-        }
-
-        if (oracleIndex < _globalOracles.length) {
-            // Move last element to the position of the element to delete
-            _globalOracles[oracleIndex] = _globalOracles[_globalOracles.length - 1];
-            _globalOracles.pop();
-        }
-
-        delete _isOracleRegistered[oracle];
-        delete _oracleTypes[oracle];
+        // Storage mutation + guards delegated to NavRegistryLib (see _addBalanceOracle); count + event stay inline.
+        NavRegistryLib.removeBalanceOracle(
+            _isOracleRegistered, _globalOracles, _oracleTypes, oracle, erc20DefaultOracle
+        );
         balanceOracleTotalCount--;
 
         // Note: a removed oracle's configured meta-instance set (if any) is left dormant — it is no longer

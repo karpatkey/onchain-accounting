@@ -53,6 +53,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             deployerCodeSize := extcodesize(deployer)
         }
         require(deployerCodeSize > 0, "Canonical CREATE2 deployer not found on fork");
+
+        // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
+        // NAVCalculator/Balances. It is not deployed on the fork, so etch its runtime code there for proxy init/upgrade.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
     }
 
     /// @notice Test that different EOAs deploy proxies to the same addresses

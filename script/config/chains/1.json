@@ -708,8 +708,22 @@
       },
       "deployed": ""
     },
-    "StakeWiseV3Vault_Genesis": {
+    "StakeWiseV3VaultsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (setMetaInstances, from metaInstances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "protocol": "StakeWise V3"
+      },
+      "metaInstances": [
+        "0xAC0F906E433d58FA868F936E8A43230473652885",
+        "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
+      ],
+      "deployed": ""
+    },
+    "StakeWiseV3Vault_Genesis": {
+      "$superseded": "Disabled — superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
@@ -720,7 +734,8 @@
       "deployed": ""
     },
     "StakeWiseV3Vault_MetaVault": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         "vault": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3",

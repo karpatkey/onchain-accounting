@@ -28,6 +28,7 @@ import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/ba
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
@@ -192,7 +193,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
         _deployIfEnabled("StakeWiseV3OsToken_ETH");
-        _deployIfEnabled("StakeWiseV3Vault_Genesis");
+        _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
+        _deployIfEnabled("StakeWiseV3Vault_Genesis"); // per-vault — superseded by StakeWiseV3VaultsMeta
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
@@ -370,6 +372,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // StakeWise V3 Vault adapters
+        if (_equals(adapterName, "StakeWiseV3VaultsMeta")) {
+            return _deployStakeWiseV3VaultsMeta(adapterName, navCalculator);
+        }
         if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
             return _deployStakeWiseV3Vault(adapterName, navCalculator);
         }
@@ -809,6 +814,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
         StakeWiseV3VaultBalanceOracle adapter = new StakeWiseV3VaultBalanceOracle(
             underlyingToken, vault, protocol, positionDetail, positionId, navCalculator
         );
+        return address(adapter);
+    }
+
+    /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,
+    ///         navCalculator); the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        StakeWiseV3VaultsMetaBalanceAdapter adapter =
+            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navCalculator);
         return address(adapter);
     }
 

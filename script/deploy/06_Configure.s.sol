@@ -150,7 +150,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](60);
+        names = new string[](61);
         uint256 i = 0;
         // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV3InstancesMeta";
@@ -224,6 +224,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "LidoWithdrawalQueue";
         // StakeWise V3 (Mainnet)
         names[i++] = "StakeWiseV3OsToken_ETH";
+        names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
         names[i++] = "StakeWiseV3Vault_Genesis";
         // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances
         names[i++] = "UniswapV3PoolsMeta"; // Mainnet

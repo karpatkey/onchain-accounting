@@ -179,7 +179,16 @@
     "positionId": "<osToken contract address>"
   },
 
+  "StakeWiseV3VaultsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL StakeWise V3 vaults. Constructor takes (underlyingToken, protocol, navCalculator) — underlyingToken is the chain-level staking asset (ETH sentinel on mainnet, GNO on Gnosis). The active vault set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.StakeWiseV3VaultsMeta.metaInstances — vault addresses). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault adapter.",
+    "$perPositionFields": "type: Staking | Borrow (Staking=vault shares→assets, isDebt=false; Borrow=osToken debt→assets, isDebt=true)",
+    "protocol": "StakeWise V3",
+    "positionDetail": { "protocol": "StakeWise V3", "product": "Vault", "name": "<derived: vault name()>" },
+    "positionId": "<derived: vault address>"
+  },
+
   "StakeWiseV3Vault": {
+    "$superseded": "Superseded by StakeWiseV3VaultsMeta (ADR 0010); per-vault deploys disabled in chain config.",
     "$perPositionFields": "type: Staking | Borrow (Staking=vault shares converted to assets, isDebt=false; Borrow=osToken debt converted to assets, isDebt=true)",
     "protocol": "StakeWise V3",
     "positionDetail": { "protocol": "StakeWise V3", "product": "Vault", "name": "<vault name>" },

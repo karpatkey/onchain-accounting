@@ -39,6 +39,7 @@ import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
+import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
@@ -570,6 +571,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(name, navAddr);
         }
+        if (_equals(name, "StakeWiseV3VaultsMeta")) {
+            return _deployStakeWiseV3VaultsMeta(name, navAddr);
+        }
         if (_startsWith(name, "StakeWiseV3Vault_")) {
             return _deployStakeWiseV3Vault(name, navAddr);
         }
@@ -869,6 +873,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(
             new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, positionId, navAddr)
         );
+    }
+
+    function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navAddr));
     }
 
     function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {

@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8;
+
+import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
+import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
+import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+
+/// @title StakeWiseV3VaultsMetaParityForkTest (Gnosis)
+/// @notice Proves the StakeWise V3 vaults meta-adapter reproduces the per-vault StakeWiseV3VaultBalanceOracle
+///         leg-for-leg (exact) against the real Gnosis Genesis vault and real holders. Both adapters share one
+///         BalancesHarnessForFork registry.
+contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
+    using Strings for address;
+
+    address public constant GNO = 0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb;
+    address public constant VAULT = 0x4b4406Ed8659D03423490D8b62a1639206dA0A7a;
+    address public constant TEST_USER = 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f;
+    address public constant TEST_USER2 = 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669;
+    uint256 public constant FORK_BLOCK_1 = 38_449_644;
+    uint256 public constant FORK_BLOCK_2 = 35_261_999;
+
+    StakeWiseV3VaultBalanceOracle public per;
+    StakeWiseV3VaultsMetaBalanceAdapter public meta;
+
+    function setUp() public override {
+        super.setUp();
+    }
+
+    function _deploy() internal {
+        balances = _deployBalancesForOracle(GNO);
+        per = new StakeWiseV3VaultBalanceOracle(
+            GNO,
+            VAULT,
+            "StakeWise V3",
+            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"x\"",
+            VAULT.toHexString(),
+            address(balances)
+        );
+        meta = new StakeWiseV3VaultsMetaBalanceAdapter(GNO, "StakeWise V3", address(balances));
+    }
+
+    function _vaultInstance() internal pure returns (bytes32[] memory ins) {
+        ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(VAULT)));
+    }
+
+    /// @notice Sums (staking, borrow) over a position array.
+    function _legs(INAVCalculator.PositionBalance[] memory p) internal pure returns (uint256 staking, uint256 borrow) {
+        for (uint256 i = 0; i < p.length; i++) {
+            if (p[i].isDebt) borrow += p[i].amount;
+            else staking += p[i].amount;
+        }
+    }
+
+    function _assertParity(address user) internal view {
+        (uint256 perStaking, uint256 perBorrow) = _legs(per.getOraclePositions(user, address(0)));
+        (uint256 metaStaking, uint256 metaBorrow) =
+            _legs(meta.getOraclePositionsForInstances(user, _vaultInstance(), address(0)));
+        assertEq(metaStaking, perStaking, "staking parity");
+        assertEq(metaBorrow, perBorrow, "borrow parity");
+    }
+
+    function test_parity_user1() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
+        _deploy();
+        (uint256 s, uint256 b) = _legs(meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0)));
+        assertTrue(s > 0 || b > 0, "user1 should have a position");
+        _assertParity(TEST_USER);
+    }
+
+    function test_parity_user2_withDebt() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
+        _deploy();
+        _assertParity(TEST_USER2);
+    }
+
+    function test_identityDerivedOnChain() public {
+        fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
+        _deploy();
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0));
+        assertGt(p.length, 0);
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].positionId, VAULT.toHexString(), "positionId = vault address");
+            assertEq(p[i].protocol, "StakeWise V3");
+            assertEq(p[i].underlyingAsset.asset, GNO);
+        }
+    }
+}

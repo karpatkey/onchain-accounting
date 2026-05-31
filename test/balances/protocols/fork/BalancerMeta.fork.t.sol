@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
-import {BalancerPoolsMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerPoolsMeta.sol";
-import {BalancerGaugesMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerGaugesMeta.sol";
+import {MetaBalancerV3PoolBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3PoolBalanceAdapter.sol";
+import {MetaBalancerV3GaugeBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3GaugeBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -35,8 +35,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
     address public constant MAINNET_WHALE_USER = 0xaF52695E1bB01A16D33D7194C28C42b10e0Dbec2;
 
     BalancerV3PoolBalanceOracle public combined;
-    BalancerPoolsMetaBalanceOracle public pools;
-    BalancerGaugesMetaBalanceOracle public gauges;
+    MetaBalancerV3PoolBalanceAdapter public pools;
+    MetaBalancerV3GaugeBalanceAdapter public gauges;
 
     function setUp() public override {
         super.setUp();
@@ -61,8 +61,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
             POOL.toHexString(),
             address(balances)
         );
-        pools = new BalancerPoolsMetaBalanceOracle("Balancer V3", address(balances));
-        gauges = new BalancerGaugesMetaBalanceOracle(BALANCER_MINTER, "Balancer V3", address(balances));
+        pools = new MetaBalancerV3PoolBalanceAdapter("Balancer V3", address(balances));
+        gauges = new MetaBalancerV3GaugeBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
     }
 
     function _supportedAssets() internal pure returns (address[] memory assets) {

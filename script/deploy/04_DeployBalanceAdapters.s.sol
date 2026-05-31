@@ -24,8 +24,8 @@ import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
-import {BalancerPoolsMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerPoolsMeta.sol";
-import {BalancerGaugesMetaBalanceOracle} from "../../src/balances/protocols/balancer/BalancerGaugesMeta.sol";
+import {MetaBalancerV3PoolBalanceAdapter} from "../../src/balances/protocols/balancer/MetaBalancerV3PoolBalanceAdapter.sol";
+import {MetaBalancerV3GaugeBalanceAdapter} from "../../src/balances/protocols/balancer/MetaBalancerV3GaugeBalanceAdapter.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
@@ -700,7 +700,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        BalancerPoolsMetaBalanceOracle adapter = new BalancerPoolsMetaBalanceOracle(protocol, navCalculator);
+        MetaBalancerV3PoolBalanceAdapter adapter = new MetaBalancerV3PoolBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
@@ -713,8 +713,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        BalancerGaugesMetaBalanceOracle adapter =
-            new BalancerGaugesMetaBalanceOracle(balancerMinter, protocol, navCalculator);
+        MetaBalancerV3GaugeBalanceAdapter adapter =
+            new MetaBalancerV3GaugeBalanceAdapter(balancerMinter, protocol, navCalculator);
         return address(adapter);
     }
 

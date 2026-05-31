@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {BalancerPoolsMetaBalanceOracle} from "src/balances/protocols/balancer/BalancerPoolsMeta.sol";
+import {MetaBalancerV3PoolBalanceAdapter} from "src/balances/protocols/balancer/MetaBalancerV3PoolBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
@@ -13,15 +13,15 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {MockStablePool, MockBalToken} from "./BalancerMetaMocks.sol";
 
-/// @title BalancerPoolsMetaBalanceOracle unit tests (no fork)
+/// @title MetaBalancerV3PoolBalanceAdapter unit tests (no fork)
 /// @notice Exercises the meta-framework behaviour and the wallet-BPT pool-share math. The full ERC4626-unwrap and
 ///         rate-scaled math is fork-tested against the original combined adapter; here we use a non-rate, 18-dec
 ///         mock pool so the per-token share reduces to `balancesLiveScaled18 * userBalance / totalSupply`.
-contract BalancerPoolsMetaBalanceOracleTest is Test {
+contract MetaBalancerV3PoolBalanceAdapterTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    BalancerPoolsMetaBalanceOracle oracle;
+    MetaBalancerV3PoolBalanceAdapter oracle;
 
     MockBalToken tokenX;
     MockBalToken tokenY;
@@ -42,7 +42,7 @@ contract BalancerPoolsMetaBalanceOracleTest is Test {
         pool.addToken(address(tokenY), 200e18, 1, 1e18);
         pool.setTotalSupply(1000e18);
 
-        oracle = new BalancerPoolsMetaBalanceOracle("Balancer V3", address(nav));
+        oracle = new MetaBalancerV3PoolBalanceAdapter("Balancer V3", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

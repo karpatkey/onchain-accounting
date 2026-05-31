@@ -55,9 +55,9 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Money markets and credit
 
-- **Compound V3**: adapter exists (`CompoundV3Comet.sol`) but isn't wired into the Alpha funds today; revisit if usage starts.
+- **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010) enabled on mainnet (supersedes per-comet `CompoundV3Comet.sol`).
 - **Euler V2**: cluster-based lending; per-vault EVK accounting.
-- **Fluid**: lending + DEX hybrid; collateral and debt accounting non-trivial.
+- **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010) enabled on mainnet.
 - **Ajna**: pool-based lending; inflation-bearing buckets.
 
 ### RWA / off-chain backed
@@ -83,7 +83,7 @@ These are not queues but represent value that lives outside the wallet and is no
 1. Pick a row whose protocol kpk **actually uses or imminently will**.
 2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
 3. Mirror `StaderWithdrawalQueue.sol` (queue family) or whichever existing adapter is closest in shape.
-4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol` and `06_2_AddBalanceOracles.s.sol` `_balanceAdapterNames()`.
+4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol`'s `_balanceAdapterNames()`.
 5. Update this file: cross off the row or add caveats discovered during implementation.
 
 When a row turns out to be irrelevant (e.g. RPL queue, Coinbase off-chain unwrap), strike it through with a one-line reason rather than deleting — future contributors should see it was considered.

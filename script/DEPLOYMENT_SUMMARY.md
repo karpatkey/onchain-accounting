@@ -425,8 +425,9 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --account` to deploy via EOA).
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
-5. **Configure adapters** - Run `06_Configure.s.sol` to generate Safe TX JSON; execute in Safe UI to grant MANAGER, add balance oracles, authorize bridge adapters. Alternatively use ManageAdapters/AuthorizeBridgeAdapters as needed.
+5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance oracles, sets meta-instances, authorizes bridge adapters. Idempotent.
 6. **Verify** - Run verification script and run the printed `forge verify-contract` commands.
+7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 

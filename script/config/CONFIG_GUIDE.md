@@ -295,9 +295,9 @@ You should see the `deployed` field filled in!
 ### Addresses
 | Field | Type | Description |
 |-------|------|-------------|
-| `securityCouncil` | address | Safe multisig address (deploys proxies) |
-| `admin` | address | Admin role (can upgrade, authorize adapters) |
-| `manager` | address | Manager role (can register assets, add oracles) |
+| `securityCouncil` | address | Security-council Safe — the end-state admin (receives DEFAULT_ADMIN_ROLE in step 07). Does **not** execute deploy/config txs. |
+| `admin` | address | DEFAULT_ADMIN_ROLE holder. In the EOA deploy flow set to the **deployer EOA** (upgrade, authorize adapters) until step 07 hands it to the council. |
+| `manager` | address | MANAGER role (register assets, add oracles, setMetaInstances). In the EOA flow, the **deployer EOA**. |
 
 ### Adapter Configuration
 | Field | Type | Description |

@@ -2,7 +2,8 @@
 
 ## Prerequisites
 - Foundry installed (`foundryup`)
-- Safe multisig deployed on target chains
+- A funded **deployer EOA** (holds admin + manager through deploy/config; everything is broadcast from this key — no Safe executes deploy txs)
+- The **security-council Safe** address on target chains (receives admin at the end, via step 07)
 - RPC and API keys ready
 
 ## Step 1: Configure Environment
@@ -47,29 +48,26 @@ Edit the chain config for each chain you deploy to, e.g. `script/config/chains/1
 ```json
 {
   "addresses": {
-    "safeMultisig": "0xYourSafeAddress",
-    "admin": "0xYourSafeAddress",
-    "manager": "0x..."
+    "admin": "0xYourDeployerEOA",
+    "manager": "0xYourDeployerEOA",
+    "securityCouncil": "0xYourCouncilSafe"
   }
 }
 ```
 
-Set `addresses.safeMultisig`, `addresses.admin`, and `addresses.manager` (all non-zero). See `script/config/CONFIG_GUIDE.md` for the full schema.
+Set `addresses.admin` and `addresses.manager` to the **deployer EOA** (they hold DEFAULT_ADMIN_ROLE + MANAGER through deploy/config), and `addresses.securityCouncil` to the **council Safe** that becomes the end-state admin in step 07. All non-zero. See `script/config/CONFIG_GUIDE.md` for the full schema.
 
 ## Step 3: Deploy Implementations (One-time)
 
 **Note:** We use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
 
-Generate Safe transactions to deploy implementations (or deploy via EOA with `--broadcast --account`):
+Deploy the libraries + implementations directly from the deployer EOA (same deterministic addresses on every chain — run once):
 
 ```bash
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
-  --chain-id 1
-# Generates: safe-transactions/1-deploy-implementations.json (2 txs)
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
-
-**Execute via Safe UI:** Import `safe-transactions/1-deploy-implementations.json` → sign and execute (once).
 
 ## Step 4: Deploy Core Contracts (Proxies + Init, per chain)
 
@@ -88,7 +86,7 @@ forge script script/deploy/02_DeployProxies.s.sol \
 # Other chains: same script with that chain's RPC and --chain-id (e.g. 42161, 10, 8453, 100)
 ```
 
-Proxy addresses are identical on all chains. No separate Safe TX for init; 02 does deploy + init via EOA.
+Proxy addresses are identical on all chains. 02 does deploy + init + role-grant (to the deployer EOA) in one EOA transaction.
 
 ## Step 5: Deploy on Other Chains
 
@@ -110,9 +108,32 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --account $DEPLOYER_NAME \
   --broadcast
+
+# Bridge adapters (optional)
+forge script script/deploy/05_DeployBridgeAdapters.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --account $DEPLOYER_NAME --broadcast
 ```
 
-## Step 7: Verify Contracts
+## Step 7: Configure (register oracles, meta-instances, bridge adapters)
+
+Run by the deployer EOA (holds admin + MANAGER). Idempotent / re-runnable:
+
+```bash
+forge script script/deploy/06_Configure.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --chain-id 1 --account $DEPLOYER_NAME --broadcast
+```
+
+## Step 8: Transfer admin to the security council (run LAST)
+
+Grants DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on both proxies and renounces the deployer's roles:
+
+```bash
+DEPLOYER_EOA=0xYourDeployerEOA \
+forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --chain-id 1 --account $DEPLOYER_NAME --broadcast
+```
+
+## Step 9: Verify Contracts
 
 ```bash
 forge script script/verify/VerifyEtherscan.s.sol \

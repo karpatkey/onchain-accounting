@@ -40,9 +40,9 @@ Edit the new file:
   "nativeTokenSymbol": "ETH",
 
   "addresses": {
-    "safeMultisig": "0x...",
-    "admin":        "0x...",
-    "manager":      "0x..."
+    "admin":           "0x...",
+    "manager":         "0x...",
+    "securityCouncil": "0x..."
   },
 
   "deployed": {
@@ -63,7 +63,7 @@ Edit the new file:
 Notes:
 
 - **`chainlinkSequencerFeed`** is critical for L2s. Without it, the sequencer-uptime check is a no-op and you lose downtime protection. L1s leave it as zero. The default grace period is 1 hour (Chainlink's recommended minimum); `setChainlinkL2SequencerGracePeriod` enforces a floor of `>= 1 hours` — you cannot set it lower.
-- **Roles:** `safeMultisig` is the deploy authority. `admin` (DEFAULT_ADMIN_ROLE) and `manager` (MANAGER) are NAVCalculator roles. On most chains all three point to the same Safe (currently `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every live chain).
+- **Roles (EOA deploy flow):** `admin` (DEFAULT_ADMIN_ROLE) and `manager` (MANAGER) must be the **deployer EOA** — it holds both through deploy/config so it can run 03–06. `securityCouncil` is the end-state admin (the council Safe); step `07_TransferAdminToSecurityCouncil.s.sol` grants it both roles on the NAV + Bridge proxies and renounces the deployer's. No Safe executes any deploy/config transaction.
 - **`deployed`** starts empty; deploy scripts write into it.
 - **`balanceAdapters`** starts with just `ERC20Default`; add per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)).
 
@@ -111,9 +111,12 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID -
 # 05 — deploy bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis)
 forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 06 — emit Safe TX JSON to register assets, add balance oracles to NAV, authorize bridge adapters
-forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --sig 'run()'
-# Owners on the chain's admin Safe sign and execute the resulting JSON.
+# 06 — register balance oracles + meta-instances + authorize bridge adapters (EOA broadcast; idempotent)
+forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+
+# 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles
+DEPLOYER_EOA=0xYourDeployerEOA \
+forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
 Each script reads from and writes back to `script/config/chains/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.

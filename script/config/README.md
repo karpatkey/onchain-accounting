@@ -104,8 +104,8 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 | `explorerApiKey` | string | API key for verification (use env var) |
 | `chainlinkSequencerFeed` | address | L2 sequencer uptime feed (use 0x0 for L1) |
 | `nativeTokenSymbol` | string | Native token symbol (ETH, xDAI, etc.) |
-| `addresses.securityCouncil` | address | Safe multisig for this chain |
-| `addresses.admin` | address | Admin (DEFAULT_ADMIN_ROLE) |
+| `addresses.securityCouncil` | address | Security-council Safe — end-state admin (step 07), not a deploy participant |
+| `addresses.admin` | address | DEFAULT_ADMIN_ROLE — the deployer EOA during deploy (EOA flow) |
 | `addresses.manager` | address | Manager role for NAV and bridge |
 | `deployed.*` | address | Deployed implementation and proxy addresses (written by scripts) |
 | `balanceAdapters` | object | Balance adapter config per adapter: `enabled`, `constructor`, `deployed` |

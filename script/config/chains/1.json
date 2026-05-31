@@ -545,8 +545,25 @@
       },
       "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
     },
-    "Fluid_fToken_USDC": {
+    "FluidFTokensMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Fluid"
+      },
+      "metaInstances": [
+        "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
+        "0x5C20B550819128074FD538Edf79791733ccEdd18",
+        "0x90551c1795392094FE6D29B758EcCD233cFAa260",
+        "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
+        "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
+        "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11"
+      ],
+      "deployed": ""
+    },
+    "Fluid_fToken_USDC": {
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
         "protocol": "Fluid",
@@ -556,7 +573,8 @@
       "deployed": ""
     },
     "Fluid_fToken_USDT": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
         "protocol": "Fluid",
@@ -566,7 +584,8 @@
       "deployed": ""
     },
     "Fluid_fToken_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
         "protocol": "Fluid",
@@ -576,7 +595,8 @@
       "deployed": ""
     },
     "Fluid_fToken_wstETH": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
         "protocol": "Fluid",
@@ -586,7 +606,8 @@
       "deployed": ""
     },
     "Fluid_fToken_GHO": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
         "protocol": "Fluid",
@@ -596,7 +617,8 @@
       "deployed": ""
     },
     "Fluid_fToken_sUSDe": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
         "protocol": "Fluid",
@@ -605,8 +627,23 @@
       },
       "deployed": ""
     },
-    "Fluid_Vault_wstETH_USDC": {
+    "FluidVaultsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
       "enabled": true,
+      "constructor": {
+        "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+        "protocol": "Fluid"
+      },
+      "metaInstances": [
+        "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
+        "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
+        "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469"
+      ],
+      "deployed": ""
+    },
+    "Fluid_Vault_wstETH_USDC": {
+      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
@@ -617,7 +654,8 @@
       "deployed": ""
     },
     "Fluid_Vault_weETH_wstETH": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
@@ -628,7 +666,8 @@
       "deployed": ""
     },
     "Fluid_Vault_sUSDe_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",

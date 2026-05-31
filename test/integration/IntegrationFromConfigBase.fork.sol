@@ -37,7 +37,9 @@ import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balance
 import {Aura} from "src/balances/protocols/Aura.sol";
 import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
+import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
+import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
@@ -567,6 +569,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
             return _deployAaveV2(name, navAddr);
         }
+        if (_equals(name, "FluidFTokensMeta")) {
+            return _deployFluidFTokensMeta(name, navAddr);
+        }
+        if (_equals(name, "FluidVaultsMeta")) {
+            return _deployFluidVaultsMeta(name, navAddr);
+        }
         if (_startsWith(name, "Fluid_fToken_")) {
             return _deployFluidFToken(name, navAddr);
         }
@@ -846,6 +854,18 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
         return address(new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new FluidFTokensMetaBalanceAdapter(protocol, navAddr));
+    }
+
+    function _deployFluidVaultsMeta(string memory name, address navAddr) internal returns (address) {
+        address vaultResolver =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navAddr));
     }
 
     function _deployStaderWithdrawalQueue(string memory name, address navAddr) internal returns (address) {

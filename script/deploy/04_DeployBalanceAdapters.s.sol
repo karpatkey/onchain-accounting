@@ -33,7 +33,9 @@ import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeW
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
+import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
+import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {LidoWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
@@ -165,8 +167,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
         _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
 
-        // --- Fluid Lending (one adapter per fToken; mirrors of the same fToken on each chain) ---
-        _deployIfEnabled("Fluid_fToken_USDC"); // Mainnet, Arbitrum, Base, Polygon
+        // --- Fluid Lending (meta-adapter: all fTokens; fToken set on NAV, ADR 0010) ---
+        _deployIfEnabled("FluidFTokensMeta");
+        _deployIfEnabled("Fluid_fToken_USDC"); // per-fToken — superseded by FluidFTokensMeta
         _deployIfEnabled("Fluid_fToken_USDT"); // Mainnet, Arbitrum, Polygon
         _deployIfEnabled("Fluid_fToken_WETH"); // Mainnet, Arbitrum, Base, Polygon
         _deployIfEnabled("Fluid_fToken_wstETH"); // Mainnet, Arbitrum, Base, Polygon
@@ -178,7 +181,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Fluid_fToken_WPOL"); // Polygon
         _deployIfEnabled("Fluid_fToken_AUSD"); // Polygon
 
-        // --- Fluid Vaults (one adapter per T1 vault) ---
+        // --- Fluid Vaults (meta-adapter: all T1 vaults; vault set on NAV, ADR 0010) ---
+        _deployIfEnabled("FluidVaultsMeta");
+
+        // --- Fluid Vaults (one adapter per T1 vault — superseded by FluidVaultsMeta) ---
         // ETH/USDC vault is intentionally NOT wired — needs to confirm whether the vault uses
         // the native ETH sentinel (ERC-7528) or WETH on the supply leg. Add the config entry
         // and the matching `_deployIfEnabled` row in a follow-up.
@@ -392,6 +398,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 OsToken adapters
         if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(adapterName, navCalculator);
+        }
+
+        // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
+        if (_equals(adapterName, "FluidFTokensMeta")) {
+            return _deployFluidFTokensMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "FluidVaultsMeta")) {
+            return _deployFluidVaultsMeta(adapterName, navCalculator);
         }
 
         // Fluid Lending fToken adapters (one per fToken instance)
@@ -905,6 +919,28 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         FluidFTokenBalanceOracle adapter =
             new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, positionId, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (protocol, navCalculator); the fToken
+    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployFluidFTokensMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, protocol, navCalculator);
+    ///         the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployFluidVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vaultResolver = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        FluidVaultsMetaBalanceAdapter adapter =
+            new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
         return address(adapter);
     }
 

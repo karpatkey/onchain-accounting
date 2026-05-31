@@ -153,7 +153,24 @@
     "positionId": "<Convex pool/rewards address>"
   },
 
+  "FluidFTokensMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid fTokens (ERC4626 lending vaults). Constructor takes (protocol, navCalculator). The active fToken set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.FluidFTokensMeta.metaInstances — fToken addresses). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken FluidFToken adapter.",
+    "$perPositionFields": "type: Supply (one leg per fToken in its underlying)",
+    "protocol": "Fluid",
+    "positionDetail": { "protocol": "Fluid", "product": "Lending", "name": "<derived: fToken symbol()>" },
+    "positionId": "<derived: fToken address>"
+  },
+
+  "FluidVaultsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid T1 vaults. Constructor takes (vaultResolver, protocol, navCalculator) — VaultResolver is the chain-level constant. The active vault set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.FluidVaultsMeta.metaInstances — T1 vault addresses). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault FluidVault adapter. T1 vaults only.",
+    "$perPositionFields": "type: Collateral | Borrow (supply + debt aggregated over the account's NFT positions)",
+    "protocol": "Fluid",
+    "positionDetail": { "protocol": "Fluid", "product": "Vault", "name": "<derived: collSym/debtSym>" },
+    "positionId": "<derived: vault address>"
+  },
+
   "FluidFToken": {
+    "$superseded": "Superseded by FluidFTokensMeta (ADR 0010); per-fToken mainnet deploys disabled in chain config.",
     "$perPositionFields": "type: Supply",
     "protocol": "Fluid",
     "positionDetail": { "protocol": "Fluid", "product": "Lending", "name": "<fToken symbol>" },
@@ -161,6 +178,7 @@
   },
 
   "FluidVault": {
+    "$superseded": "Superseded by FluidVaultsMeta (ADR 0010); per-vault mainnet deploys disabled in chain config.",
     "$perPositionFields": "type: Collateral | Borrow",
     "protocol": "Fluid",
     "positionDetail": { "protocol": "Fluid", "product": "Vault", "name": "<collateral/debt pair>" },

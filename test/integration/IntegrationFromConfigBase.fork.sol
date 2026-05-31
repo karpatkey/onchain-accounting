@@ -15,6 +15,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 // Balance adapters
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
+import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
@@ -566,6 +567,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
+        if (_equals(name, "AaveV2InstancesMeta")) {
+            return _deployAaveV2InstancesMeta(name, navAddr);
+        }
         if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
             return _deployAaveV2(name, navAddr);
         }
@@ -834,6 +838,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
         string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
         return address(new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
+    }
+
+    function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new AaveV2InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployFluidFToken(string memory name, address navAddr) internal returns (address) {

@@ -7,6 +7,7 @@ import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
 import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
+import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV2InstancesMeta.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
@@ -80,7 +81,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("AaveV3_Gnosis");
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
-        _deployIfEnabled("AaveV2_Mainnet");
+        _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)
+        _deployIfEnabled("AaveV2_Mainnet"); // per-instance — superseded by AaveV2InstancesMeta
 
         // --- Compound V3 (one instance per Comet) ---
         _deployIfEnabled("CompoundV3CometsMeta"); // Meta-adapter: all Compound V3 comets; comet set on NAV (ADR 0010)
@@ -279,6 +281,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // AaveV2 adapters (Aave V2's data provider has the same getUserReserveData / getAllReservesTokens
         // ABI as V3, so the V2 adapter is a thin subclass — see src/balances/protocols/AaveV2Instance.sol)
+        if (_equals(adapterName, "AaveV2InstancesMeta")) {
+            return _deployAaveV2InstancesMeta(adapterName, navCalculator);
+        }
         if (_equals(adapterName, "AaveV2") || _startsWith(adapterName, "AaveV2_")) {
             return _deployAaveV2(adapterName, navCalculator);
         }
@@ -483,6 +488,15 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         AaveV2InstanceBalanceOracle adapter =
             new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Aave V2 instances meta-adapter. Constructor takes (protocol, navCalculator); the
+    ///         DataProvider set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployAaveV2InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        AaveV2InstancesMetaBalanceAdapter adapter = new AaveV2InstancesMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 

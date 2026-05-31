@@ -90,7 +90,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @notice Resolves the instance's Pool address (used as positionId — matches the per-instance adapter).
-    function _poolOf(IProtocolDataProvider dp) private view returns (address) {
+    /// @dev `virtual` so the Aave V2 subclass can resolve the pool via `getLendingPool()` instead of `getPool()`
+    ///      (V2's LendingPoolAddressesProvider uses the former).
+    function _poolOf(IProtocolDataProvider dp) internal view virtual returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
     }
 

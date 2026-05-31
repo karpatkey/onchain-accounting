@@ -87,7 +87,7 @@ import "src/constants.sol";
 /// @notice Per-chain integration test harness that mirrors the deploy pipeline:
 ///         deploys NAVCalculator + every enabled price feed adapter (assets.json) + every enabled
 ///         balance adapter (chains/<id>.json), registers all assets and balance oracles, then reads
-///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_2 + RegisterAssets
+///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_Configure + RegisterAssets
 ///         end-to-end inside a forked-mainnet test.
 /// @dev Deployment dispatch is duplicated from script/deploy/{03,04}*.sol so the test can avoid the
 ///      chain-config writes those scripts perform via ConfigReader.writeAdapterAddress.

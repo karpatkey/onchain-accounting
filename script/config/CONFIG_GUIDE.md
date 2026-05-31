@@ -105,7 +105,7 @@ Each chain config file (`chains/{chainId}.json`) contains:
   "nativeTokenSymbol": "ETH",
   
   "addresses": {
-    "safeMultisig": "0xYourSafeAddress",
+    "securityCouncil": "0xYourSafeAddress",
     "admin": "0xYourAdminAddress",
     "manager": "0xYourManagerAddress"
   },
@@ -142,7 +142,7 @@ Edit `script/config/chains/{chainId}.json`:
 ```json
 {
   "addresses": {
-    "safeMultisig": "0xYourActualSafeAddress",
+    "securityCouncil": "0xYourActualSafeAddress",
     "admin": "0xYourActualAdminAddress",
     "manager": "0xYourActualManagerAddress"
   },
@@ -245,7 +245,7 @@ If deployment is interrupted, re-running the script will:
   "chainId": 100,
   "name": "gnosis",
   "addresses": {
-    "safeMultisig": "0xYourGnosisChainSafe",
+    "securityCouncil": "0xYourGnosisChainSafe",
     "admin": "0xYourGnosisChainSafe",
     "manager": "0xYourManagerOnGnosis"
   },
@@ -295,7 +295,7 @@ You should see the `deployed` field filled in!
 ### Addresses
 | Field | Type | Description |
 |-------|------|-------------|
-| `safeMultisig` | address | Safe multisig address (deploys proxies) |
+| `securityCouncil` | address | Safe multisig address (deploys proxies) |
 | `admin` | address | Admin role (can upgrade, authorize adapters) |
 | `manager` | address | Manager role (can register assets, add oracles) |
 

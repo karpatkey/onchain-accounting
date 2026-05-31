@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
-import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
@@ -10,12 +9,12 @@ import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployImplementations
-/// @notice Deploys PriceFeedLib, NAVCalculator, and BridgeEscrow implementations (CREATE2). Safe JSON and/or EOA broadcast.
+/// @notice Deploys PriceFeedLib + NavRegistryLib (libraries), NAVCalculator, and BridgeEscrow implementations
+///         (CREATE2) via an EOA broadcast.
 /// @dev Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt || init_code (Arachnid format).
-///      Run without --broadcast: generates safe-transactions/{chainId}-deploy-implementations.json and saves addresses.
-///      Run with --broadcast --account $DEPLOYER_NAME: deploys via EOA (skips if already deployed), then saves addresses.
-///      PriceFeedLib must be deployed before NAVCalculator because NAVCalculator's bytecode references it
-///      via DELEGATECALL. All three are included in the Safe batch so the batch is self-contained.
+///      Run with --broadcast --account $DEPLOYER_NAME: deploys via the deployer EOA (skips any already deployed),
+///      then saves addresses. PriceFeedLib and NavRegistryLib must be deployed before NAVCalculator because
+///      NAVCalculator's bytecode references them via DELEGATECALL.
 contract DeployImplementations is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
@@ -40,32 +39,14 @@ contract DeployImplementations is BaseDeployScript {
 
         ImplPlan memory plan = _computeImplPlan();
 
-        SafeTxBuilder.Transaction[] memory txs = new SafeTxBuilder.Transaction[](4);
-        txs[0] = SafeTxBuilder.call(
-            CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode)
-        );
-        txs[1] = SafeTxBuilder.call(
-            CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode)
-        );
-        txs[2] =
-            SafeTxBuilder.call(CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
-        txs[3] = SafeTxBuilder.call(
-            CANONICAL_CREATE2_DEPLOYER, 0, abi.encodePacked(plan.saltBridgeImpl, plan.bridgeImplBytecode)
-        );
-
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-deploy-implementations.json"));
-        writeSafeTx(
-            filename,
-            "Deploy PriceFeedLib + NavRegistryLib + NAVCalculator + BridgeEscrow implementations (CREATE2)",
-            "Deploy the PriceFeedLib and NavRegistryLib external libraries, the NAVCalculator, and the BridgeEscrow implementations via the canonical CREATE2 deployer. Same addresses on all chains. Run once (e.g. on mainnet), then run 02 per chain for proxies + init.",
-            txs
-        );
-
+        // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NavRegistryLib, NAVCalculator impl,
+        // BridgeEscrow impl) directly via the deployer private key. Same deterministic addresses on every chain.
+        // Run once (e.g. on mainnet), then run 02 per chain for proxies + init.
         vm.startBroadcast();
         _deployIfNeeded(plan);
         vm.stopBroadcast();
 
-        _saveAndLog(plan, filename);
+        _saveAndLog(plan);
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {
@@ -126,7 +107,7 @@ contract DeployImplementations is BaseDeployScript {
     }
 
     /// @dev Saves implementation addresses to config and logs the deployment summary.
-    function _saveAndLog(ImplPlan memory plan, string memory filename) internal {
+    function _saveAndLog(ImplPlan memory plan) internal {
         saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
         saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
         saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);
@@ -134,7 +115,6 @@ contract DeployImplementations is BaseDeployScript {
 
         console2.log("\n=== Implementation Deployment ===");
         console2.log("Chain ID:", currentChainId);
-        console2.log("Generated:", filename);
         console2.log("  PriceFeedLib:", plan.priceFeedLib);
         console2.log("  NavRegistryLib:", plan.navRegistryLib);
         console2.log("  NAV Implementation:", plan.navImpl);

@@ -7,7 +7,7 @@
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "xDAI",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },

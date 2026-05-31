@@ -15,9 +15,10 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Deploys the NAVCalculator proxy only (no BridgeEscrow) via EOA using canonical CREATE2 for deterministic addresses.
 /// @dev
 ///   - Default: one tx via AtomicNAVProxyDeployer (deploy placeholder + proxy + upgradeToAndCall) to avoid front-running.
-///     Roles are granted and the deployer's admin role is renounced atomically — safe with a Safe as chainConfig.admin.
+///     Roles are granted to chainConfig.admin/manager (the deployer EOA in the EOA flow) and the deployer's own
+///     admin role is renounced atomically.
 ///   - Set env USE_LEGACY_DEPLOY=1 to use the legacy multi-tx path instead.
-///     NOTE: legacy path does NOT grant MANAGER — have the admin Safe call grantRole(MANAGER, manager) afterwards.
+///     NOTE: legacy path does NOT grant MANAGER — have the admin (chainConfig.admin) call grantRole(MANAGER, manager) afterwards.
 ///   - Proxy salts use version 2 (same as full 02_DeployProxies.s.sol — identical proxy address on all chains).
 ///   - Prerequisite: run 01_2_DeployNAVImplementation.s.sol first to populate NAVCalculatorImplementation in config.
 contract DeployNAVProxy is BaseDeployScript {
@@ -98,7 +99,7 @@ contract DeployNAVProxy is BaseDeployScript {
                             vm.toString(currentNavImpl),
                             "; upgrade to ",
                             vm.toString(navImpl),
-                            " must be executed by current admin (e.g. via Safe)."
+                            " must be executed by the current admin."
                         )
                     )
                 );
@@ -106,7 +107,7 @@ contract DeployNAVProxy is BaseDeployScript {
         } else {
             // Atomic path: one transaction (no front-run window).
             // AtomicNAVProxyDeployer grants DEFAULT_ADMIN_ROLE to chainConfig.admin, grants MANAGER to
-            // chainConfig.manager, then renounces its own DEFAULT_ADMIN_ROLE — safe when admin is a Safe.
+            // chainConfig.manager (the deployer EOA in the EOA flow), then renounces its own DEFAULT_ADMIN_ROLE.
             console2.log("[ATOMIC] Deploying placeholder + NAV proxy + upgrade in a single transaction");
             new AtomicNAVProxyDeployer(
                 navImpl,
@@ -118,12 +119,12 @@ contract DeployNAVProxy is BaseDeployScript {
         }
 
         // MANAGER is granted inside AtomicNAVProxyDeployer (atomic path).
-        // Legacy path: chainConfig.admin holds DEFAULT_ADMIN_ROLE; have the admin Safe call
+        // Legacy path: chainConfig.admin holds DEFAULT_ADMIN_ROLE; have the admin (chainConfig.admin) call
         // grantRole(MANAGER, manager) on the NAV proxy after this script completes.
         if (useLegacy && chainConfig.manager != address(0)) {
             console2.log(
                 "[WARN] Legacy path: MANAGER role NOT granted by this script.",
-                "Have the admin Safe call grantRole(MANAGER, manager) on the NAV proxy."
+                "Have the admin (chainConfig.admin) call grantRole(MANAGER, manager) on the NAV proxy."
             );
         }
 

@@ -17,7 +17,7 @@ library ConfigReader {
         string explorerApiKey;
         address chainlinkSequencerFeed;
         string nativeTokenSymbol;
-        address safeMultisig;
+        address securityCouncil;
         address admin;
         address manager;
     }
@@ -44,7 +44,7 @@ library ConfigReader {
         config.explorerApiKey = _resolveEnvVar(vm, json.readString(".explorerApiKey"));
         config.chainlinkSequencerFeed = json.readAddress(".chainlinkSequencerFeed");
         config.nativeTokenSymbol = json.readString(".nativeTokenSymbol");
-        config.safeMultisig = json.readAddress(".addresses.safeMultisig");
+        config.securityCouncil = json.readAddress(".addresses.securityCouncil");
         config.admin = json.readAddress(".addresses.admin");
         config.manager = json.readAddress(".addresses.manager");
     }

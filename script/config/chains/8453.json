@@ -7,7 +7,7 @@
   "chainlinkSequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },

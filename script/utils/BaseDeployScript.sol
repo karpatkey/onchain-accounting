@@ -34,9 +34,9 @@ abstract contract BaseDeployScript is Script {
         console2.log("=== Deployment Configuration ===");
         console2.log("Chain ID:", currentChainId);
         console2.log("Chain Name:", chainConfig.name);
-        console2.log("Safe Multisig:", chainConfig.safeMultisig);
-        console2.log("Admin:", chainConfig.admin);
-        console2.log("Manager:", chainConfig.manager);
+        console2.log("Admin (deployer EOA during deploy):", chainConfig.admin);
+        console2.log("Manager (deployer EOA during deploy):", chainConfig.manager);
+        console2.log("Security council (end-state admin):", chainConfig.securityCouncil);
         console2.log("================================");
     }
 
@@ -105,7 +105,7 @@ abstract contract BaseDeployScript is Script {
         SafeTxBuilder.Transaction[] memory transactions
     ) internal {
         SafeTxBuilder.writeSafeTx(
-            vm, currentChainId, filename, name, description, chainConfig.safeMultisig, transactions
+            vm, currentChainId, filename, name, description, chainConfig.securityCouncil, transactions
         );
     }
 
@@ -123,9 +123,10 @@ abstract contract BaseDeployScript is Script {
         }
     }
 
-    /// @notice Validates that required addresses are set
+    /// @notice Validates that the deploy-phase role addresses are set. In the EOA deploy flow `admin` and `manager`
+    ///         are the deployer EOA (they hold the roles through deploy/config); the `securityCouncil` Safe is the
+    ///         end-state admin and is required only by the final handoff step (07), which checks it itself.
     function validateAddresses() internal view {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
         require(chainConfig.manager != address(0), "Manager address not configured");
     }

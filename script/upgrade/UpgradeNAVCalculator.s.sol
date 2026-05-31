@@ -76,7 +76,7 @@ contract UpgradeNAVCalculator is BaseDeployScript {
         console2.log("\n=== Upgrade Instructions ===");
         console2.log("1. Review changes between old and new implementation");
         console2.log("2. Go to Safe UI: https://app.safe.global");
-        console2.log("3. Select your Safe:", chainConfig.safeMultisig);
+        console2.log("3. Select your Safe:", chainConfig.securityCouncil);
         console2.log("4. New Transaction -> Transaction Builder -> Import JSON");
         console2.log("5. Upload file:", filename);
         console2.log("6. Review and execute the transaction");

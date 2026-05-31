@@ -204,7 +204,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
         ConfigReader.ChainConfig memory config = ConfigReader.readChainConfig(vm, 1);
 
         // All address fields should be defined (even if zero address as placeholder)
-        assertTrue(config.safeMultisig != address(1), "safeMultisig should be defined");
+        assertTrue(config.securityCouncil != address(1), "securityCouncil should be defined");
         assertTrue(config.admin != address(1), "admin should be defined");
         assertTrue(config.manager != address(1), "manager should be defined");
     }
@@ -217,12 +217,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
         ConfigReader.ChainConfig memory ref = ConfigReader.readChainConfig(vm, chainIds[0]);
         for (uint256 i = 1; i < chainIds.length; i++) {
             ConfigReader.ChainConfig memory c = ConfigReader.readChainConfig(vm, chainIds[i]);
-            // Admin and manager are typically same across chains; safeMultisig may differ per chain (e.g. Gnosis)
+            // Admin and manager are typically same across chains; securityCouncil may differ per chain (e.g. Gnosis)
             assertEq(c.admin, ref.admin, "admin should match across chains");
             assertEq(c.manager, ref.manager, "manager should match across chains");
-            // Only assert safeMultisig when both are non-zero and we expect consistency (optional: skip if config differs)
-            if (ref.safeMultisig == c.safeMultisig) {
-                assertEq(c.safeMultisig, ref.safeMultisig, "safeMultisig should match when same");
+            // Only assert securityCouncil when both are non-zero and we expect consistency (optional: skip if config differs)
+            if (ref.securityCouncil == c.securityCouncil) {
+                assertEq(c.securityCouncil, ref.securityCouncil, "securityCouncil should match when same");
             }
         }
     }

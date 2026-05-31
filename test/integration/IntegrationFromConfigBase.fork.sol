@@ -34,6 +34,8 @@ import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3Safe
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
+import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
 import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
@@ -558,6 +560,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "BalancerV3GaugesMeta")) {
             return _deployBalancerV3GaugesMeta(name, navAddr);
         }
+        if (_equals(name, "BalancerV2PoolsMeta")) {
+            return _deployBalancerV2PoolsMeta(name, navAddr);
+        }
+        if (_equals(name, "BalancerV2GaugesMeta")) {
+            return _deployBalancerV2GaugesMeta(name, navAddr);
+        }
         if (_startsWith(name, "BalancerV3_")) {
             return _deployBalancerV3(name, navAddr);
         }
@@ -690,6 +698,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navAddr));
+    }
+
+    function _deployBalancerV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navAddr));
+    }
+
+    function _deployBalancerV2GaugesMeta(string memory name, address navAddr) internal returns (address) {
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        address balancerMinter =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navAddr));
     }
 
     function _deployMorphoMarketsMeta(string memory name, address navAddr) internal returns (address) {

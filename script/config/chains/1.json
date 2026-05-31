@@ -421,6 +421,31 @@
       ],
       "deployed": ""
     },
+    "BalancerV2PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 pool's wallet-held BPT, decomposed pro-rata into the underlying tokens (composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply()). The instance coordinate is the raw 32-byte poolId (metaInstancesRaw below), NOT an address — the BPT address is derived on-chain as address(uint160(uint256(poolId) >> 96)). positionId derived on-chain = the BPT address; name = the BPT name(). Gauge-staked BPT is the separate BalancerV2GaugesMeta adapter. Disabled: no fund holds Balancer V2 positions today — the example instance is B-80BAL-20WETH, enable + add poolIds via setMetaInstancesRaw when a position is opened.",
+      "enabled": false,
+      "constructor": {
+        "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+        "protocol": "Balancer V2"
+      },
+      "metaInstancesRaw": [
+        "0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014"
+      ],
+      "deployed": ""
+    },
+    "BalancerV2GaugesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 gauge's staked BPT (decomposed pro-rata like BalancerV2PoolsMeta) + claimable BAL and extra reward tokens. The instance coordinate is the gauge address (metaInstances below); the BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Wallet-held (unstaked) BPT is the separate BalancerV2PoolsMeta adapter. Disabled: no fund holds Balancer V2 gauge positions today — the example instance is the B-stETH-STABLE gauge, enable + add gauges via setMetaInstances when a position is opened.",
+      "enabled": false,
+      "constructor": {
+        "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+        "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+        "protocol": "Balancer V2"
+      },
+      "metaInstances": [
+        "0xcD4722B7c24C29e0413BDCd9e51404B4539D14aE"
+      ],
+      "deployed": ""
+    },
     "BalancerV3_rETH_WETH": {
       "$superseded": "Disabled — superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
       "enabled": false,

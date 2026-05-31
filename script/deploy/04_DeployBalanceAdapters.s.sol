@@ -29,6 +29,8 @@ import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrel
 import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
+import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
+import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
@@ -144,6 +146,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
         _deployIfEnabled("BalancerV3PoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
         _deployIfEnabled("BalancerV3GaugesMeta"); // Meta-adapter: all Balancer V3 gauges (staked LP + rewards); gauge set on NAV
+        _deployIfEnabled("BalancerV2PoolsMeta"); // Meta-adapter: all Balancer V2 pools (wallet LP); poolId set on NAV
+        _deployIfEnabled("BalancerV2GaugesMeta"); // Meta-adapter: all Balancer V2 gauges (staked LP + rewards); gauge set on NAV
 
         // --- Balancer V3 (one per pool — superseded by the meta-adapters above) ---
         _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
@@ -380,6 +384,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
         if (_equals(adapterName, "BalancerV3GaugesMeta")) {
             return _deployBalancerV3GaugesMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerV2PoolsMeta")) {
+            return _deployBalancerV2PoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerV2GaugesMeta")) {
+            return _deployBalancerV2GaugesMeta(adapterName, navCalculator);
         }
 
         // Balancer V3 adapters
@@ -817,6 +827,35 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         BalancerV3GaugesMetaBalanceAdapter adapter =
             new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer V2 pools meta-adapter. Constructor takes (vault, protocol, navCalculator); the
+    ///         poolId set is configured on NAVCalculator via setMetaInstances (metaInstancesRaw) in 06 (ADR 0010).
+    function _deployBalancerV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV2PoolsMetaBalanceAdapter adapter =
+            new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer V2 gauges meta-adapter. Constructor takes (vault, balancerMinter, protocol,
+    ///         navCalculator); the gauge set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployBalancerV2GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        address balancerMinter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV2GaugesMetaBalanceAdapter adapter =
+            new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navCalculator);
         return address(adapter);
     }
 

@@ -67,6 +67,9 @@
     },
     "wstETH_L2": {
       "deployed": "0x17A50CCeCCD6E168Fcea22A3B5830a2cB389E557"
+    },
+    "osGNO": {
+      "deployed": ""
     }
   }
 }

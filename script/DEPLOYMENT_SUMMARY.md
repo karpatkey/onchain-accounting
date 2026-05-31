@@ -356,7 +356,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `SkySavingsUsdsBalanceOracle` - Sky USDS savings (sUSDS)
 - `FluidFTokenBalanceOracle`, `FluidVaultBalanceOracle` - Fluid lending + vaults
 - `GearboxMarketBalanceOracle` - Gearbox kpk-curated markets
-- `StakeWiseV3OsTokenBalanceOracle`, `StakeWiseV3VaultBalanceOracle` - StakeWise V3 osToken + Genesis Vault
+- `StakeWiseV3VaultBalanceOracle` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
 - `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceOracle` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceOracle` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)

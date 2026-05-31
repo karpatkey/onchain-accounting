@@ -13,6 +13,7 @@ import {sUSDe_PriceOracle} from "../../src/prices/protocols/sUSDe_Price.sol";
 import {syrupUSDC_PriceOracle} from "../../src/prices/protocols/syrupUSDC_Price.sol";
 import {wstETH_PriceOracle} from "../../src/prices/protocols/wstETH_Price.sol";
 import {rETH_PriceOracle} from "../../src/prices/protocols/rETH_Price.sol";
+import {osToken_PriceOracle} from "../../src/prices/protocols/osToken_Price.sol";
 import {cbETH_PriceOracle} from "../../src/prices/protocols/cbETH_Price.sol";
 import {weETH_PriceOracle} from "../../src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "../../src/prices/protocols/rsETH_Price.sol";
@@ -153,11 +154,15 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployEthPlus();
         }
 
-        // Note: StakeWise V3 osETH does not need a dedicated price feed. The StakeWise V3
-        // balance adapters (StakeWiseV3OsToken_*, StakeWiseV3Vault_*) call
-        // OsTokenVaultController.convertToAssets(...) internally and return PositionBalance
-        // values denominated in the underlying asset (ETH-sentinel on Mainnet), which is
-        // already a registered priceable asset. See script/NAV_V2_DEPLOYMENT_RUNBOOK.md.
+        // Deploy osToken (StakeWise V3) custom price feeds — osETH on Mainnet, osGNO on Gnosis.
+        // osTokens are now Custom-priced ERC20s (held balance via ERC20DefaultOracle, priced
+        // convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
+            _deployOsToken("osETH");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osGNO")) {
+            _deployOsToken("osGNO");
+        }
 
         vm.stopBroadcast();
     }
@@ -324,6 +329,30 @@ contract DeployPriceFeeds is BaseDeployScript {
         rETH_PriceOracle rEthAdapter = new rETH_PriceOracle(rEth, ethUsdOracle, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rETH", address(rEthAdapter));
         console2.log("rETH_PriceOracle deployed at:", address(rEthAdapter));
+    }
+
+    /// @notice Deploys the generic osToken price feed (osETH, osGNO) for the given adapter name.
+    function _deployOsToken(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("osToken_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address osToken = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "osToken"));
+        address osTokenVaultController =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "osTokenVaultController"));
+        address underlyingUsdOracle = vm.parseAddress(
+            ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingToUsdChainlinkOracle")
+        );
+        uint256 heartbeat = vm.parseUint(
+            ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingToUsdChainlinkHeartbeat")
+        );
+
+        osToken_PriceOracle adapter =
+            new osToken_PriceOracle(osToken, osTokenVaultController, underlyingUsdOracle, heartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("osToken_PriceOracle deployed at:", address(adapter));
     }
 
     function _deployCbEth() internal {

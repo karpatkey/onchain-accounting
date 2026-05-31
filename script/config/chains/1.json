@@ -810,18 +810,6 @@
       },
       "deployed": ""
     },
-    "StakeWiseV3OsToken_ETH": {
-      "enabled": true,
-      "constructor": {
-        "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
-        "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-        "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
-        "protocol": "StakeWise V3",
-        "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"osETH\"",
-        "positionId": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38"
-      },
-      "deployed": ""
-    },
     "StakeWiseV3VaultsMeta": {
       "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (setMetaInstances, from metaInstances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
       "enabled": true,
@@ -1029,6 +1017,9 @@
     },
     "rETH": {
       "deployed": "0x99690D21EB64cA7941e974691455Be41D558441B"
+    },
+    "osETH": {
+      "deployed": ""
     },
     "weETH": {
       "deployed": "0xAb5A2dB56e6608De7FE12a447B26d349a10fb037"

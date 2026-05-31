@@ -156,7 +156,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](68);
+        names = new string[](67);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
@@ -238,8 +238,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "KelpWithdrawalQueue";
         // Lido (Mainnet)
         names[i++] = "LidoWithdrawalQueue";
-        // StakeWise V3 (Mainnet)
-        names[i++] = "StakeWiseV3OsToken_ETH";
+        // StakeWise V3 (Mainnet) — osETH itself is a Custom-priced ERC20 (osToken_PriceOracle), not a balance adapter
         names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
         names[i++] = "StakeWiseV3Vault_Genesis";
         // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances

@@ -44,7 +44,6 @@ import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFToken
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
@@ -64,6 +63,7 @@ import {sUSDe_PriceOracle} from "src/prices/protocols/sUSDe_Price.sol";
 import {syrupUSDC_PriceOracle} from "src/prices/protocols/syrupUSDC_Price.sol";
 import {wstETH_PriceOracle} from "src/prices/protocols/wstETH_Price.sol";
 import {rETH_PriceOracle} from "src/prices/protocols/rETH_Price.sol";
+import {osToken_PriceOracle} from "src/prices/protocols/osToken_Price.sol";
 import {cbETH_PriceOracle} from "src/prices/protocols/cbETH_Price.sol";
 import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
@@ -218,6 +218,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
             _tryDeployPriceFeed("ETHx", _deployEthx);
+            _tryDeployPriceFeed("osETH", _deployOsEth);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -231,6 +232,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         } else if (_chainId == 100) {
             _tryDeployPriceFeed("sXDAI", _deploySxdai);
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
+            _tryDeployPriceFeed("osGNO", _deployOsGno);
         }
         // Optimism: no Custom adapters.
     }
@@ -251,6 +253,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_chainId == 100 && _equals(symbol, "sDAI")) {
             return "sXDAI";
+        }
+        if (_chainId == 100 && _equals(symbol, "osGNO")) {
+            return "osGNO";
         }
         return string(abi.encodePacked(symbol, "_L2"));
     }
@@ -321,6 +326,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkHeartbeat"));
         return address(new rETH_PriceOracle(rEth, ethUsd, ethUsdHb));
+    }
+
+    function _deployOsEth() internal returns (address) {
+        return _deployOsToken("osETH");
+    }
+
+    function _deployOsGno() internal returns (address) {
+        return _deployOsToken("osGNO");
+    }
+
+    function _deployOsToken(string memory name) internal returns (address) {
+        address osToken = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osToken"));
+        address controller =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osTokenVaultController"));
+        address underlyingUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkOracle"));
+        uint256 hb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkHeartbeat"));
+        return address(new osToken_PriceOracle(osToken, controller, underlyingUsd, hb));
     }
 
     function _deployCbEth() internal returns (address) {
@@ -596,9 +620,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_equals(name, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(name, navAddr);
-        }
-        if (_startsWith(name, "StakeWiseV3OsToken_")) {
-            return _deployStakeWiseV3OsToken(name, navAddr);
         }
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
@@ -917,25 +938,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
     }
 
-    function _deployStakeWiseV3OsToken(string memory name, address navAddr) internal returns (address) {
-        address osToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osToken"));
-        address underlyingToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        address osTokenVaultController = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
-        );
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new StakeWiseV3OsTokenBalanceOracle(
-                osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, positionId, navAddr
-            )
-        );
-    }
-
     function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
@@ -1211,7 +1213,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](33);
+            string[] memory s = new string[](34);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -1245,6 +1247,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[30] = "EURC";
             s[31] = "WBTC";
             s[32] = "AAVE";
+            s[33] = "osETH";
             return s;
         }
         if (chainId == 42161) {
@@ -1264,7 +1267,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return s;
         }
         if (chainId == 100) {
-            string[] memory s = new string[](7);
+            string[] memory s = new string[](8);
             s[0] = "xDAI";
             s[1] = "WXDAI";
             s[2] = "WETH";
@@ -1272,6 +1275,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[4] = "USDCe";
             s[5] = "sDAI";
             s[6] = "GHO";
+            s[7] = "osGNO";
             return s;
         }
         if (chainId == 8453) {

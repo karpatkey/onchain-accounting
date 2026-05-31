@@ -519,7 +519,6 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `BalancerV3_*` | `pool`, `gauge`, `balancerMinter`, `protocol` | Mainnet |
 | `Aura_*` | `pool`, `gauge`, `booster`, `pid`, `protocol`, `positionDetail` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
 | `StakeWiseV3Vault_*` | `underlyingToken`, `vault`, `protocol`, `positionDetail` | Mainnet |
-| `StakeWiseV3OsToken_*` | `osToken`, `underlyingToken`, `osTokenVaultController`, `protocol`, `positionDetail` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager`, `protocol`, `positionDetail` | Mainnet |
 | `SkySavingsUsds` | `savingsUsds`, `protocol`, `positionDetail` | Mainnet |
 
@@ -560,7 +559,7 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
 
-**StakeWise V3 (Mainnet):** `StakeWiseV3OsToken_ETH` (raw osETH wallet balance, returned as ETH-sentinel via `OsTokenVaultController.convertToAssets`), `StakeWiseV3Vault_Genesis` (Genesis Vault deposit net of minted-osETH debt — `vaultAssets - mintedOs`). Wired primarily for integration-report cross-checks against accounts holding StakeWise positions; the Alpha funds themselves do not currently use StakeWise. No dedicated `osETH` price feed is needed — both adapters report positions denominated in ETH (sentinel), which is already a registered priceable asset on Mainnet.
+**StakeWise V3:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultOracle` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, config keys `priceFeeds.osETH` / `priceFeeds.osGNO`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
 **Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 

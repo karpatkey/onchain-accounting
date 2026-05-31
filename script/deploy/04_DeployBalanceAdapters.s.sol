@@ -34,7 +34,6 @@ import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/b
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
 import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
@@ -207,8 +206,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Lido (Mainnet only) — stETH withdrawal-queue balance oracle ---
         _deployIfEnabled("LidoWithdrawalQueue");
 
-        // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
-        _deployIfEnabled("StakeWiseV3OsToken_ETH");
+        // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
         _deployIfEnabled("StakeWiseV3Vault_Genesis"); // per-vault — superseded by StakeWiseV3VaultsMeta
 
@@ -408,11 +406,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
         if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
             return _deployStakeWiseV3Vault(adapterName, navCalculator);
-        }
-
-        // StakeWise V3 OsToken adapters
-        if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
-            return _deployStakeWiseV3OsToken(adapterName, navCalculator);
         }
 
         // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
@@ -933,29 +926,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
             new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployStakeWiseV3OsToken(string memory adapterName, address navCalculator) internal returns (address) {
-        address osToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osToken")
-        );
-        address underlyingToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
-        );
-        address osTokenVaultController = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
-        );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
-            osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, positionId, navCalculator
-        );
         return address(adapter);
     }
 

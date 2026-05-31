@@ -16,6 +16,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
@@ -503,6 +504,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_startsWith(name, "AaveV3_")) {
             return _deployAaveV3(name, navAddr);
         }
+        if (_equals(name, "CompoundV3CometsMeta")) {
+            return _deployCompoundV3CometsMeta(name, navAddr);
+        }
         if (_startsWith(name, "CompoundV3_")) {
             return _deployCompoundV3(name, navAddr);
         }
@@ -638,6 +642,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(
             new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navAddr)
         );
+    }
+
+    function _deployCompoundV3CometsMeta(string memory name, address navAddr) internal returns (address) {
+        address compoundRewards =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
+        address rewardToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navAddr));
     }
 
     function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {

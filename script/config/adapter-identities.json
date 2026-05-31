@@ -54,7 +54,16 @@
     "positionId": "<Pool address>"
   },
 
+  "CompoundV3CometsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Compound V3 (Comet) markets. Constructor takes (compoundRewards, rewardToken, protocol, navCalculator) — CometRewards + COMP are chain-level constants. The active comet set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CompoundV3CometsMeta.metaInstances — comet addresses). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3Comet adapter. protocol is the canonical 'Compound V3' (not the legacy per-comet 'Compound v3').",
+    "$perPositionFields": "type: Supply | Borrow | Collateral | Rewards (base supply/borrow + per-collateral + COMP)",
+    "protocol": "Compound V3",
+    "positionDetail": { "protocol": "Compound V3", "product": "Lending", "name": "<derived: comet name()>" },
+    "positionId": "<derived: comet address>"
+  },
+
   "CompoundV3Comet": {
+    "$superseded": "Superseded by CompoundV3CometsMeta (ADR 0010); per-comet mainnet deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Borrow | Collateral | Reward",
     "$deployedNote": "Existing mainnet deployments use protocol='Compound v3' (lowercase v). New deployments should use 'Compound V3' for consistency. Requires redeploy to fix.",
     "protocol": "Compound V3",

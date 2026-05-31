@@ -150,7 +150,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](62);
+        names = new string[](63);
         uint256 i = 0;
         // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV3InstancesMeta";
@@ -165,6 +165,8 @@ contract Configure is BaseDeployScript {
         names[i++] = "SparkLend";
         names[i++] = "AaveV3SafetyModule";
         names[i++] = "Cap";
+        // Compound V3 meta-adapter (ADR 0010): comet set configured via setMetaInstances
+        names[i++] = "CompoundV3CometsMeta";
         // Morpho Vaults
         names[i++] = "MorphoVault_kpkETHPrime_V1";
         names[i++] = "MorphoVault_kpkETHPrime_V2";

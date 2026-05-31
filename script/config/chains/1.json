@@ -638,8 +638,27 @@
       },
       "deployed": ""
     },
-    "CompoundV3_USDC": {
+    "CompoundV3CometsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+        "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+        "protocol": "Compound V3"
+      },
+      "metaInstances": [
+        "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+        "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
+        "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
+        "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
+        "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
+        "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3"
+      ],
+      "deployed": ""
+    },
+    "CompoundV3_USDC": {
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
@@ -651,7 +670,8 @@
       "deployed": ""
     },
     "CompoundV3_USDS": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
@@ -663,7 +683,8 @@
       "deployed": ""
     },
     "CompoundV3_USDT": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
@@ -675,7 +696,8 @@
       "deployed": ""
     },
     "CompoundV3_WBTC": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
@@ -687,7 +709,8 @@
       "deployed": ""
     },
     "CompoundV3_WETH": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
@@ -699,7 +722,8 @@
       "deployed": ""
     },
     "CompoundV3_wstETH": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
         "comet": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",

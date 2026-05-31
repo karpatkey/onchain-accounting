@@ -10,6 +10,7 @@ import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2In
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
@@ -80,6 +81,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("AaveV2_Mainnet");
 
         // --- Compound V3 (one instance per Comet) ---
+        _deployIfEnabled("CompoundV3CometsMeta"); // Meta-adapter: all Compound V3 comets; comet set on NAV (ADR 0010)
         _deployIfEnabled("CompoundV3_USDC"); // Mainnet, Optimism, Arbitrum, Base
         _deployIfEnabled("CompoundV3_USDS"); // Mainnet, Base
         _deployIfEnabled("CompoundV3_USDT"); // Mainnet, Optimism, Arbitrum
@@ -286,6 +288,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // CompoundV3 adapters
+        if (_equals(adapterName, "CompoundV3CometsMeta")) {
+            return _deployCompoundV3CometsMeta(adapterName, navCalculator);
+        }
         if (_startsWith(adapterName, "CompoundV3_")) {
             return _deployCompoundV3(adapterName, navCalculator);
         }
@@ -511,6 +516,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
         CompoundV3Comet adapter = new CompoundV3Comet(
             compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navCalculator
         );
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Compound V3 comets meta-adapter. Constructor takes (compoundRewards, rewardToken,
+    ///         protocol, navCalculator) — chain-level constants; the comet set is configured on NAVCalculator
+    ///         via setMetaInstances in 06 (ADR 0010).
+    function _deployCompoundV3CometsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address compoundRewards = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "compoundRewards")
+        );
+        address rewardToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        CompoundV3CometsMetaBalanceAdapter adapter =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navCalculator);
         return address(adapter);
     }
 

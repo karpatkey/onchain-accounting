@@ -91,38 +91,26 @@ contract KelpWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         config.setSupportedAssetList(supported);
 
         manager = new MockLRTWithdrawalManager(address(config));
-        oracle = new KelpWithdrawalQueueBalanceOracle(
-            address(manager),
-            "Kelp",
-            POSITION_DETAIL_BASE,
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new KelpWithdrawalQueueBalanceOracle(address(manager), address(balances));
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroManager() public {
         vm.expectRevert(InvalidArguments.selector);
-        new KelpWithdrawalQueueBalanceOracle(
-            address(0), "Kelp", POSITION_DETAIL_BASE, "0x0000000000000000000000000000000000000001", address(balances)
-        );
+        new KelpWithdrawalQueueBalanceOracle(address(0), address(balances));
     }
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("WithdrawalManager must be a contract"));
-        new KelpWithdrawalQueueBalanceOracle(
-            eoa, "Kelp", POSITION_DETAIL_BASE, "0x0000000000000000000000000000000000000001", address(balances)
-        );
+        new KelpWithdrawalQueueBalanceOracle(eoa, address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("NAVCalculator must be a contract"));
-        new KelpWithdrawalQueueBalanceOracle(
-            address(manager), "Kelp", POSITION_DETAIL_BASE, "0x0000000000000000000000000000000000000001", eoa
-        );
+        new KelpWithdrawalQueueBalanceOracle(address(manager), eoa);
     }
 
     // ---- Interface ----
@@ -241,17 +229,15 @@ contract KelpWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 2);
 
-        assertEq(positions[0].underlyingAsset.asset, address(weth));
+        assertEq(positions[0].balanceAsset.asset, address(weth));
         assertEq(positions[0].amount, 4e18);
-        assertEq(positions[1].underlyingAsset.asset, address(steth));
+        assertEq(positions[1].balanceAsset.asset, address(steth));
         assertEq(positions[1].amount, 5e18);
 
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].protocol, "Kelp");
-            assertEq(positions[i].positionDetail, POSITION_DETAIL_FULL);
-            assertEq(positions[i].positionId, "0x0000000000000000000000000000000000000001");
+            assertEq(positions[i].positionId, "");
         }
     }
 
@@ -276,7 +262,7 @@ contract KelpWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
 
         positions = oracle.getOraclePositions(alice, address(steth));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(steth));
+        assertEq(positions[0].balanceAsset.asset, address(steth));
         assertEq(positions[0].amount, 5e18);
     }
 }

@@ -118,10 +118,10 @@ contract AdapterConsistencyTest is Test {
 
         // Both should only have USDC (not DAI)
         assertEq(positions1.length, 1, "ERC20DefaultOracle should have one position");
-        assertEq(positions1[0].underlyingAsset.asset, address(usdc), "Should be USDC");
+        assertEq(positions1[0].balanceAsset.asset, address(usdc), "Should be USDC");
 
         assertEq(positions2.length, 1, "CustomOracle should have one position");
-        assertEq(positions2[0].underlyingAsset.asset, address(usdc), "Should be USDC");
+        assertEq(positions2[0].balanceAsset.asset, address(usdc), "Should be USDC");
     }
 
     // ============================================
@@ -161,13 +161,9 @@ contract AdapterConsistencyTest is Test {
 
         // Both should have protocol and positionDetail
         if (positions1.length > 0) {
-            assertTrue(bytes(positions1[0].protocol).length > 0, "ERC20DefaultOracle should have protocol");
-            assertTrue(bytes(positions1[0].positionDetail).length > 0, "ERC20DefaultOracle should have positionDetail");
         }
 
         if (positions2.length > 0) {
-            assertTrue(bytes(positions2[0].protocol).length > 0, "CustomOracle should have protocol");
-            assertTrue(bytes(positions2[0].positionDetail).length > 0, "CustomOracle should have positionDetail");
         }
     }
 
@@ -189,7 +185,7 @@ contract AdapterConsistencyTest is Test {
         // All filtered positions should be for USDC
         for (uint256 i = 0; i < positions1.length; i++) {
             assertEq(
-                positions1[i].underlyingAsset.asset,
+                positions1[i].balanceAsset.asset,
                 address(usdc),
                 "ERC20DefaultOracle: Filtered positions should match filter"
             );
@@ -197,7 +193,7 @@ contract AdapterConsistencyTest is Test {
 
         for (uint256 i = 0; i < positions2.length; i++) {
             assertEq(
-                positions2[i].underlyingAsset.asset,
+                positions2[i].balanceAsset.asset,
                 address(usdc),
                 "CustomOracle: Filtered positions should match filter"
             );

@@ -3,26 +3,27 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CompoundV3CometLib} from "src/balances/protocols/CompoundV3CometLib.sol";
 
 /// @title Compound V3 Comets Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's position in *any* Compound V3 (Comet) market — the
-///         base-token supply (`Supply`) or borrow (`Borrow`), every `Collateral` leg, and unclaimed `Rewards`
-///         (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set lives
-///         on NAVCalculator (`setMetaInstances`). The CometRewards contract and reward token (COMP) are the
-///         chain-level constants pinned in the constructor. Identity is derived on-chain (positionId = comet
-///         address; name = comet ERC20 `name()`). See ADR 0010.
+///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Earned`
+///         rewards (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set
+///         lives on NAVCalculator (`setMetaInstances`). The CometRewards contract and reward token (COMP) are the
+///         chain-level constants pinned in the constructor. Identity is encoded as `abi.encode(address(comet))`.
+///         See ADR 0010.
 /// @dev Read math (base accrual, reward accrual, collateral enumeration) is delegated to `CompoundV3CometLib`,
 ///      which mirrors the per-comet `CompoundV3Comet` adapter leg-for-leg (parity fork-tested). Multi-role assets
 ///      (e.g. COMP as both collateral and reward) emit one leg per role, same as the per-comet adapter.
 contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
     using SafeCast for int256;
+
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
 
     /// @notice The chain's CometRewards contract (same for every comet on the chain).
     address public immutable COMPOUND_REWARDS;
@@ -31,10 +32,10 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @param compoundRewards_ The chain's CometRewards contract.
     /// @param rewardToken_ The reward token (COMP).
-    /// @param protocol_ Protocol identifier (e.g. "Compound V3").
+    /// @param protocolName_ Human-readable protocol name (e.g. "Compound V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address compoundRewards_, address rewardToken_, string memory protocol_, address navCalculator_)
-        MetaBalanceOracle(protocol_, navCalculator_)
+    constructor(address compoundRewards_, address rewardToken_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(compoundRewards_.code.length > 0, "CompoundRewards must be a contract");
         require(rewardToken_ != address(0), "rewardToken=0");
@@ -43,8 +44,8 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @inheritdoc MetaBalanceOracle
-    /// @dev `instance` is the comet address. Emits a base `Supply`/`Borrow` leg, a `Collateral` leg per collateral,
-    ///      and a `Rewards` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
+    /// @dev `instance` is the comet address. Emits a base `Supplied`/`Borrowed` leg, a `Collateral` leg per
+    ///      collateral, and an `Earned` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -55,8 +56,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         CompoundV3CometLib.AccountData memory d =
             CompoundV3CometLib.accountData(comet, COMPOUND_REWARDS, REWARD_TOKEN, account);
 
-        string memory positionId = comet.toHexString();
-        string memory base = _detailBase(comet);
+        bytes memory pid = abi.encode(comet);
 
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](d.collateralAssets.length + 2);
@@ -68,8 +68,8 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
             if (ok) {
                 bool isDebt = d.baseNet < 0;
                 uint256 amount = isDebt ? uint256(-d.baseNet) : uint256(d.baseNet);
-                temp[count++] =
-                    _row(a, amount, isDebt, positionId, base, isDebt ? PositionType.BORROW : PositionType.SUPPLY);
+                PositionKind kind = isDebt ? PositionKind.Borrowed : PositionKind.Supplied;
+                temp[count++] = _row(a, amount, isDebt, pid, kind);
             }
         }
 
@@ -77,13 +77,13 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         for (uint256 i = 0; i < d.collateralAssets.length; i++) {
             if (d.collateralBalances[i] == 0) continue;
             (INAVCalculator.Asset memory a, bool ok) = _eligible(d.collateralAssets[i], assetFilter);
-            if (ok) temp[count++] = _row(a, d.collateralBalances[i], false, positionId, base, PositionType.COLLATERAL);
+            if (ok) temp[count++] = _row(a, d.collateralBalances[i], false, pid, PositionKind.Collateral);
         }
 
         // Reward leg.
         if (d.rewardOwed != 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(REWARD_TOKEN, assetFilter);
-            if (ok) temp[count++] = _row(a, d.rewardOwed, false, positionId, base, PositionType.REWARDS);
+            if (ok) temp[count++] = _row(a, d.rewardOwed, false, pid, PositionKind.Earned);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -96,6 +96,17 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
     /// @inheritdoc MetaBalanceOracle
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         return CompoundV3CometLib.supportedAssets(_toAddress(instance), REWARD_TOKEN);
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 32) return "";
+        address comet = abi.decode(pid, (address));
+        try IERC20Metadata(comet).name() returns (string memory n) {
+            return n;
+        } catch {
+            return "";
+        }
     }
 
     function _eligible(address token, address assetFilter)
@@ -111,29 +122,17 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.Asset memory asset,
         uint256 amount,
         bool isDebt,
-        string memory positionId,
-        string memory base,
-        string memory typeLabel
+        bytes memory pid,
+        PositionKind kind
     ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: asset,
+            balanceAsset: asset,
             balanceOracle: address(this),
             amount: amount,
             isDebt: isDebt,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(base, typeLabel),
-            positionId: positionId
+            protocolId: PROTOCOL_ID,
+            positionId: pid,
+            positionKind: kind
         });
-    }
-
-    /// @notice positionDetail JSON base (no closing `}`); name derived on-chain from the comet's ERC20 `name()`.
-    function _detailBase(address comet) private view returns (string memory) {
-        string memory name;
-        try IERC20Metadata(comet).name() returns (string memory n) {
-            name = bytes(n).length == 0 ? comet.toHexString() : n;
-        } catch {
-            name = comet.toHexString();
-        }
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"Lending\",\"name\":\"", name, "\"");
     }
 }

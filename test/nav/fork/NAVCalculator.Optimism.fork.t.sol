@@ -74,15 +74,14 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
             INAVCalculator.Position memory p = positions[i];
             console2.log("  index", i);
             console2.log("       value", p.value);
-            console2.log("       underlyingAsset.symbol", p.underlyingAsset.symbol);
+            console2.log("       underlyingAsset.symbol", p.balanceAsset.symbol);
             console2.log("       balanceOracle", p.balanceOracle);
             console2.log("       amount", p.amount);
             console2.log("       isDebt", p.isDebt);
             console2.log("       quoteAsset.asset", p.quoteAsset.asset);
             console2.log("       price", p.price);
             console2.log("       stale", p.stale);
-            console2.log("       protocol", p.protocol);
-            console2.log("       positionDetail", p.positionDetail);
+            console2.logBytes32(p.protocolId);
         }
     }
 
@@ -95,13 +94,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(
-            aaveV3DataProvider,
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
-        );
+        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, address(nav));
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3Comet =

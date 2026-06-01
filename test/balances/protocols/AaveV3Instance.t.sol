@@ -8,13 +8,35 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import "src/errors.sol";
 
 /// @title Mock Aave Protocol Data Provider
+contract MockAavePoolAddressesProvider {
+    address public pool;
+    constructor(address pool_) { pool = pool_; }
+    function getPool() external view returns (address) { return pool; }
+    function getLendingPool() external view returns (address) { return pool; }
+}
+
+contract MockAddressesProviderSource {
+    MockAavePoolAddressesProvider public ap;
+    constructor(address pool_) { ap = new MockAavePoolAddressesProvider(pool_); }
+    function ADDRESSES_PROVIDER() external view returns (address) { return address(ap); }
+}
+
 contract MockAaveProtocolDataProvider {
     struct TokenData {
         string symbol;
         address tokenAddress;
     }
 
+    MockAddressesProviderSource public _src;
     TokenData[] public reserves;
+
+    constructor() {
+        _src = new MockAddressesProviderSource(address(0x1234));
+    }
+
+    function ADDRESSES_PROVIDER() external view returns (address) {
+        return address(_src.ADDRESSES_PROVIDER());
+    }
 
     function getAllReservesTokens() external view returns (TokenData[] memory) {
         return reserves;
@@ -58,13 +80,7 @@ contract AaveV3InstanceBalanceOracleTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        oracle = new AaveV3InstanceBalanceOracle(
-            address(mockDataProvider),
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new AaveV3InstanceBalanceOracle(address(mockDataProvider), address(balances));
     }
 
     // ============================================

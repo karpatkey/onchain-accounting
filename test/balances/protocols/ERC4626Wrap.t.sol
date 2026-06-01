@@ -63,8 +63,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
         wrapper = new MockERC4626Wrapper(address(underlying));
         // Stub `isAssetRegistered(underlying) -> true` so the constructor check passes.
         _stubAssetRegistered();
-        oracle = new ERC4626WrapBalanceOracle(
-            address(wrapper), PROTOCOL, POSITION_DETAIL_BASE, POSITION_ID, address(mockBalances)
+        oracle = new ERC4626WrapBalanceOracle(address(wrapper), address(mockBalances)
         );
     }
 
@@ -86,19 +85,18 @@ contract ERC4626WrapBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroWrapper() public {
         vm.expectRevert(InvalidArguments.selector);
-        new ERC4626WrapBalanceOracle(address(0), PROTOCOL, POSITION_DETAIL_BASE, POSITION_ID, address(mockBalances));
+        new ERC4626WrapBalanceOracle(address(0), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractWrapper() public {
         vm.expectRevert("Wrapper must be a contract");
-        new ERC4626WrapBalanceOracle(
-            address(0xdead), PROTOCOL, POSITION_DETAIL_BASE, POSITION_ID, address(mockBalances)
+        new ERC4626WrapBalanceOracle(address(0xdead), address(mockBalances)
         );
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new ERC4626WrapBalanceOracle(address(wrapper), PROTOCOL, POSITION_DETAIL_BASE, POSITION_ID, address(0xdead));
+        new ERC4626WrapBalanceOracle(address(wrapper), address(0xdead));
     }
 
     function test_constructor_reverts_whenUnderlyingNotRegistered() public {
@@ -106,8 +104,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
         MockERC4626Wrapper otherWrapper = new MockERC4626Wrapper(address(otherUnderlying));
         // `mockBalances.isAssetRegistered(otherUnderlying)` falls back to default `false`.
         vm.expectRevert("Wrapper underlying must be a NAV-registered asset");
-        new ERC4626WrapBalanceOracle(
-            address(otherWrapper), PROTOCOL, POSITION_DETAIL_BASE, POSITION_ID, address(mockBalances)
+        new ERC4626WrapBalanceOracle(address(otherWrapper), address(mockBalances)
         );
     }
 
@@ -193,11 +190,10 @@ contract ERC4626WrapBalanceOracleTest is Test {
         wrapper.setBalance(alice, 100e18);
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(underlying));
+        assertEq(positions[0].balanceAsset.asset, address(underlying));
         assertEq(positions[0].amount, 100e18);
         assertEq(positions[0].isDebt, false);
-        assertEq(positions[0].protocol, PROTOCOL);
-        assertEq(positions[0].positionId, POSITION_ID);
+        assertEq(positions[0].positionId, abi.encode(address(wrapper)));
         assertEq(positions[0].balanceOracle, address(oracle));
     }
 

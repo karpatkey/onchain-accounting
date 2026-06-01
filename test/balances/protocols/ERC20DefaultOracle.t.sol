@@ -159,12 +159,10 @@ contract ERC20DefaultOracleTest is Test {
         // Filter by USDC
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(usdc));
-        assertEq(positions[0].underlyingAsset.symbol, "USDC");
-        assertEq(positions[0].underlyingAsset.decimals, 6);
+        assertEq(positions[0].balanceAsset.asset, address(usdc));
+        assertEq(positions[0].balanceAsset.symbol, "USDC");
+        assertEq(positions[0].balanceAsset.decimals, 6);
         assertEq(positions[0].balanceOracle, address(oracle));
-        assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
     }
 
     function test_getOraclePositions_protocolAndPositionDetail() public {
@@ -178,8 +176,6 @@ contract ERC20DefaultOracleTest is Test {
 
         positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
     }
 
     // ============================================

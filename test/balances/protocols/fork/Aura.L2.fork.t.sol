@@ -49,16 +49,7 @@ contract AuraArbitrumL2ForkTest is TestEnvConfigurator, TestSetupHelpers {
         allAssets[5] = BAL_ARB;
         balances = deployBalancesInFork(allAssets);
 
-        oracle = new Aura(
-            POOL,
-            GAUGE,
-            BOOSTER,
-            AURA_PID,
-            "Aura",
-            "{\"protocol\":\"Aura\",\"pool\":\"Aave GHO/USDT/USDC\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new Aura(POOL, GAUGE, BOOSTER, AURA_PID, address(balances));
     }
 
     function test_detectsL2() public view {

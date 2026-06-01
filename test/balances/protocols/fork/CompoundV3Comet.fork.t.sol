@@ -6,6 +6,7 @@ import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CometExtInterface, CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title CompoundV3Comet fork tests (Mainnet cUSDCv3)
 /// @notice Real Compound V3 positions at a pinned Mainnet block. Each test asserts both the
@@ -55,15 +56,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, address(balances));
         comet = CometExtInterface(USDCV3_COMET);
     }
 
@@ -72,15 +65,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     ///      internally, so no further dedup is needed here.
     function _collectSupportedAssets() internal returns (address[] memory) {
         BalancesHarnessForFork tmpBalances = new BalancesHarnessForFork();
-        CompoundV3Comet tmp = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(tmpBalances)
-        );
+        CompoundV3Comet tmp = new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, address(tmpBalances));
         return tmp.underlyingAssetsSupported();
     }
 
@@ -157,15 +142,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         // Use the same fork as setUp so state is consistent.
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, address(balances));
 
         INAVCalculator.PositionBalance[] memory positions =
             oracle.getOraclePositions(MULTI_COLLATERAL_USER, REWARD_TOKEN);
@@ -177,14 +154,13 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         uint256 rewardAmount;
 
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, REWARD_TOKEN);
+            assertEq(positions[i].balanceAsset.asset, REWARD_TOKEN);
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "Compound v3 USDC");
             assertFalse(positions[i].isDebt);
-            if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_COLLATERAL))) {
+            if (positions[i].positionKind == PositionKind.Collateral) {
                 sawCollateral = true;
                 collateralAmount = positions[i].amount;
-            } else if (keccak256(bytes(positions[i].positionDetail)) == keccak256(bytes(DETAIL_REWARD))) {
+            } else if (positions[i].positionKind == PositionKind.Earned) {
                 sawReward = true;
                 rewardAmount = positions[i].amount;
             }
@@ -230,15 +206,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_protocolAndDetailLabels() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(_collectSupportedAssets());
-        oracle = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            USDCV3_COMET,
-            REWARD_TOKEN,
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new CompoundV3Comet(COMPOUND_REWARDS, USDCV3_COMET, REWARD_TOKEN, address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(BORROW_USER, address(0));
         assertGt(positions.length, 0);
@@ -246,20 +214,18 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
         bool sawBorrow;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "Compound v3 USDC");
             assertGt(positions[i].amount, 0);
-            string memory d = positions[i].positionDetail;
-            // Every position must carry one of the expected role labels.
-            bool isKnown =
-                (keccak256(bytes(d)) == keccak256(bytes(DETAIL_SUPPLY))
-                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))
-                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_COLLATERAL))
-                    || keccak256(bytes(d)) == keccak256(bytes(DETAIL_REWARD)));
-            assertTrue(isKnown, "unexpected positionDetail");
-            if (keccak256(bytes(d)) == keccak256(bytes(DETAIL_BORROW))) {
+            // Every position must carry a known positionKind.
+            PositionKind kind = positions[i].positionKind;
+            bool isKnown = kind == PositionKind.Supplied
+                || kind == PositionKind.Borrowed
+                || kind == PositionKind.Collateral
+                || kind == PositionKind.Earned;
+            assertTrue(isKnown, "unexpected positionKind");
+            if (kind == PositionKind.Borrowed) {
                 sawBorrow = true;
                 assertTrue(positions[i].isDebt);
-                assertEq(positions[i].underlyingAsset.asset, address(USDC));
+                assertEq(positions[i].balanceAsset.asset, address(USDC));
             }
         }
         assertTrue(sawBorrow, "BORROW_USER should have a Borrow leg");
@@ -271,7 +237,7 @@ contract CompoundV3CometForkTest is BalanceAdapterTestBase {
 
         assertGt(all.length, onlyUsdc.length, "filter should narrow the result");
         for (uint256 i = 0; i < onlyUsdc.length; i++) {
-            assertEq(onlyUsdc[i].underlyingAsset.asset, address(USDC));
+            assertEq(onlyUsdc[i].balanceAsset.asset, address(USDC));
         }
     }
 

@@ -107,15 +107,14 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
         assertEq(pos.length, 2, "two USDC positions from one adapter");
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].underlyingAsset.asset, address(USDC));
+            assertEq(pos[i].balanceAsset.asset, address(USDC));
             assertEq(pos[i].balanceOracle, address(oracle));
-            assertEq(pos[i].protocol, "Morpho");
             assertFalse(pos[i].isDebt);
             assertGt(pos[i].amount, 0);
         }
         // Identity derived on-chain from the instance coordinate.
-        assertEq(pos[0].positionId, address(KPK_USDC_VAULT).toHexString());
-        assertEq(pos[1].positionId, address(vault2).toHexString());
+        assertEq(pos[0].positionId, abi.encode(address(KPK_USDC_VAULT)));
+        assertEq(pos[1].positionId, abi.encode(address(vault2)));
     }
 
     function test_navRouting_aggregatesViaMetaOracle() public view {

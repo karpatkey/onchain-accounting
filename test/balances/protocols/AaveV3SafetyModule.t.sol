@@ -23,33 +23,23 @@ contract AaveV3SafetyModuleBalanceOracleTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         super.setUp();
-        oracle = new AaveV3SafetyModuleBalanceOracle(
-            address(balances),
-            "Aave V3 Safety Module",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Safety Module\"",
-            "0x0000000000000000000000000000000000000001"
-        );
+        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances));
     }
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
     function test_constructor_pinsImmutables() public view {
         assertEq(address(oracle.NAV_CALCULATOR()), address(balances));
-        assertEq(oracle.PROTOCOL(), "Aave V3 Safety Module");
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveV3SafetyModuleBalanceOracle(
-            address(0), "x", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
-        );
+        new AaveV3SafetyModuleBalanceOracle(address(0));
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(); // require message; selector check unnecessary
-        new AaveV3SafetyModuleBalanceOracle(
-            makeAddr("eoa"), "x", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
-        );
+        new AaveV3SafetyModuleBalanceOracle(makeAddr("eoa"));
     }
 
     // ─── Hardcoded address table ──────────────────────────────────────────────

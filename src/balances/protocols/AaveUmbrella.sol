@@ -7,7 +7,8 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave Umbrella Balance Oracle (multi-token, dynamic discovery)
 /// @author kpk
@@ -55,6 +56,8 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     ///      `deposit()`, USDC's proxy chain) from burning the caller's remaining gas budget.
     uint256 private constant PROBE_GAS = 30_000;
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_UMBRELLA;
+
     //
     // State
     //
@@ -66,29 +69,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry lookups.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
-    string public PROTOCOL;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (rewardsController address)
-    string private _positionId;
-
     //
     // Constructor
     //
 
     /// @param rewardsController The Umbrella RewardsController address (registry root). Required to be a contract.
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
-    /// @param protocol_ Protocol identifier emitted on every PositionBalance (e.g. "Aave Umbrella").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (rewardsController address).
-    constructor(
-        address rewardsController,
-        address navCalculator,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_
-    ) {
+    constructor(address rewardsController, address navCalculator) {
         if (rewardsController == address(0) || navCalculator == address(0)) {
             revert InvalidArguments();
         }
@@ -96,9 +83,6 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
         NAV_CALCULATOR = INAVCalculator(navCalculator);
-        PROTOCOL = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -109,6 +93,9 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
+
+    function protocolName() external pure returns (string memory) { return "Aave Umbrella"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "umbrella stake"; }
 
     //
     // IBalanceOracleAdapter
@@ -235,13 +222,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
             uint256 stakedAmount = _stakedUnderlying(stk, account);
             if (stakedAmount != 0) {
                 tmp[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetMeta,
+                    balanceAsset: assetMeta,
                     balanceOracle: address(this),
                     amount: stakedAmount,
                     isDebt: false,
-                    protocol: PROTOCOL,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(stk)),
+                    positionKind: PositionKind.Supplied
                 });
             }
 
@@ -249,13 +236,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
             uint256 rewardAmount = _claimableRewardInBareReserve(stk, account, bare);
             if (rewardAmount != 0) {
                 tmp[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetMeta,
+                    balanceAsset: assetMeta,
                     balanceOracle: address(this),
                     amount: rewardAmount,
                     isDebt: false,
-                    protocol: PROTOCOL,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.REWARDS),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(stk)),
+                    positionKind: PositionKind.Earned
                 });
             }
         }

@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Curve Balance Oracle
 /// @author kpk
@@ -57,14 +58,8 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     /// @notice Bounded iteration limit for pool coins and reward tokens
     uint256 internal constant _MAX_ITERATIONS = 8;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-
-    /// @notice JSON metadata base (no closing `}`) for this oracle
-    string private _positionDetail;
-
-    /// @notice Stable hex identifier for this adapter instance (gauge address)
-    string private _positionId;
+    /// @notice Protocol identifier constant
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
 
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -74,15 +69,9 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
     //
 
     /// @param gauge_ The Curve gauge contract address (lp_token() is derived from it)
-    /// @param protocol_ Protocol identifier (e.g., "Curve")
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (gauge address).
     /// @param navCalculator_ The NAVCalculator contract address
     constructor(
         address gauge_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         if (gauge_ == address(0)) revert InvalidArguments();
@@ -93,10 +82,17 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
         address lpToken = ICurveGauge(gauge_).lp_token();
         require(lpToken != address(0), "Gauge lp_token() returned zero");
         LP_TOKEN = lpToken;
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+    }
+
+    /// @notice Returns the human-readable protocol name.
+    function protocolName() external pure returns (string memory) {
+        return "Curve";
+    }
+
+    /// @notice Returns a human-readable description of the position.
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "LP position";
     }
 
     //
@@ -198,24 +194,24 @@ contract CurveBalanceOracle is IBalanceOracleAdapter {
 
             if (unstakedBalance > 0) {
                 tempPositions[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetInfo,
+                    balanceAsset: assetInfo,
                     balanceOracle: address(this),
                     amount: unstakedBalance,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(GAUGE)),
+                    positionKind: PositionKind.Supplied
                 });
             }
             if (stakedAndRewardBalance > 0) {
                 tempPositions[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetInfo,
+                    balanceAsset: assetInfo,
                     balanceOracle: address(this),
                     amount: stakedAndRewardBalance,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(GAUGE)),
+                    positionKind: PositionKind.Supplied
                 });
             }
         }

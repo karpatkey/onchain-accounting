@@ -103,14 +103,9 @@ contract FluidVaultBalanceOracleTest is Test {
         vault.setTokens(address(collateral), address(debt));
         otherVault.setTokens(address(collateral), address(debt));
 
-        oracle = new FluidVaultBalanceOracle(
-            address(vault),
+        oracle = new FluidVaultBalanceOracle(address(vault),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"wstETH/USDC\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     // ============================================
@@ -119,104 +114,64 @@ contract FluidVaultBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroVault() public {
         vm.expectRevert(InvalidArguments.selector);
-        new FluidVaultBalanceOracle(
-            address(0),
+        new FluidVaultBalanceOracle(address(0),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_invalidArgs_zeroResolver() public {
         vm.expectRevert(InvalidArguments.selector);
-        new FluidVaultBalanceOracle(
-            address(vault),
+        new FluidVaultBalanceOracle(address(vault),
             address(0),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractVault() public {
         vm.expectRevert("Vault must be a contract");
-        new FluidVaultBalanceOracle(
-            address(0xdead),
+        new FluidVaultBalanceOracle(address(0xdead),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractResolver() public {
         vm.expectRevert("VaultResolver must be a contract");
-        new FluidVaultBalanceOracle(
-            address(vault),
+        new FluidVaultBalanceOracle(address(vault),
             address(0xdead),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new FluidVaultBalanceOracle(
-            address(vault),
+        new FluidVaultBalanceOracle(address(vault),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(0xdead)
-        );
+            address(0xdead));
     }
 
     function test_constructor_revertsOnZeroCollateral() public {
         MockFluidVaultT1 badVault = new MockFluidVaultT1();
         badVault.setTokens(address(0), address(debt));
         vm.expectRevert("Vault tokens must be non-zero");
-        new FluidVaultBalanceOracle(
-            address(badVault),
+        new FluidVaultBalanceOracle(address(badVault),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_revertsOnZeroDebt() public {
         MockFluidVaultT1 badVault = new MockFluidVaultT1();
         badVault.setTokens(address(collateral), address(0));
         vm.expectRevert("Vault tokens must be non-zero");
-        new FluidVaultBalanceOracle(
-            address(badVault),
+        new FluidVaultBalanceOracle(address(badVault),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_revertsOnNonContractToken() public {
         MockFluidVaultT1 badVault = new MockFluidVaultT1();
         badVault.setTokens(address(0xCAFE), address(debt));
         vm.expectRevert("supplyToken not a contract");
-        new FluidVaultBalanceOracle(
-            address(badVault),
+        new FluidVaultBalanceOracle(address(badVault),
             address(resolver),
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid Vault\",\"pool\":\"x/y\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+            address(mockBalances));
     }
 
     function test_constructor_stores_immutables() public view {

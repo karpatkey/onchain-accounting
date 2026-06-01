@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstanceBalanceOracle, IAaveAddressesProviderSource} from "src/balances/protocols/AaveV3Instance.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+
+interface ILendingPoolAddressesProvider {
+    function getLendingPool() external view returns (address);
+}
 
 /// @title Aave V2 Instance Balance Oracle
 /// @author kpk
@@ -21,16 +26,21 @@ import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance
 /// observed for a tracked account, this adapter must be replaced with a standalone
 /// implementation that reads the third return value of `getUserReserveData`.
 contract AaveV2InstanceBalanceOracle is AaveV3InstanceBalanceOracle {
+    bytes32 private constant PROTOCOL_ID_V2 = ProtocolIds.AAVE_V2_LENDING;
+
     /// @param dataProvider_ The address of the Aave V2 Protocol Data Provider contract.
-    /// @param protocol_ Protocol identifier (e.g., "Aave V2").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (Aave pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
-    constructor(
-        address dataProvider_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) AaveV3InstanceBalanceOracle(dataProvider_, protocol_, positionDetail_, positionId_, navCalculator_) {}
+    constructor(address dataProvider_, address navCalculator_)
+        AaveV3InstanceBalanceOracle(dataProvider_, navCalculator_)
+    {}
+
+    function protocolName() external pure override returns (string memory) { return "Aave V2"; }
+
+    function _protocolId() internal pure override returns (bytes32) { return PROTOCOL_ID_V2; }
+
+    /// @dev V2 uses getLendingPool() on an ILendingPoolAddressesProvider instead of getPool().
+    function _poolFrom(address dataProvider_) internal view override returns (address) {
+        address ap = IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER();
+        return ILendingPoolAddressesProvider(ap).getLendingPool();
+    }
 }

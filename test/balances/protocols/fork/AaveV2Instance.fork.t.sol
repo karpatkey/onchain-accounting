@@ -58,9 +58,6 @@ contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(_v2Assets());
         oracle = new AaveV2InstanceBalanceOracle(
             AAVE_V2_DATA_PROVIDER,
-            "Aave V2",
-            "{\"protocol\":\"Aave V2\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }
@@ -136,7 +133,6 @@ contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertGt(positions[i].amount, 0, "amount must be positive");
             assertEq(positions[i].balanceOracle, address(oracle), "oracle attribution");
-            assertEq(positions[i].protocol, "Aave V2", "protocol string");
         }
     }
 
@@ -163,7 +159,7 @@ contract AaveV2InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         _deployOracle();
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STETH_SUPPLY_USDC_BORROW, STETH);
         assertEq(positions.length, 1, "asset filter should yield a single asset's positions");
-        assertEq(positions[0].underlyingAsset.asset, STETH, "filtered asset matches");
+        assertEq(positions[0].balanceAsset.asset, STETH, "filtered asset matches");
         assertFalse(positions[0].isDebt, "stETH leg is supply");
     }
 

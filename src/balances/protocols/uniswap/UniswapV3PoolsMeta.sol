@@ -1,47 +1,55 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {PositionType} from "src/utils/PositionType.sol";
-import {IUniswapV3Pool} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
-import {UniswapV3PoolLib} from "src/balances/protocols/uniswap/UniswapV3PoolLib.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {IUniswapV3Pool, INonfungiblePositionManager} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
+import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
+import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Uniswap V3 Pools Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's Uniswap V3 LP across *any* pool — both the in-range
-///         liquidity (`Supply`) and the unclaimed fees (`Fees`) of the account's NFT positions. The instance
+///         liquidity (`Supplied`) and the unclaimed fees (`Earned`) of the account's NFT positions. The instance
 ///         coordinate is the pool address, widened to bytes32; the active pool set lives on NAVCalculator
 ///         (`setMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
-///         constructor. Identity is derived on-chain (positionId = pool address; name = `sym0/sym1 <feeTier>`).
+///         constructor. Each NFT position gets its own positionId = abi.encode(npm, tokenId).
 ///         See ADR 0010.
-/// @dev Position discovery and the principal/fee math are delegated to `UniswapV3PoolLib`, which mirrors the
-///      per-instance `UniswapV3PoolBalanceOracle` leg-for-leg (parity fork-tested). `slot0` is read via the
-///      `_slot0` virtual hook so forks with a divergent `slot0()` ABI (PancakeSwap V3) override just that read.
-///      Licensing: links the GPL-2.0-or-later Uniswap math via the lib → combined work is GPL-2.0-or-later
-///      (ADR 0008).
+/// @dev `slot0` is read via the `_slot0` virtual hook so forks with a divergent `slot0()` ABI (PancakeSwap V3)
+///      override just that read.
+///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128) —
+///      combined work is GPL-2.0-or-later (ADR 0008).
 contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
     using Strings for uint256;
+
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V3;
+
+    /// @notice Bounded iteration limit for position discovery (matches the per-instance adapter).
+    uint256 internal constant MAX_POSITIONS = 256;
 
     /// @notice The Uniswap V3 NonfungiblePositionManager (chain-level constant; same for all V3 pools on a chain).
     address public immutable POSITION_MANAGER;
 
     /// @param positionManager_ The NonfungiblePositionManager address (per-chain canonical NPM).
-    /// @param protocol_ Protocol identifier (e.g. "Uniswap V3").
+    /// @param protocolName_ Protocol identifier (e.g. "Uniswap V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address positionManager_, string memory protocol_, address navCalculator_)
-        MetaBalanceOracle(protocol_, navCalculator_)
+    constructor(address positionManager_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(positionManager_.code.length > 0, "PositionManager must be a contract");
         POSITION_MANAGER = positionManager_;
     }
 
     /// @inheritdoc MetaBalanceOracle
-    /// @dev `instance` is the pool address. Emits up to 4 legs — `Supply` ×2 (in-range liquidity) and `Fees` ×2
-    ///      (unclaimed fees) — dropping zeros and unregistered assets, respecting `assetFilter`.
+    /// @dev `instance` is the pool address. For each NFT the account owns in this pool, emits up to 4 legs:
+    ///      `Supplied` x2 (in-range liquidity) and `Earned` x2 (unclaimed fees) — dropping zeros and unregistered
+    ///      assets, respecting `assetFilter`. Each NFT gets its own positionId = abi.encode(npm, tokenId).
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -51,27 +59,66 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         address pool = _toAddress(instance);
         address token0 = IUniswapV3Pool(pool).token0();
         address token1 = IUniswapV3Pool(pool).token1();
-
-        (uint160 sqrtPriceX96, int24 tick) = _slot0(pool);
-        (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1) =
-            UniswapV3PoolLib.accountAggregates(pool, POSITION_MANAGER, account, sqrtPriceX96, tick);
-
-        string memory positionId = pool.toHexString();
-        string memory base = _detailBase(pool, token0, token1);
-        string memory supplyDetail = PositionType.withType(base, PositionType.SUPPLY);
-        string memory feesDetail = PositionType.withType(base, PositionType.FEES);
-
-        // Up to 4 legs: (token0 supply, token1 supply, token0 fees, token1 fees).
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](4);
-        uint256 count;
+        uint24 fee = IUniswapV3Pool(pool).fee();
 
         (INAVCalculator.Asset memory a0, bool f0reg) = _eligible(token0, assetFilter);
         (INAVCalculator.Asset memory a1, bool f1reg) = _eligible(token1, assetFilter);
+        if (!f0reg && !f1reg) return new INAVCalculator.PositionBalance[](0);
 
-        if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, supplyDetail);
-        if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, supplyDetail);
-        if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, feesDetail);
-        if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, feesDetail);
+        (uint160 sqrtPriceX96, int24 tick) = _slot0(pool);
+        uint256 fgGlobal0 = IUniswapV3Pool(pool).feeGrowthGlobal0X128();
+        uint256 fgGlobal1 = IUniswapV3Pool(pool).feeGrowthGlobal1X128();
+
+        uint256 nftBalance = INonfungiblePositionManager(POSITION_MANAGER).balanceOf(account);
+        uint256 max = nftBalance > MAX_POSITIONS ? MAX_POSITIONS : nftBalance;
+
+        // Up to 4 legs per NFT (liq0, liq1, fee0, fee1).
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](max * 4);
+        uint256 count;
+
+        for (uint256 i = 0; i < max; i++) {
+            uint256 tokenId = INonfungiblePositionManager(POSITION_MANAGER).tokenOfOwnerByIndex(account, i);
+
+            (
+                ,,
+                address t0,
+                address t1,
+                uint24 f,
+                int24 tickLower,
+                int24 tickUpper,
+                uint128 liquidity,
+                uint256 fgInside0Last,
+                uint256 fgInside1Last,
+                uint128 tokensOwed0,
+                uint128 tokensOwed1
+            ) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+
+            // Filter: only positions in this pool.
+            if (t0 != token0 || t1 != token1 || f != fee) continue;
+
+            bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
+
+            uint256 liq0;
+            uint256 liq1;
+            if (liquidity > 0) {
+                (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(
+                    sqrtPriceX96,
+                    TickMath.getSqrtRatioAtTick(tickLower),
+                    TickMath.getSqrtRatioAtTick(tickUpper),
+                    liquidity
+                );
+            }
+
+            (uint256 fee0, uint256 fee1) = _computeFees(
+                pool, tick, fgGlobal0, fgGlobal1, tickLower, tickUpper, liquidity,
+                fgInside0Last, fgInside1Last, tokensOwed0, tokensOwed1
+            );
+
+            if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
+            if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied);
+            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Earned);
+            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Earned);
+        }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i = 0; i < count; i++) {
@@ -86,6 +133,12 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         assets = new address[](2);
         assets[0] = IUniswapV3Pool(pool).token0();
         assets[1] = IUniswapV3Pool(pool).token1();
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        (, uint256 tokenId) = abi.decode(pid, (address, uint256));
+        return string.concat("NFT #", tokenId.toString());
     }
 
     /// @notice Reads `(sqrtPriceX96, tick)` from the pool's `slot0`.
@@ -105,60 +158,66 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, string memory positionId, string memory detail)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
+    function _row(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        bytes memory positionId,
+        PositionKind kind
+    ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: asset,
+            balanceAsset: asset,
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: detail,
-            positionId: positionId
+            protocolId: PROTOCOL_ID,
+            positionId: positionId,
+            positionKind: kind
         });
     }
 
-    /// @notice positionDetail JSON base (no closing `}`); name derived on-chain as `sym0/sym1 <feeTier>`.
-    function _detailBase(address pool, address token0, address token1) private view returns (string memory) {
-        string memory name =
-            string.concat(_symbol(token0), "/", _symbol(token1), " ", _feeTierLabel(IUniswapV3Pool(pool).fee()));
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"LP\",\"name\":\"", name, "\"");
+    /// @notice Computes unclaimed fees for a single NFT position.
+    /// @dev Subtractions intentionally wrap (`unchecked`), matching Uniswap's fee accounting (v3 whitepaper 6.3).
+    function _computeFees(
+        address pool,
+        int24 tickCurrent,
+        uint256 fgGlobal0,
+        uint256 fgGlobal1,
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity,
+        uint256 fgInside0Last,
+        uint256 fgInside1Last,
+        uint128 tokensOwed0,
+        uint128 tokensOwed1
+    ) private view returns (uint256 f0, uint256 f1) {
+        (uint256 fgOutLower0, uint256 fgOutLower1) = _ticksFeeGrowthOutside(pool, tickLower);
+        (uint256 fgOutUpper0, uint256 fgOutUpper1) = _ticksFeeGrowthOutside(pool, tickUpper);
+
+        unchecked {
+            uint256 fgInside0;
+            uint256 fgInside1;
+            if (tickCurrent < tickLower) {
+                fgInside0 = fgOutLower0 - fgOutUpper0;
+                fgInside1 = fgOutLower1 - fgOutUpper1;
+            } else if (tickCurrent < tickUpper) {
+                fgInside0 = fgGlobal0 - fgOutLower0 - fgOutUpper0;
+                fgInside1 = fgGlobal1 - fgOutLower1 - fgOutUpper1;
+            } else {
+                fgInside0 = fgOutUpper0 - fgOutLower0;
+                fgInside1 = fgOutUpper1 - fgOutLower1;
+            }
+
+            f0 = Math.mulDiv(fgInside0 - fgInside0Last, liquidity, FixedPoint128.Q128) + tokensOwed0;
+            f1 = Math.mulDiv(fgInside1 - fgInside1Last, liquidity, FixedPoint128.Q128) + tokensOwed1;
+        }
     }
 
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
-    function _symbol(address token) private view returns (string memory) {
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
-    }
-
-    /// @notice Renders a Uniswap V3 fee tier (hundredths of a bip) as a percent string: 3000→"0.3%",
-    ///         500→"0.05%", 10000→"1%", 100→"0.01%", 2500→"0.25%".
-    function _feeTierLabel(uint24 fee) private pure returns (string memory) {
-        uint256 whole = uint256(fee) / 10_000;
-        uint256 frac = uint256(fee) % 10_000; // fractional part out of 10_000
-        if (frac == 0) return string.concat(whole.toString(), "%");
-
-        // 4-digit zero-padded fractional, trailing zeros trimmed.
-        bytes memory digits = bytes(frac.toString());
-        bytes memory padded = new bytes(4);
-        uint256 lead = 4 - digits.length;
-        for (uint256 i = 0; i < 4; i++) {
-            padded[i] = i < lead ? bytes1(0x30) : digits[i - lead]; // 0x30 == ASCII '0'
-        }
-        uint256 end = 4;
-        while (end > 0 && padded[end - 1] == 0x30) {
-            end--;
-        }
-        bytes memory fracTrim = new bytes(end);
-        for (uint256 i = 0; i < end; i++) {
-            fracTrim[i] = padded[i];
-        }
-        return string.concat(whole.toString(), ".", string(fracTrim), "%");
+    function _ticksFeeGrowthOutside(address pool, int24 tick)
+        private
+        view
+        returns (uint256 fgOut0, uint256 fgOut1)
+    {
+        (,, uint256 _fgOut0, uint256 _fgOut1,,,,) = IUniswapV3Pool(pool).ticks(tick);
+        return (_fgOut0, _fgOut1);
     }
 }

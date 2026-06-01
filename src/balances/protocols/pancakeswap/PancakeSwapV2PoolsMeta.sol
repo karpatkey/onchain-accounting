@@ -11,9 +11,9 @@ import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 ///         clarity, mirroring the per-instance `PancakeSwapV2BalanceOracle`. The protocol identifier (e.g.
 ///         "PancakeSwap V2") is set per deployment.
 contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter {
-    /// @param protocol_ Protocol identifier (e.g. "PancakeSwap V2").
+    /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V2").
     /// @param navCalculator_ NAVCalculator contract address.
-    constructor(string memory protocol_, address navCalculator_)
-        UniswapV2PoolsMetaBalanceAdapter(protocol_, navCalculator_)
+    constructor(string memory protocolName_, address navCalculator_)
+        UniswapV2PoolsMetaBalanceAdapter(protocolName_, navCalculator_)
     {}
 }

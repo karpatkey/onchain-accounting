@@ -482,15 +482,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        AaveV2InstanceBalanceOracle adapter =
-            new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        AaveV2InstanceBalanceOracle adapter = new AaveV2InstanceBalanceOracle(dataProvider, navCalculator);
         return address(adapter);
     }
 
@@ -507,15 +500,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        AaveV3InstanceBalanceOracle adapter =
-            new AaveV3InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        AaveV3InstanceBalanceOracle adapter = new AaveV3InstanceBalanceOracle(dataProvider, navCalculator);
         return address(adapter);
     }
 
@@ -537,16 +523,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewardToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        CompoundV3Comet adapter = new CompoundV3Comet(
-            compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navCalculator
-        );
+        CompoundV3Comet adapter = new CompoundV3Comet(compoundRewards, comet, rewardToken, navCalculator);
         return address(adapter);
     }
 
@@ -572,15 +549,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        SparkLendBalanceOracle adapter =
-            new SparkLendBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        SparkLendBalanceOracle adapter = new SparkLendBalanceOracle(dataProvider, navCalculator);
         return address(adapter);
     }
 
@@ -591,13 +561,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory marketIdStr =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "marketId");
         bytes32 marketId = vm.parseBytes32(marketIdStr);
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-
-        MorphoMarketBalanceOracle adapter =
-            new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navCalculator);
+        MorphoMarketBalanceOracle adapter = new MorphoMarketBalanceOracle(morpho, marketId, navCalculator);
         return address(adapter);
     }
 
@@ -620,15 +584,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dsrManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dsrManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "positionId");
 
-        DaiDsrBalanceOracle adapter =
-            new DaiDsrBalanceOracle(dai, dsrManager, protocol, positionDetail, positionId, navCalculator);
+        DaiDsrBalanceOracle adapter = new DaiDsrBalanceOracle(dai, dsrManager, navCalculator);
         return address(adapter);
     }
 
@@ -636,30 +593,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address savingsUsds = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "savingsUsds")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "positionId");
 
-        SkySavingsUsdsBalanceOracle adapter =
-            new SkySavingsUsdsBalanceOracle(savingsUsds, protocol, positionDetail, positionId, navCalculator);
+        SkySavingsUsdsBalanceOracle adapter = new SkySavingsUsdsBalanceOracle(savingsUsds, navCalculator);
         return address(adapter);
     }
 
     function _deployMorphoVault(string memory adapterName, address navCalculator) internal returns (address) {
         address vault =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        MorphoVaultBalanceOracle adapter =
-            new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navCalculator);
+        MorphoVaultBalanceOracle adapter = new MorphoVaultBalanceOracle(vault, navCalculator);
         return address(adapter);
     }
 
@@ -677,15 +620,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address market = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        GearboxMarketBalanceOracle adapter =
-            new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navCalculator);
+        GearboxMarketBalanceOracle adapter = new GearboxMarketBalanceOracle(market, navCalculator);
         return address(adapter);
     }
 
@@ -706,28 +642,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionId");
 
-        CapBalanceOracle adapter =
-            new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, positionId, navCalculator);
+        CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, navCalculator);
         return address(adapter);
     }
 
     function _deployCurve(string memory adapterName, address navCalculator) internal returns (address) {
         address gauge =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, protocol, positionDetail, positionId, navCalculator);
+        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, navCalculator);
         return address(adapter);
     }
 
@@ -738,37 +662,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address lpToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        ConvexBalanceOracle adapter =
-            new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, positionId, navCalculator);
+        ConvexBalanceOracle adapter = new ConvexBalanceOracle(rewarder, lpToken, navCalculator);
         return address(adapter);
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "AaveV3SafetyModule": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "protocol": "Aave V3 Safety Module",
-        //       "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Safety Module\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
         // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceOracle).
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-        AaveV3SafetyModuleBalanceOracle adapter =
-            new AaveV3SafetyModuleBalanceOracle(navCalculator, protocol, positionDetail, positionId);
+        AaveV3SafetyModuleBalanceOracle adapter = new AaveV3SafetyModuleBalanceOracle(navCalculator);
         return address(adapter);
     }
 
@@ -788,14 +689,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewardsController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-        AaveUmbrellaBalanceOracle adapter =
-            new AaveUmbrellaBalanceOracle(rewardsController, navCalculator, protocol, positionDetail, positionId);
+        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(rewardsController, navCalculator);
         return address(adapter);
     }
 
@@ -860,16 +754,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address balancerMinter = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        BalancerV3PoolBalanceOracle adapter = new BalancerV3PoolBalanceOracle(
-            pool, gauge, balancerMinter, protocol, positionDetail, positionId, navCalculator
-        );
+        BalancerV3PoolBalanceOracle adapter = new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, navCalculator);
         return address(adapter);
     }
 
@@ -883,16 +769,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         uint256 pid =
             vm.parseUint(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pid"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
         // AURA token address is resolved dynamically inside the adapter constructor via Booster.minter()
         // (Mainnet: returns AURA; L2: returns L2Coordinator whose auraOFT() is the bridged AURA).
-        Aura adapter = new Aura(pool, gauge, booster, pid, protocol, positionDetail, positionId, navCalculator);
+        Aura adapter = new Aura(pool, gauge, booster, pid, navCalculator);
         return address(adapter);
     }
 
@@ -902,16 +782,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         address vault =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        StakeWiseV3VaultBalanceOracle adapter = new StakeWiseV3VaultBalanceOracle(
-            underlyingToken, vault, protocol, positionDetail, positionId, navCalculator
-        );
+        StakeWiseV3VaultBalanceOracle adapter = new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, navCalculator);
         return address(adapter);
     }
 
@@ -933,15 +805,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address fToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "fToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        FluidFTokenBalanceOracle adapter =
-            new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, positionId, navCalculator);
+        FluidFTokenBalanceOracle adapter = new FluidFTokenBalanceOracle(fToken, navCalculator);
         return address(adapter);
     }
 
@@ -973,15 +838,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address vaultResolver = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        FluidVaultBalanceOracle adapter =
-            new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, positionId, navCalculator);
+        FluidVaultBalanceOracle adapter = new FluidVaultBalanceOracle(vault, vaultResolver, navCalculator);
         return address(adapter);
     }
 
@@ -992,16 +850,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        StaderWithdrawalQueueBalanceOracle adapter = new StaderWithdrawalQueueBalanceOracle(
-            userWithdrawalManager, underlyingToken, protocol, positionDetail, positionId, navCalculator
-        );
+        StaderWithdrawalQueueBalanceOracle adapter =
+            new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -1012,16 +862,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address withdrawalManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(
-            withdrawalManager, protocol, positionDetail, positionId, navCalculator
-        );
+        KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(withdrawalManager, navCalculator);
         return address(adapter);
     }
 
@@ -1032,16 +873,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        LidoWithdrawalQueueBalanceOracle adapter = new LidoWithdrawalQueueBalanceOracle(
-            withdrawalQueue, underlyingToken, protocol, positionDetail, positionId, navCalculator
-        );
+        LidoWithdrawalQueueBalanceOracle adapter =
+            new LidoWithdrawalQueueBalanceOracle(withdrawalQueue, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -1062,18 +895,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(
-            distributor, navCalculator, protocol, positionDetail, positionId, chainConfig.admin
-        );
+        MerklRewardsBalanceOracle adapter =
+            new MerklRewardsBalanceOracle(distributor, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 
@@ -1083,15 +908,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        UniswapV3PoolBalanceOracle adapter =
-            new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navCalculator);
+        UniswapV3PoolBalanceOracle adapter = new UniswapV3PoolBalanceOracle(pool, positionManager, navCalculator);
         return address(adapter);
     }
 
@@ -1154,15 +972,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // — see src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
         address pair =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        PancakeSwapV2BalanceOracle adapter =
-            new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, positionId, navCalculator);
+        PancakeSwapV2BalanceOracle adapter = new PancakeSwapV2BalanceOracle(pair, navCalculator);
         return address(adapter);
     }
 
@@ -1185,16 +996,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        PancakeSwapV3PoolBalanceOracle adapter = new PancakeSwapV3PoolBalanceOracle(
-            pool, positionManager, protocol, positionDetail, positionId, navCalculator
-        );
+        PancakeSwapV3PoolBalanceOracle adapter = new PancakeSwapV3PoolBalanceOracle(pool, positionManager, navCalculator);
         return address(adapter);
     }
 

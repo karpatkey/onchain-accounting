@@ -8,7 +8,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title StakeWise Vault Balance Oracle
 /// @author kpk
@@ -45,14 +46,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice The vault
     IStakeWiseVault public immutable VAULT;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (vault address)
-    string private _positionId;
-    /// @notice List of underlying assets supported by this oracle.
-    address[] internal _underlyingAssetsSupported;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
+
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -62,18 +57,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
 
     /// @param underlyingToken_ The address of the underlying token for this oracle.
     /// @param vault_ The address of the vault.
-    /// @param protocol_ Protocol identifier (e.g., "Stakewise v3").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (vault address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address underlyingToken_,
-        address vault_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address underlyingToken_, address vault_, address navCalculator_) {
         if (underlyingToken_ == address(0) || vault_ == address(0)) {
             revert InvalidArguments();
         }
@@ -82,9 +67,6 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
 
         UNDERLYING_TOKEN = underlyingToken_;
         VAULT = IStakeWiseVault(vault_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -110,12 +92,8 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
         return (mintedOs - vaultAssets, true);
     }
 
-    /// @notice Returns the positionDetail JSON for a given leg.
-    function _positionDetailFor(bool isDebt_) internal view returns (string memory) {
-        return isDebt_
-            ? PositionType.withType(_positionDetail, PositionType.BORROW)
-            : PositionType.withType(_positionDetail, PositionType.STAKING);
-    }
+    function protocolName() external pure returns (string memory) { return "StakeWise V3"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "vault position"; }
 
     /// @inheritdoc IBalanceOracleAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
@@ -277,13 +255,13 @@ contract StakeWiseV3VaultBalanceOracle is IBalanceOracleAdapter {
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: _positionDetailFor(assetBalanceData[i].isDebt),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(VAULT)),
+                positionKind: assetBalanceData[i].isDebt ? PositionKind.Borrowed : PositionKind.Supplied
             });
 
             positionCount++;

@@ -5,15 +5,11 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title CompoundV3CometsMetaParityForkTest
 /// @notice Proves the Compound V3 comets meta-adapter reproduces the per-comet CompoundV3Comet exactly (same
 ///         CompoundV3CometLib math) against the real mainnet cUSDCv3 market and real holders covering supply,
 ///         borrow, multi-collateral, and COMP-reward positions. Both adapters share one BalancesHarnessForFork.
 contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant COMPOUND_REWARDS = 0x1B0e765F6224C21223AeA2af16c1C46E38885a40;
     address public constant COMP = 0xc00e94Cb662C3520282E6f5717214004A7f26888;
     address public constant COMET = 0xc3d688B66703497DAA19211EEdff47f25384cdc3; // cUSDCv3
@@ -39,15 +35,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[3] = COMP;
         balances = _deployBalancesForOracle(assetsList);
 
-        per = new CompoundV3Comet(
-            COMPOUND_REWARDS,
-            COMET,
-            COMP,
-            "Compound V3",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
-            COMET.toHexString(),
-            address(balances)
-        );
+        per = new CompoundV3Comet(COMPOUND_REWARDS, COMET, COMP, address(balances));
         meta = new CompoundV3CometsMetaBalanceAdapter(COMPOUND_REWARDS, COMP, "Compound V3", address(balances));
     }
 
@@ -63,7 +51,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
         returns (uint256 credit, uint256 debt)
     {
         for (uint256 i = 0; i < p.length; i++) {
-            if (p[i].underlyingAsset.asset != asset) continue;
+            if (p[i].balanceAsset.asset != asset) continue;
             if (p[i].isDebt) debt += p[i].amount;
             else credit += p[i].amount;
         }
@@ -105,8 +93,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
             meta.getOraclePositionsForInstances(LEND_USER, _instance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, COMET.toHexString(), "positionId = comet address");
-            assertEq(p[i].protocol, "Compound V3");
+            assertEq(p[i].positionId, abi.encode(COMET), "positionId = comet address");
         }
     }
 }

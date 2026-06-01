@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3SafetyModuleBalanceOracle, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 interface IStakeTokenExtended is IStakeToken {
     function claimRewards(address user, uint256 amount) external;
@@ -67,9 +68,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = ABPT;
         assets[3] = ABPT_V2;
         balances = _deployBalancesForOracle(assets);
-        oracle = new AaveV3SafetyModuleBalanceOracle(
-            address(balances), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
-        );
+        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances));
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────
@@ -136,12 +135,13 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
         bool sawGhoStakedFromGho;
         for (uint256 i; i < positions.length; ++i) {
-            address asset = positions[i].underlyingAsset.asset;
-            if (asset == GHO && _eq(positions[i].positionDetail, _detail("Staking"))) sawGhoStakedFromGho = true;
+            address asset = positions[i].balanceAsset.asset;
             assertGt(positions[i].amount, 0);
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "Aave V3 Safety Module");
             assertFalse(positions[i].isDebt);
+            if (asset == GHO && positions[i].positionKind == PositionKind.Supplied) {
+                sawGhoStakedFromGho = true;
+            }
         }
         assertTrue(sawGhoStakedFromGho, "missing GHO/stkGHO position");
     }
@@ -149,8 +149,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_assetFilter_onlyEmitsMatchingAsset() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, GHO);
-        assertEq(positions[0].positionDetail, _detail("Staking"));
+        assertEq(positions[0].balanceAsset.asset, GHO);
     }
 
     // ─── Reward freeze behaviour (only when distributionEnd is in the future) ─

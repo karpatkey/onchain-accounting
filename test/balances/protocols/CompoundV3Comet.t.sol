@@ -7,6 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {MockContract} from "test/mocks/MockContract.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -225,56 +226,24 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         mockRewards = new MockCompoundRewardsMinimal();
         mockComet = new MockCometMinimal(address(usdc));
         mockRewardToken = new MockContract();
-        oracle = new CompoundV3Comet(
-            address(mockRewards),
-            address(mockComet),
-            address(mockRewardToken),
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new CompoundV3Comet(address(mockRewards), address(mockComet), address(mockRewardToken), address(balances));
     }
 
     // ============ Constructor ============
 
     function test_constructor_revertsOnZeroCompoundRewards() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(
-            address(0),
-            address(mockComet),
-            address(mockRewardToken),
-            "x",
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        new CompoundV3Comet(address(0), address(mockComet), address(mockRewardToken), address(balances));
     }
 
     function test_constructor_revertsOnZeroComet() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(
-            address(mockRewards),
-            address(0),
-            address(mockRewardToken),
-            "x",
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        new CompoundV3Comet(address(mockRewards), address(0), address(mockRewardToken), address(balances));
     }
 
     function test_constructor_revertsOnZeroRewardToken() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CompoundV3Comet(
-            address(mockRewards),
-            address(mockComet),
-            address(0),
-            "x",
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        new CompoundV3Comet(address(mockRewards), address(mockComet), address(0), address(balances));
     }
 
     function test_constructor_pinsBaseTokenFromComet() public view {
@@ -311,15 +280,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         cols[1] = address(mockRewardToken); // dup with reward token
         MockCometRich rich = new MockCometRich(address(usdc), cols);
 
-        CompoundV3Comet o = new CompoundV3Comet(
-            address(mockRewards),
-            address(rich),
-            address(mockRewardToken),
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        CompoundV3Comet o = new CompoundV3Comet(address(mockRewards), address(rich), address(mockRewardToken), address(balances));
 
         address[] memory assets = o.underlyingAssetsSupported();
         // Expected: [USDC, WETH, COMP] — COMP appears once even though it's listed as both collateral and reward.
@@ -406,15 +367,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         cols[1] = address(mockRewardToken);
         rich = new MockCometRich(address(usdc), cols);
         r = new MockCompoundRewardsConfigurable(address(mockRewardToken));
-        o = new CompoundV3Comet(
-            address(r),
-            address(rich),
-            address(mockRewardToken),
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        o = new CompoundV3Comet(address(r), address(rich), address(mockRewardToken), address(balances));
     }
 
     function test_getOracleBalanceForAsset_collateralOnly() public {
@@ -453,20 +406,13 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         bool sawCollateral;
         bool sawReward;
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(mockRewardToken));
+            assertEq(positions[i].balanceAsset.asset, address(mockRewardToken));
             assertEq(positions[i].balanceOracle, address(o));
-            assertEq(positions[i].protocol, "Compound v3 USDC");
             assertFalse(positions[i].isDebt);
-            if (
-                keccak256(bytes(positions[i].positionDetail))
-                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}")
-            ) {
+            if (positions[i].positionKind == PositionKind.Collateral) {
                 assertEq(positions[i].amount, 100);
                 sawCollateral = true;
-            } else if (
-                keccak256(bytes(positions[i].positionDetail))
-                    == keccak256("{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Rewards\"}")
-            ) {
+            } else if (positions[i].positionKind == PositionKind.Earned) {
                 assertEq(positions[i].amount, 25);
                 sawReward = true;
             }
@@ -486,11 +432,8 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
         // Only WETH collateral remains; mockRewardToken (unregistered) is filtered out.
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(weth));
-        assertEq(
-            positions[0].positionDetail,
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Collateral\"}"
-        );
+        assertEq(positions[0].balanceAsset.asset, address(weth));
+        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Collateral));
         assertEq(positions[0].amount, 5 ether);
     }
 
@@ -505,7 +448,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
         // Filter for WETH — only the WETH collateral leg.
         positions = o.getOraclePositions(alice, address(weth));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(weth));
+        assertEq(positions[0].balanceAsset.asset, address(weth));
     }
 
     function test_getOraclePositions_baseSupplyEmitsSupplyDetail() public {
@@ -514,9 +457,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory positions = o.getOraclePositions(alice, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Supply\"}"
-        );
+        assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(positions[0].isDebt);
     }
 
@@ -526,9 +467,7 @@ contract CompoundV3CometTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory positions = o.getOraclePositions(alice, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"type\":\"Borrow\"}"
-        );
+        assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Borrowed));
         assertTrue(positions[0].isDebt);
     }
 

@@ -81,24 +81,16 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         assertEq(pos.length, 3, "two Staking legs + one Rewards leg (BAL is 0 in unit test)");
 
         // Staking legs (staked-BPT share of each pool token)
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 10e18);
-        assertEq(pos[0].positionId, address(gauge).toHexString());
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"rETH/WETH BPT\",\"type\":\"Staking\"}"
-        );
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].positionId, abi.encode(address(gauge)));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
         assertEq(pos[1].amount, 20e18);
 
         // Rewards leg (extra reward token)
-        assertEq(pos[2].underlyingAsset.asset, address(extraReward));
+        assertEq(pos[2].balanceAsset.asset, address(extraReward));
         assertEq(pos[2].amount, 7e18);
         assertFalse(pos[2].isDebt);
-        assertEq(
-            pos[2].positionDetail,
-            "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"rETH/WETH BPT\",\"type\":\"Rewards\"}"
-        );
     }
 
     function test_noStake_onlyRewards() public {
@@ -107,7 +99,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(extraReward));
+        assertEq(pos[0].balanceAsset.asset, address(extraReward));
         assertEq(pos[0].amount, 3e18);
     }
 
@@ -121,7 +113,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(tokenX));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 10e18);
     }
 
@@ -132,8 +124,8 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 2, "only the two registered Staking legs survive");
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
     }
 
     function test_badInstance_isolated() public {

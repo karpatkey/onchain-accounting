@@ -313,7 +313,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 positionsLength = allPositions.length;
         for (uint256 i = 0; i < positionsLength; i++) {
             INAVCalculator.PositionBalance memory pos = allPositions[i];
-            address asset = pos.underlyingAsset.asset;
+            address asset = pos.balanceAsset.asset;
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
             uint8 canonicalDecimals = _getRegisteredAsset(asset).decimals;
             totalValue += _priceConversion(
@@ -372,7 +372,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 _getOraclePositionsView(allOracles[i], account, assetFilter);
 
             for (uint256 j = 0; j < oraclePositions.length; j++) {
-                address asset = oraclePositions[j].underlyingAsset.asset;
+                address asset = oraclePositions[j].balanceAsset.asset;
                 if (!isAssetRegistered(asset)) continue;
                 if (assetFilter != address(0) && asset != assetFilter) continue;
                 temp[count++] = oraclePositions[j];
@@ -449,7 +449,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         positions = new INAVCalculator.Position[](length);
         for (uint256 i = 0; i < length; i++) {
             INAVCalculator.PositionBalance memory balance = positionBalances[i];
-            address asset = balance.underlyingAsset.asset;
+            address asset = balance.balanceAsset.asset;
             INAVCalculator.Asset memory registered = _getRegisteredAsset(asset);
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
             positions[i] = _enrichPositionWithPricing(
@@ -563,7 +563,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 length = positions.length;
         address[] memory allAssets = new address[](length);
         for (uint256 i = 0; i < length; i++) {
-            allAssets[i] = positions[i].underlyingAsset.asset;
+            allAssets[i] = positions[i].balanceAsset.asset;
         }
         uniqueAssets = ArrayLib.deduplicateAddresses(allAssets);
     }
@@ -855,17 +855,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         );
 
         // Build enriched position with canonical asset metadata (decimals, symbol from registry)
-        INAVCalculator.Asset memory underlyingAsset = INAVCalculator.Asset({
-            asset: balance.underlyingAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
+        INAVCalculator.Asset memory balanceAsset = INAVCalculator.Asset({
+            asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
         });
         position = INAVCalculator.Position({
-            underlyingAsset: underlyingAsset,
+            balanceAsset: balanceAsset,
             balanceOracle: balance.balanceOracle,
             amount: balance.amount,
             isDebt: balance.isDebt,
-            protocol: balance.protocol,
-            positionDetail: balance.positionDetail,
+            protocolId: balance.protocolId,
             positionId: balance.positionId,
+            positionKind: balance.positionKind,
             quoteAsset: quoteAssetStruct,
             value: value,
             price: priceFeed.price,

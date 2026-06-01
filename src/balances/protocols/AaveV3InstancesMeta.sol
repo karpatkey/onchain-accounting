@@ -3,8 +3,9 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "./AaveV3Instance.sol";
 
 /// @notice Minimal views to derive an instance's identity on-chain from its ProtocolDataProvider.
@@ -26,11 +27,13 @@ interface IAavePoolAddressesProvider {
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
 ///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_LENDING;
 
-    /// @param protocol_ Protocol identifier (e.g. "Aave V3").
+    /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_) MetaBalanceOracle(protocol_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
@@ -43,8 +46,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         IProtocolDataProvider dp = IProtocolDataProvider(_toAddress(instance));
-        string memory positionId = _poolOf(dp).toHexString();
-        string memory base = _detailBase(dp);
+        address pool = _poolOf(dp);
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 2);
@@ -60,15 +62,14 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
             (uint256 aTokenBalance,, uint256 variableDebt,,,,,, bool usageAsCollateral) =
                 dp.getUserReserveData(asset, account);
 
+            bytes memory pid = abi.encode(pool, asset);
+
             if (aTokenBalance > 0) {
-                string memory detail = usageAsCollateral
-                    ? PositionType.withType(base, PositionType.COLLATERAL)
-                    : PositionType.withType(base, PositionType.SUPPLY);
-                temp[count++] = _row(assetInfo, aTokenBalance, false, positionId, detail);
+                PositionKind kind = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
+                temp[count++] = _row(assetInfo, aTokenBalance, false, pid, kind);
             }
             if (variableDebt > 0) {
-                temp[count++] =
-                    _row(assetInfo, variableDebt, true, positionId, PositionType.withType(base, PositionType.BORROW));
+                temp[count++] = _row(assetInfo, variableDebt, true, pid, PositionKind.Borrowed);
             }
         }
 
@@ -89,19 +90,28 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @notice Resolves the instance's Pool address (used as positionId — matches the per-instance adapter).
+    /// @inheritdoc MetaBalanceOracle
+    /// @dev `virtual` so the Aave V2 subclass can override.
+    function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
+        if (pid.length < 64) return "";
+        (, address reserve) = abi.decode(pid, (address, address));
+        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
+            return string.concat(sym, " position");
+        } catch {
+            return "";
+        }
+    }
+
+    /// @notice Resolves the instance's Pool address (used as first element of positionId).
     /// @dev `virtual` so the Aave V2 subclass can resolve the pool via `getLendingPool()` instead of `getPool()`
     ///      (V2's LendingPoolAddressesProvider uses the former).
     function _poolOf(IProtocolDataProvider dp) internal view virtual returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
     }
 
-    /// @notice Builds the positionDetail JSON base (no closing `}`), deriving the instance name on-chain from the
-    ///         PoolAddressesProvider market id, e.g. `{"protocol":"Aave V3","product":"Lending","name":"<marketId>"`.
-    function _detailBase(IProtocolDataProvider dp) private view returns (string memory) {
-        string memory marketId =
-            IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getMarketId();
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"Lending\",\"name\":\"", marketId, "\"");
+    /// @notice Returns the protocol id constant for this adapter. Virtual so subclasses can override.
+    function _getProtocolId() internal view virtual returns (bytes32) {
+        return PROTOCOL_ID;
     }
 
     /// @notice Assembles a single PositionBalance row with this adapter's identity.
@@ -109,17 +119,17 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.Asset memory asset,
         uint256 amount,
         bool isDebt,
-        string memory positionId,
-        string memory positionDetail
-    ) private view returns (INAVCalculator.PositionBalance memory) {
+        bytes memory pid,
+        PositionKind kind
+    ) internal view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: asset,
+            balanceAsset: asset,
             balanceOracle: address(this),
             amount: amount,
             isDebt: isDebt,
-            protocol: _protocol,
-            positionDetail: positionDetail,
-            positionId: positionId
+            protocolId: _getProtocolId(),
+            positionId: pid,
+            positionKind: kind
         });
     }
 }

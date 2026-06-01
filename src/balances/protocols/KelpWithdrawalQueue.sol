@@ -5,7 +5,8 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Kelp DAO rsETH Withdrawal Queue Balance Oracle
 /// @author kpk
@@ -31,6 +32,8 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     ///      handful of pending requests per asset.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.KELP_WITHDRAWAL;
+
     //
     // State
     //
@@ -41,29 +44,13 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance.
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (withdrawalManager address).
-    string private _positionId;
-
     //
     // Constructor
     //
 
     /// @param withdrawalManager_ Address of Kelp's LRTWithdrawalManager contract.
-    /// @param protocol_ Protocol identifier (e.g. "Kelp").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (withdrawalManager address).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(
-        address withdrawalManager_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address withdrawalManager_, address navCalculator_) {
         if (withdrawalManager_ == address(0)) {
             revert InvalidArguments();
         }
@@ -72,9 +59,6 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         WITHDRAWAL_MANAGER = ILRTWithdrawalManager(withdrawalManager_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -138,6 +122,9 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
+
+    function protocolName() external pure returns (string memory) { return "Kelp DAO"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "rsETH withdrawal queue"; }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset)
@@ -225,13 +212,13 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
             }
 
             tmp[count++] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlying,
+                balanceAsset: underlying,
                 balanceOracle: address(this),
                 amount: owed,
                 isDebt: false,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: "",
+                positionKind: PositionKind.Supplied
             });
         }
 

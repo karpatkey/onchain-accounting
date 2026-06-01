@@ -3,28 +3,30 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Fluid fTokens Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's supply position in *any* Fluid fToken (ERC4626
-///         lending vault) — `convertToAssets(balanceOf(account))` emitted as a single `Supply` leg in the
+///         lending vault) — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the
 ///         fToken's underlying. The instance coordinate is the fToken address, widened to bytes32; the active
-///         fToken set lives on NAVCalculator (`setMetaInstances`). Identity is derived on-chain (positionId =
-///         fToken address; name = fToken `symbol()`, e.g. "fUSDC"). See ADR 0010.
+///         fToken set lives on NAVCalculator (`setMetaInstances`). Identity is encoded as
+///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Mirrors the per-fToken `FluidFTokenBalanceOracle` leg-for-leg.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_FTOKENS;
 
-    /// @param protocol_ Protocol identifier (e.g. "Fluid").
+    /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_) MetaBalanceOracle(protocol_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceOracle
-    /// @dev `instance` is the fToken (ERC4626) address. Emits one `Supply` leg in the fToken's underlying.
+    /// @dev `instance` is the fToken (ERC4626) address. Emits one `Supplied` leg in the fToken's underlying.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -44,13 +46,13 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: assetInfo,
+            balanceAsset: assetInfo,
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_detailBase(address(fToken)), PositionType.SUPPLY),
-            positionId: address(fToken).toHexString()
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(address(fToken)),
+            positionKind: PositionKind.Supplied
         });
         return positions;
     }
@@ -61,14 +63,14 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @notice positionDetail JSON base (no closing `}`); name derived on-chain from the fToken `symbol()`.
-    function _detailBase(address fToken) private view returns (string memory) {
-        string memory name;
-        try IERC20Metadata(fToken).symbol() returns (string memory s) {
-            name = bytes(s).length == 0 ? fToken.toHexString() : s;
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 32) return "";
+        address fToken = abi.decode(pid, (address));
+        try IERC20Metadata(fToken).symbol() returns (string memory sym) {
+            return string.concat(sym, " supply");
         } catch {
-            name = fToken.toHexString();
+            return "";
         }
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"Lending\",\"name\":\"", name, "\"");
     }
 }

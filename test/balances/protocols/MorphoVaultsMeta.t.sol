@@ -116,21 +116,17 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos.length, 2, "two positions");
 
         // vaultA position
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[0].amount, 1_000_000);
         assertFalse(pos[0].isDebt);
         assertEq(pos[0].balanceOracle, address(oracle));
-        assertEq(pos[0].protocol, "Morpho");
-        assertEq(pos[0].positionId, address(vaultA).toHexString());
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"Steakhouse USDC\",\"type\":\"Supply\"}"
-        );
+        assertEq(pos[0].positionId, abi.encode(address(vaultA)));
+
 
         // vaultB position (rate applied)
-        assertEq(pos[1].underlyingAsset.asset, address(weth));
+        assertEq(pos[1].balanceAsset.asset, address(weth));
         assertEq(pos[1].amount, 1e18);
-        assertEq(pos[1].positionId, address(vaultB).toHexString());
+        assertEq(pos[1].positionId, abi.encode(address(vaultB)));
     }
 
     function test_assetFilter_returnsOnlyMatchingVault() public {
@@ -140,7 +136,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(usdc));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
 
     function test_zeroBalance_skipped() public {
@@ -149,7 +145,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
 
     function test_unregisteredAsset_skipped_othersSurvive() public {
@@ -164,7 +160,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 1, "unregistered vault skipped, registered one survives");
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
 
     function test_badInstance_isolated() public {
@@ -175,7 +171,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 1, "bad instance isolated, good one returned");
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
 
     function test_emptyInstances_returnsEmpty() public view {

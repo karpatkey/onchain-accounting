@@ -26,14 +26,7 @@ contract MerklRewardsBalanceOracleForkTest is BalanceAdapterTestBase {
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForOracle(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
-        oracle = new MerklRewardsBalanceOracle(
-            MERKL_DISTRIBUTOR,
-            address(balances),
-            "Merkl",
-            "Unclaimed Rewards",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        oracle = new MerklRewardsBalanceOracle(MERKL_DISTRIBUTOR, address(balances), owner);
     }
 
     // ============================================

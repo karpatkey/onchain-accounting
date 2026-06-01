@@ -113,21 +113,20 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         assertEq(pos.length, 3, "collateral(WETH) + supply(USDC) + borrow(USDC)");
 
         // Reserve order: USDC first, WETH second.
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[0].amount, 1000e6);
         assertFalse(pos[0].isDebt);
-        assertEq(pos[1].underlyingAsset.asset, address(usdc));
+        assertEq(pos[1].balanceAsset.asset, address(usdc));
         assertEq(pos[1].amount, 400e6);
         assertTrue(pos[1].isDebt);
-        assertEq(pos[2].underlyingAsset.asset, address(weth));
+        assertEq(pos[2].balanceAsset.asset, address(weth));
         assertEq(pos[2].amount, 5e18);
         assertFalse(pos[2].isDebt);
 
-        // Identity derived on-chain: positionId = Pool hex.
+        // Identity derived on-chain: positionId = abi.encode(pool, reserve), protocolId = AAVE_V3_LENDING.
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].positionId, pool.toHexString());
             assertEq(pos[i].balanceOracle, address(oracle));
-            assertEq(pos[i].protocol, "Aave V3");
+            assertEq(pos[i].protocolId, keccak256("aave-v3-lending"));
         }
     }
 
@@ -138,8 +137,8 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _ids(), address(usdc));
         assertEq(pos.length, 2, "USDC supply + borrow");
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
-        assertEq(pos[1].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
+        assertEq(pos[1].balanceAsset.asset, address(usdc));
     }
 
     function test_noPosition_empty() public view {

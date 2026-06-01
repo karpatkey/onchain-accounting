@@ -87,13 +87,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         mockMorpho = new MockMorpho(params);
         mockMorpho.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
 
-        oracle = new MorphoMarketBalanceOracle(
-            address(mockMorpho),
-            marketId,
-            "Morpho - Mock",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(address(mockMorpho), marketId, address(balances));
     }
 
     // ============================================
@@ -152,7 +146,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
 
         assertEq(positions.length, 1, "should emit exactly one row");
-        assertEq(positions[0].underlyingAsset.asset, address(usdc), "row asset is loan token");
+        assertEq(positions[0].balanceAsset.asset, address(usdc), "row asset is loan token");
         assertEq(positions[0].amount, 100e6, "amount = supplied assets");
         assertFalse(positions[0].isDebt, "supply row is credit");
     }
@@ -164,7 +158,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
 
         assertEq(positions.length, 1, "should emit exactly one row");
-        assertEq(positions[0].underlyingAsset.asset, address(usdc), "row asset is loan token");
+        assertEq(positions[0].balanceAsset.asset, address(usdc), "row asset is loan token");
         assertEq(positions[0].amount, 50e6, "amount = borrowed assets");
         assertTrue(positions[0].isDebt, "borrow row is debt");
     }
@@ -176,7 +170,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
 
         assertEq(positions.length, 1, "should emit exactly one row");
-        assertEq(positions[0].underlyingAsset.asset, address(weth), "row asset is collateral token");
+        assertEq(positions[0].balanceAsset.asset, address(weth), "row asset is collateral token");
         assertEq(positions[0].amount, 2 ether, "amount = collateral");
         assertFalse(positions[0].isDebt, "collateral row is credit");
     }
@@ -199,7 +193,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         bool sawSupply;
         bool sawBorrow;
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(usdc), "both rows are on the loan token");
+            assertEq(positions[i].balanceAsset.asset, address(usdc), "both rows are on the loan token");
             if (!positions[i].isDebt) {
                 assertEq(positions[i].amount, 100e6, "supply row amount untouched (not netted)");
                 sawSupply = true;
@@ -223,11 +217,11 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         bool sawCollateral;
         bool sawBorrow;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == address(weth)) {
+            if (positions[i].balanceAsset.asset == address(weth)) {
                 assertFalse(positions[i].isDebt);
                 assertEq(positions[i].amount, 1 ether);
                 sawCollateral = true;
-            } else if (positions[i].underlyingAsset.asset == address(usdc)) {
+            } else if (positions[i].balanceAsset.asset == address(usdc)) {
                 assertTrue(positions[i].isDebt);
                 assertEq(positions[i].amount, 50e6);
                 sawBorrow = true;
@@ -250,13 +244,13 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         bool sawSupply;
         bool sawBorrow;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == address(weth) && !positions[i].isDebt) {
+            if (positions[i].balanceAsset.asset == address(weth) && !positions[i].isDebt) {
                 assertEq(positions[i].amount, 2 ether);
                 sawCollateral = true;
-            } else if (positions[i].underlyingAsset.asset == address(usdc) && !positions[i].isDebt) {
+            } else if (positions[i].balanceAsset.asset == address(usdc) && !positions[i].isDebt) {
                 assertEq(positions[i].amount, 100e6);
                 sawSupply = true;
-            } else if (positions[i].underlyingAsset.asset == address(usdc) && positions[i].isDebt) {
+            } else if (positions[i].balanceAsset.asset == address(usdc) && positions[i].isDebt) {
                 assertEq(positions[i].amount, 30e6);
                 sawBorrow = true;
             }
@@ -278,7 +272,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
 
         assertEq(positions.length, 2, "filter to loan token returns supply + borrow");
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(usdc), "all filtered rows are loan token");
+            assertEq(positions[i].balanceAsset.asset, address(usdc), "all filtered rows are loan token");
         }
     }
 
@@ -289,7 +283,7 @@ contract MorphoMarketBalanceOracleUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(weth));
 
         assertEq(positions.length, 1, "filter to collateral token returns one row");
-        assertEq(positions[0].underlyingAsset.asset, address(weth));
+        assertEq(positions[0].balanceAsset.asset, address(weth));
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].amount, 2 ether);
     }

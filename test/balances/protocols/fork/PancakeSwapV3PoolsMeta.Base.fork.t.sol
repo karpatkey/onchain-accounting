@@ -5,8 +5,6 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title PancakeSwapV3PoolsMetaParityForkTest (Base)
 /// @notice Validates the PancakeSwap V3 pools meta-adapter against the real Base WETH/COW 0.25% pool. The key
 ///         check is that the `_slot0` override decodes PancakeSwap's `uint32 feeProtocol` (Uniswap's `uint8` read
@@ -15,8 +13,6 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 ///         the assertion is parity with the per-instance PancakeSwapV3PoolBalanceOracle (both return empty without
 ///         reverting).
 contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address public constant POOL = 0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF; // WETH/COW 0.25%
     address public constant BASE_WETH = 0x4200000000000000000000000000000000000006;
@@ -31,14 +27,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForOracle(_assets());
-        per = new PancakeSwapV3PoolBalanceOracle(
-            POOL,
-            NPM,
-            "PancakeSwap V3",
-            "{\"protocol\":\"PancakeSwap V3\",\"product\":\"LP\",\"name\":\"x\"",
-            POOL.toHexString(),
-            address(balances)
-        );
+        per = new PancakeSwapV3PoolBalanceOracle(POOL, NPM, address(balances));
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
     }
 
@@ -70,8 +59,8 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p =
             meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
         for (uint256 i = 0; i < p.length; i++) {
-            if (p[i].underlyingAsset.asset == BASE_WETH) metaWeth += p[i].amount;
-            if (p[i].underlyingAsset.asset == BASE_COW) metaCow += p[i].amount;
+            if (p[i].balanceAsset.asset == BASE_WETH) metaWeth += p[i].amount;
+            if (p[i].balanceAsset.asset == BASE_COW) metaCow += p[i].amount;
         }
         assertEq(metaWeth, perWeth, "WETH parity");
         assertEq(metaCow, perCow, "COW parity");

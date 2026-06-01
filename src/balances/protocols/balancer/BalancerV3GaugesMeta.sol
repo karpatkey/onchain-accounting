@@ -3,10 +3,10 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IStablePool, IGaugeV3, IBalancerMinter, ITokenAdmin} from "../BalancerV3.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
@@ -22,8 +22,9 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     using SafeCast for uint256;
     using SafeCast for int128;
-    using Strings for address;
     using BalancerV3PoolLib for IStablePool;
+
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_GAUGE;
 
     /// @notice One week in seconds (gauge inflation accounting boundary).
     uint256 public constant WEEK = 7 * 86_400;
@@ -32,10 +33,10 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     IBalancerMinter public immutable BALANCER_MINTER;
 
     /// @param balancerMinter_ Address of the Balancer Minter contract.
-    /// @param protocol_ Protocol identifier (e.g. "Balancer V3").
+    /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address balancerMinter_, string memory protocol_, address navCalculator_)
-        MetaBalanceOracle(protocol_, navCalculator_)
+    constructor(address balancerMinter_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
@@ -53,8 +54,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         IStablePool pool = IStablePool(gauge.lp_token());
-        string memory positionId = address(gauge).toHexString();
-        string memory base = _detailBase(IERC20Metadata(address(pool)).name());
+        bytes memory positionId = abi.encode(address(gauge));
 
         address[] memory tokens = pool.poolTokens();
         // Worst case: one Staking leg per pool token + one Rewards leg per (pool token also a reward) + BAL +
@@ -67,7 +67,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         // Staking legs: account's staked-BPT share of each pool token.
         uint256 staked = gauge.balanceOf(account);
         if (staked != 0) {
-            string memory stakingDetail = PositionType.withType(base, PositionType.STAKING);
             for (uint256 i = 0; i < tokens.length; i++) {
                 address token = tokens[i];
                 if (assetFilter != address(0) && token != assetFilter) continue;
@@ -75,19 +74,17 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
                 if (!found) continue;
                 uint256 amount = pool.poolBalanceOf(staked, token);
                 if (amount == 0) continue;
-                temp[count++] = _row(assetInfo, amount, positionId, stakingDetail);
+                temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Supplied);
             }
         }
 
         // Rewards legs: BAL (minted via the minter) + the gauge's extra reward tokens.
-        string memory rewardsDetail = PositionType.withType(base, PositionType.REWARDS);
         address balToken = BALANCER_MINTER.getBalancerToken();
-        count = _addReward(temp, count, balToken, claimableBal(gauge, account), positionId, rewardsDetail, assetFilter);
+        count = _addReward(temp, count, balToken, claimableBal(gauge, account), positionId, assetFilter);
         for (uint256 i = 0; i < rewardCount; i++) {
             address rt = _rewardToken(gauge, i);
             if (rt == address(0) || rt == balToken) continue;
-            count =
-                _addReward(temp, count, rt, gaugeRewards(gauge, account, rt), positionId, rewardsDetail, assetFilter);
+            count = _addReward(temp, count, rt, gaugeRewards(gauge, account, rt), positionId, assetFilter);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -117,6 +114,16 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         // Trim
         assembly {
             mstore(assets, n)
+        }
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata positionId) external view override returns (string memory) {
+        address gauge = abi.decode(positionId, (address));
+        try IERC20Metadata(gauge).symbol() returns (string memory s) {
+            return s;
+        } catch {
+            return "";
         }
     }
 
@@ -246,31 +253,31 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         uint256 count,
         address token,
         uint256 amount,
-        string memory positionId,
-        string memory rewardsDetail,
+        bytes memory positionId,
         address assetFilter
     ) private view returns (uint256) {
         if (amount == 0) return count;
         if (assetFilter != address(0) && token != assetFilter) return count;
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) return count;
-        temp[count] = _row(assetInfo, amount, positionId, rewardsDetail);
+        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Earned);
         return count + 1;
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, string memory positionId, string memory detail)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
+    function _row(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        bytes memory positionId,
+        PositionKind kind
+    ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: asset,
+            balanceAsset: asset,
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: detail,
-            positionId: positionId
+            protocolId: PROTOCOL_ID,
+            positionId: positionId,
+            positionKind: kind
         });
     }
 
@@ -288,10 +295,5 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         } catch {
             return address(0);
         }
-    }
-
-    /// @notice positionDetail JSON base (no closing `}`), deriving the pool name on-chain from the BPT token name.
-    function _detailBase(string memory poolName) private view returns (string memory) {
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"LP\",\"name\":\"", poolName, "\"");
     }
 }

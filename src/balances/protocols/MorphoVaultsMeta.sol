@@ -4,23 +4,24 @@ pragma solidity ^0.8;
 import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Vaults Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports the underlying-asset balance for an account's position in *any*
 ///         Morpho ERC4626 vault. The set of vaults to query is configured on NAVCalculator (per-oracle,
 ///         MANAGER-gated) and passed in as `bytes32` instance coordinates (vault addresses widened to bytes32).
-/// @dev Per-instance identity is derived on-chain: `positionId` is the vault address as hex, and the
-///      `positionDetail` name is read from the vault's ERC20 `name()`. Supports ERC4626-compliant Morpho vaults
+/// @dev Per-instance identity is encoded as `abi.encode(address(vault))`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
 contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_VAULTS;
 
-    /// @param protocol_ Protocol identifier (e.g. "Morpho").
+    /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_) MetaBalanceOracle(protocol_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev Returns an empty array (rather than reverting) when the vault asset is unregistered or the balance is
@@ -52,13 +53,13 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: assetInfo,
+            balanceAsset: assetInfo,
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetailBase(vault), PositionType.SUPPLY),
-            positionId: address(vault).toHexString()
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(address(vault)),
+            positionKind: PositionKind.Supplied
         });
         return positions;
     }
@@ -69,9 +70,14 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @notice Builds the positionDetail JSON base (no closing `}`), deriving the vault name on-chain.
-    /// @dev e.g. `{"protocol":"Morpho","product":"Vault","name":"Steakhouse USDC"`.
-    function _positionDetailBase(IERC4626 vault) internal view returns (string memory) {
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"Vault\",\"name\":\"", vault.name(), "\"");
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 32) return "";
+        address vault = abi.decode(pid, (address));
+        try IERC4626(vault).name() returns (string memory n) {
+            return n;
+        } catch {
+            return "";
+        }
     }
 }

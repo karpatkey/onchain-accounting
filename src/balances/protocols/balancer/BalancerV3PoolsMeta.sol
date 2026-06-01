@@ -3,9 +3,9 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IStablePool} from "../BalancerV3.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
@@ -16,12 +16,15 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 ///         BalancerV3GaugesMetaBalanceAdapter). The instance coordinate is the pool (BPT) address, widened to bytes32.
 ///         Emits one `Supply` leg per registered underlying pool token. See ADR 0010.
 contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
     using BalancerV3PoolLib for IStablePool;
 
-    /// @param protocol_ Protocol identifier (e.g. "Balancer V3").
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_POOL;
+
+    /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_) MetaBalanceOracle(protocol_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the pool (BPT) address. Emits one Supply leg per registered pool token for the account's
@@ -39,9 +42,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         address[] memory tokens = pool.poolTokens();
-        string memory positionId = address(pool).toHexString();
-        string memory detail =
-            PositionType.withType(_detailBase(IERC20Metadata(address(pool)).name()), PositionType.SUPPLY);
+        bytes memory positionId = abi.encode(address(pool));
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](tokens.length);
         uint256 count;
@@ -56,13 +57,13 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
             if (amount == 0) continue;
 
             temp[count++] = INAVCalculator.PositionBalance({
-                underlyingAsset: assetInfo,
+                balanceAsset: assetInfo,
                 balanceOracle: address(this),
                 amount: amount,
                 isDebt: false,
-                protocol: _protocol,
-                positionDetail: detail,
-                positionId: positionId
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied
             });
         }
 
@@ -78,8 +79,13 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         return IStablePool(_toAddress(instance)).poolTokens();
     }
 
-    /// @notice positionDetail JSON base (no closing `}`), deriving the pool name on-chain from the BPT token name.
-    function _detailBase(string memory poolName) private view returns (string memory) {
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"LP\",\"name\":\"", poolName, "\"");
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata positionId) external view override returns (string memory) {
+        address pool = abi.decode(positionId, (address));
+        try IERC20Metadata(pool).name() returns (string memory n) {
+            return n;
+        } catch {
+            return "";
+        }
     }
 }

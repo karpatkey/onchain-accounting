@@ -6,8 +6,6 @@ import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title BalancerMetaParityForkTest
 /// @notice Proves the split (BalancerV3PoolsMeta = wallet LP, BalancerV3GaugesMeta = staked LP + rewards) reproduces the
 ///         original combined BalancerV3PoolBalanceOracle per token, against the real mainnet Aave GHO/USDT/USDC pool
@@ -16,8 +14,6 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 ///         `poolBalanceOf(wallet + staked)` conversion while the split does two — a ≤ a-few-units rounding
 ///         difference per token (see BalancerV3PoolLib), asserted within tight tolerances.
 contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant POOL = 0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D;
     address public constant GAUGE = 0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f;
     address public constant BALANCER_MINTER = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b;
@@ -52,15 +48,7 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deployAll() internal {
         balances = _deployBalancesForOracle(_supportedAssets());
-        combined = new BalancerV3PoolBalanceOracle(
-            POOL,
-            GAUGE,
-            BALANCER_MINTER,
-            "Balancer V3",
-            "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
-            POOL.toHexString(),
-            address(balances)
-        );
+        combined = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, address(balances));
         pools = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(balances));
         gauges = new BalancerV3GaugesMetaBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
     }
@@ -144,13 +132,12 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p =
             pools.getOraclePositionsForInstances(MAINNET_WHALE_USER, _poolInstance(), address(0));
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, POOL.toHexString(), "pool positionId = pool address");
-            assertEq(p[i].protocol, "Balancer V3");
+            assertEq(p[i].positionId, abi.encode(POOL), "pool positionId = pool address");
         }
         INAVCalculator.PositionBalance[] memory g =
             gauges.getOraclePositionsForInstances(MAINNET_WHALE_USER, _gaugeInstance(), address(0));
         for (uint256 i = 0; i < g.length; i++) {
-            assertEq(g[i].positionId, GAUGE.toHexString(), "gauge positionId = gauge address");
+            assertEq(g[i].positionId, abi.encode(GAUGE), "gauge positionId = gauge address");
         }
     }
 }

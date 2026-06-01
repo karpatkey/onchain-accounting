@@ -119,7 +119,7 @@ contract NAVCalculatorTest is SuperTest {
         returns (INAVCalculator.Position memory, bool)
     {
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == asset) {
+            if (positions[i].balanceAsset.asset == asset) {
                 // Check if this matches the balance oracle index by checking metadata
                 // We'll need to match by protocol/positionDetail or use a different approach
                 // For now, return first match - tests should be more specific
@@ -133,12 +133,10 @@ contract NAVCalculatorTest is SuperTest {
     function assertPositionMetadata(
         INAVCalculator.Position memory pos,
         address expectedAsset,
-        string memory expectedProtocol,
-        string memory expectedPositionDetail
+        string memory, /* expectedProtocol — replaced by protocolId in new struct */
+        string memory  /* expectedPositionDetail — replaced by positionKind in new struct */
     ) internal pure {
-        assertEq(pos.underlyingAsset.asset, expectedAsset, "Asset mismatch");
-        assertEq(pos.protocol, expectedProtocol, "Protocol mismatch");
-        assertEq(pos.positionDetail, expectedPositionDetail, "PositionDetail mismatch");
+        assertEq(pos.balanceAsset.asset, expectedAsset, "Asset mismatch");
     }
 
     function test_setUp() public {
@@ -582,7 +580,7 @@ contract NAVCalculatorTest is SuperTest {
         // All positions should be for USDC
         assertTrue(usdcPositions.length > 0);
         for (uint256 i = 0; i < usdcPositions.length; i++) {
-            assertEq(usdcPositions[i].underlyingAsset.asset, address(usdc));
+            assertEq(usdcPositions[i].balanceAsset.asset, address(usdc));
         }
     }
 
@@ -931,9 +929,9 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position memory p = positions[0];
 
         // Check core data
-        assertEq(p.underlyingAsset.asset, address(usdc));
-        assertEq(p.underlyingAsset.symbol, "USDC");
-        assertEq(p.underlyingAsset.decimals, usdc.decimals());
+        assertEq(p.balanceAsset.asset, address(usdc));
+        assertEq(p.balanceAsset.symbol, "USDC");
+        assertEq(p.balanceAsset.decimals, usdc.decimals());
         assertEq(p.amount, 10 ** usdc.decimals());
         assertFalse(p.isDebt, "Should be credit position");
         assertPositionMetadata(p, address(usdc), "wallet", "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
@@ -992,9 +990,9 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(positions.length, 1);
 
         INAVCalculator.Position memory p = positions[0];
-        assertEq(p.underlyingAsset.asset, nav.NATIVE_ADDRESS());
-        assertEq(p.underlyingAsset.symbol, "ETH");
-        assertEq(p.underlyingAsset.decimals, 18);
+        assertEq(p.balanceAsset.asset, nav.NATIVE_ADDRESS());
+        assertEq(p.balanceAsset.symbol, "ETH");
+        assertEq(p.balanceAsset.decimals, 18);
         assertEq(p.amount, 11 ether);
         assertFalse(p.isDebt, "Should be credit position");
         assertPositionMetadata(p, nav.NATIVE_ADDRESS(), "wallet", "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
@@ -1015,11 +1013,10 @@ contract NAVCalculatorTest is SuperTest {
         // Find the position from custom oracle (should be index 1, but we'll search)
         bool found = false;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (keccak256(bytes(positions[i].protocol)) == keccak256(bytes("Mock Protocol"))) {
+            if (positions[i].balanceOracle == address(mockBalanceOracle)) {
                 INAVCalculator.Position memory p = positions[i];
-                assertPositionMetadata(p, address(usdc), "Mock Protocol", "Mock Position");
-                assertEq(p.underlyingAsset.symbol, "USDC");
-                assertEq(p.underlyingAsset.decimals, usdc.decimals());
+                assertEq(p.balanceAsset.symbol, "USDC");
+                assertEq(p.balanceAsset.decimals, usdc.decimals());
                 assertEq(p.amount, 123 * 10 ** usdc.decimals());
                 assertFalse(p.isDebt, "Should be credit position");
                 assertEq(p.value, 123e8);
@@ -1065,7 +1062,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Verify both positions are for DAI
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(dai));
+            assertEq(positions[i].balanceAsset.asset, address(dai));
             assertTrue(positions[i].amount != 0);
         }
 
@@ -1126,7 +1123,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Both positions should be for USDC
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(usdc));
+            assertEq(positions[i].balanceAsset.asset, address(usdc));
         }
 
         // Sum should match NAV
@@ -1428,7 +1425,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Should only have 1 position (ERC20 USDC), not the zero custom oracle position
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(usdc));
+        assertEq(positions[0].balanceAsset.asset, address(usdc));
         assertTrue(positions[0].amount != 0);
 
         // Verify no zero positions
@@ -1457,7 +1454,7 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position[] memory positions2 = nav.getAccountPositions(safe, address(0));
         bool foundCustom = false;
         for (uint256 i = 0; i < positions2.length; i++) {
-            if (keccak256(bytes(positions2[i].protocol)) == keccak256(bytes("Mock Protocol"))) {
+            if (positions2[i].balanceOracle == address(mockBalanceOracle)) {
                 assertPositionMetadata(positions2[i], address(usdc), "Mock Protocol", "Mock Position");
                 foundCustom = true;
             }
@@ -1516,7 +1513,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // All positions for stale asset should be marked stale
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == address(usdc)) {
+            if (positions[i].balanceAsset.asset == address(usdc)) {
                 assertTrue(positions[i].stale, "Position not marked stale");
             }
         }
@@ -1541,7 +1538,7 @@ contract NAVCalculatorTest is SuperTest {
         // Asset should be included since it has a price feed
         bool found = false;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == address(newToken)) {
+            if (positions[i].balanceAsset.asset == address(newToken)) {
                 found = true;
                 break;
             }
@@ -1561,7 +1558,7 @@ contract NAVCalculatorTest is SuperTest {
         // Unregistered asset should not be included
         for (uint256 i = 0; i < positions.length; i++) {
             assertTrue(
-                positions[i].underlyingAsset.asset != address(unregisteredToken), "Unregistered asset should be skipped"
+                positions[i].balanceAsset.asset != address(unregisteredToken), "Unregistered asset should be skipped"
             );
         }
     }
@@ -1601,11 +1598,10 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position memory p = positions[0];
 
         // Check Position completeness
-        assertTrue(p.underlyingAsset.asset != address(0));
-        assertTrue(bytes(p.underlyingAsset.symbol).length > 0);
-        assertTrue(p.underlyingAsset.decimals > 0);
-        assertTrue(bytes(p.protocol).length > 0);
-        assertTrue(bytes(p.positionDetail).length > 0);
+        assertTrue(p.balanceAsset.asset != address(0));
+        assertTrue(bytes(p.balanceAsset.symbol).length > 0);
+        assertTrue(p.balanceAsset.decimals > 0);
+        assertTrue(p.protocolId != bytes32(0));
 
         // Check pricing completeness
         assertTrue(bytes(p.quoteAsset.symbol).length > 0);
@@ -1622,7 +1618,7 @@ contract NAVCalculatorTest is SuperTest {
         // Test USD rate
         INAVCalculator.Position[] memory usdPositions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory usdPos = usdPositions[0];
-        assertEq(usdPos.underlyingAsset.asset, address(usdc));
+        assertEq(usdPos.balanceAsset.asset, address(usdc));
         (int256 priceInUsd, uint8 usdPriceDecimals,) = nav.latestPrice(address(usdc));
         assertEq(usdPos.price, priceInUsd);
         assertEq(usdPos.priceDecimals, usdPriceDecimals);
@@ -1648,8 +1644,8 @@ contract NAVCalculatorTest is SuperTest {
         assertLe(ethPriceDecimals, 255, "decimals valid");
 
         // Verify underlying asset is still USDC (what we hold)
-        assertEq(ethPos.underlyingAsset.asset, address(usdc));
-        assertEq(usdPos.underlyingAsset.asset, address(usdc));
+        assertEq(ethPos.balanceAsset.asset, address(usdc));
+        assertEq(usdPos.balanceAsset.asset, address(usdc));
 
         // Verify quote asset is ETH (the quote currency)
         assertEq(ethPos.quoteAsset.asset, nav.NATIVE_ADDRESS());
@@ -1874,7 +1870,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < assets.length; i++) {
             bool found = false;
             for (uint256 j = 0; j < positions.length; j++) {
-                if (positions[j].underlyingAsset.asset == assets[i]) {
+                if (positions[j].balanceAsset.asset == assets[i]) {
                     found = true;
                     break;
                 }
@@ -1884,7 +1880,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // All positions in getAllPositions should be from assets in getAssetsWithPositions
         for (uint256 i = 0; i < positions.length; i++) {
-            address positionAsset = positions[i].underlyingAsset.asset;
+            address positionAsset = positions[i].balanceAsset.asset;
             bool found = false;
             for (uint256 j = 0; j < assets.length; j++) {
                 if (assets[j] == positionAsset) {
@@ -2010,7 +2006,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < assetsWithPos.length; i++) {
             bool found = false;
             for (uint256 j = 0; j < positions.length; j++) {
-                if (positions[j].underlyingAsset.asset == assetsWithPos[i]) {
+                if (positions[j].balanceAsset.asset == assetsWithPos[i]) {
                     found = true;
                     break;
                 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "./IMetaBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -15,13 +16,13 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getOraclePositionsForInstances` is also exposed for explicit/off-chain queries.
-abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
+abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescribable {
     //
     // State
     //
 
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Morpho"). Set once at construction.
-    string internal _protocol;
+    /// @notice Human-readable protocol name for IPositionDescribable (e.g. "Morpho"). Set once at construction.
+    string internal _protocolName;
 
     /// @notice NAVCalculator reference, used for the registered-asset registry.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -30,11 +31,11 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
     // Constructor
     //
 
-    /// @param protocol_ Protocol identifier (e.g. "Morpho").
+    /// @param protocolName_ Human-readable protocol name for verbose reads (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_) {
+    constructor(string memory protocolName_, address navCalculator_) {
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
-        _protocol = protocol_;
+        _protocolName = protocolName_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -45,8 +46,22 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
         return interfaceId == type(IMetaBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
+
+    //
+    // IPositionDescribable
+    //
+
+    /// @inheritdoc IPositionDescribable
+    function protocolName() external view virtual override returns (string memory) {
+        return _protocolName;
+    }
+
+    /// @inheritdoc IPositionDescribable
+    /// @dev Concrete adapters must override — derives a human-readable label from the encoded instance coordinate.
+    function describePosition(bytes calldata positionId) external view virtual override returns (string memory);
 
     //
     // IBalanceOracleAdapter

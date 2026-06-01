@@ -78,14 +78,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function _perInstance(MockUniswapV3Pool pool) internal returns (UniswapV3PoolBalanceOracle) {
-        return new UniswapV3PoolBalanceOracle(
-            address(pool),
-            address(npm),
-            "Uniswap V3",
-            "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"x\"",
-            "0x01",
-            address(nav)
-        );
+        return new UniswapV3PoolBalanceOracle(address(pool), address(npm), address(nav));
     }
 
     /// @notice Sum of meta legs for a single (pool, token).
@@ -94,7 +87,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         one[0] = instance;
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         for (uint256 i = 0; i < p.length; i++) {
-            if (p[i].underlyingAsset.asset == token) sum += p[i].amount;
+            if (p[i].balanceAsset.asset == token) sum += p[i].amount;
         }
     }
 
@@ -132,30 +125,17 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         assertEq(p.length, 8, "4 legs per pool");
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].balanceOracle, address(meta));
-            assertEq(p[i].protocol, "Uniswap V3");
             assertFalse(p[i].isDebt);
         }
-        // poolA legs carry the pool-A positionId + derived name "WBTC/WETH 0.3%".
-        assertEq(p[0].positionId, address(poolA).toHexString());
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WBTC/WETH 0.3%\",\"type\":\"Supply\"}"
-        );
-        // poolB derived name "USDC/WETH 0.05%".
-        assertEq(p[4].positionId, address(poolB).toHexString());
-        assertEq(
-            p[4].positionDetail,
-            "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"USDC/WETH 0.05%\",\"type\":\"Supply\"}"
-        );
+        // poolA legs carry positionId = abi.encode(npm, tokenId=1)
+        assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
+        // poolB legs carry positionId = abi.encode(npm, tokenId=2)
+        assertEq(p[4].positionId, abi.encode(address(npm), uint256(2)));
     }
 
     function test_feesLegType() public view {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         // The 3rd/4th poolA legs are Fees (tokensOwed 42/1337).
-        assertEq(
-            p[2].positionDetail,
-            "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WBTC/WETH 0.3%\",\"type\":\"Fees\"}"
-        );
         assertEq(p[2].amount, 42);
         assertEq(p[3].amount, 1337);
     }
@@ -165,7 +145,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(wbtc));
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].underlyingAsset.asset, address(wbtc));
+            assertEq(p[i].balanceAsset.asset, address(wbtc));
         }
         assertGt(p.length, 0);
     }
@@ -176,7 +156,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].underlyingAsset.asset, address(wbtc), "only WBTC legs survive");
+            assertEq(p[i].balanceAsset.asset, address(wbtc), "only WBTC legs survive");
         }
         assertGt(p.length, 0);
     }

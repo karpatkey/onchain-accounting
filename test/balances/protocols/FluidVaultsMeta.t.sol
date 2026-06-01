@@ -10,6 +10,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockFluidVaultT1, MockFluidVaultResolver, MockToken} from "test/balances/protocols/FluidVault.t.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title FluidVaultsMetaBalanceAdapter unit tests (no fork)
 contract FluidVaultsMetaBalanceAdapterTest is Test {
@@ -71,28 +72,21 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertEq(p.length, 4);
 
         // vaultA Collateral (wstETH)
-        assertEq(p[0].underlyingAsset.asset, address(wsteth));
+        assertEq(p[0].balanceAsset.asset, address(wsteth));
         assertEq(p[0].amount, 5e18);
         assertFalse(p[0].isDebt);
-        assertEq(p[0].positionId, address(vaultA).toHexString());
-        assertEq(p[0].protocol, "Fluid");
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"wstETH/USDC\",\"type\":\"Collateral\"}"
-        );
+        assertEq(p[0].positionId, abi.encode(address(vaultA)));
+
         // vaultA Borrow (USDC)
-        assertEq(p[1].underlyingAsset.asset, address(usdc));
+        assertEq(p[1].balanceAsset.asset, address(usdc));
         assertEq(p[1].amount, 1000e6);
         assertTrue(p[1].isDebt);
-        assertEq(
-            p[1].positionDetail,
-            "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"wstETH/USDC\",\"type\":\"Borrow\"}"
-        );
+
         // vaultB Collateral (weETH) + Borrow (wstETH)
-        assertEq(p[2].underlyingAsset.asset, address(weeth));
+        assertEq(p[2].balanceAsset.asset, address(weeth));
         assertEq(p[2].amount, 2e18);
         assertFalse(p[2].isDebt);
-        assertEq(p[3].underlyingAsset.asset, address(wsteth));
+        assertEq(p[3].balanceAsset.asset, address(wsteth));
         assertEq(p[3].amount, 1e18);
         assertTrue(p[3].isDebt);
     }
@@ -112,7 +106,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(usdc));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(usdc));
+        assertEq(p[0].balanceAsset.asset, address(usdc));
         assertTrue(p[0].isDebt);
     }
 
@@ -122,7 +116,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         assertEq(p.length, 1, "only the registered collateral leg survives");
-        assertEq(p[0].underlyingAsset.asset, address(wsteth));
+        assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_badInstance_isolated() public view {

@@ -7,15 +7,11 @@ import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title FluidFTokensMetaParityForkTest
 /// @notice Proves the Fluid fTokens meta-adapter reproduces the per-fToken FluidFTokenBalanceOracle exactly,
 ///         against the real mainnet fUSDC vault with a deal-and-deposit position. Both adapters share one
 ///         BalancesHarnessForFork.
 contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant F_USDC = 0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     uint256 public constant FORK_BLOCK = 23_641_970;
@@ -39,13 +35,7 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         balances = _deployBalancesForOracle(USDC);
-        per = new FluidFTokenBalanceOracle(
-            F_USDC,
-            "Fluid",
-            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
-            F_USDC.toHexString(),
-            address(balances)
-        );
+        per = new FluidFTokenBalanceOracle(F_USDC, address(balances));
         meta = new FluidFTokensMetaBalanceAdapter("Fluid", address(balances));
     }
 
@@ -60,7 +50,6 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         assertEq(p.length, 1);
         assertEq(p[0].amount, perAmt, "USDC supply parity");
         assertApproxEqAbs(p[0].amount, 50_000e6, 1, "approx deposited assets");
-        assertEq(p[0].positionId, F_USDC.toHexString());
-        assertEq(p[0].protocol, "Fluid");
+        assertEq(p[0].positionId, abi.encode(F_USDC));
     }
 }

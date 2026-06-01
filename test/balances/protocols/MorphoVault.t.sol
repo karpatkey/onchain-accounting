@@ -51,13 +51,7 @@ contract MorphoVaultBalanceOracleTest is Test {
         mockBalances = new MockBalances();
         mockAsset = new MockToken();
         mockVault = new MockMorphoVault(address(mockAsset));
-        oracle = new MorphoVaultBalanceOracle(
-            address(mockVault),
-            "Morpho",
-            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        oracle = new MorphoVaultBalanceOracle(address(mockVault), address(mockBalances));
     }
 
     // ============================================
@@ -66,35 +60,17 @@ contract MorphoVaultBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroVault() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MorphoVaultBalanceOracle(
-            address(0),
-            "Morpho",
-            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new MorphoVaultBalanceOracle(address(0), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractVault() public {
         vm.expectRevert("Vault must be a contract");
-        new MorphoVaultBalanceOracle(
-            address(0xdead),
-            "Morpho",
-            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new MorphoVaultBalanceOracle(address(0xdead), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new MorphoVaultBalanceOracle(
-            address(mockVault),
-            "Morpho",
-            "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpkUSDC Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(0xdead)
-        );
+        new MorphoVaultBalanceOracle(address(mockVault), address(0xdead));
     }
 
     function test_constructor_stores_immutables() public view {

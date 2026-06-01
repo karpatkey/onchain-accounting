@@ -40,9 +40,6 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(_getAaveAssets());
         oracle = new AaveV3InstanceBalanceOracle(
             address(AAVE_DATA_PROVIDER),
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }
@@ -178,9 +175,6 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(USDT);
         oracle = new AaveV3InstanceBalanceOracle(
             address(AAVE_DATA_PROVIDER),
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
 
@@ -230,7 +224,7 @@ contract AaveV3InstanceBalanceOracleForkTest is BalanceAdapterTestBase {
         // Verify positions have correct structure
         for (uint256 i = 0; i < positions.length; i++) {
             assertTrue(positions[i].amount > 0, "Position amount should be positive");
-            assertEq(positions[i].underlyingAsset.asset, positions[i].underlyingAsset.asset, "Asset should match");
+            assertEq(positions[i].balanceAsset.asset, positions[i].balanceAsset.asset, "Asset should match");
         }
     }
 }

@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @dev Minimal subset of the Umbrella stake-token / RewardsController surface needed by this test
 ///      to compute expected values independently of the adapter under test.
@@ -88,10 +89,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForOracle(assets);
         oracle = new AaveUmbrellaBalanceOracle(
             address(REWARDS_CONTROLLER),
-            address(balances),
-            "Aave Umbrella",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"",
-            "0x0000000000000000000000000000000000000001"
+            address(balances)
         );
     }
 
@@ -160,12 +158,11 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         for (uint256 i; i < positions.length; ++i) {
             assertGt(positions[i].amount, 0);
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "Aave Umbrella");
             assertFalse(positions[i].isDebt);
 
-            if (positions[i].underlyingAsset.asset == USDC) {
-                if (_eq(positions[i].positionDetail, _detail("Staking"))) sawStaked = true;
-                if (_eq(positions[i].positionDetail, _detail("Rewards"))) sawRewards = true;
+            if (positions[i].balanceAsset.asset == USDC) {
+                if (positions[i].positionKind == PositionKind.Supplied) sawStaked = true;
+                if (positions[i].positionKind == PositionKind.Earned) sawRewards = true;
             }
         }
         assertTrue(sawStaked, "missing USDC/stkwaEthUSDC.v1 Staking position");
@@ -180,9 +177,9 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawStaked;
         bool sawRewards;
         for (uint256 i; i < positions.length; ++i) {
-            if (positions[i].underlyingAsset.asset != GHO) continue;
-            if (_eq(positions[i].positionDetail, _detail("Staking"))) sawStaked = true;
-            if (_eq(positions[i].positionDetail, _detail("Rewards"))) sawRewards = true;
+            if (positions[i].balanceAsset.asset != GHO) continue;
+            if (positions[i].positionKind == PositionKind.Supplied) sawStaked = true;
+            if (positions[i].positionKind == PositionKind.Earned) sawRewards = true;
         }
         assertTrue(sawStaked, "missing GHO/stkGHO.v1 Staking position");
         assertTrue(sawRewards, "missing GHO/stkGHO.v1 Rewards position");
@@ -193,7 +190,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 2);
         for (uint256 i; i < positions.length; ++i) {
-            assertEq(positions[i].underlyingAsset.asset, GHO);
+            assertEq(positions[i].balanceAsset.asset, GHO);
         }
     }
 

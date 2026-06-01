@@ -10,7 +10,8 @@ import {InvalidArguments} from "src/errors.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 // solhint-disable func-name-mixedcase
 
@@ -46,12 +47,9 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Balancer Minter contract that mints the BAL token
     IBalancerMinter public immutable BALANCER_MINTER;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`) for this oracle
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (pool address)
-    string private _positionId;
+    /// @notice Protocol identifier constant
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_POOL;
+
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -59,18 +57,12 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @param pool_ Address of the Balancer V3 pool
     /// @param gauge_ Address of the corresponding gauge contract
     /// @param balancerMinter_ Address of the Balancer Minter contract
-    /// @param protocol_ Protocol identifier (e.g., "Balancer V3").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     /// @dev Validates that the gauge's LP token matches the pool address
     constructor(
         address pool_,
         address gauge_,
         address balancerMinter_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         if (pool_ == address(0) || gauge_ == address(0)) {
@@ -94,9 +86,16 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
             revert InvalidArguments();
         }
 
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
+    }
+
+    /// @notice Returns the human-readable protocol name.
+    function protocolName() external pure returns (string memory) {
+        return "Balancer V3";
+    }
+
+    /// @notice Returns a human-readable description of the position.
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "LP position";
     }
 
     /// @notice Calculates a user's token balance in the pool
@@ -608,13 +607,13 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(POOL)),
+                positionKind: PositionKind.Supplied
             });
 
             positionCount++;
@@ -674,24 +673,24 @@ contract BalancerV3PoolBalanceOracle is IBalanceOracleAdapter {
 
             if (unstakedAmount > 0) {
                 tempPositions[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetInfo,
+                    balanceAsset: assetInfo,
                     balanceOracle: address(this),
                     amount: unstakedAmount,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(POOL)),
+                    positionKind: PositionKind.Supplied
                 });
             }
             if (stakedAndRewardAmount > 0) {
                 tempPositions[count++] = INAVCalculator.PositionBalance({
-                    underlyingAsset: assetInfo,
+                    balanceAsset: assetInfo,
                     balanceOracle: address(this),
                     amount: stakedAndRewardAmount,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(POOL)),
+                    positionKind: PositionKind.Supplied
                 });
             }
         }

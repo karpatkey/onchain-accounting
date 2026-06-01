@@ -66,9 +66,9 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         for (uint256 i = 0; i < positions.length; i++) {
             INAVCalculator.Position memory p = positions[i];
             console2.log("  index", i);
-            console2.log("       underlyingAsset.asset", p.underlyingAsset.asset);
-            console2.log("       underlyingAsset.symbol", p.underlyingAsset.symbol);
-            console2.log("       underlyingAsset.decimals", p.underlyingAsset.decimals);
+            console2.log("       underlyingAsset.asset", p.balanceAsset.asset);
+            console2.log("       underlyingAsset.symbol", p.balanceAsset.symbol);
+            console2.log("       underlyingAsset.decimals", p.balanceAsset.decimals);
             console2.log("       balanceOracle", p.balanceOracle);
             console2.log("       amount", p.amount);
             console2.log("       isDebt", p.isDebt);
@@ -78,8 +78,7 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
             console2.log("       price", p.price);
             console2.log("       priceDecimals", p.priceDecimals);
             console2.log("       stale", p.stale);
-            console2.log("       protocol", p.protocol);
-            console2.log("       positionDetail", p.positionDetail);
+            console2.logBytes32(p.protocolId);
         }
     }
 
@@ -127,17 +126,9 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         address compoundRewardContract_,
         address comet_,
         address compound_,
-        string memory protocol_,
+        string memory, /* protocol_ — unused after constructor simplification */
         address nav_
     ) external returns (CompoundV3Comet) {
-        return new CompoundV3Comet(
-            compoundRewardContract_,
-            comet_,
-            compound_,
-            protocol_,
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            nav_
-        );
+        return new CompoundV3Comet(compoundRewardContract_, comet_, compound_, nav_);
     }
 }

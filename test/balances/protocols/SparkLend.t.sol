@@ -17,13 +17,7 @@ contract SparkLendBalanceOracleTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        oracle = new SparkLendBalanceOracle(
-            address(mockDataProvider),
-            "Spark",
-            "{\"protocol\":\"Spark\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new SparkLendBalanceOracle(address(mockDataProvider), address(balances));
     }
 
     // ============================================

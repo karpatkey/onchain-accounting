@@ -51,14 +51,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
@@ -70,14 +63,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
@@ -89,14 +75,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER2, GNO);
@@ -124,14 +103,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
         vaultContract = IEthGenesisVault(STAKE_WISE_VAULT);
 
         (uint256 initialAmount,) = oracle.getOracleBalanceForAsset(TEST_USER, GNO);
@@ -172,14 +144,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_3);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
 
         address user = 0x564E604edA8c878021126C06084a4dA4E1A960Cb;
         (uint256 amount,) = oracle.getOracleBalanceForAsset(user, GNO);
@@ -198,14 +163,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
 
         (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(TEST_USER);
 
@@ -218,14 +176,7 @@ contract StakeWiseV3VaultBalanceOracleForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
 
         balances = _deployBalancesForOracle(GNO);
-        oracle = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            STAKE_WISE_VAULT,
-            "Stakewise v3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StakeWiseV3VaultBalanceOracle(GNO, STAKE_WISE_VAULT, address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, address(0));
 

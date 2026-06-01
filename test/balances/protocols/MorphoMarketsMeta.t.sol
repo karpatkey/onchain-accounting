@@ -61,22 +61,21 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         assertEq(pos.length, 3);
 
         // Order: collateral, loan-supply, loan-borrow.
-        assertEq(pos[0].underlyingAsset.asset, address(weth));
+        assertEq(pos[0].balanceAsset.asset, address(weth));
         assertEq(pos[0].amount, 2e18);
         assertFalse(pos[0].isDebt);
 
-        assertEq(pos[1].underlyingAsset.asset, address(usdc));
+        assertEq(pos[1].balanceAsset.asset, address(usdc));
         assertEq(pos[1].amount, 100e6);
         assertFalse(pos[1].isDebt);
 
-        assertEq(pos[2].underlyingAsset.asset, address(usdc));
+        assertEq(pos[2].balanceAsset.asset, address(usdc));
         assertEq(pos[2].amount, 50e6);
         assertTrue(pos[2].isDebt);
 
         // Identity derived on-chain: marketId hex + collateral/loan symbols.
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceOracle, address(oracle));
-            assertEq(pos[i].protocol, "Morpho");
         }
     }
 
@@ -85,9 +84,9 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _ids(), address(usdc));
         assertEq(pos.length, 2);
-        assertEq(pos[0].underlyingAsset.asset, address(usdc));
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertFalse(pos[0].isDebt);
-        assertEq(pos[1].underlyingAsset.asset, address(usdc));
+        assertEq(pos[1].balanceAsset.asset, address(usdc));
         assertTrue(pos[1].isDebt);
     }
 
@@ -96,7 +95,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _ids(), address(weth));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(weth));
+        assertEq(pos[0].balanceAsset.asset, address(weth));
     }
 
     function test_noPosition_empty() public view {

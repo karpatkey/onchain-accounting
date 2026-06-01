@@ -70,18 +70,13 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
 
         assertEq(pos.length, 2, "one Supply leg per pool token");
 
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 10e18); // 100e18 * 100e18 / 1000e18
         assertFalse(pos[0].isDebt);
         assertEq(pos[0].balanceOracle, address(oracle));
-        assertEq(pos[0].protocol, "Balancer V3");
-        assertEq(pos[0].positionId, address(pool).toHexString());
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"rETH/WETH BPT\",\"type\":\"Supply\"}"
-        );
+        assertEq(pos[0].positionId, abi.encode(address(pool)));
 
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
         assertEq(pos[1].amount, 20e18); // 200e18 * 100e18 / 1000e18
     }
 
@@ -96,7 +91,7 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(tokenY));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].balanceAsset.asset, address(tokenY));
         assertEq(pos[0].amount, 20e18);
     }
 
@@ -107,7 +102,7 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
     }
 
     function test_badInstance_isolated() public {
@@ -117,7 +112,7 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         ins[1] = bytes32(uint256(uint160(address(pool))));
         INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 2, "bad instance isolated, good pool returns both legs");
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
     }
 
     function test_emptyInstances_returnsEmpty() public view {

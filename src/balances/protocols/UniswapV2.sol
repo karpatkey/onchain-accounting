@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Uniswap V2 Balance Oracle
 /// @author kpk
@@ -56,29 +57,17 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier for this oracle (e.g. "Uniswap V2").
-    string private _protocol;
-
-    /// @notice JSON metadata base (no closing `}`) for this oracle.
-    string private _positionDetail;
-
-    /// @notice Stable hex identifier for this adapter instance (pair address).
-    string private _positionId;
+    /// @notice Protocol identifier constant.
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V2;
 
     //
     // Constructor
     //
 
     /// @param pair_ The Uniswap V2 pair contract address.
-    /// @param protocol_ Protocol identifier (e.g. "Uniswap V2").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (pair address).
     /// @param navCalculator_ The NAVCalculator contract address.
     constructor(
         address pair_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         if (pair_ == address(0)) revert InvalidArguments();
@@ -92,10 +81,17 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
         require(TOKEN0 != address(0) && TOKEN1 != address(0), "Pair tokens must be non-zero");
         require(TOKEN0 != TOKEN1, "Pair tokens must differ");
 
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+    }
+
+    /// @notice Returns the human-readable protocol name.
+    function protocolName() external pure returns (string memory) {
+        return "Uniswap V2";
+    }
+
+    /// @notice Returns a human-readable description of the position.
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "LP position";
     }
 
     //
@@ -200,13 +196,13 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
 
             positions = new INAVCalculator.PositionBalance[](1);
             positions[0] = INAVCalculator.PositionBalance({
-                underlyingAsset: _getAssetInfo(assetFilter),
+                balanceAsset: _getAssetInfo(assetFilter),
                 balanceOracle: address(this),
                 amount: balance,
                 isDebt: false,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(PAIR)),
+                positionKind: PositionKind.Supplied
             });
             return positions;
         }
@@ -220,13 +216,13 @@ contract UniswapV2BalanceOracle is IBalanceOracleAdapter {
             uint256 balance = _calculateBalance(account, eligibleAssets[i]);
             if (balance > 0) {
                 tempPositions[count] = INAVCalculator.PositionBalance({
-                    underlyingAsset: _getAssetInfo(eligibleAssets[i]),
+                    balanceAsset: _getAssetInfo(eligibleAssets[i]),
                     balanceOracle: address(this),
                     amount: balance,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(PAIR)),
+                    positionKind: PositionKind.Supplied
                 });
                 count++;
             }

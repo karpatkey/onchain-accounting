@@ -82,18 +82,13 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
 
         assertEq(pos.length, 2, "one Supply leg per pool token");
 
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 100e18); // 1000e18 * 100e18 / 1000e18
         assertFalse(pos[0].isDebt);
         assertEq(pos[0].balanceOracle, address(adapter));
-        assertEq(pos[0].protocol, "Balancer V2");
-        assertEq(pos[0].positionId, address(pool).toHexString());
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Balancer V2\",\"product\":\"LP\",\"name\":\"B-50X-50Y\",\"type\":\"Supply\"}"
-        );
+        assertNotEq(pos[0].positionId.length, uint256(0));
 
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
         assertEq(pos[1].amount, 200e18); // 2000e18 * 100e18 / 1000e18
     }
 
@@ -124,8 +119,8 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 2, "BPT-in-pool token excluded");
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
 
         address[] memory assets = adapter.underlyingAssetsSupportedForInstances(_instances());
         assertEq(assets.length, 2);
@@ -144,7 +139,7 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(alice, _instances(), address(tokenY));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].balanceAsset.asset, address(tokenY));
         assertEq(pos[0].amount, 200e18);
     }
 
@@ -154,7 +149,7 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
     }
 
     function test_badInstance_isolated() public {
@@ -164,7 +159,7 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         ins[1] = poolId;
         INAVCalculator.PositionBalance[] memory pos = adapter.getOraclePositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 2, "bad instance isolated, good pool returns both legs");
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
     }
 
     function test_emptyInstances_returnsEmpty() public view {

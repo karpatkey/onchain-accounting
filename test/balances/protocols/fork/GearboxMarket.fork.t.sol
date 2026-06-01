@@ -42,13 +42,7 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WETH));
-        oracle = new GearboxMarketBalanceOracle(
-            address(MARKET),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new GearboxMarketBalanceOracle(address(MARKET), address(balances));
     }
 
     // ============================================
@@ -116,11 +110,9 @@ contract GearboxMarketBalanceOracleForkTest_WETH is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE, address(0));
 
         assertEq(positions.length, 1, "Should have one position");
-        assertEq(positions[0].underlyingAsset.asset, address(WETH));
+        assertEq(positions[0].balanceAsset.asset, address(WETH));
         assertGt(positions[0].amount, 0, "Position amount should be positive");
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"type\":\"Supply\"}");
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
@@ -169,13 +161,7 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(WSTETH));
-        oracle = new GearboxMarketBalanceOracle(
-            address(MARKET),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new GearboxMarketBalanceOracle(address(MARKET), address(balances));
     }
 
     // ============================================
@@ -198,11 +184,9 @@ contract GearboxMarketBalanceOracleForkTest_wstETH is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE, address(0));
 
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(WSTETH));
+        assertEq(positions[0].balanceAsset.asset, address(WSTETH));
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Gearbox");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"type\":\"Supply\"}");
     }
 
     function test_underlyingAssetsSupported() public view {

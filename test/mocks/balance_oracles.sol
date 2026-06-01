@@ -6,6 +6,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     mapping(address => mapping(address => uint256)) public amounts;
@@ -191,19 +192,19 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                     }
                 }
 
-                // Build underlying asset struct
-                INAVCalculator.Asset memory underlyingAsset =
+                // Build balance asset struct
+                INAVCalculator.Asset memory balanceAsset =
                     INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
 
                 // Build position (balance-only, pricing will be added by NAVCalculator)
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
+                    balanceAsset: balanceAsset,
                     balanceOracle: address(this),
                     amount: amount,
                     isDebt: debt,
-                    protocol: _protocol,
-                    positionDetail: _positionDetail,
-                    positionId: "0x0000000000000000000000000000000000000001"
+                    protocolId: bytes32(0),
+                    positionId: abi.encode(address(this)),
+                    positionKind: debt ? PositionKind.Borrowed : PositionKind.Supplied
                 });
 
                 positionCount++;

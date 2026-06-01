@@ -11,7 +11,8 @@ import {InvalidArguments} from "src/errors.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Uniswap V3 Pool Balance Oracle
 /// @author kpk
@@ -98,14 +99,8 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
     /// @notice Bounded iteration limit for position discovery.
     uint256 internal constant _MAX_POSITIONS = 256;
 
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Uniswap V3").
-    string private _protocol;
-
-    /// @notice JSON metadata base (no closing `}`) emitted on liquidity entries.
-    string private _positionDetail;
-
-    /// @notice Stable hex identifier for this adapter instance (pool address).
-    string private _positionId;
+    /// @notice Protocol identifier constant.
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V3;
 
     //
     // Constructor
@@ -113,16 +108,10 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
 
     /// @param pool_ The Uniswap V3 pool address.
     /// @param positionManager_ The NonfungiblePositionManager address (per-chain canonical NPM).
-    /// @param protocol_ Protocol identifier (e.g. "Uniswap V3").
-    /// @param positionDetail_ JSON metadata base without closing `}` (e.g. `{"protocol":"Uniswap V3","pool":"ETH/USDC 0.05%"`).
-    /// @param positionId_ Stable hex identifier for this adapter instance (pool address).
     /// @param navCalculator_ NAVCalculator contract address (asset registry source).
     constructor(
         address pool_,
         address positionManager_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         if (pool_ == address(0) || positionManager_ == address(0) || navCalculator_ == address(0)) {
@@ -139,9 +128,16 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         FEE = IUniswapV3Pool(pool_).fee();
         TICK_SPACING = IUniswapV3Pool(pool_).tickSpacing();
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
+    }
+
+    /// @notice Returns the human-readable protocol name.
+    function protocolName() external pure returns (string memory) {
+        return "Uniswap V3";
+    }
+
+    /// @notice Returns a human-readable description of the position.
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "LP position";
     }
 
     //
@@ -247,20 +243,17 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](4);
         uint256 count;
 
-        string memory liquidityDetail = PositionType.withType(_positionDetail, PositionType.SUPPLY);
-        string memory feesDetail = PositionType.withType(_positionDetail, PositionType.FEES);
-
         if (token0Eligible && liq0 > 0) {
-            temp[count++] = _makePosition(TOKEN0, liq0, liquidityDetail);
+            temp[count++] = _makePosition(TOKEN0, liq0, PositionKind.Supplied);
         }
         if (token1Eligible && liq1 > 0) {
-            temp[count++] = _makePosition(TOKEN1, liq1, liquidityDetail);
+            temp[count++] = _makePosition(TOKEN1, liq1, PositionKind.Supplied);
         }
         if (token0Eligible && fee0 > 0) {
-            temp[count++] = _makePosition(TOKEN0, fee0, feesDetail);
+            temp[count++] = _makePosition(TOKEN0, fee0, PositionKind.Earned);
         }
         if (token1Eligible && fee1 > 0) {
-            temp[count++] = _makePosition(TOKEN1, fee1, feesDetail);
+            temp[count++] = _makePosition(TOKEN1, fee1, PositionKind.Earned);
         }
 
         positions = new INAVCalculator.PositionBalance[](count);
@@ -396,20 +389,20 @@ contract UniswapV3PoolBalanceOracle is IBalanceOracleAdapter {
         });
     }
 
-    /// @notice Builds a single PositionBalance entry for the given asset/amount/detail.
-    function _makePosition(address asset, uint256 amount, string memory detail)
+    /// @notice Builds a single PositionBalance entry for the given asset/amount/kind.
+    function _makePosition(address asset, uint256 amount, PositionKind kind)
         internal
         view
         returns (INAVCalculator.PositionBalance memory)
     {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: _getAssetInfo(asset),
+            balanceAsset: _getAssetInfo(asset),
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: detail,
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(address(POSITION_MANAGER)),
+            positionKind: kind
         });
     }
 

@@ -56,13 +56,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         assets[0] = WETH;
         assets[1] = WEETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new CurveBalanceOracle(
-            GAUGE,
-            "Curve",
-            "{\"protocol\":\"Curve\",\"pool\":\"weETH/WETH Pool\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new CurveBalanceOracle(GAUGE, address(balances));
     }
 
     // ============================================
@@ -202,11 +196,9 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].protocol, "Curve");
             // positionDetail is JSON: {"protocol":"Curve","pool":"weETH/WETH Pool","type":"Supply"}
-            assertTrue(bytes(positions[i].positionDetail).length > 0);
-            if (positions[i].underlyingAsset.asset == WETH) hasWeth = true;
-            if (positions[i].underlyingAsset.asset == WEETH) hasWeEth = true;
+            if (positions[i].balanceAsset.asset == WETH) hasWeth = true;
+            if (positions[i].balanceAsset.asset == WEETH) hasWeEth = true;
         }
         assertTrue(hasWeth, "Should have WETH position");
         assertTrue(hasWeEth, "Should have weETH position");
@@ -215,7 +207,7 @@ contract CurveBalanceOracleForkTest_weETH_WETH is BalanceAdapterTestBase {
     function test_getOraclePositions_withAssetFilter() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(USER_FULLY_STAKED, WETH);
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, WETH);
+        assertEq(positions[0].balanceAsset.asset, WETH);
         assertGt(positions[0].amount, 0);
 
         INAVCalculator.PositionBalance[] memory empty = oracle.getOraclePositions(USER_FULLY_STAKED, address(0xdead));

@@ -5,6 +5,8 @@ import {
     AaveV3InstancesMetaBalanceAdapter,
     IAaveAddressesProviderSource
 } from "src/balances/protocols/AaveV3InstancesMeta.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "src/balances/protocols/AaveV3Instance.sol";
 
 /// @title Aave V2 Instances Meta Balance Adapter
@@ -17,17 +19,35 @@ import {IProtocolDataProvider} from "src/balances/protocols/AaveV3Instance.sol";
 ///         derivation. Stable debt is not reported (governance-disabled on V2, same as the per-instance adapter).
 ///         See ADR 0010.
 contract AaveV2InstancesMetaBalanceAdapter is AaveV3InstancesMetaBalanceAdapter {
-    /// @param protocol_ Protocol identifier (e.g. "Aave V2").
+    bytes32 private constant PROTOCOL_ID_V2 = ProtocolIds.AAVE_V2_LENDING;
+
+    /// @param protocolName_ Human-readable protocol name (e.g. "Aave V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocol_, address navCalculator_)
-        AaveV3InstancesMetaBalanceAdapter(protocol_, navCalculator_)
+    constructor(string memory protocolName_, address navCalculator_)
+        AaveV3InstancesMetaBalanceAdapter(protocolName_, navCalculator_)
     {}
+
+    /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
+    function _getProtocolId() internal view override returns (bytes32) {
+        return PROTOCOL_ID_V2;
+    }
 
     /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
     /// @dev V2's LendingPoolAddressesProvider exposes `getLendingPool()` rather than V3's `getPool()`.
     function _poolOf(IProtocolDataProvider dp) internal view override returns (address) {
         return IAaveV2LendingPoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER())
             .getLendingPool();
+    }
+
+    /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 64) return "";
+        (, address reserve) = abi.decode(pid, (address, address));
+        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
+            return string.concat(sym, " position");
+        } catch {
+            return "";
+        }
     }
 }
 

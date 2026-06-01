@@ -38,15 +38,7 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
         mockPool = new MockContract();
         mockGauge = new MockBalancerGauge(address(mockPool));
         mockMinter = new MockContract();
-        oracle = new BalancerV3PoolBalanceOracle(
-            address(mockPool),
-            address(mockGauge),
-            address(mockMinter),
-            "Balancer v3",
-            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new BalancerV3PoolBalanceOracle(address(mockPool), address(mockGauge), address(mockMinter), address(balances));
     }
 
     // ============================================
@@ -60,28 +52,12 @@ contract BalancerV3PoolBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_reverts_zeroPool() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(
-            address(0),
-            address(mockGauge),
-            address(mockMinter),
-            "Balancer v3",
-            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new BalancerV3PoolBalanceOracle(address(0), address(mockGauge), address(mockMinter), address(balances));
     }
 
     function test_constructor_reverts_zeroGauge() public {
         vm.expectRevert(InvalidArguments.selector);
-        new BalancerV3PoolBalanceOracle(
-            address(mockPool),
-            address(0),
-            address(mockMinter),
-            "Balancer v3",
-            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new BalancerV3PoolBalanceOracle(address(mockPool), address(0), address(mockMinter), address(balances));
     }
 
     // ============================================

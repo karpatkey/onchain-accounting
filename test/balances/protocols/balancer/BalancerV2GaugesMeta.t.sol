@@ -88,14 +88,10 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
 
         assertEq(pos.length, 2, "one Staking leg per pool token (BAL=0, no extra rewards)");
 
-        assertEq(pos[0].underlyingAsset.asset, address(tokenX));
+        assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 100e18); // 1000e18 * 100e18 / 1000e18
-        assertEq(pos[0].positionId, address(gauge).toHexString());
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Balancer V2\",\"product\":\"LP\",\"name\":\"B-50X-50Y\",\"type\":\"Staking\"}"
-        );
-        assertEq(pos[1].underlyingAsset.asset, address(tokenY));
+        assertEq(pos[0].positionId, abi.encode(address(gauge)));
+        assertEq(pos[1].balanceAsset.asset, address(tokenY));
         assertEq(pos[1].amount, 200e18);
     }
 
@@ -108,13 +104,9 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
             adapter.getOraclePositionsForInstances(alice, _instances(), address(0));
 
         assertEq(pos.length, 3, "2 staking + 1 reward");
-        assertEq(pos[2].underlyingAsset.asset, address(reward));
+        assertEq(pos[2].balanceAsset.asset, address(reward));
         assertEq(pos[2].amount, 7e18);
-        assertEq(
-            pos[2].positionDetail,
-            "{\"protocol\":\"Balancer V2\",\"product\":\"LP\",\"name\":\"B-50X-50Y\",\"type\":\"Rewards\"}"
-        );
-    }
+            }
 
     function test_zeroStake_onlyRewards() public {
         gauge.addRewardToken(address(reward));
@@ -122,7 +114,7 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1, "no stake -> only the reward leg");
-        assertEq(pos[0].underlyingAsset.asset, address(reward));
+        assertEq(pos[0].balanceAsset.asset, address(reward));
         assertEq(pos[0].amount, 3e18);
     }
 
@@ -133,7 +125,7 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(alice, _instances(), address(reward));
         assertEq(pos.length, 1);
-        assertEq(pos[0].underlyingAsset.asset, address(reward));
+        assertEq(pos[0].balanceAsset.asset, address(reward));
     }
 
     function test_unregisteredReward_skipped() public {

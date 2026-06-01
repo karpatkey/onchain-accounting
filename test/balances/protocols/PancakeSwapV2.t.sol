@@ -40,13 +40,7 @@ contract PancakeSwapV2BalanceOracleTest is Test {
         mockBalances = new MockBalances();
         address factory = address(new MockToken()); // any contract address works
         mockPair = new MockV2Pair(address(new MockToken()), address(new MockToken()), factory);
-        oracle = new PancakeSwapV2BalanceOracle(
-            address(mockPair),
-            "PancakeSwap V2",
-            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        oracle = new PancakeSwapV2BalanceOracle(address(mockPair), address(mockBalances));
     }
 
     function test_constructor_storesImmutables() public view {
@@ -59,13 +53,7 @@ contract PancakeSwapV2BalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroPair() public {
         vm.expectRevert(InvalidArguments.selector);
-        new PancakeSwapV2BalanceOracle(
-            address(0),
-            "PancakeSwap V2",
-            "{\"protocol\":\"Uniswap V2\",\"pool\":\"T0/T1\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new PancakeSwapV2BalanceOracle(address(0), address(mockBalances));
     }
 
     function test_supportsInterface() public view {

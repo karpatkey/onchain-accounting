@@ -47,14 +47,7 @@ contract FluidVaultBalanceOracleForkTest_wstETH_USDC is BalanceAdapterTestBase {
         assets[1] = MAINNET_USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new FluidVaultBalanceOracle(
-            VAULT_WSTETH_USDC,
-            VAULT_RESOLVER,
-            "Fluid Vault",
-            "{\"protocol\":\"Fluid\",\"product\":\"Vault\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new FluidVaultBalanceOracle(VAULT_WSTETH_USDC, VAULT_RESOLVER, address(balances));
     }
 
     // ============================================

@@ -37,15 +37,7 @@ contract BalancerV3ArbitrumL2ForkTest is TestEnvConfigurator, TestSetupHelpers {
         allAssets[1] = BAL_ARB;
         balances = deployBalancesInFork(allAssets);
 
-        oracle = new BalancerV3PoolBalanceOracle(
-            POOL,
-            GAUGE,
-            BALANCER_MINTER,
-            "Balancer v3",
-            "{\"protocol\":\"Balancer V3\",\"pool\":\"Test Pool\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, address(balances));
     }
 
     function test_claimableTokens_arbitrum_l2_fallback() public view {

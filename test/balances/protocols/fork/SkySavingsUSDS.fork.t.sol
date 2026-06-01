@@ -40,13 +40,7 @@ contract SkySavingsUsdsBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(USDS));
-        oracle = new SkySavingsUsdsBalanceOracle(
-            address(SAVINGS_USDS),
-            "Sky",
-            "{\"protocol\":\"Sky\",\"product\":\"SavingsUSDS\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new SkySavingsUsdsBalanceOracle(address(SAVINGS_USDS), address(balances));
     }
 
     // ============================================

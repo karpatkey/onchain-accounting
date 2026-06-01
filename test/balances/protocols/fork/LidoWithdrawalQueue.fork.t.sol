@@ -38,14 +38,7 @@ contract LidoWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        oracle = new LidoWithdrawalQueueBalanceOracle(
-            WITHDRAWAL_QUEUE,
-            NATIVE_ETH,
-            "Lido",
-            "{\"protocol\":\"Lido\",\"product\":\"Staking\",\"name\":\"stETH Withdrawal Queue\"",
-            "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1",
-            address(balances)
-        );
+        oracle = new LidoWithdrawalQueueBalanceOracle(WITHDRAWAL_QUEUE, NATIVE_ETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -76,7 +69,7 @@ contract LidoWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(finalizedHolder, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(positions[0].amount, expectedClaimableEth);
     }
 
@@ -91,12 +84,10 @@ contract LidoWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_realHolder() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Lido");
-        assertEq(positions[0].positionDetail, POSITION_DETAIL_FULL);
     }
 
     function test_getOracleBalances_realHolder() public view {

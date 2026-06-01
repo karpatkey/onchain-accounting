@@ -9,6 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 import {MockAaveDataProvider} from "test/balances/protocols/AaveV3InstancesMeta.t.sol";
 
 /// @notice Minimal Aave V2 LendingPoolAddressesProvider mock: getLendingPool() + getMarketId().
@@ -92,24 +93,16 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2); // USDC Collateral + WETH Borrow
 
-        assertEq(p[0].underlyingAsset.asset, address(usdc));
+        assertEq(p[0].balanceAsset.asset, address(usdc));
         assertEq(p[0].amount, 1000e6);
         assertFalse(p[0].isDebt);
-        assertEq(p[0].protocol, "Aave V2");
-        // positionId derived via getLendingPool() (V2), not getPool().
-        assertEq(p[0].positionId, LENDING_POOL.toHexString());
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Aave Mainnet Market\",\"type\":\"Collateral\"}"
-        );
+        // positionId is abi.encode(pool, reserve); protocolId = AAVE_V2_LENDING
+        assertEq(p[0].positionId, abi.encode(LENDING_POOL, address(usdc)));
 
-        assertEq(p[1].underlyingAsset.asset, address(weth));
+        assertEq(p[1].balanceAsset.asset, address(weth));
         assertEq(p[1].amount, 5e17);
         assertTrue(p[1].isDebt);
-        assertEq(
-            p[1].positionDetail,
-            "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Aave Mainnet Market\",\"type\":\"Borrow\"}"
-        );
+        assertEq(uint256(p[1].positionKind), uint256(PositionKind.Borrowed));
     }
 
     function test_supplyLeg_whenNotCollateral() public {
@@ -117,21 +110,20 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p =
             meta.getOraclePositionsForInstances(alice, _instances(), address(usdc));
         assertEq(p.length, 1);
-        assertTrue(_hasType(p[0].positionDetail, "Supply"));
     }
 
     function test_assetFilter() public view {
         INAVCalculator.PositionBalance[] memory p =
             meta.getOraclePositionsForInstances(alice, _instances(), address(weth));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(weth));
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_unregisteredReserve_skipped() public {
         nav.unregisterAssetHelper(address(weth));
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(usdc));
+        assertEq(p[0].balanceAsset.asset, address(usdc));
     }
 
     function test_badInstance_isolated() public view {

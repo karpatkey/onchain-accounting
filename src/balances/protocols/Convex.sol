@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Convex Balance Oracle
 /// @author kpk
@@ -60,14 +61,8 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
     /// @notice Bounded iteration limit
     uint256 internal constant _MAX_ITERATIONS = 8;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-
-    /// @notice JSON metadata base (no closing `}`) for this oracle
-    string private _positionDetail;
-
-    /// @notice Stable hex identifier for this adapter instance (gauge/pool address)
-    string private _positionId;
+    /// @notice Protocol identifier constant
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
 
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -78,16 +73,10 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
 
     /// @param convexRewards_ The Convex BaseRewardPool contract
     /// @param lpToken_ The underlying Curve LP token (NOT the Convex deposit token from stakingToken())
-    /// @param protocol_ Protocol identifier (e.g., "Convex")
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (gauge/pool address).
     /// @param navCalculator_ The NAVCalculator contract address
     constructor(
         address convexRewards_,
         address lpToken_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
     ) {
         if (convexRewards_ == address(0) || lpToken_ == address(0)) {
@@ -99,10 +88,17 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
 
         REWARDER = convexRewards_;
         LP_TOKEN = lpToken_;
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+    }
+
+    /// @notice Returns the human-readable protocol name.
+    function protocolName() external pure returns (string memory) {
+        return "Convex";
+    }
+
+    /// @notice Returns a human-readable description of the position.
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "LP position";
     }
 
     //
@@ -200,13 +196,13 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory filteredAsset = _getAssetInfo(assetFilter);
             positions = new INAVCalculator.PositionBalance[](1);
             positions[0] = INAVCalculator.PositionBalance({
-                underlyingAsset: filteredAsset,
+                balanceAsset: filteredAsset,
                 balanceOracle: address(this),
                 amount: balance,
                 isDebt: false,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(REWARDER)),
+                positionKind: PositionKind.Supplied
             });
             return positions;
         }
@@ -221,13 +217,13 @@ contract ConvexBalanceOracle is IBalanceOracleAdapter {
             if (balance > 0) {
                 INAVCalculator.Asset memory eligibleAsset = _getAssetInfo(eligibleAssets[i]);
                 tempPositions[count] = INAVCalculator.PositionBalance({
-                    underlyingAsset: eligibleAsset,
+                    balanceAsset: eligibleAsset,
                     balanceOracle: address(this),
                     amount: balance,
                     isDebt: false,
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                    positionId: _positionId
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(address(REWARDER)),
+                    positionKind: PositionKind.Supplied
                 });
                 count++;
             }

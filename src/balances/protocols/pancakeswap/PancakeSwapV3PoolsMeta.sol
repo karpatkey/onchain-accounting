@@ -13,10 +13,10 @@ import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 ///         other behaviour (NFT discovery, principal/fee math, NAV filtering, identity derivation) is unchanged.
 contract PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter {
     /// @param positionManager_ The PancakeSwap V3 NonfungiblePositionManager (canonical CREATE2 address).
-    /// @param protocol_ Protocol identifier (e.g. "PancakeSwap V3").
+    /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V3").
     /// @param navCalculator_ NAVCalculator contract address.
-    constructor(address positionManager_, string memory protocol_, address navCalculator_)
-        UniswapV3PoolsMetaBalanceAdapter(positionManager_, protocol_, navCalculator_)
+    constructor(address positionManager_, string memory protocolName_, address navCalculator_)
+        UniswapV3PoolsMetaBalanceAdapter(positionManager_, protocolName_, navCalculator_)
     {}
 
     /// @inheritdoc UniswapV3PoolsMetaBalanceAdapter

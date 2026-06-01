@@ -9,7 +9,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title ISavingsUSDS Interface
 /// @notice Interface for interacting with the Savings USDS (sUSDS) vault
@@ -49,14 +50,11 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @notice The Savings USDS (sUSDS) vault contract
     ISavingsUSDS public immutable SAVINGS_USDS;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (savingsUsds address)
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for Sky Savings
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.SKY_SAVINGS;
 
     //
     // Constructor
@@ -64,26 +62,14 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
 
     /// @notice Initializes the balance oracle for Savings USDS. Reverts if savingsUsds_ is zero address
     /// @param savingsUsds_ Address of the Savings USDS (sUSDS) vault contract
-    /// @param protocol_ Protocol identifier (e.g., "Sky").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (savingsUsds address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address savingsUsds_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address savingsUsds_, address navCalculator_) {
         if (savingsUsds_ == address(0)) revert InvalidArguments();
         require(savingsUsds_.code.length > 0, "SavingsUSDS must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         SAVINGS_USDS = ISavingsUSDS(savingsUsds_);
         USDS = SAVINGS_USDS.usds();
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -115,6 +101,18 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "Sky";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "USDS savings";
     }
 
     //
@@ -279,13 +277,13 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(SAVINGS_USDS)),
+                positionKind: PositionKind.Supplied
             });
             positionCount++;
         }

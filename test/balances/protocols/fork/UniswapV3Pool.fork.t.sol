@@ -62,14 +62,7 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
         assets[0] = WBTC;
         assets[1] = WETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new UniswapV3PoolBalanceOracle(
-            POOL,
-            NPM,
-            "Uniswap V3",
-            "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new UniswapV3PoolBalanceOracle(POOL, NPM, address(balances));
     }
 
     // ============================================
@@ -151,23 +144,13 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
 
         // Order from adapter: t0_liq, t1_liq, t0_fees, t1_fees with zeros dropped.
         // So with t0_liq = 0: positions = [t1_liq, t0_fees, t1_fees].
-        assertEq(positions[0].underlyingAsset.asset, WETH);
-        assertEq(
-            positions[0].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\",\"type\":\"Supply\"}"
-        );
+        assertEq(positions[0].balanceAsset.asset, WETH);
         assertEq(positions[0].balanceOracle, address(oracle));
-        assertEq(positions[0].protocol, "Uniswap V3");
         assertFalse(positions[0].isDebt);
 
-        assertEq(positions[1].underlyingAsset.asset, WBTC);
-        assertEq(
-            positions[1].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\",\"type\":\"Fees\"}"
-        );
+        assertEq(positions[1].balanceAsset.asset, WBTC);
 
-        assertEq(positions[2].underlyingAsset.asset, WETH);
-        assertEq(
-            positions[2].positionDetail, "{\"protocol\":\"Uniswap V3\",\"pool\":\"WBTC/WETH 0.3%\",\"type\":\"Fees\"}"
-        );
+        assertEq(positions[2].balanceAsset.asset, WETH);
     }
 
     // ============================================
@@ -189,7 +172,7 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
     function test_getOraclePositions_assetFilter_weth() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE_HOLDER, WETH);
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, WETH);
+            assertEq(positions[i].balanceAsset.asset, WETH);
         }
         assertEq(positions.length, 2, "expect WETH liq + WETH fees");
     }
@@ -197,7 +180,7 @@ contract UniswapV3PoolBalanceOracleForkTest_WBTC_WETH is BalanceAdapterTestBase 
     function test_getOraclePositions_assetFilter_wbtc() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE_HOLDER, WBTC);
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, WBTC);
+            assertEq(positions[i].balanceAsset.asset, WBTC);
         }
         assertEq(positions.length, 1, "expect only WBTC fees (no WBTC liquidity above range)");
     }

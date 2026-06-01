@@ -51,13 +51,7 @@ contract GearboxMarketBalanceOracleTest is Test {
         mockBalances = new MockBalances();
         mockAsset = new MockToken();
         mockMarket = new MockGearboxMarket(address(mockAsset));
-        oracle = new GearboxMarketBalanceOracle(
-            address(mockMarket),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        oracle = new GearboxMarketBalanceOracle(address(mockMarket), address(mockBalances));
     }
 
     // ============================================
@@ -66,35 +60,17 @@ contract GearboxMarketBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroMarket() public {
         vm.expectRevert(InvalidArguments.selector);
-        new GearboxMarketBalanceOracle(
-            address(0),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new GearboxMarketBalanceOracle(address(0), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractMarket() public {
         vm.expectRevert("Market must be a contract");
-        new GearboxMarketBalanceOracle(
-            address(0xdead),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(mockBalances)
-        );
+        new GearboxMarketBalanceOracle(address(0xdead), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new GearboxMarketBalanceOracle(
-            address(mockMarket),
-            "Gearbox",
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH Market\"",
-            "0x0000000000000000000000000000000000000001",
-            address(0xdead)
-        );
+        new GearboxMarketBalanceOracle(address(mockMarket), address(0xdead));
     }
 
     function test_constructor_stores_immutables() public view {

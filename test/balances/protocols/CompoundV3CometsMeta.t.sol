@@ -10,6 +10,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockCometRich, MockCompoundRewardsConfigurable} from "test/balances/protocols/CompoundV3Comet.t.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 contract MetaTok {
     string public symbol;
@@ -91,34 +92,23 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         assertEq(p.length, 4);
 
         // cometA Supply (base USDC)
-        assertEq(p[0].underlyingAsset.asset, address(usdc));
+        assertEq(p[0].balanceAsset.asset, address(usdc));
         assertEq(p[0].amount, 100e6);
         assertFalse(p[0].isDebt);
-        assertEq(p[0].positionId, address(cometA).toHexString());
-        assertEq(p[0].protocol, "Compound V3");
-        assertEq(
-            p[0].positionDetail,
-            string.concat(
-                "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"",
-                address(cometA).toHexString(),
-                "\",\"type\":\"Supply\"}"
-            )
-        );
+        assertEq(p[0].positionId, abi.encode(address(cometA)));
+        assertEq(uint256(p[0].positionKind), uint256(PositionKind.Supplied));
         // cometA Collateral (WBTC)
-        assertEq(p[1].underlyingAsset.asset, address(wbtc));
+        assertEq(p[1].balanceAsset.asset, address(wbtc));
         assertEq(p[1].amount, 5e8);
         assertFalse(p[1].isDebt);
-        assertTrue(_hasType(p[1].positionDetail, "Collateral"));
         // cometA Rewards (COMP)
-        assertEq(p[2].underlyingAsset.asset, address(comp));
+        assertEq(p[2].balanceAsset.asset, address(comp));
         assertEq(p[2].amount, 7e18);
-        assertTrue(_hasType(p[2].positionDetail, "Rewards"));
         // cometB Borrow (WETH)
-        assertEq(p[3].underlyingAsset.asset, address(weth));
+        assertEq(p[3].balanceAsset.asset, address(weth));
         assertEq(p[3].amount, 50e18);
         assertTrue(p[3].isDebt);
-        assertEq(p[3].positionId, address(cometB).toHexString());
-        assertTrue(_hasType(p[3].positionDetail, "Borrow"));
+        assertEq(p[3].positionId, abi.encode(address(cometB)));
     }
 
     function test_assetFilter() public view {
@@ -126,7 +116,7 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(wbtc));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(wbtc));
+        assertEq(p[0].balanceAsset.asset, address(wbtc));
     }
 
     function test_unregisteredAsset_skipped() public {
@@ -137,7 +127,7 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         // cometA now: Supply(USDC) + Collateral(WBTC) = 2 (COMP reward dropped)
         assertEq(p.length, 2);
         for (uint256 i = 0; i < p.length; i++) {
-            assertTrue(p[i].underlyingAsset.asset != address(comp));
+            assertTrue(p[i].balanceAsset.asset != address(comp));
         }
     }
 

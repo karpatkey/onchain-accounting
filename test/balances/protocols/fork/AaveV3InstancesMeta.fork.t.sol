@@ -75,13 +75,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        perInstance = new AaveV3InstanceBalanceOracle(
-            CORE_DATA_PROVIDER,
-            "Aave V3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Core Instance\"",
-            "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
-            address(nav)
-        );
+        perInstance = new AaveV3InstanceBalanceOracle(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
         nav.addBalanceOracle(address(oracle));
@@ -101,7 +95,6 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertGt(pos.length, 0, "account has Core positions");
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceOracle, address(oracle));
-            assertEq(pos[i].protocol, "Aave V3");
             assertGt(pos[i].amount, 0);
         }
     }
@@ -116,10 +109,10 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // the meta-adapter derives it lowercase (Strings.toHexString) while the per-instance adapter pins the
         // checksummed config string — same address, different case, so compare case-insensitively.
         for (uint256 i = 0; i < metaPos.length; i++) {
-            assertEq(metaPos[i].underlyingAsset.asset, refPos[i].underlyingAsset.asset, "asset");
+            assertEq(metaPos[i].balanceAsset.asset, refPos[i].balanceAsset.asset, "asset");
             assertEq(metaPos[i].amount, refPos[i].amount, "amount");
             assertEq(metaPos[i].isDebt, refPos[i].isDebt, "isDebt");
-            assertEq(vm.toLowercase(metaPos[i].positionId), vm.toLowercase(refPos[i].positionId), "positionId (Pool)");
+            assertEq(metaPos[i].positionId, refPos[i].positionId, "positionId");
         }
     }
 
@@ -141,7 +134,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_assetFilter_singleAsset() public view {
         INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(USER, _ids(), USDC);
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].underlyingAsset.asset, USDC);
+            assertEq(pos[i].balanceAsset.asset, USDC);
         }
     }
 }

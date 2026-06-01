@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Vault Balance Oracle
 /// @author kpk
@@ -37,31 +38,19 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice The vault's underlying asset (cached from VAULT.asset() at construction)
     address public immutable ASSET;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`); append `}` at emit time
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (vault address)
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for Morpho Vaults
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_VAULTS;
 
     //
     // Constructor
     //
 
     /// @param vault_ The address of the Morpho ERC4626 vault
-    /// @param protocol_ Protocol identifier (e.g., "Morpho")
-    /// @param positionDetail_ JSON metadata base without closing `}` (e.g., `{"protocol":"Morpho","product":"Vault","name":"kpk USDC Prime V1"`)
-    /// @param positionId_ Stable hex identifier for this adapter instance (vault address)
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access
-    constructor(
-        address vault_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address vault_, address navCalculator_) {
         if (vault_ == address(0)) revert InvalidArguments();
         require(vault_.code.length > 0, "Vault must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -69,9 +58,6 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
         VAULT = IERC4626(vault_);
         ASSET = VAULT.asset();
         require(ASSET != address(0), "Vault asset must be non-zero");
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -82,6 +68,18 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "Morpho";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "vault supply";
     }
 
     //
@@ -221,13 +219,13 @@ contract MorphoVaultBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(assetBalanceData[i].asset);
 
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(VAULT)),
+                positionKind: PositionKind.Supplied
             });
             positionCount++;
         }

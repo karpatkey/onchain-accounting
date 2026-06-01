@@ -40,13 +40,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
 
     function _setupOracle() internal {
         balances = _deployBalancesForOracle(address(USDC));
-        oracle = new FluidFTokenBalanceOracle(
-            address(F_TOKEN),
-            "Fluid Lending",
-            "{\"protocol\":\"Fluid\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), address(balances));
     }
 
     function _depositUsdcIntoFToken(address account, uint256 assets) internal returns (uint256 sharesMinted) {
@@ -136,11 +130,9 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
 
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(USDC));
+        assertEq(positions[0].balanceAsset.asset, address(USDC));
         assertGt(positions[0].amount, 0);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Fluid Lending");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"type\":\"Supply\"}");
         assertEq(positions[0].balanceOracle, address(oracle));
     }
 
@@ -164,13 +156,7 @@ contract FluidFTokenBalanceOracleForkTest_fUSDC is BalanceAdapterTestBase {
         // because the registry intersection between the adapter's supported assets ([USDC]) and
         // the registry's assets ([WETH]) is empty.
         balances = _deployBalancesForOracle(MAINNET_WETH);
-        oracle = new FluidFTokenBalanceOracle(
-            address(F_TOKEN),
-            "Fluid Lending",
-            "{\"protocol\":\"Fluid\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new FluidFTokenBalanceOracle(address(F_TOKEN), address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
         assertEq(positions.length, 0);

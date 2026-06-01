@@ -38,13 +38,7 @@ contract KelpWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[0] = MAINNET_STETH;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new KelpWithdrawalQueueBalanceOracle(
-            WITHDRAWAL_MANAGER,
-            "Kelp",
-            "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\"",
-            "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
-            address(balances)
-        );
+        oracle = new KelpWithdrawalQueueBalanceOracle(WITHDRAWAL_MANAGER, address(balances));
     }
 
     function _setupFork() internal override {
@@ -64,12 +58,10 @@ contract KelpWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_realHolder() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, MAINNET_STETH);
+        assertEq(positions[0].balanceAsset.asset, MAINNET_STETH);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].amount, TEST_USER_EXPECTED_STETH);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Kelp");
-        assertEq(positions[0].positionDetail, POSITION_DETAIL_FULL);
     }
 
     function test_getOracleBalances_realHolder() public view {

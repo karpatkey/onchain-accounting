@@ -8,7 +8,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title CompoundV3Comet balance oracle
 /// @notice One adapter wraps a single Compound V3 (Comet) market. Reports the user's
@@ -49,33 +50,17 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
     // Effectively-immutable storage (populated once in constructor)
     //
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
+
     /// @notice Collateral asset addresses for this Comet (snapshot at construction).
     address[] public collaterals;
     mapping(address asset => bool collateral) public isCollateral;
 
-    /// @notice Protocol identifier reported on every position (e.g. "Compound v3 USDC").
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (comet address)
-    string private _positionId;
-
     /// @param compoundRewards_ The chain's CometRewards contract.
     /// @param comet_           The specific Comet (one per market).
     /// @param rewardToken_     COMP (or the chain-specific bridged COMP).
-    /// @param protocol_        Per-market label, e.g. "Compound v3 USDC".
-    /// @param positionDetail_  JSON metadata base without closing `}`.
-    /// @param positionId_      Stable hex identifier for this adapter instance (comet address).
     /// @param navCalculator_   NAVCalculator used as the asset registry.
-    constructor(
-        address compoundRewards_,
-        address comet_,
-        address rewardToken_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address compoundRewards_, address comet_, address rewardToken_, address navCalculator_) {
         if (compoundRewards_ == address(0) || comet_ == address(0) || rewardToken_ == address(0)) {
             revert InvalidArguments();
         }
@@ -90,9 +75,6 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         BASE_TOKEN = CometInterface(comet_).baseToken();
         ACCRUAL_DESCALE_FACTOR = COMET_EXT_INTERFACE.baseScale() / BASE_ACCRUAL_SCALE;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
 
         uint8 assetCount = COMET_EXT_INTERFACE.numAssets();
         for (uint8 i = 0; i < assetCount; i++) {
@@ -230,18 +212,18 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
                     bool isDebt_ = net < 0;
                     uint256 amount = isDebt_ ? SafeCast.toUint256(-net) : SafeCast.toUint256(net);
                     tmp[count++] =
-                        _makePosition(meta, amount, isDebt_, isDebt_ ? PositionType.BORROW : PositionType.SUPPLY);
+                        _makePosition(meta, amount, isDebt_, isDebt_ ? PositionKind.Borrowed : PositionKind.Supplied);
                 }
             }
             // Collateral leg (separate from base; base is never also a collateral in Comet).
             if (isCollateral[asset]) {
                 uint256 c = COMET_EXT_INTERFACE.collateralBalanceOf(account, asset);
-                if (c > 0) tmp[count++] = _makePosition(meta, c, false, PositionType.COLLATERAL);
+                if (c > 0) tmp[count++] = _makePosition(meta, c, false, PositionKind.Collateral);
             }
             // Reward leg
             if (asset == address(REWARD_TOKEN)) {
                 uint256 r = _rewardOwed(account);
-                if (r > 0) tmp[count++] = _makePosition(meta, r, false, PositionType.REWARDS);
+                if (r > 0) tmp[count++] = _makePosition(meta, r, false, PositionKind.Earned);
             }
         }
 
@@ -250,6 +232,9 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
             positions[i] = tmp[i];
         }
     }
+
+    function protocolName() external pure returns (string memory) { return "Compound V3"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "lending position"; }
 
     //
     // Internal: position assembly
@@ -271,19 +256,19 @@ contract CompoundV3Comet is IBalanceOracleAdapter {
         return (sum, false);
     }
 
-    function _makePosition(INAVCalculator.Asset memory meta, uint256 amount, bool isDebt, string memory typeLabel)
+    function _makePosition(INAVCalculator.Asset memory meta, uint256 amount, bool isDebt, PositionKind kind)
         internal
         view
         returns (INAVCalculator.PositionBalance memory)
     {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: meta,
+            balanceAsset: meta,
             balanceOracle: address(this),
             amount: amount,
             isDebt: isDebt,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetail, typeLabel),
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(COMET),
+            positionKind: kind
         });
     }
 

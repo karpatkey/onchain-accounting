@@ -6,7 +6,8 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave V3 Instance Balance Oracle
 /// @author kpk
@@ -42,42 +43,34 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     /// @notice The address of the Aave v3 Protocol Data Provider contract
     IProtocolDataProvider public immutable DATA_PROVIDER;
 
+    /// @notice The Pool address derived from DATA_PROVIDER at construction (used as positionId anchor).
+    address public immutable POOL;
+
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier for this oracle (e.g., "Aave v3")
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (Aave pool address)
-    string private _positionId;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_LENDING;
+
+    function _protocolId() internal pure virtual returns (bytes32) { return PROTOCOL_ID; }
 
     //
     // Constructor
     //
 
     /// @param dataProvider_ The address of the Aave v3 Pool Data Provider contract
-    /// @param protocol_ Protocol identifier (e.g., "Aave v3")
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (Aave pool address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address dataProvider_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
-        // Validate that addresses are contracts (for production safety)
-        // In tests, mocks should be proper contracts, but we handle failures gracefully in view functions
+    constructor(address dataProvider_, address navCalculator_) {
         require(dataProvider_.code.length > 0, "DataProvider must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        POOL = _poolFrom(dataProvider_);
+    }
+
+    /// @notice Resolves the Pool address from a DataProvider. Virtual so V2 subclass can use getLendingPool().
+    function _poolFrom(address dataProvider_) internal view virtual returns (address) {
+        return IAavePoolAddressesProvider(IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER()).getPool();
     }
 
     //
@@ -299,6 +292,9 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
     // Internal Functions - Position Building
     //
 
+    function protocolName() external pure virtual returns (string memory) { return "Aave V3"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "lending position"; }
+
     /// @notice Internal helper that builds all positions for this oracle
     /// @param userReservesData Array of UserReserveData to build positions from
     /// @return positions Array of balance-only PositionBalance structs from this oracle
@@ -319,22 +315,22 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             address asset = userReservesData[i].asset;
 
             // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
-            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
+            INAVCalculator.Asset memory assetMeta = _getAssetInfo(asset);
 
             // Build supply position (supplied assets)
-            // Label as Collateral when used as collateral, otherwise Supply
+            // Label as Collateral when used as collateral, otherwise Supplied
             if (userReservesData[i].currentATokenBalance > 0) {
-                string memory supplyDetail = userReservesData[i].usageAsCollateralEnabled
-                    ? PositionType.withType(_positionDetail, PositionType.COLLATERAL)
-                    : PositionType.withType(_positionDetail, PositionType.SUPPLY);
+                PositionKind kind = userReservesData[i].usageAsCollateralEnabled
+                    ? PositionKind.Collateral
+                    : PositionKind.Supplied;
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
+                    balanceAsset: assetMeta,
                     balanceOracle: address(this),
                     amount: userReservesData[i].currentATokenBalance,
                     isDebt: false, // Deposits are credit
-                    protocol: _protocol,
-                    positionDetail: supplyDetail,
-                    positionId: _positionId
+                    protocolId: _protocolId(),
+                    positionId: abi.encode(POOL, asset),
+                    positionKind: kind
                 });
                 positionCount++;
             }
@@ -342,13 +338,13 @@ contract AaveV3InstanceBalanceOracle is IBalanceOracleAdapter {
             // Build borrowing position (borrowed assets - debt)
             if (userReservesData[i].currentVariableDebt > 0) {
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
+                    balanceAsset: assetMeta,
                     balanceOracle: address(this),
                     amount: userReservesData[i].currentVariableDebt,
                     isDebt: true, // Borrows are debt
-                    protocol: _protocol,
-                    positionDetail: PositionType.withType(_positionDetail, PositionType.BORROW),
-                    positionId: _positionId
+                    protocolId: _protocolId(),
+                    positionId: abi.encode(POOL, asset),
+                    positionKind: PositionKind.Borrowed
                 });
                 positionCount++;
             }
@@ -408,4 +404,12 @@ interface IProtocolDataProvider {
     /// @dev Handling MKR and ETH in a different way since they do not have standard `symbol` functions.
     /// @return reserveTokens The list of reserves, pairs of symbols and addresses
     function getAllReservesTokens() external view returns (TokenData[] memory reserveTokens);
+}
+
+interface IAaveAddressesProviderSource {
+    function ADDRESSES_PROVIDER() external view returns (address);
+}
+
+interface IAavePoolAddressesProvider {
+    function getPool() external view returns (address);
 }

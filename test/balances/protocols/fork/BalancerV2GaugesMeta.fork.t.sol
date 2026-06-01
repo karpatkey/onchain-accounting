@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 interface IBalV2Vault {
     function getPoolTokens(bytes32 poolId)
         external
@@ -31,8 +29,6 @@ interface IV2Bpt {
 ///         BAL inflation math is byte-identical to BalancerV3GaugesMeta (real-staker fork-tested there); the
 ///         staked-share decomposition uses the same BalancerV2PoolLib proven in BalancerV2PoolsMeta.fork.t.sol.
 contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     address public constant BALANCER_MINTER = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b;
     address public constant GAUGE = 0xcD4722B7c24C29e0413BDCd9e51404B4539D14aE; // B-stETH-STABLE gauge
@@ -88,12 +84,11 @@ contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceOracle, address(adapter));
             assertFalse(pos[i].isDebt);
-            assertEq(pos[i].protocol, "Balancer V2");
-            assertEq(pos[i].positionId, GAUGE.toHexString(), "positionId = gauge address");
+            assertEq(pos[i].positionId, abi.encode(GAUGE), "positionId = gauge address");
 
             // Staking legs (wstETH / WETH) must match the pro-rata Vault share. Reward legs (LDO/BAL), if any,
             // are not pro-rata of the pool — skip them here (covered by the unit + V3 reward fork tests).
-            address tok = pos[i].underlyingAsset.asset;
+            address tok = pos[i].balanceAsset.asset;
             if (tok != WSTETH && tok != WETH) continue;
             stakingLegs++;
             uint256 vaultBal;
@@ -110,10 +105,6 @@ contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.getOraclePositionsForInstances(STAKER, _instance(), WSTETH);
         assertEq(pos.length, 1);
-        assertEq(
-            pos[0].positionDetail,
-            "{\"protocol\":\"Balancer V2\",\"product\":\"LP\",\"name\":\"Balancer stETH Stable Pool\",\"type\":\"Staking\"}"
-        );
     }
 
     /// @notice underlyingAssetsSupportedForInstances decodes pool tokens + reward tokens + BAL.

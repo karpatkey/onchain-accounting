@@ -94,16 +94,11 @@ contract FluidFTokensMetaBalanceAdapterTest is Test {
     function test_fanOut_supplyLegsAndIdentity() public view {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2);
-        assertEq(p[0].underlyingAsset.asset, address(usdc));
+        assertEq(p[0].balanceAsset.asset, address(usdc));
         assertEq(p[0].amount, 110e6); // 100 * 1.1
         assertFalse(p[0].isDebt);
-        assertEq(p[0].positionId, address(fUSDC).toHexString());
-        assertEq(p[0].protocol, "Fluid");
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\",\"type\":\"Supply\"}"
-        );
-        assertEq(p[1].underlyingAsset.asset, address(weth));
+        assertEq(p[0].positionId, abi.encode(address(fUSDC)));
+        assertEq(p[1].balanceAsset.asset, address(weth));
         assertEq(p[1].amount, 3e18);
     }
 
@@ -111,21 +106,21 @@ contract FluidFTokensMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p =
             meta.getOraclePositionsForInstances(alice, _instances(), address(weth));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(weth));
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_unregisteredAsset_skipped() public {
         nav.unregisterAssetHelper(address(usdc));
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(weth));
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_zeroBalance_skipped() public {
         fUSDC.setBalance(alice, 0);
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(weth));
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_badInstance_isolated() public view {

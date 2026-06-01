@@ -94,13 +94,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_WSTETH_USDC),
-            "Morpho - wstETH/USDC",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), address(balances));
 
         (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_USDC_USER, USDC);
         assertGt(amount, 0, "User should have USDC supply position");
@@ -120,13 +114,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = MKR;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
-            "Morpho - USDC/DAI/MKR",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), address(balances));
 
         (uint256 amountUsdc, bool isDebtUsdc) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, USDC);
         assertTrue(isDebtUsdc, "User should have USDC borrow position (negative balance)");
@@ -142,13 +130,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = MKR;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
-            "Morpho - USDC/DAI/MKR",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), address(balances));
 
         (uint256 amountMkr, bool isDebtMkr) = oracle.getOracleBalanceForAsset(BORROW_USDC_USER, MKR);
         assertGt(amountMkr, 0, "User should have MKR collateral position");
@@ -167,13 +149,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assetsToRegister[1] = USDC;
         balances = _deployBalancesForOracle(assetsToRegister);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_WSTETH_USDC),
-            "Morpho - wstETH/USDC",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), address(balances));
 
         address[] memory assets = oracle.underlyingAssetsSupported();
         assertEq(assets.length, 2);
@@ -193,13 +169,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assetsToRegister[1] = USDC;
         balances = _deployBalancesForOracle(assetsToRegister);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_WSTETH_USDC),
-            "Morpho - wstETH/USDC",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), address(balances));
 
         assertEq(oracle.COLLATERAL_TOKEN(), WSTETH);
         assertEq(oracle.LOAN_TOKEN(), USDC);
@@ -218,13 +188,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = MKR;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_USDC_DAI_MKR),
-            "Morpho - USDC/DAI/MKR",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_USDC_DAI_MKR), address(balances));
 
         (address[] memory resultAssets, uint256[] memory amounts,) = oracle.getOracleBalances(BORROW_USDC_USER);
 
@@ -241,13 +205,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_WSTETH_USDC),
-            "Morpho - wstETH/USDC",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_WSTETH_USDC), address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SUPPLY_USDC_USER, address(0));
 
@@ -304,13 +262,7 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = APYUSD;
         balances = _deployBalancesForOracle(assets);
 
-        oracle = new MorphoMarketBalanceOracle(
-            MORPHO_MAINNET,
-            Id.unwrap(MARKET_ID_APXUSD_APYUSD),
-            "Morpho - apxUSD/apyUSD",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(balances)
-        );
+        oracle = new MorphoMarketBalanceOracle(MORPHO_MAINNET, Id.unwrap(MARKET_ID_APXUSD_APYUSD), address(balances));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SUPPLY_BORROW_USER, address(0));
 
@@ -322,13 +274,13 @@ contract MorphoMarketBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawBorrow;
         for (uint256 i = 0; i < positions.length; i++) {
             INAVCalculator.PositionBalance memory p = positions[i];
-            if (p.underlyingAsset.asset == APYUSD && !p.isDebt) {
+            if (p.balanceAsset.asset == APYUSD && !p.isDebt) {
                 assertGt(p.amount, 0, "apyUSD collateral row has non-zero amount");
                 sawCollateral = true;
-            } else if (p.underlyingAsset.asset == APXUSD && !p.isDebt) {
+            } else if (p.balanceAsset.asset == APXUSD && !p.isDebt) {
                 assertGt(p.amount, 0, "apxUSD supply row has non-zero amount");
                 sawSupply = true;
-            } else if (p.underlyingAsset.asset == APXUSD && p.isDebt) {
+            } else if (p.balanceAsset.asset == APXUSD && p.isDebt) {
                 assertGt(p.amount, 0, "apxUSD borrow row has non-zero amount");
                 sawBorrow = true;
             }

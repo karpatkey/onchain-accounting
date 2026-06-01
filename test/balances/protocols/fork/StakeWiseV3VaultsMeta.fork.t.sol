@@ -5,15 +5,11 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title StakeWiseV3VaultsMetaParityForkTest (Gnosis)
 /// @notice Proves the StakeWise V3 vaults meta-adapter reproduces the per-vault StakeWiseV3VaultBalanceOracle
 ///         leg-for-leg (exact) against the real Gnosis Genesis vault and real holders. Both adapters share one
 ///         BalancesHarnessForFork registry.
 contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant GNO = 0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb;
     address public constant VAULT = 0x4b4406Ed8659D03423490D8b62a1639206dA0A7a;
     address public constant TEST_USER = 0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f;
@@ -30,14 +26,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deploy() internal {
         balances = _deployBalancesForOracle(GNO);
-        per = new StakeWiseV3VaultBalanceOracle(
-            GNO,
-            VAULT,
-            "StakeWise V3",
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"x\"",
-            VAULT.toHexString(),
-            address(balances)
-        );
+        per = new StakeWiseV3VaultBalanceOracle(GNO, VAULT, address(balances));
         meta = new StakeWiseV3VaultsMetaBalanceAdapter(GNO, "StakeWise V3", address(balances));
     }
 
@@ -83,9 +72,8 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
             meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, VAULT.toHexString(), "positionId = vault address");
-            assertEq(p[i].protocol, "StakeWise V3");
-            assertEq(p[i].underlyingAsset.asset, GNO);
+            assertEq(p[i].positionId, abi.encode(VAULT), "positionId = vault address");
+            assertEq(p[i].balanceAsset.asset, GNO);
         }
     }
 }

@@ -65,9 +65,6 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         oracle = new ConvexBalanceOracle(
             REWARDER,
             LP_TOKEN,
-            "Convex",
-            "{\"protocol\":\"Convex\",\"pool\":\"crvUSD/USDT Pool\"",
-            "0x0000000000000000000000000000000000000001",
             address(balances)
         );
     }
@@ -172,16 +169,14 @@ contract ConvexBalanceOracleForkTest_crvUSD_USDT is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertGt(positions[i].amount, 0);
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].protocol, "Convex");
             // positionDetail is JSON: {"protocol":"Convex","pool":"crvUSD/USDT Pool","type":"Staking"}
-            assertTrue(bytes(positions[i].positionDetail).length > 0);
         }
     }
 
     function test_getOraclePositions_withAssetFilter() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE, USDT);
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, USDT);
+        assertEq(positions[0].balanceAsset.asset, USDT);
         assertEq(positions[0].amount, EXPECTED_USDT);
 
         INAVCalculator.PositionBalance[] memory empty = oracle.getOraclePositions(SAFE, address(0xdead));

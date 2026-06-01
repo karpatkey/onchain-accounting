@@ -5,15 +5,11 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
 import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title FluidVaultsMetaParityForkTest
 /// @notice Validates the Fluid vaults meta-adapter against the real mainnet wstETH/USDC T1 vault: the on-chain
 ///         `constantsView` token decode + VaultResolver read path match the per-vault FluidVaultBalanceOracle
 ///         (parity over getOraclePositions). Both adapters share one BalancesHarnessForFork.
 contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant VAULT = 0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE; // wstETH/USDC
     address public constant VAULT_RESOLVER = 0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC;
     address public constant WSTETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
@@ -37,14 +33,7 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[1] = USDC;
         balances = _deployBalancesForOracle(assetsList);
 
-        per = new FluidVaultBalanceOracle(
-            VAULT,
-            VAULT_RESOLVER,
-            "Fluid",
-            "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"wstETH/USDC\"",
-            VAULT.toHexString(),
-            address(balances)
-        );
+        per = new FluidVaultBalanceOracle(VAULT, VAULT_RESOLVER, address(balances));
         meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, "Fluid", address(balances));
     }
 
@@ -59,7 +48,7 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         returns (uint256 credit, uint256 debt)
     {
         for (uint256 i = 0; i < p.length; i++) {
-            if (p[i].underlyingAsset.asset != asset) continue;
+            if (p[i].balanceAsset.asset != asset) continue;
             if (p[i].isDebt) debt += p[i].amount;
             else credit += p[i].amount;
         }

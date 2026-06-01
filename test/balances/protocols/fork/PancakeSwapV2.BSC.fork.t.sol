@@ -89,13 +89,7 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         assets[0] = BSC_ETH;
         assets[1] = BSC_COW;
         balances = _deployBalancesForOracle(assets);
-        oracle = new PancakeSwapV2BalanceOracle(
-            PAIR,
-            "PancakeSwap V2",
-            "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new PancakeSwapV2BalanceOracle(PAIR, address(balances));
     }
 
     // ============================================
@@ -196,12 +190,10 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         bool sawCow;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "PancakeSwap V2");
-            assertEq(positions[i].positionDetail, "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"}");
             assertFalse(positions[i].isDebt);
             assertGt(positions[i].amount, 0);
-            if (positions[i].underlyingAsset.asset == BSC_ETH) sawEth = true;
-            if (positions[i].underlyingAsset.asset == BSC_COW) sawCow = true;
+            if (positions[i].balanceAsset.asset == BSC_ETH) sawEth = true;
+            if (positions[i].balanceAsset.asset == BSC_COW) sawCow = true;
         }
         assertTrue(sawEth, "BSC-ETH position present");
         assertTrue(sawCow, "COW position present");
@@ -210,7 +202,7 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
     function test_getOraclePositions_assetFilter_eth() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_HOLDER, BSC_ETH);
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, BSC_ETH);
+        assertEq(positions[0].balanceAsset.asset, BSC_ETH);
         assertGt(positions[0].amount, 0);
     }
 
@@ -236,17 +228,11 @@ contract PancakeSwapV2BalanceOracleForkTest_BSC_ETH_COW is BalanceAdapterTestBas
         address[] memory shippedAssets = new address[](1);
         shippedAssets[0] = BSC_ETH;
         BalancesHarnessForFork shippedBalances = _deployBalancesForOracle(shippedAssets);
-        PancakeSwapV2BalanceOracle shippedOracle = new PancakeSwapV2BalanceOracle(
-            PAIR,
-            "PancakeSwap V2",
-            "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW LP\"",
-            "0x0000000000000000000000000000000000000001",
-            address(shippedBalances)
-        );
+        PancakeSwapV2BalanceOracle shippedOracle = new PancakeSwapV2BalanceOracle(PAIR, address(shippedBalances));
 
         INAVCalculator.PositionBalance[] memory positions = shippedOracle.getOraclePositions(TEST_HOLDER, address(0));
         assertEq(positions.length, 1, "only ETH leg should survive the registry filter");
-        assertEq(positions[0].underlyingAsset.asset, BSC_ETH, "the surviving leg is ETH");
+        assertEq(positions[0].balanceAsset.asset, BSC_ETH, "the surviving leg is ETH");
         assertGt(positions[0].amount, 0, "ETH leg is the holder's pro-rata share of the ETH reserve");
 
         // And the per-asset query for COW returns 0 because COW isn't in the registry — the

@@ -3,9 +3,9 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balancer/BalancerV2PoolLib.sol";
 
 /// @title Balancer V2 Pools Meta Balance Adapter
@@ -18,17 +18,18 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balance
 ///         constant pinned in the constructor. Identity derived on-chain (positionId = BPT address; name = BPT
 ///         `name()`). See ADR 0010.
 contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
-    using Strings for address;
     using BalancerV2PoolLib for bytes32;
+
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2_POOL;
 
     /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
     address public immutable VAULT;
 
     /// @param vault_ The Balancer V2 Vault address.
-    /// @param protocol_ Protocol identifier (e.g. "Balancer V2").
+    /// @param protocolName_ Protocol identifier (e.g. "Balancer V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address vault_, string memory protocol_, address navCalculator_)
-        MetaBalanceOracle(protocol_, navCalculator_)
+    constructor(address vault_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(vault_.code.length > 0, "Vault must be a contract");
         VAULT = vault_;
@@ -50,8 +51,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
         (address[] memory tokens, uint256[] memory amounts) = BalancerV2PoolLib.shares(VAULT, poolId, bpt, walletBpt);
 
-        string memory positionId = bpt.toHexString();
-        string memory detail = PositionType.withType(_detailBase(bpt), PositionType.SUPPLY);
+        bytes memory positionId = abi.encode(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](tokens.length);
         uint256 count;
@@ -61,13 +61,13 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(tokens[i]);
             if (!found) continue;
             temp[count++] = INAVCalculator.PositionBalance({
-                underlyingAsset: assetInfo,
+                balanceAsset: assetInfo,
                 balanceOracle: address(this),
                 amount: amounts[i],
                 isDebt: false,
-                protocol: _protocol,
-                positionDetail: detail,
-                positionId: positionId
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied
             });
         }
 
@@ -83,14 +83,14 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
         return BalancerV2PoolLib.poolTokens(VAULT, instance, BalancerV2PoolLib.bptOf(instance));
     }
 
-    /// @notice positionDetail JSON base (no closing `}`); name derived on-chain from the BPT token name.
-    function _detailBase(address bpt) private view returns (string memory) {
-        string memory name;
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        bytes32 poolId = abi.decode(pid, (bytes32));
+        address bpt = address(uint160(uint256(poolId) >> 96));
         try IERC20Metadata(bpt).name() returns (string memory n) {
-            name = bytes(n).length == 0 ? bpt.toHexString() : n;
+            return n;
         } catch {
-            name = bpt.toHexString();
+            return "";
         }
-        return string.concat("{\"protocol\":\"", _protocol, "\",\"product\":\"LP\",\"name\":\"", name, "\"");
     }
 }

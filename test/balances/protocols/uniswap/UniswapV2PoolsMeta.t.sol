@@ -59,13 +59,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
     }
 
     function _per(MockUniswapV2Pair pair) internal returns (UniswapV2BalanceOracle) {
-        return new UniswapV2BalanceOracle(
-            address(pair),
-            "Uniswap V2",
-            "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"x\"",
-            "0x01",
-            address(nav)
-        );
+        return new UniswapV2BalanceOracle(address(pair), address(nav));
     }
 
     function test_supportsInterface() public view {
@@ -88,23 +82,19 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         assertEq(p.length, 2, "DAI + WETH supply legs");
-        assertEq(p[0].underlyingAsset.asset, address(dai));
+        assertEq(p[0].balanceAsset.asset, address(dai));
         assertEq(p[0].amount, 100e18);
         assertEq(p[0].amount, perDai, "DAI parity");
         assertEq(p[1].amount, 1e18);
         assertEq(p[1].amount, perWeth, "WETH parity");
 
-        assertEq(p[0].positionId, address(pairA).toHexString());
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Uniswap V2\",\"product\":\"LP\",\"name\":\"DAI/WETH LP\",\"type\":\"Supply\"}"
-        );
+        assertEq(p[0].positionId, abi.encode(address(pairA)));
     }
 
     function test_fanOut_acrossPairs() public view {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 4, "2 legs per pair");
-        assertEq(p[2].underlyingAsset.asset, address(usdc));
+        assertEq(p[2].balanceAsset.asset, address(usdc));
         assertEq(p[2].amount, 100e18);
     }
 
@@ -113,7 +103,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
             meta.getOraclePositionsForInstances(alice, _instances(), address(weth));
         assertEq(p.length, 2, "WETH leg from each pair");
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].underlyingAsset.asset, address(weth));
+            assertEq(p[i].balanceAsset.asset, address(weth));
         }
     }
 
@@ -123,7 +113,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(dai));
+        assertEq(p[0].balanceAsset.asset, address(dai));
     }
 
     function test_zeroBalance_empty() public {

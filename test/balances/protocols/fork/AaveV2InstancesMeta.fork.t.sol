@@ -5,14 +5,12 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title AaveV2InstancesMetaParityForkTest
 /// @notice Proves the Aave V2 instances meta-adapter reproduces the per-instance AaveV2InstanceBalanceOracle
 ///         exactly against the real mainnet Aave V2 market and real holders (pure supplier + supply/borrow). Both
 ///         adapters share one BalancesHarnessForFork.
 contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
 
     address public constant DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d;
     address public constant LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
@@ -40,9 +38,6 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
 
         per = new AaveV2InstanceBalanceOracle(
             DATA_PROVIDER,
-            "Aave V2",
-            "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Mainnet Market\"",
-            LENDING_POOL.toHexString(),
             address(balances)
         );
         meta = new AaveV2InstancesMetaBalanceAdapter("Aave V2", address(balances));
@@ -59,7 +54,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
         returns (uint256 credit, uint256 debt)
     {
         for (uint256 i = 0; i < p.length; i++) {
-            if (p[i].underlyingAsset.asset != asset) continue;
+            if (p[i].balanceAsset.asset != asset) continue;
             if (p[i].isDebt) debt += p[i].amount;
             else credit += p[i].amount;
         }
@@ -93,8 +88,8 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
             meta.getOraclePositionsForInstances(PURE_USDC_SUPPLIER, _instance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, LENDING_POOL.toHexString(), "positionId = LendingPool (getLendingPool)");
-            assertEq(p[i].protocol, "Aave V2");
+            (address pool,) = abi.decode(p[i].positionId, (address, address));
+            assertEq(pool, LENDING_POOL, "positionId pool = LendingPool (getLendingPool)");
         }
     }
 }

@@ -13,15 +13,9 @@ import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 ///         changing semantics.
 contract PancakeSwapV2BalanceOracle is UniswapV2BalanceOracle {
     /// @param pair_ The PancakeSwap V2 pair contract address.
-    /// @param protocol_ Protocol identifier (e.g. "PancakeSwap V2").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (pair address).
     /// @param navCalculator_ The NAVCalculator contract address.
     constructor(
         address pair_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
         address navCalculator_
-    ) UniswapV2BalanceOracle(pair_, protocol_, positionDetail_, positionId_, navCalculator_) {}
+    ) UniswapV2BalanceOracle(pair_, navCalculator_) {}
 }

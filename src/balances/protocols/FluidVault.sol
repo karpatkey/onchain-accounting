@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Fluid Vault Balance Oracle (T1)
 /// @author kpk
@@ -58,12 +59,7 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     /// @notice NAVCalculator, used to filter to registered assets and resolve symbol/decimals
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier (e.g. "Fluid Vault")
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (vault address)
-    string private _positionId;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_VAULTS;
 
     //
     // Constructor
@@ -72,18 +68,8 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
     /// @param vault_ The Fluid T1 vault address.
     /// @param vaultResolver_ The Fluid VaultResolver address (used only at runtime for NFT
     ///                       enumeration and per-NFT position reads).
-    /// @param protocol_ Protocol identifier (e.g. "Fluid Vault").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (vault address).
     /// @param navCalculator_ NAVCalculator address (asset registry source).
-    constructor(
-        address vault_,
-        address vaultResolver_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address vault_, address vaultResolver_, address navCalculator_) {
         if (vault_ == address(0) || vaultResolver_ == address(0)) {
             revert InvalidArguments();
         }
@@ -114,9 +100,6 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
 
         COLLATERAL_TOKEN = cv.supplyToken;
         DEBT_TOKEN = cv.borrowToken;
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -352,15 +335,14 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         revert("Asset not found in NAVCalculator");
     }
 
-    /// @notice Returns the `positionDetail` JSON string for a given asset/leg.
-    function _positionDetailFor(address asset, bool isDebt) internal view returns (string memory) {
-        if (asset == COLLATERAL_TOKEN && !isDebt) {
-            return PositionType.withType(_positionDetail, PositionType.COLLATERAL);
-        }
-        if (asset == DEBT_TOKEN && isDebt) {
-            return PositionType.withType(_positionDetail, PositionType.BORROW);
-        }
-        return string.concat(_positionDetail, "}");
+    function protocolName() external pure returns (string memory) { return "Fluid"; }
+    function describePosition(bytes calldata) external pure returns (string memory) { return "vault position"; }
+
+    /// @notice Returns the PositionKind for a given asset/leg.
+    function _positionKindFor(address asset, bool isDebt) internal view returns (PositionKind) {
+        if (asset == COLLATERAL_TOKEN && !isDebt) return PositionKind.Collateral;
+        if (asset == DEBT_TOKEN && isDebt) return PositionKind.Borrowed;
+        return PositionKind.Supplied;
     }
 
     /// @notice Builds PositionBalance array from pre-computed asset balance data
@@ -375,15 +357,15 @@ contract FluidVaultBalanceOracle is IBalanceOracleAdapter {
         uint256 positionCount = 0;
 
         for (uint256 i = 0; i < data.length; i++) {
-            INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(data[i].asset);
+            INAVCalculator.Asset memory assetMeta = _getAssetInfo(data[i].asset);
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: assetMeta,
                 balanceOracle: address(this),
                 amount: data[i].amount,
                 isDebt: data[i].isDebt,
-                protocol: _protocol,
-                positionDetail: _positionDetailFor(data[i].asset, data[i].isDebt),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(VAULT),
+                positionKind: _positionKindFor(data[i].asset, data[i].isDebt)
             });
             positionCount++;
         }

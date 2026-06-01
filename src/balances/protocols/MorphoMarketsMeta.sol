@@ -4,11 +4,11 @@ pragma solidity ^0.8;
 import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Markets Meta Balance Adapter
 /// @author kpk
@@ -19,17 +19,18 @@ import {PositionType} from "src/utils/PositionType.sol";
 ///         the per-market `MorphoMarket` adapter. See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
 contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
     using Math for uint256;
-    using Strings for uint256;
     using MorphoBalancesLib for IMorpho;
+
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_MARKETS;
 
     /// @notice The Morpho Blue singleton (protocol-global).
     IMorpho public immutable MORPHO;
 
     /// @param morpho_ The Morpho Blue contract address.
-    /// @param protocol_ Protocol identifier (e.g. "Morpho").
+    /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address morpho_, string memory protocol_, address navCalculator_)
-        MetaBalanceOracle(protocol_, navCalculator_)
+    constructor(address morpho_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(morpho_.code.length > 0, "Morpho must be a contract");
         MORPHO = IMorpho(morpho_);
@@ -59,31 +60,22 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         Position memory pos = MORPHO.position(marketId, account);
-        string memory base = _detailBase(collateral, loan);
-        string memory positionId = uint256(instance).toHexString(32);
+        bytes memory pid = abi.encode(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](3);
         uint256 count;
 
         if (collateralEligible && uint256(pos.collateral) > 0) {
-            temp[count++] = _row(
-                collAsset,
-                uint256(pos.collateral),
-                false,
-                positionId,
-                PositionType.withType(base, PositionType.COLLATERAL)
-            );
+            temp[count++] = _row(collAsset, uint256(pos.collateral), false, pid, PositionKind.Collateral);
         }
 
         if (loanEligible) {
             (uint256 supplied, uint256 borrowed) = _loanLegs(mp, pos);
             if (supplied > 0) {
-                temp[count++] =
-                    _row(loanAsset, supplied, false, positionId, PositionType.withType(base, PositionType.SUPPLY));
+                temp[count++] = _row(loanAsset, supplied, false, pid, PositionKind.Supplied);
             }
             if (borrowed > 0) {
-                temp[count++] =
-                    _row(loanAsset, borrowed, true, positionId, PositionType.withType(base, PositionType.BORROW));
+                temp[count++] = _row(loanAsset, borrowed, true, pid, PositionKind.Borrowed);
             }
         }
 
@@ -100,6 +92,19 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         assets = new address[](2);
         assets[0] = mp.collateralToken;
         assets[1] = mp.loanToken;
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 32) return "";
+        bytes32 marketId = abi.decode(pid, (bytes32));
+        try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
+            string memory collSym = _symbol(mp.collateralToken);
+            string memory loanSym = _symbol(mp.loanToken);
+            return string.concat(collSym, "/", loanSym, " market");
+        } catch {
+            return "";
+        }
     }
 
     /// @notice Projected loan-token supply/borrow amounts for the account (ADR 0004: expectedMarketBalances).
@@ -119,36 +124,31 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @notice Builds the positionDetail JSON base (no closing `}`), deriving the market name on-chain from the
-    ///         collateral/loan token symbols, e.g. `{"protocol":"Morpho","product":"Market","name":"cbBTC/USDC"`.
-    function _detailBase(address collateral, address loan) private view returns (string memory) {
-        return string.concat(
-            "{\"protocol\":\"",
-            _protocol,
-            "\",\"product\":\"Market\",\"name\":\"",
-            IERC20Metadata(collateral).symbol(),
-            "/",
-            IERC20Metadata(loan).symbol(),
-            "\""
-        );
-    }
-
     /// @notice Assembles a single PositionBalance row with this adapter's identity.
     function _row(
         INAVCalculator.Asset memory asset,
         uint256 amount,
         bool isDebt,
-        string memory positionId,
-        string memory positionDetail
+        bytes memory pid,
+        PositionKind kind
     ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
-            underlyingAsset: asset,
+            balanceAsset: asset,
             balanceOracle: address(this),
             amount: amount,
             isDebt: isDebt,
-            protocol: _protocol,
-            positionDetail: positionDetail,
-            positionId: positionId
+            protocolId: PROTOCOL_ID,
+            positionId: pid,
+            positionKind: kind
         });
+    }
+
+    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens.
+    function _symbol(address token) private view returns (string memory) {
+        try IERC20Metadata(token).symbol() returns (string memory s) {
+            return bytes(s).length == 0 ? "?" : s;
+        } catch {
+            return "?";
+        }
     }
 }

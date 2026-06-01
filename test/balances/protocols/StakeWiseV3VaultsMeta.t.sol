@@ -99,31 +99,20 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         assertEq(p.length, 3);
 
         // vaultA Staking
-        assertEq(p[0].underlyingAsset.asset, address(underlying));
+        assertEq(p[0].balanceAsset.asset, address(underlying));
         assertEq(p[0].amount, 10e18);
         assertFalse(p[0].isDebt);
         assertEq(p[0].balanceOracle, address(meta));
-        assertEq(p[0].protocol, "StakeWise V3");
-        assertEq(p[0].positionId, address(vaultA).toHexString());
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Genesis Vault\",\"type\":\"Staking\"}"
-        );
+        assertEq(p[0].positionId, abi.encode(address(vaultA)));
+
         // vaultA Borrow
         assertEq(p[1].amount, 2e18);
         assertTrue(p[1].isDebt);
-        assertEq(
-            p[1].positionDetail,
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Genesis Vault\",\"type\":\"Borrow\"}"
-        );
+
         // vaultB Staking only
         assertEq(p[2].amount, 3e18);
         assertFalse(p[2].isDebt);
-        assertEq(p[2].positionId, address(vaultB).toHexString());
-        assertEq(
-            p[2].positionDetail,
-            "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Meta Vault\",\"type\":\"Staking\"}"
-        );
+        assertEq(p[2].positionId, abi.encode(address(vaultB)));
     }
 
     function test_assetFilter_match_and_miss() public view {

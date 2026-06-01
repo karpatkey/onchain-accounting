@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Gearbox Market Balance Oracle
 /// @author kpk
@@ -36,31 +37,19 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
     /// @notice The market's underlying asset (cached from MARKET.asset() at construction)
     address public immutable ASSET;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (market address)
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for Gearbox V3
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
 
     //
     // Constructor
     //
 
     /// @param market_ The address of the Gearbox ERC4626 farming pool
-    /// @param protocol_ Protocol identifier (e.g., "Gearbox")
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (market address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access
-    constructor(
-        address market_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address market_, address navCalculator_) {
         if (market_ == address(0)) revert InvalidArguments();
         require(market_.code.length > 0, "Market must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -68,9 +57,6 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
         MARKET = IERC4626(market_);
         ASSET = MARKET.asset();
         require(ASSET != address(0), "Market asset must be non-zero");
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -81,6 +67,18 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "Gearbox";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "supply";
     }
 
     //
@@ -218,13 +216,13 @@ contract GearboxMarketBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(assetBalanceData[i].asset);
 
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(MARKET)),
+                positionKind: PositionKind.Supplied
             });
             positionCount++;
         }

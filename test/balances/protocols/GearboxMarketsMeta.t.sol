@@ -95,41 +95,37 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2);
 
-        assertEq(p[0].underlyingAsset.asset, address(weth));
+        assertEq(p[0].balanceAsset.asset, address(weth));
         assertEq(p[0].amount, 11e18);
         assertFalse(p[0].isDebt);
         assertEq(p[0].balanceOracle, address(meta));
-        assertEq(p[0].protocol, "Gearbox");
-        assertEq(p[0].positionId, address(marketA).toHexString());
-        assertEq(
-            p[0].positionDetail,
-            "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH market\",\"type\":\"Supply\"}"
-        );
+        assertEq(p[0].positionId, abi.encode(address(marketA)));
 
-        assertEq(p[1].underlyingAsset.asset, address(wsteth));
+
+        assertEq(p[1].balanceAsset.asset, address(wsteth));
         assertEq(p[1].amount, 4e18);
-        assertEq(p[1].positionId, address(marketB).toHexString());
+        assertEq(p[1].positionId, abi.encode(address(marketB)));
     }
 
     function test_assetFilter() public view {
         INAVCalculator.PositionBalance[] memory p =
             meta.getOraclePositionsForInstances(alice, _instances(), address(wsteth));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(wsteth));
+        assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_unregisteredAsset_skipped() public {
         nav.unregisterAssetHelper(address(weth));
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(wsteth));
+        assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_zeroBalance_skipped() public {
         marketA.setBalance(alice, 0);
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].underlyingAsset.asset, address(wsteth));
+        assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_badInstance_isolated() public view {

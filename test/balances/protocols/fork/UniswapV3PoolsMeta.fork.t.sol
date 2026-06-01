@@ -5,15 +5,11 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-
 /// @title UniswapV3PoolsMetaParityForkTest
 /// @notice Proves the Uniswap V3 pools meta-adapter reproduces the per-instance UniswapV3PoolBalanceOracle per token
 ///         (exact — both delegate the same UniswapV3PoolLib math), against the real mainnet WBTC/WETH 0.3% pool and
 ///         a real NFT holder. Both adapters share one BalancesHarnessForFork registry.
 contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
-    using Strings for address;
-
     address public constant NPM = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
     address public constant POOL = 0xCBCdF9626bC03E24f779434178A73a0B4bad62eD; // WBTC/WETH 0.3%
     address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
@@ -28,14 +24,7 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForOracle(_assets());
-        per = new UniswapV3PoolBalanceOracle(
-            POOL,
-            NPM,
-            "Uniswap V3",
-            "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"x\"",
-            POOL.toHexString(),
-            address(balances)
-        );
+        per = new UniswapV3PoolBalanceOracle(POOL, NPM, address(balances));
         meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
     }
 
@@ -76,10 +65,9 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
             meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, POOL.toHexString(), "positionId = pool address");
-            assertEq(p[i].protocol, "Uniswap V3");
-            // Name is derived on-chain from token symbols + fee tier.
-            assertTrue(_contains(p[i].positionDetail, "WBTC/WETH 0.3%"), "derived name WBTC/WETH 0.3%");
+            (address npm, uint256 tokenId) = abi.decode(p[i].positionId, (address, uint256));
+            assertEq(npm, NPM, "positionId[0] = NonfungiblePositionManager");
+            assertGt(tokenId, 0, "positionId[1] = non-zero tokenId");
         }
     }
 

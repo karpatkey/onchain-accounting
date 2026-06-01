@@ -62,13 +62,7 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         assets[0] = USDC;
         assets[1] = WETH;
         balances = _deployBalancesForOracle(assets);
-        oracle = new UniswapV2BalanceOracle(
-            PAIR,
-            "Uniswap V2",
-            "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new UniswapV2BalanceOracle(PAIR, address(balances));
     }
 
     // ============================================
@@ -162,15 +156,10 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         bool sawWeth;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceOracle, address(oracle));
-            assertEq(positions[i].protocol, "Uniswap V2");
-            assertEq(
-                positions[i].positionDetail,
-                "{\"protocol\":\"Uniswap V2\",\"pool\":\"USDC/WETH LP\",\"type\":\"Supply\"}"
-            );
             assertFalse(positions[i].isDebt);
             assertGt(positions[i].amount, 0);
-            if (positions[i].underlyingAsset.asset == USDC) sawUsdc = true;
-            if (positions[i].underlyingAsset.asset == WETH) sawWeth = true;
+            if (positions[i].balanceAsset.asset == USDC) sawUsdc = true;
+            if (positions[i].balanceAsset.asset == WETH) sawWeth = true;
         }
         assertTrue(sawUsdc, "USDC position present");
         assertTrue(sawWeth, "WETH position present");
@@ -180,7 +169,7 @@ contract UniswapV2BalanceOracleForkTest_USDC_WETH is BalanceAdapterTestBase {
         deal(PAIR, alice, 1e15);
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, USDC);
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, USDC);
+        assertEq(positions[0].balanceAsset.asset, USDC);
         assertGt(positions[0].amount, 0);
     }
 

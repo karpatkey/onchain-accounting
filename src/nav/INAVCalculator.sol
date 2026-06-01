@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {IBalances} from "src/balances/IBalances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title INAVCalculator
 /// @notice Interface for the NAV Calculator contract. Defines the full API for asset registration, price feeds,
@@ -27,37 +28,31 @@ interface INAVCalculator is IBalances {
 
     /// @notice Balance-only position data returned by balance oracles (no pricing).
     /// @dev NAVCalculator enriches these with pricing to produce Position structs.
-    /// @param underlyingAsset Asset metadata (address, symbol, decimals).
-    /// @param balanceOracle Address of the oracle that reported this position.
+    /// @param balanceAsset Asset metadata (address, symbol, decimals). The token `amount` is denominated in.
+    /// @param balanceOracle Address of the oracle that reported this position. Provenance / audit trail — NOT part of identity.
     /// @param amount Balance magnitude (always positive); sign is implied by isDebt.
-    /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV).
-    /// @param protocol Protocol or source identifier (e.g. "Aave V3", "wallet").
-    /// @param positionDetail Fully-closed JSON object with position metadata. Adapters construct this at
-    ///        query time by appending a closing `}` (or `,"type":"..."}`) to the JSON base stored in the
-    ///        constructor. Required keys: `protocol`, `product`. Optional keys: `type`, `token`.
-    ///        `protocol` mirrors the adapter's protocol field. `product` is the position category
-    ///        ("Lending", "Vault", "Market", "LP", "Staking", "Rewards", "Holding"). `name` (optional)
-    ///        is the specific market/instance as it appears in the protocol's own UI — e.g. "Core Instance"
-    ///        or "Prime Instance" for Aave V3, "kpk ETH Prime V1" for a Morpho vault.
-    ///        `type` disambiguates sub-positions: "Supply", "Borrow", "Collateral", "Staking", "Rewards", "Fees".
-    ///        Constants are defined in `src/utils/PositionType.sol`.
-    ///        Full schema reference: see docs/howto/position-detail-schema.md.
-    /// @param positionId Stable hex identifier for this adapter instance (pool address, market id, etc.).
-    ///        Frontend uses this as a safe React key across blocks and deployments. Derived from the most
-    ///        specific immutable address in the adapter's constructor (vault, comet, gauge, marketId, …).
+    /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV). Canonical NAV-sign signal.
+    /// @param protocolId `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`).
+    ///        Selects the `positionId` ABI-decode schema — one slug implies exactly one schema.
+    /// @param positionId ABI-encoded position identifier. Decode schema is determined by `protocolId`.
+    ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool, address reserve)`.
+    ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-detail-schema.md.
+    /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Earned).
+    ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
+    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
     struct PositionBalance {
-        Asset underlyingAsset;
+        Asset balanceAsset;
         address balanceOracle;
         uint256 amount;
         bool isDebt;
-        string protocol;
-        string positionDetail;
-        string positionId;
+        bytes32 protocolId;
+        bytes positionId;
+        PositionKind positionKind;
     }
 
     /// @notice Enriched position including pricing and quote-currency value.
     /// @dev Returned by getAccountPositions and getAccountPositionsForAsset.
-    /// @param underlyingAsset Asset metadata from registry (canonical symbol/decimals).
+    /// @param balanceAsset Asset metadata from registry (canonical symbol/decimals).
     /// @param balanceOracle Oracle that reported the balance.
     /// @param amount Balance magnitude (positive); sign implied by isDebt.
     /// @param isDebt True if debt, false if credit.
@@ -66,11 +61,11 @@ interface INAVCalculator is IBalances {
     /// @param price Price used (e.g. USD per unit of asset).
     /// @param priceDecimals Decimals of price.
     /// @param stale True if the price was stale at query time.
-    /// @param protocol Protocol/source identifier.
-    /// @param positionDetail Fully-closed JSON object. Copied verbatim from PositionBalance.positionDetail.
-    /// @param positionId Stable hex identifier for this adapter instance. Copied from PositionBalance.
+    /// @param protocolId `keccak256` protocol slug. Copied from PositionBalance.
+    /// @param positionId ABI-encoded position identifier. Copied from PositionBalance.
+    /// @param positionKind Semantic discriminator. Copied from PositionBalance.
     struct Position {
-        Asset underlyingAsset;
+        Asset balanceAsset;
         address balanceOracle;
         uint256 amount;
         bool isDebt;
@@ -79,9 +74,26 @@ interface INAVCalculator is IBalances {
         int256 price;
         uint8 priceDecimals;
         bool stale;
-        string protocol;
-        string positionDetail;
-        string positionId;
+        bytes32 protocolId;
+        bytes positionId;
+        PositionKind positionKind;
+    }
+
+    /// @notice Position enriched with human-readable display labels.
+    /// @dev Returned by verbose read methods. Labels are sourced from the adapter's IPositionDescribable
+    ///      implementation (if present) and are empty strings otherwise. MUST NOT be used for identity,
+    ///      indexing, or reconciliation — use the typed fields on `position` for those purposes.
+    struct VerbosePosition {
+        Position position;
+        string protocolName;  // e.g. "Aave V3", "Morpho"
+        string positionLabel; // e.g. "USDC supply", "USDC/WETH 0.05% LP"
+    }
+
+    /// @notice NAV snapshot bundled with a full verbose position breakdown.
+    // forge-lint: disable-next-line(pascal-case-struct)
+    struct VerboseNAV {
+        NAV nav;
+        VerbosePosition[] positions;
     }
 
     /// @notice NAV snapshot for an account in a given quote currency.

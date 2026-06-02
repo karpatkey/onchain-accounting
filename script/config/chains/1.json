@@ -498,8 +498,39 @@
       },
       "deployed": "0x45006c280bF3dC44D7D370C9a801c95eC501aA3E"
     },
-    "Curve_weETH_WETH": {
+    "CurvePoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Curve"
+      },
+      "metaInstances": [
+        "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
+        "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
+        "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
+        "0xD001aE433f254283FeCE51d4ACcE8c53263aa186"
+      ],
+      "deployed": ""
+    },
+    "CurveGaugesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving gauge-staked LP + CRV + extra rewards for every configured Curve gauge. Instance coordinate = gauge address. Supersedes staked-LP + reward reporting in per-instance Curve_* adapters, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "minter": "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0",
+        "crvToken": "0xD533a949740bb3306d119CC777fa900bA034cd52",
+        "protocol": "Curve"
+      },
+      "metaInstances": [
+        "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
+        "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
+        "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
+        "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
+      ],
+      "deployed": ""
+    },
+    "Curve_weETH_WETH": {
+      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "enabled": false,
       "constructor": {
         "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
         "protocol": "Curve",
@@ -509,7 +540,8 @@
       "deployed": "0xAF8A9F7b37925973615Eaa787AefA3f388D32101"
     },
     "Curve_crvUSD_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "enabled": false,
       "constructor": {
         "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
         "protocol": "Curve",
@@ -519,7 +551,8 @@
       "deployed": "0x9eFcd3aE461a4F5769365B25673053FB08cc76B9"
     },
     "Curve_crvUSD_USDT": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "enabled": false,
       "constructor": {
         "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
         "protocol": "Curve",
@@ -529,7 +562,8 @@
       "deployed": "0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc"
     },
     "Curve_RLUSD_USDC": {
-      "enabled": true,
+      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "enabled": false,
       "constructor": {
         "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
         "protocol": "Curve",

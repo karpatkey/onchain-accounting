@@ -16,7 +16,8 @@ import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/Morph
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
-import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
+import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
+import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMeta.sol";
 import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
@@ -105,11 +106,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Aura_GHO_USDC_USDT"); // Arbitrum — USD Alpha
         _deployIfEnabled("Aura_GHO_USDC"); // Base — USD Alpha
 
-        // --- Curve (one per gauge — Mainnet) ---
-        _deployIfEnabled("Curve_weETH_WETH"); // ETH Alpha
-        _deployIfEnabled("Curve_crvUSD_USDC"); // USD Alpha (Convex-underlying)
-        _deployIfEnabled("Curve_crvUSD_USDT"); // USD Alpha (Convex-underlying)
-        _deployIfEnabled("Curve_RLUSD_USDC"); // USD Alpha (Convex-underlying)
+        // --- Curve meta-adapters (ADR 0010: pools = wallet LP, gauges = staked LP + CRV + rewards) ---
+        _deployIfEnabled("CurvePoolsMeta"); // Meta-adapter: all Curve pools (wallet LP); pool set on NAV
+        _deployIfEnabled("CurveGaugesMeta"); // Meta-adapter: all Curve gauges (staked LP + CRV + rewards); gauge set on NAV
 
         // --- Convex (one per rewarder — Mainnet) ---
         _deployIfEnabled("Convex_weETH_WETH"); // ETH Alpha
@@ -254,9 +253,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployCap(navCalculator);
         }
 
-        // Curve adapters
-        if (_startsWith(adapterName, "Curve_")) {
-            return _deployCurve(adapterName, navCalculator);
+        // Curve meta-adapters (ADR 0010)
+        if (_equals(adapterName, "CurvePoolsMeta")) {
+            return _deployCurvePoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "CurveGaugesMeta")) {
+            return _deployCurveGaugesMeta(adapterName, navCalculator);
         }
 
         // Convex adapters
@@ -452,12 +454,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployCurve(string memory adapterName, address navCalculator) internal returns (address) {
-        address gauge =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+    function _deployCurvePoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        return address(new CurvePoolsMetaBalanceAdapter(protocol, navCalculator));
+    }
 
-        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, navCalculator);
-        return address(adapter);
+    function _deployCurveGaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address minter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "minter")
+        );
+        address crvToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "crvToken")
+        );
+        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
     }
 
     function _deployConvex(string memory adapterName, address navCalculator) internal returns (address) {

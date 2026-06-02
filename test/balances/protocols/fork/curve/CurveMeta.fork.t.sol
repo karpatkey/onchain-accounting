@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
-import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -38,9 +37,17 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     // Account known to hold gauge-staked LP and claimable rewards at FORK_BLOCK
     address public constant CRVUSD_USDC_STAKER = 0xc9332cbf6fee06A6b8cf87e56Bd2E77e08C0C13c;
 
+    // crvUSD/USDT StableSwap-NG pool
+    address public constant CRVUSD_USDT_POOL  = 0x390f3595bCa2Df7d23783dFd126427CCeb997BF4;
+    address public constant CRVUSD_USDT_GAUGE = 0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939;
+
+    // RLUSD/USDC StableSwap-NG pool
+    address public constant RLUSD_USDC_POOL  = 0xD001aE433f254283FeCE51d4ACcE8c53263aa186;
+    address public constant RLUSD_USDC_GAUGE = 0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F;
+
     // weETH/WETH NG pool (self-LP, uint256 indices)
-    address public constant WEETH_WETH_POOL  = 0x13947303F63b363876868D070F14dc865C36463b;
-    address public constant WEETH_WETH_GAUGE = 0xcA8c7Cc4A38A8481f52AD43De9A97c03f2C5BEBd;
+    address public constant WEETH_WETH_POOL  = 0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5;
+    address public constant WEETH_WETH_GAUGE = 0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2;
     // Account with weETH/WETH staked LP
     address public constant WEETH_WETH_STAKER = 0x6cF2A2Cb4F1D3A4aeb56DB52E9b5B69F8bDB83c5;
 
@@ -58,6 +65,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     address public constant WETH   = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant DAI    = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     address public constant USDT   = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+    address public constant RLUSD  = 0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD;
 
     uint256 public constant FORK_BLOCK = 22_500_000;
 
@@ -70,10 +78,10 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        address[] memory assets = new address[](7);
+        address[] memory assets = new address[](8);
         assets[0] = CRV; assets[1] = CRVUSD; assets[2] = USDC;
         assets[3] = WEETH; assets[4] = WETH;
-        assets[5] = DAI; assets[6] = USDT;
+        assets[5] = DAI; assets[6] = USDT; assets[7] = RLUSD;
         balances = _deployBalancesForOracle(assets);
 
         poolsMeta  = new CurvePoolsMetaBalanceAdapter("Curve", address(balances));
@@ -192,93 +200,6 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         assertGt(bytes(label).length, 0);
     }
 
-    // ─── Parity with CurveBalanceOracle (per-instance) ────────────────────────
-    //
-    // The old per-instance CurveBalanceOracle(gauge, nav) reports:
-    //   - wallet LP + staked LP decomposed into underlying coins (both as Supplied)
-    //   - CRV rewards via integrate_fraction − minter.minted (Supplied, same lower bound)
-    //   - extra reward tokens via claimable_reward (Supplied)
-    //
-    // The new adapters correctly split PositionKind:
-    //   - CurvePoolsMeta: wallet LP → Supplied per coin
-    //   - CurveGaugesMetaMeta: staked LP → Supplied per coin, rewards → Earned
-    //
-    // For NAV value parity what matters is total per-asset AMOUNT; PositionKind differs
-    // by design (Earned replaces Supplied for rewards — the old adapter had everything Supplied).
-    // These tests verify the amounts match exactly.
-
-    /// @notice crvUSD/USDC: per-coin total from meta matches the old per-instance adapter.
-    function test_parity_crvUsdUsdc_totalAmounts() public {
-        uint256 walletLp = _lpBalance(CRVUSD_USDC_POOL, CRVUSD_USDC_STAKER);
-        uint256 staked   = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        if (walletLp == 0 && staked == 0) return;
-
-        // Old adapter: covers both wallet + staked + rewards in one call
-        CurveBalanceOracle old = new CurveBalanceOracle(CRVUSD_USDC_GAUGE, address(balances));
-        INAVCalculator.PositionBalance[] memory oldPos =
-            old.getOraclePositions(CRVUSD_USDC_STAKER, address(0));
-
-        // New adapters: pools (wallet) + gauges (staked + rewards)
-        INAVCalculator.PositionBalance[] memory poolPos =
-            poolsMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _pool(CRVUSD_USDC_POOL), address(0));
-        INAVCalculator.PositionBalance[] memory gaugePos =
-            gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
-
-        // For each asset the old adapter reported, verify meta total == old total
-        for (uint256 i; i < oldPos.length; ++i) {
-            address asset = oldPos[i].balanceAsset.asset;
-            uint256 oldAmt = _sumAsset(oldPos, asset);
-            uint256 metaAmt = _sumAsset(poolPos, asset) + _sumAsset(gaugePos, asset);
-            assertEq(metaAmt, oldAmt, string.concat("amount mismatch for ", oldPos[i].balanceAsset.symbol));
-        }
-    }
-
-    /// @notice weETH/WETH: per-coin total from meta matches old per-instance adapter.
-    function test_parity_weethWeth_totalAmounts() public {
-        uint256 walletLp = _lpBalance(WEETH_WETH_POOL, WEETH_WETH_STAKER);
-        uint256 staked   = _gaugeBalance(WEETH_WETH_GAUGE, WEETH_WETH_STAKER);
-        if (walletLp == 0 && staked == 0) return;
-
-        CurveBalanceOracle old = new CurveBalanceOracle(WEETH_WETH_GAUGE, address(balances));
-        INAVCalculator.PositionBalance[] memory oldPos =
-            old.getOraclePositions(WEETH_WETH_STAKER, address(0));
-
-        INAVCalculator.PositionBalance[] memory poolPos =
-            poolsMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _pool(WEETH_WETH_POOL), address(0));
-        INAVCalculator.PositionBalance[] memory gaugePos =
-            gaugesMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _gauge(WEETH_WETH_GAUGE), address(0));
-
-        for (uint256 i; i < oldPos.length; ++i) {
-            address asset = oldPos[i].balanceAsset.asset;
-            uint256 oldAmt  = _sumAsset(oldPos, asset);
-            uint256 metaAmt = _sumAsset(poolPos, asset) + _sumAsset(gaugePos, asset);
-            assertEq(metaAmt, oldAmt, string.concat("amount mismatch for ", oldPos[i].balanceAsset.symbol));
-        }
-    }
-
-    /// @notice 3pool (int128 pool): wallet LP via meta matches old per-instance adapter.
-    function test_parity_threepool_walletLp() public {
-        uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
-        if (walletLp == 0) return;
-
-        // 3pool gauge for parity test
-        CurveBalanceOracle old = new CurveBalanceOracle(THREEPOOL_GAUGE, address(balances));
-        INAVCalculator.PositionBalance[] memory oldPos =
-            old.getOraclePositions(THREEPOOL_HOLDER, address(0));
-
-        INAVCalculator.PositionBalance[] memory poolPos =
-            poolsMeta.getOraclePositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
-
-        // Only comparing wallet LP legs (the holder has no gauge stake)
-        for (uint256 i; i < oldPos.length; ++i) {
-            address asset = oldPos[i].balanceAsset.asset;
-            if (oldPos[i].positionKind != PositionKind.Supplied) continue;
-            uint256 oldAmt  = _sumAsset(oldPos, asset);
-            uint256 metaAmt = _sumAsset(poolPos, asset);
-            assertEq(metaAmt, oldAmt, string.concat("3pool amount mismatch: ", oldPos[i].balanceAsset.symbol));
-        }
-    }
-
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     function _pool(address pool) internal pure returns (bytes32[] memory ins) {
@@ -366,14 +287,4 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice Sums amounts across all legs for a given asset address.
-    function _sumAsset(INAVCalculator.PositionBalance[] memory pos, address asset)
-        internal
-        pure
-        returns (uint256 total)
-    {
-        for (uint256 i; i < pos.length; ++i) {
-            if (pos[i].balanceAsset.asset == asset) total += pos[i].amount;
-        }
-    }
 }

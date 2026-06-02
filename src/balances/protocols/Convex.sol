@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Returns pool-token and reward balances for an account's Convex-staked Curve LP position.
 /// @dev The Curve LP token address must be passed explicitly as `lpToken_` — `convexRewards.stakingToken()`
 ///      returns the cvxLP wrapper token, not the underlying Curve LP.
-///      Compatible with Curve Stableswap pools (IDs 0, 3, 12) — see CurveBalanceOracle for pool notes.
+///      Compatible with Curve Stableswap pools (IDs 0, 3, 12).
 ///      Bounded loop: `_MAX_ITERATIONS = 8`.
 ///
 ///      Token flow:

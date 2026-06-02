@@ -22,7 +22,8 @@ import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3In
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
-import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
+import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
+import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
 import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
@@ -541,8 +542,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "Cap")) {
             return _deployCap(navAddr);
         }
-        if (_startsWith(name, "Curve_")) {
-            return _deployCurve(name, navAddr);
+        if (_equals(name, "CurvePoolsMeta")) {
+            return _deployCurvePoolsMeta(name, navAddr);
+        }
+        if (_equals(name, "CurveGaugesMeta")) {
+            return _deployCurveGaugesMeta(name, navAddr);
         }
         if (_startsWith(name, "Convex_")) {
             return _deployConvex(name, navAddr);
@@ -680,9 +684,18 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CapBalanceOracle(cUsd, stcUsd, usdc, navAddr));
     }
 
-    function _deployCurve(string memory name, address navAddr) internal returns (address) {
-        address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
-        return address(new CurveBalanceOracle(gauge, navAddr));
+    function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new CurvePoolsMetaBalanceAdapter(protocol, navAddr));
+    }
+
+    function _deployCurveGaugesMeta(string memory name, address navAddr) internal returns (address) {
+        address minter =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "minter"));
+        address crvToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "crvToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
     }
 
     function _deployConvex(string memory name, address navAddr) internal returns (address) {

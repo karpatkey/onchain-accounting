@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         The instance coordinate is the market (pool) address, widened to bytes32; the active market set lives
 ///         on NAVCalculator (`setMetaInstances`). Identity is encoded as `abi.encode(address(market))`.
 ///         See ADR 0010.
-/// @dev Mirrors the per-market `GearboxMarketBalanceOracle` leg-for-leg. Does not include Merkl rewards (same as
+/// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include Merkl rewards (same as
 ///      the per-market adapter).
 contract GearboxMarketsMetaBalanceAdapter is MetaBalanceOracle {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;

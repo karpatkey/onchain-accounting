@@ -70,7 +70,7 @@ interface INonfungiblePositionManager {
 /// @notice Shared read math for the Uniswap V3 meta-adapter (and PancakeSwap V3 fork). Given a pool, the
 ///         NonfungiblePositionManager, an account, and a pool `slot0` snapshot, it scans the account's NFT
 ///         positions in that pool and aggregates principal (liquidity → token amounts) and unclaimed fees.
-/// @dev Ports the per-pool aggregation from `UniswapV3PoolBalanceOracle` verbatim so the meta-adapter is
+/// @dev Contains the per-pool aggregation logic so the meta-adapter is
 ///      leg-for-leg identical (parity fork-tested). The `slot0` read is intentionally NOT done here — the caller
 ///      passes `(sqrtPriceX96, tickCurrent)` so a fork with a divergent `slot0()` ABI (PancakeSwap V3's `uint32
 ///      feeProtocol`) can override that single read in the adapter without duplicating this math.

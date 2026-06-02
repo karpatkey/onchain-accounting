@@ -13,7 +13,7 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockUniswapV3Pool, MockPositionManager, MockToken} from "test/balances/protocols/uniswap/UniswapV3Mocks.sol";
 
 /// @title UniswapV3PoolsMetaBalanceAdapter unit tests (no fork)
-/// @notice Meta-framework behaviour + parity with the per-instance UniswapV3PoolBalanceOracle on the same mocks.
+/// @notice Meta-framework behaviour and decomposition logic for UniswapV3PoolsMeta.
 contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     using Strings for address;
 

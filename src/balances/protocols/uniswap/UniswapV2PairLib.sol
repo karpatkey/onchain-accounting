@@ -23,7 +23,7 @@ interface IUniswapV2Factory {
 /// @author kpk
 /// @notice Shared read math for the Uniswap V2 meta-adapter (and PancakeSwap V2 fork). Given a pair and an
 ///         account, returns the LP holder's dilution-adjusted pro-rata share of both reserves.
-/// @dev Ports `_calculateBalance` / `_pendingProtocolMint` from `UniswapV2BalanceOracle` verbatim so the
+/// @dev Contains the pair balance calculation logic so the
 ///      meta-adapter is leg-for-leg identical (parity fork-tested). The dilution term mirrors V2's internal
 ///      `_mintFee` (the LP that would be minted to `feeTo` on the next mint/burn), so the reported amount
 ///      matches what an LP would actually receive on `burn`.

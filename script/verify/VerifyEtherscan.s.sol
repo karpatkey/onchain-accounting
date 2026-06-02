@@ -95,7 +95,7 @@ contract VerifyEtherscan is BaseDeployScript {
         returns (string memory path, bytes memory args)
     {
         if (_startsWith(name, "AaveV3_")) {
-            path = "src/balances/protocols/AaveV3Instance.sol:AaveV3InstanceBalanceOracle";
+            path = "src/balances/protocols/AaveV3InstancesMeta.sol:AaveV3InstancesMetaBalanceAdapter";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
@@ -124,7 +124,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_startsWith(name, "MorphoBlue_")) {
-            path = "src/balances/protocols/MorphoMarket.sol:MorphoMarketBalanceOracle";
+            path = "src/balances/protocols/MorphoMarketsMeta.sol:MorphoMarketsMetaBalanceAdapter";
             address morpho = _parseAddr("balanceAdapters", name, "morpho", address(0));
             string memory marketIdStr = _readParam("balanceAdapters", name, "marketId");
             bytes32 marketId = bytes(marketIdStr).length == 0 ? bytes32(0) : vm.parseBytes32(marketIdStr);

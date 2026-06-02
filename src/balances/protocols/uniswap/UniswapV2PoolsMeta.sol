@@ -15,7 +15,7 @@ import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`setMetaInstances`).
 ///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
 /// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
-///      per-instance `UniswapV2BalanceOracle` leg-for-leg (parity fork-tested). Works with canonical Uniswap V2
+///      leg-for-leg. Works with canonical Uniswap V2
 ///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
 contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
     /// @notice Protocol identifier constant.

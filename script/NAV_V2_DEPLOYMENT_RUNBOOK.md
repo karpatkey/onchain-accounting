@@ -1130,7 +1130,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 8. **Run full test suite.** `forge test` non-fork + fork must both be green before pushing.
 9. **Deploy + register on NAV** via Phases 4 and 6.
 
-> **Naming rule:** new balance adapter files use PascalCase. Contract names use the same PascalCase + a `BalanceOracle` suffix where the convention exists (see `CurveBalanceOracle`, `MorphoVaultBalanceOracle`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
+> **Naming rule:** new balance adapter files use PascalCase. Meta-adapters (one contract per protocol covering many instances) use the `MetaBalanceAdapter` suffix (e.g. `AuraRewardsMetaBalanceAdapter`, `MorphoVaultsMetaBalanceAdapter`); per-instance singletons use descriptive names (e.g. `SparkLendBalanceOracle`, `AaveV3SafetyModuleBalanceOracle`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
 
 ---
 

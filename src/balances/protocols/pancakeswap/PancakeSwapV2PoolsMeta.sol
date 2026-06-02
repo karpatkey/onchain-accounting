@@ -8,7 +8,7 @@ import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 /// @notice Meta-adapter for PancakeSwap V2 pairs. PancakeSwap V2 is a byte-for-byte Uniswap V2 fork (same
 ///         Pair/Factory ABI, same `_mintFee` formula), so this is a thin subclass of the Uniswap V2 pools
 ///         meta-adapter with no behavioural change — it exists for block-explorer visibility and dispatch
-///         clarity, mirroring the per-instance `PancakeSwapV2BalanceOracle`. The protocol identifier (e.g.
+///         clarity, reporting the same positions. The protocol identifier (e.g.
 ///         "PancakeSwap V2") is set per deployment.
 contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter {
     /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V2").

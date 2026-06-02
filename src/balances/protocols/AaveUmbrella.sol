@@ -41,7 +41,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      can add a new Umbrella stake token (or change the reward token configured on an existing
 ///      one) and the adapter will pick it up automatically, provided the bare reserve it ultimately
 ///      reports against is registered on `NAVCalculator` with a price feed. Unregistered reserves
-///      are silently skipped — same convention used by `AaveV3InstanceBalanceOracle`.
+///      are silently skipped — same convention used by the Aave lending adapters.
 ///
 ///      Slashing-correctness: Umbrella stake tokens reduce `totalAssets` while keeping
 ///      `totalSupply` constant when slashing fires, so the chained `convertToAssets` walk is

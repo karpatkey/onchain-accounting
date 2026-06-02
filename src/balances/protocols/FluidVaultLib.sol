@@ -54,7 +54,7 @@ interface IFluidVaultResolver {
 /// @author kpk
 /// @notice Shared read math for the Fluid T1 vaults meta-adapter. Resolves a vault's collateral/debt tokens and
 ///         aggregates an account's collateral/debt across its NFT positions in that vault.
-/// @dev Ports `FluidVaultBalanceOracle`'s `constantsView` token read + `_aggregateUserPositions` /
+/// @dev Ports the Fluid vault 's `constantsView` token read + `_aggregateUserPositions` /
 ///      `_readUserPositionPrefix` verbatim, parameterized by the vault + resolver so one stateless library
 ///      serves every vault (the per-vault adapter cached the tokens at construction; here they are read per
 ///      call). Mirrors the per-vault adapter leg-for-leg (parity fork-tested). Only T1 vaults are supported —

@@ -6,7 +6,7 @@ import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title UniswapV2PoolsMetaParityForkTest
-/// @notice Proves the Uniswap V2 pools meta-adapter reproduces the per-instance UniswapV2BalanceOracle per token
+/// @notice Fork tests for the Uniswap V2 pools meta-adapter against real mainnet contracts.
 ///         (exact — both delegate the same UniswapV2PairLib math, incl. the protocol-fee dilution), against the
 ///         real mainnet USDC/WETH V2 pair with a dealt LP balance. Both adapters share one BalancesHarnessForFork.
 contract UniswapV2PoolsMetaParityForkTest is BalanceAdapterTestBase {

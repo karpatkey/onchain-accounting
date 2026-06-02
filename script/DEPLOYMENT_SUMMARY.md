@@ -339,29 +339,29 @@ forge script script/verify/VerifyEtherscan.s.sol \
 
 ### Balance Adapters (Protocol Integrations)
 - `ERC20DefaultOracle` - Wallet ERC20 + native, auto-registered at NAV initialization
-- `AaveV3InstanceBalanceOracle` - Aave V3 lending positions
+- `AaveV3InstancesMetaBalanceAdapter` - Aave V3 lending positions
 - `AaveV3SafetyModuleBalanceOracle` - Aave V3 Safety Module (stkGHO etc.)
-- `AaveV2InstanceBalanceOracle` - Aave V2 aTokens (legacy)
+- `AaveV2InstancesMetaBalanceAdapter` - Aave V2 aTokens (legacy)
 - `AaveUmbrellaBalanceOracle` - Aave Umbrella stake tokens
 - `CompoundV3Comet` - Compound V3 (Comet) base + collateral + rewards
-- `MorphoMarketBalanceOracle` - Morpho direct market positions
-- `MorphoVaultBalanceOracle` - MetaMorpho vault positions
+- `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions
+- `MorphoVaultsMetaBalanceAdapter` - MetaMorpho vault positions
 - `SparkLendBalanceOracle` - Spark Lend positions
-- `BalancerV3BalanceOracle` - Balancer V3 LPs
+- `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
 - `Aura` - Aura vault/LP positions
-- `Curve` - Curve LPs + gauges
-- `Convex` - Convex staking
+- `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
+- `ConvexRewardsMetaBalanceAdapter` - Convex staking
 - `CapBalanceOracle` - Cap (cUSD + stcUSD aggregated → USDC)
 - `DaiDsrBalanceOracle` - DAI Savings Rate
 - `SkySavingsUsdsBalanceOracle` - Sky USDS savings (sUSDS)
-- `FluidFTokenBalanceOracle`, `FluidVaultBalanceOracle` - Fluid lending + vaults
-- `GearboxMarketBalanceOracle` - Gearbox kpk-curated markets
-- `StakeWiseV3VaultBalanceOracle` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
+- `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
+- `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
+- `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
 - `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceOracle` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceOracle` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
-- `UniswapV2BalanceOracle`, `UniswapV3BalanceOracle` - Uni V2 pairs / V3 pools
-- `PancakeSwapV2`, `PancakeSwapV3` - PancakeSwap variants
+- `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools
+- `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
 - `MerklRewardsBalanceOracle` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
 
 ### Bridge Adapters

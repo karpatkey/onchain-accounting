@@ -10,7 +10,7 @@ interface IERC4626Min {
 }
 
 /// @title GearboxMarketsMetaParityForkTest
-/// @notice Proves the Gearbox markets meta-adapter reproduces the per-market GearboxMarketBalanceOracle exactly,
+/// @notice Fork tests for the Gearbox markets meta-adapter against real mainnet contracts.
 ///         against the real mainnet kpkWETH market and a real holder. Both adapters share one BalancesHarnessForFork.
 contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant MARKET = 0x9396DCbf78fc526bb003665337C5E73b699571EF; // kpkWETH

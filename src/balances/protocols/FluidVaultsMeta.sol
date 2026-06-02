@@ -16,7 +16,7 @@ import {FluidVaultLib} from "src/balances/protocols/FluidVaultLib.sol";
 ///         lives on NAVCalculator (`setMetaInstances`). The Fluid VaultResolver is the chain-level constant
 ///         pinned in the constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
 /// @dev Read logic (tokens via `constantsView`, NFT aggregation) is delegated to `FluidVaultLib`, mirroring the
-///      per-vault `FluidVaultBalanceOracle` leg-for-leg (parity fork-tested). T1 vaults only — Smart vaults
+///      T1 vaults only — Smart vaults
 ///      (T2/T3/T4) have a different `constantsView` layout and must not be configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_VAULTS;

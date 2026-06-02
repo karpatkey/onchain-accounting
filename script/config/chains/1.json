@@ -46,7 +46,7 @@
         "positionId": "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9"
       },
       "deployed": "",
-      "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, so the V2 adapter is a thin subclass of AaveV3InstanceBalanceOracle (see src/balances/protocols/AaveV2Instance.sol). Stable-debt positions are not reported \u2014 V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
+      "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, covered by AaveV2InstancesMetaBalanceAdapter. Stable-debt positions are not reported \u2014 V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
     },
     "AaveV3InstancesMeta": {
       "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",

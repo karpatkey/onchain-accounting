@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         fToken's underlying. The instance coordinate is the fToken address, widened to bytes32; the active
 ///         fToken set lives on NAVCalculator (`setMetaInstances`). Identity is encoded as
 ///         `abi.encode(address(fToken))`. See ADR 0010.
-/// @dev Mirrors the per-fToken `FluidFTokenBalanceOracle` leg-for-leg.
+/// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_FTOKENS;
 

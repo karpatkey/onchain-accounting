@@ -8,7 +8,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title FluidFTokensMetaParityForkTest
-/// @notice Proves the Fluid fTokens meta-adapter reproduces the per-fToken FluidFTokenBalanceOracle exactly,
+/// @notice Fork tests for the Fluid fTokens meta-adapter against real mainnet contracts.
 ///         against the real mainnet fUSDC vault with a deal-and-deposit position. Both adapters share one
 ///         BalancesHarnessForFork.
 contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {

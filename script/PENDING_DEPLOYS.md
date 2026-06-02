@@ -72,7 +72,7 @@ Sorted by family.
 
 | Key | Notes |
 |---|---|
-| `priceFeeds.osETH` (Mainnet), `priceFeeds.osGNO` (Gnosis) | osETH/osGNO are now Custom-priced ERC20s via `osToken_PriceOracle` (deploy with `03_DeployPriceFeeds`, register with `RegisterAssets`) — replaces the old `StakeWiseV3OsToken` balance adapter |
+| `priceFeeds.osETH` (Mainnet), `priceFeeds.osGNO` (Gnosis) | osETH/osGNO are Custom-priced ERC20s via `osToken_PriceOracle` (deploy with `03_DeployPriceFeeds`, register with `RegisterAssets`) |
 | `StakeWiseV3Vault_Genesis` | Genesis Vault `0xAC0F906E433d58FA868F936E8A43230473652885` — closes ACCOUNT_10's $24.6M coverage gap |
 | `StakeWiseV3Vault_MetaVault` | Meta Vault `0x15639e82d2072fa510e5d2b5f0db361c823bcad3` — adapter shipped in PR #35 (`fddcd46`); production deploy still pending |
 

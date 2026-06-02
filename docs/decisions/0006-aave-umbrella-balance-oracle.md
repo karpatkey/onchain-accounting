@@ -26,11 +26,11 @@ For each stake position the adapter emits up to two `PositionBalance` entries:
 - Staking leg (`positionKind = Supplied`) — principal denominated in the bare reserve. The `positionId` (encoding the stakeToken address) disambiguates which stake token the position belongs to.
 - Rewards leg (`positionKind = Earned`) — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
 
-Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstanceBalanceOracle` uses for unregistered Aave reserves.
+Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstancesMetaBalanceAdapter` uses for unregistered Aave reserves.
 
 ## Why dynamic over hardcoded
 
-ADR 0005 hardcodes the legacy Safety Module set because Aave does not publish an on-chain registry for it. Umbrella ships with one (`getAllAssets()`), and other adapters in this repo (notably `AaveV3InstanceBalanceOracle`, which discovers reserves via `dataProvider.getAllReservesTokens()`) follow the *use the registry when it exists* convention. We do the same here:
+ADR 0005 hardcodes the legacy Safety Module set because Aave does not publish an on-chain registry for it. Umbrella ships with one (`getAllAssets()`), and other adapters in this repo (notably `AaveV3InstancesMetaBalanceAdapter`, which discovers reserves via `dataProvider.getAllReservesTokens()`) follow the *use the registry when it exists* convention. We do the same here:
 
 - A new Umbrella stake token (or a re-configured reward token on an existing one) does not require a code change or a redeploy. The adapter picks up governance changes the next time NAV is computed.
 - The constructor surface stays minimal — one trust-anchor address, no per-token plumbing — so the chain-config schema is small (`rewardsController` + `protocol`).
@@ -56,7 +56,7 @@ The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and rema
 
 **Positive**
 
-- One uniform rule across the framework: adapters use the protocol's on-chain registry when it exists. Matches `AaveV3InstanceBalanceOracle`'s precedent.
+- One uniform rule across the framework: adapters use the protocol's on-chain registry when it exists. Matches `AaveV3InstancesMetaBalanceAdapter`'s precedent.
 - No hardcoded token addresses anywhere in source. The only address pinned is the `RewardsController`, passed via constructor and treated as a trust anchor — the chain-config schema is minimal (`rewardsController` + `protocol`).
 - Aave governance can add a new Umbrella stake token (or change its reward configuration) and the adapter picks it up on the next view call, provided the bare reserve is already registered with `NAVCalculator`.
 - Reports in bare reserves means NAV pricing falls through to existing Chainlink feeds — no new price-feed adapters required for this PR.

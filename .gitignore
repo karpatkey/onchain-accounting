@@ -20,3 +20,14 @@ commit.msg
 safe-transactions/
 .claude/
 pr1_body.md
+
+# JS dependencies & build output (dashboard app, design-system, etc.)
+node_modules/
+.next/
+app/.env.local
+
+# Embedded design-system (separate git clone)
+design-system/
+
+# Local anvil dev state
+script/development/state/

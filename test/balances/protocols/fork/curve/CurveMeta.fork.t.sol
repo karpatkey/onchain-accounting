@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
+import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -191,6 +192,93 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         assertGt(bytes(label).length, 0);
     }
 
+    // ─── Parity with CurveBalanceOracle (per-instance) ────────────────────────
+    //
+    // The old per-instance CurveBalanceOracle(gauge, nav) reports:
+    //   - wallet LP + staked LP decomposed into underlying coins (both as Supplied)
+    //   - CRV rewards via integrate_fraction − minter.minted (Supplied, same lower bound)
+    //   - extra reward tokens via claimable_reward (Supplied)
+    //
+    // The new adapters correctly split PositionKind:
+    //   - CurvePoolsMeta: wallet LP → Supplied per coin
+    //   - CurveGaugesMetaMeta: staked LP → Supplied per coin, rewards → Earned
+    //
+    // For NAV value parity what matters is total per-asset AMOUNT; PositionKind differs
+    // by design (Earned replaces Supplied for rewards — the old adapter had everything Supplied).
+    // These tests verify the amounts match exactly.
+
+    /// @notice crvUSD/USDC: per-coin total from meta matches the old per-instance adapter.
+    function test_parity_crvUsdUsdc_totalAmounts() public {
+        uint256 walletLp = _lpBalance(CRVUSD_USDC_POOL, CRVUSD_USDC_STAKER);
+        uint256 staked   = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
+        if (walletLp == 0 && staked == 0) return;
+
+        // Old adapter: covers both wallet + staked + rewards in one call
+        CurveBalanceOracle old = new CurveBalanceOracle(CRVUSD_USDC_GAUGE, address(balances));
+        INAVCalculator.PositionBalance[] memory oldPos =
+            old.getOraclePositions(CRVUSD_USDC_STAKER, address(0));
+
+        // New adapters: pools (wallet) + gauges (staked + rewards)
+        INAVCalculator.PositionBalance[] memory poolPos =
+            poolsMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _pool(CRVUSD_USDC_POOL), address(0));
+        INAVCalculator.PositionBalance[] memory gaugePos =
+            gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
+
+        // For each asset the old adapter reported, verify meta total == old total
+        for (uint256 i; i < oldPos.length; ++i) {
+            address asset = oldPos[i].balanceAsset.asset;
+            uint256 oldAmt = _sumAsset(oldPos, asset);
+            uint256 metaAmt = _sumAsset(poolPos, asset) + _sumAsset(gaugePos, asset);
+            assertEq(metaAmt, oldAmt, string.concat("amount mismatch for ", oldPos[i].balanceAsset.symbol));
+        }
+    }
+
+    /// @notice weETH/WETH: per-coin total from meta matches old per-instance adapter.
+    function test_parity_weethWeth_totalAmounts() public {
+        uint256 walletLp = _lpBalance(WEETH_WETH_POOL, WEETH_WETH_STAKER);
+        uint256 staked   = _gaugeBalance(WEETH_WETH_GAUGE, WEETH_WETH_STAKER);
+        if (walletLp == 0 && staked == 0) return;
+
+        CurveBalanceOracle old = new CurveBalanceOracle(WEETH_WETH_GAUGE, address(balances));
+        INAVCalculator.PositionBalance[] memory oldPos =
+            old.getOraclePositions(WEETH_WETH_STAKER, address(0));
+
+        INAVCalculator.PositionBalance[] memory poolPos =
+            poolsMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _pool(WEETH_WETH_POOL), address(0));
+        INAVCalculator.PositionBalance[] memory gaugePos =
+            gaugesMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _gauge(WEETH_WETH_GAUGE), address(0));
+
+        for (uint256 i; i < oldPos.length; ++i) {
+            address asset = oldPos[i].balanceAsset.asset;
+            uint256 oldAmt  = _sumAsset(oldPos, asset);
+            uint256 metaAmt = _sumAsset(poolPos, asset) + _sumAsset(gaugePos, asset);
+            assertEq(metaAmt, oldAmt, string.concat("amount mismatch for ", oldPos[i].balanceAsset.symbol));
+        }
+    }
+
+    /// @notice 3pool (int128 pool): wallet LP via meta matches old per-instance adapter.
+    function test_parity_threepool_walletLp() public {
+        uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
+        if (walletLp == 0) return;
+
+        // 3pool gauge for parity test
+        CurveBalanceOracle old = new CurveBalanceOracle(THREEPOOL_GAUGE, address(balances));
+        INAVCalculator.PositionBalance[] memory oldPos =
+            old.getOraclePositions(THREEPOOL_HOLDER, address(0));
+
+        INAVCalculator.PositionBalance[] memory poolPos =
+            poolsMeta.getOraclePositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
+
+        // Only comparing wallet LP legs (the holder has no gauge stake)
+        for (uint256 i; i < oldPos.length; ++i) {
+            address asset = oldPos[i].balanceAsset.asset;
+            if (oldPos[i].positionKind != PositionKind.Supplied) continue;
+            uint256 oldAmt  = _sumAsset(oldPos, asset);
+            uint256 metaAmt = _sumAsset(poolPos, asset);
+            assertEq(metaAmt, oldAmt, string.concat("3pool amount mismatch: ", oldPos[i].balanceAsset.symbol));
+        }
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     function _pool(address pool) internal pure returns (bytes32[] memory ins) {
@@ -275,6 +363,17 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
                     break;
                 }
             }
+        }
+    }
+
+    /// @notice Sums amounts across all legs for a given asset address.
+    function _sumAsset(INAVCalculator.PositionBalance[] memory pos, address asset)
+        internal
+        pure
+        returns (uint256 total)
+    {
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].balanceAsset.asset == asset) total += pos[i].amount;
         }
     }
 }

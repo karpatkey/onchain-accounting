@@ -1,8 +1,19 @@
-# `positionDetail` JSON Schema
+# `positionDetail` JSON Schema — DEPRECATED
 
-Each `PositionBalance` and `Position` returned by the NAV stack carries a `positionDetail` field — a
-fully-closed JSON object that gives the frontend (and off-chain tooling) structured metadata about
-**what kind of position this is**, without having to parse the `protocol` string.
+> **This document is deprecated.** The `positionDetail`, `protocol`, and `positionId` string fields
+> were removed from `PositionBalance` and `Position` in the meta-adapter migration. They have been
+> replaced by typed, machine-readable fields: `bytes32 protocolId`, `bytes positionId`, and
+> `PositionKind positionKind`.
+>
+> See **[`position-identity-schema.md`](position-identity-schema.md)** for the current reference.
+>
+> This file is kept as a historical record of the old schema for anyone auditing pre-migration data.
+
+---
+
+Each `PositionBalance` and `Position` returned by the NAV stack previously carried a `positionDetail`
+field — a fully-closed JSON object that gave the frontend (and off-chain tooling) structured metadata
+about **what kind of position this is**, without having to parse the `protocol` string.
 
 ## Wire format
 

@@ -402,8 +402,8 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         assembly {
             let ptr := mload(0x40)
             mstore(ptr, 2) // slot 2
-            result := staticcall(gas(), auraToken, ptr, 0x20, ptr, 0x20)
-            result := mload(ptr)
+            let ok := staticcall(gas(), auraToken, ptr, 0x20, ptr, 0x20)
+            if ok { result := mload(ptr) }
         }
     }
 

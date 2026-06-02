@@ -7,7 +7,6 @@ import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV2InstancesMeta.sol";
-import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
@@ -215,10 +214,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployAaveV3InstancesMeta(adapterName, navCalculator);
         }
 
-        if (_startsWith(adapterName, "AaveV3_")) {
-            return _deployAaveV3(adapterName, navCalculator);
-        }
-
         // CompoundV3 meta-adapter (per-instance adapters removed — superseded by CompoundV3CometsMeta)
         if (_equals(adapterName, "CompoundV3CometsMeta")) {
             return _deployCompoundV3CometsMeta(adapterName, navCalculator);
@@ -353,15 +348,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         AaveV2InstancesMetaBalanceAdapter adapter = new AaveV2InstancesMetaBalanceAdapter(protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployAaveV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address dataProvider = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
-        );
-
-        AaveV3InstanceBalanceOracle adapter = new AaveV3InstanceBalanceOracle(dataProvider, navCalculator);
         return address(adapter);
     }
 

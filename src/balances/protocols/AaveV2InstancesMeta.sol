@@ -7,7 +7,7 @@ import {
 } from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IProtocolDataProvider} from "src/balances/protocols/AaveV3Instance.sol";
+import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
 
 /// @title Aave V2 Instances Meta Balance Adapter
 /// @author kpk

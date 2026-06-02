@@ -13,7 +13,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
@@ -602,7 +601,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAaveV3(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new AaveV3InstanceBalanceOracle(dataProvider, navAddr));
+        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
     }
 
     function _deploySparkLend(string memory name, address navAddr) internal returns (address) {

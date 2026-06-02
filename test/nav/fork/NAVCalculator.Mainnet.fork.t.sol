@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
@@ -141,15 +141,11 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(aaveV3DataProvider, address(nav));
-
-        // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav).
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        aaveOracle = aaveMeta;
         AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
-
         compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-
         morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
-
         daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
 
         nav.addBalanceOracle(address(aaveOracle));
@@ -157,6 +153,10 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         nav.addBalanceOracle(address(compoundV3Comet));
         nav.addBalanceOracle(address(morphoBlueOracle));
         nav.addBalanceOracle(address(daiDsr));
+
+        bytes32[] memory aaveInstances = new bytes32[](1);
+        aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
+        nav.setMetaInstances(address(aaveMeta), aaveInstances);
     }
 
     function test_logPositions() public view {

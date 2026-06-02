@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -34,7 +34,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     NAVCalculator public nav;
     AaveV3InstancesMetaBalanceAdapter public oracle;
-    AaveV3InstanceBalanceOracle public perInstance;
+    SparkLendBalanceOracle public perInstance;
 
     function setUp() public override {
         super.setUp(); // forks mainnet at DEFAULT_FORK_BLOCK
@@ -75,7 +75,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        perInstance = new AaveV3InstanceBalanceOracle(CORE_DATA_PROVIDER, address(nav));
+        perInstance = new SparkLendBalanceOracle(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
         nav.addBalanceOracle(address(oracle));

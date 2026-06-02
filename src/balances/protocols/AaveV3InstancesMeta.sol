@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IProtocolDataProvider} from "./AaveV3Instance.sol";
+import {IProtocolDataProvider} from "./SparkLend.sol";
 
 /// @notice Minimal views to derive an instance's identity on-chain from its ProtocolDataProvider.
 interface IAaveAddressesProviderSource {

@@ -8,7 +8,6 @@ import {console2} from "forge-std/console2.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
@@ -21,7 +20,7 @@ import "src/constants.sol";
 abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     address public safe = address(0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
 
-    AaveV3InstanceBalanceOracle public aaveOracle;
+    IBalanceOracleAdapter public aaveOracle;
     IBalanceOracleAdapter public compoundV3Comet;
     IBalanceOracleAdapter public morphoBlueOracle;
     DaiDsrBalanceOracle public daiDsr;

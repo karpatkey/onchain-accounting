@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {IProtocolDataProvider} from "src/balances/protocols/AaveV3Instance.sol";
+import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";

@@ -176,7 +176,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
             uint8 k = uint8(metaPos[i].positionKind);
             assertTrue(
                 k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards),
-                "only Supplied or Earned positions expected"
+                "only Supplied or Rewards positions expected"
             );
         }
 

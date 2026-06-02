@@ -504,23 +504,31 @@ For each new adapter you want to deploy on a given chain, add an entry to `scrip
 
 The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
-| Adapter prefix | Constructor params | Applicable chains |
-|---------------|-------------------|-------------------|
-| `AaveV3_*` | `dataProvider` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
-| `CompoundV3_*` | `compoundRewards`, `comet`, `rewardToken` | Mainnet |
-| `SparkLend`, `SparkLend_*` | `dataProvider` | Mainnet (current wiring uses the bare `SparkLend`; the `SparkLend_*` prefix is supported for future multi-market use) |
-| `MorphoMarket_*` | `morpho`, `marketId` | Mainnet, Arbitrum, Base (per-chain via config `enabled` flag) |
-| `MorphoVault_*` | `vault` | Mainnet |
-| `GearboxMarket_*` | `market` | Mainnet |
+| Adapter name | Key config params | Applicable chains |
+|---|---|---|
+| `AaveV3_*` | `dataProvider`, `protocol` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
+| `AaveV3SafetyModule` | *(no extra params)* | Mainnet |
+| `AaveUmbrella` | `rewardsController` | Mainnet |
+| `SparkLend` | `dataProvider` | Mainnet |
+| `CompoundV3CometsMeta` | `compoundRewards`, `rewardToken`, `protocol` | Mainnet |
+| `MorphoVaultsMeta` | `protocol` | Mainnet |
+| `MorphoBlue_*` | `morpho`, `marketId`, `protocol` | Mainnet, Arbitrum, Base |
+| `GearboxMarketsMeta` | `protocol` | Mainnet |
+| `BalancerV3PoolsMeta` | `protocol` | Mainnet |
+| `BalancerV3GaugesMeta` | `balancerMinter`, `protocol` | Mainnet |
+| `BalancerV2PoolsMeta` | `vault`, `protocol` | Mainnet |
+| `BalancerV2GaugesMeta` | `vault`, `balancerMinter`, `protocol` | Mainnet |
+| `AuraRewardsMeta` | `booster`, `balancerV2Vault`, `protocol` | Mainnet, Arbitrum, Base. AURA token resolved dynamically via `Booster.minter()` — do **not** add an `auraToken` config field. |
+| `CurvePoolsMeta` | `protocol` | Mainnet |
+| `CurveGaugesMeta` | `minter`, `crvToken`, `protocol` | Mainnet (pass `minter=address(0)` on L2) |
+| `ConvexRewardsMeta` | `booster`, `cvxToken`, `protocol` | Mainnet |
+| `StakeWiseV3VaultsMeta` | `underlyingToken`, `protocol` | Mainnet, Gnosis |
 | `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
-| `Curve_*` | `gauge` | Mainnet |
-| `Convex_*` | `rewarder`, `lpToken` | Mainnet |
-| `AaveV3SafetyModule_*` | `stakeToken` | Mainnet |
-| `BalancerV3_*` | `pool`, `gauge`, `balancerMinter` | Mainnet |
-| `Aura_*` | `pool`, `gauge`, `booster`, `pid` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
-| `StakeWiseV3Vault_*` | `underlyingToken`, `vault` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager` | Mainnet |
 | `SkySavingsUsds` | `savingsUsds` | Mainnet |
+| `LidoWithdrawalQueue` | `withdrawalQueue`, `underlyingToken` | Mainnet |
+| `StaderWithdrawalQueue` | `userWithdrawalManager`, `underlyingToken` | Mainnet |
+| `KelpWithdrawalQueue` | `withdrawalManager`, `lrtConfig` | Mainnet |
 
 ### 2.3 Specific adapters currently wired in the deploy script
 

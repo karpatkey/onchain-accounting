@@ -273,8 +273,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
             string memory s;
             try IERC20Metadata(coins[i]).symbol() returns (string memory sym) {
                 s = sym;
-            }
-                catch {
+            } catch {
                 s = "?";
             }
             syms = i == 0 ? s : string.concat(syms, "/", s);

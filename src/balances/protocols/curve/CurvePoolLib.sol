@@ -211,8 +211,7 @@ library CurvePoolLib {
             string memory sym;
             try IERC20Symbol(coins[i]).symbol() returns (string memory s) {
                 sym = s;
-            }
-                catch {
+            } catch {
                 sym = "?";
             }
             result = i == 0 ? sym : string.concat(result, "/", sym);

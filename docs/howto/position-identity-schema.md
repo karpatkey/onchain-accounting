@@ -16,7 +16,7 @@ struct PositionBalance {
     bool         isDebt;         // NAV sign: true = subtract
     bytes32      protocolId;     // keccak256("protocol-slug") — selects decode schema
     bytes        positionId;     // abi.encode(...) — stable position key
-    PositionKind positionKind;   // Wallet | Supplied | Borrowed | Collateral | Earned
+    PositionKind positionKind;   // Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees
 }
 ```
 
@@ -94,7 +94,9 @@ enum PositionKind {
     Supplied,   // lending supply, vault shares, staking principal, LP principal
     Borrowed,   // any debt position (isDebt = true)
     Collateral, // supply locked as collateral (e.g. Aave usageAsCollateralEnabled = true)
-    Earned      // accrued but not yet claimed: rewards, uncollected fees
+    Staking,    // staking principal
+    Rewards,    // accrued but not yet claimed reward tokens
+    Fees        // uncollected protocol or LP fees
 }
 ```
 
@@ -149,30 +151,30 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `AaveV2InstancesMeta` | `aave-v2-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
-| `AaveV3SafetyModule` | `aave-v3-safety-module` | `Supplied`, `Earned` |
-| `AaveUmbrella` | `aave-v3-umbrella` | `Supplied`, `Earned` |
+| `AaveV3SafetyModule` | `aave-v3-safety-module` | `Supplied`, `Rewards` |
+| `AaveUmbrella` | `aave-v3-umbrella` | `Supplied`, `Rewards` |
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `GearboxMarketsMeta` | `gearbox-v3` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
-| `CompoundV3CometsMeta` | `compound-v3` | `Supplied`, `Borrowed`, `Collateral`, `Earned` |
+| `CompoundV3CometsMeta` | `compound-v3` | `Supplied`, `Borrowed`, `Collateral`, `Rewards` |
 | `StakeWiseV3VaultsMeta` | `stakewise-v3` | `Supplied`, `Borrowed` |
 | `BalancerV3PoolsMeta` | `balancer-v3-pool` | `Supplied` |
-| `BalancerV3GaugesMeta` | `balancer-v3-gauge` | `Supplied`, `Earned` |
+| `BalancerV3GaugesMeta` | `balancer-v3-gauge` | `Supplied`, `Rewards` |
 | `BalancerV2PoolsMeta` | `balancer-v2-pool` | `Supplied` |
-| `BalancerV2GaugesMeta` | `balancer-v2-gauge` | `Supplied`, `Earned` |
+| `BalancerV2GaugesMeta` | `balancer-v2-gauge` | `Supplied`, `Rewards` |
 | `CurvePoolsMeta` | `curve-pool` | `Supplied` |
-| `CurveGaugesMeta` | `curve-gauge` | `Supplied`, `Earned` |
-| `ConvexRewardsMeta` | `convex` | `Supplied`, `Earned` |
-| `AuraRewardsMeta` | `aura` | `Supplied`, `Earned` |
-| `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Earned` |
+| `CurveGaugesMeta` | `curve-gauge` | `Supplied`, `Rewards` |
+| `ConvexRewardsMeta` | `convex` | `Supplied`, `Rewards` |
+| `AuraRewardsMeta` | `aura` | `Supplied`, `Rewards` |
+| `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Rewards` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `DaiDsr` | `dai-dsr` | `Supplied` |
 | `SkySavingsUsds` | `sky-savings` | `Supplied` |
-| `MerklRewards` | `merkl` | `Earned` |
+| `MerklRewards` | `merkl` | `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
 | `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` |
@@ -215,7 +217,7 @@ const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
 const [stakeToken] = abi.decode(["address"], pos.positionId);
 // stakeToken — stkAAVE, stkABPT, stkABPTv2, or stkGHO
 // Supplied   → staked principal (denominated in the stake token's STAKED_TOKEN())
-// Earned     → claimable AAVE rewards
+// Rewards    → claimable AAVE rewards
 ```
 
 #### Aave Umbrella — `aave-v3-umbrella`
@@ -224,7 +226,7 @@ const [stakeToken] = abi.decode(["address"], pos.positionId);
 const [stakeToken] = abi.decode(["address"], pos.positionId);
 // stakeToken — UmbrellaStakeToken (e.g. stkwaEthUSDC.v1, stkGHO.v1)
 // Supplied   → principal, denominated in the bare reserve (USDC, WETH, GHO …)
-// Earned     → claimable rewards, same bare reserve denomination
+// Rewards    → claimable rewards, same bare reserve denomination
 ```
 
 #### Morpho Vaults — `morpho-vaults`
@@ -280,7 +282,7 @@ const [comet] = abi.decode(["address"], pos.positionId);
 // Supplied    → base-token supply
 // Borrowed    → base-token borrow
 // Collateral  → individual collateral asset legs
-// Earned      → COMP rewards (claimable)
+// Rewards     → COMP rewards (claimable)
 ```
 
 #### StakeWise V3 — `stakewise-v3`

@@ -249,7 +249,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Earned
+                    positionKind: PositionKind.Rewards
                 });
             }
         }

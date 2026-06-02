@@ -83,7 +83,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `isDebt`        | `bool`        | `true` = debt (subtract from NAV), `false` = credit (add to NAV). Canonical NAV-sign signal. |
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
 | `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool, address reserve)`. Empty bytes for account-global positions (DAI DSR, Lido withdrawal queue, etc.). Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
-| `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet \| Supplied \| Borrowed \| Collateral \| Earned`. See `src/utils/PositionKind.sol`. |
+| `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees`. See `src/utils/PositionKind.sol`. |
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceOracle` is excluded — redeploying an adapter doesn't change the position.
 
@@ -101,7 +101,9 @@ Defined in `src/utils/PositionKind.sol`.
 | `Supplied`    | Credit deployed into a protocol: lending supply, vault shares, staking principal, LP principal. |
 | `Borrowed`    | Debt owed to a protocol (`isDebt = true`). |
 | `Collateral`  | Credit locked as collateral (e.g. Aave reserve with `usageAsCollateralEnabled = true`). Distinct from `Supplied` because it cannot be freely withdrawn. |
-| `Earned`      | Accrued but not yet claimed: rewards, uncollected LP fees. |
+| `Staking`     | Staking principal locked in a staking contract. |
+| `Rewards`     | Accrued but not yet claimed reward tokens (CRV, CVX, BAL, …). |
+| `Fees`        | Uncollected protocol or LP fees (e.g. Uniswap V3 position fees). |
 
 ### 3.3 Asset
 
@@ -215,20 +217,20 @@ Meta-adapters extend `MetaBalanceOracle`. The instance set is configured on NAVC
 | **AaveV2InstancesMeta** | All Aave V2 instances. Thin subclass of `AaveV3InstancesMeta` (same DataProvider ABI; pool resolved via `getLendingPool()`). Instance coordinate = ProtocolDataProvider address. Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV2InstancesMeta`; DataProviders under `metaInstances`. |
 | **AuraRewardsMeta** | All Aura gauge staked LP + claimable BAL/AURA rewards. Instance coordinate = auraRewards address (resolved from Booster pid at query time). positionId = `abi.encode(auraRewards)`. | `(booster, balancerV2Vault, protocolName, navCalculator)` | `AuraRewardsMeta`; pids / reward addresses under `metaInstances`. |
 | **BalancerV2PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V2 pools. Instance coordinate = raw bytes32 poolId. positionId = `abi.encode(bytes32 poolId)`. One `Supplied` leg per underlying token. | `(vault, protocolName, navCalculator)` | `BalancerV2PoolsMeta`; poolIds under `metaInstancesRaw`. |
-| **BalancerV2GaugesMeta** | Gauge-staked LP + rewards for all Balancer V2 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Supplied` leg per underlying token + `Earned` legs (BAL + extras). | `(vault, balancerMinter, protocolName, navCalculator)` | `BalancerV2GaugesMeta`; gauges under `metaInstances`. |
+| **BalancerV2GaugesMeta** | Gauge-staked LP + rewards for all Balancer V2 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Supplied` leg per underlying token + `Rewards` legs (BAL + extras). | `(vault, balancerMinter, protocolName, navCalculator)` | `BalancerV2GaugesMeta`; gauges under `metaInstances`. |
 | **BalancerV3PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V3 pools. Instance coordinate = pool/BPT address. positionId = `abi.encode(pool)`. One `Supplied` leg per underlying token. | `(protocolName, navCalculator)` | `BalancerV3PoolsMeta`; pools under `metaInstances`. |
-| **BalancerV3GaugesMeta** | Gauge-staked LP + rewards for all Balancer V3 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Supplied` leg per underlying token + `Earned` legs (BAL + extras). | `(balancerMinter, protocolName, navCalculator)` | `BalancerV3GaugesMeta`; gauges under `metaInstances`. |
-| **CompoundV3CometsMeta** | All Compound V3 (Comet) markets. Instance coordinate = comet address. positionId = `abi.encode(comet)`. Base `Supplied`/`Borrowed`, `Collateral` per collateral, COMP `Earned`. CometRewards + reward token pinned in constructor. | `(compoundRewards, rewardToken, protocolName, navCalculator)` | `CompoundV3CometsMeta`; comets under `metaInstances`. |
+| **BalancerV3GaugesMeta** | Gauge-staked LP + rewards for all Balancer V3 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Supplied` leg per underlying token + `Rewards` legs (BAL + extras). | `(balancerMinter, protocolName, navCalculator)` | `BalancerV3GaugesMeta`; gauges under `metaInstances`. |
+| **CompoundV3CometsMeta** | All Compound V3 (Comet) markets. Instance coordinate = comet address. positionId = `abi.encode(comet)`. Base `Supplied`/`Borrowed`, `Collateral` per collateral, COMP `Rewards`. CometRewards + reward token pinned in constructor. | `(compoundRewards, rewardToken, protocolName, navCalculator)` | `CompoundV3CometsMeta`; comets under `metaInstances`. |
 | **ConvexRewardsMeta** | All Convex staking (CRV, CVX, extras). Instance coordinate = rewarder address. positionId = `abi.encode(rewarder)`. | `(booster, cvxToken, protocolName, navCalculator)` | `ConvexRewardsMeta`; rewarder addresses under `metaInstances`. |
 | **CurvePoolsMeta** | Wallet-held (unstaked) LP for all Curve pools. Instance coordinate = pool address. positionId = `abi.encode(pool)`. `Supplied` legs per underlying token. | `(protocolName, navCalculator)` | `CurvePoolsMeta`; pools under `metaInstances`. |
-| **CurveGaugesMeta** | Gauge-staked LP + rewards (CRV + extras) for all Curve gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. `Supplied` + `Earned` legs. | `(minter, crvToken, protocolName, navCalculator)` | `CurveGaugesMeta`; gauges under `metaInstances`. |
+| **CurveGaugesMeta** | Gauge-staked LP + rewards (CRV + extras) for all Curve gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. `Supplied` + `Rewards` legs. | `(minter, crvToken, protocolName, navCalculator)` | `CurveGaugesMeta`; gauges under `metaInstances`. |
 | **FluidFTokensMeta** | All Fluid fTokens (ERC4626 lending vaults). Instance coordinate = fToken address. positionId = `abi.encode(fToken)`. One `Supplied` leg per fToken (`convertToAssets(balanceOf)`). | `(protocolName, navCalculator)` | `FluidFTokensMeta`; fTokens under `metaInstances`. |
 | **FluidVaultsMeta** | All Fluid T1 vaults. Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Collateral` (supply) + `Borrowed` (debt) legs per vault. VaultResolver pinned in constructor. | `(vaultResolver, protocolName, navCalculator)` | `FluidVaultsMeta`; vaults under `metaInstances`. |
 | **GearboxMarketsMeta** | All Gearbox V3 ERC4626 farming pools. Instance coordinate = market address. positionId = `abi.encode(market)`. One `Supplied` leg per market (`convertToAssets(balanceOf)`). | `(protocolName, navCalculator)` | `GearboxMarketsMeta`; markets under `metaInstances`. |
 | **MorphoVaultsMeta** | All Morpho ERC4626 vaults (MetaMorpho). Instance coordinate = vault address. positionId = `abi.encode(vault)`. One `Supplied` leg per vault (shares → underlying). | `(protocolName, navCalculator)` | `MorphoVaultsMeta`; vaults under `metaInstances`. |
 | **MorphoMarketsMeta** | All Morpho Blue markets. Instance coordinate = raw bytes32 marketId. positionId = `abi.encode(bytes32 marketId)`. Up to 3 rows per market (`Collateral`, `Supplied`, `Borrowed`). Morpho contract pinned in constructor. | `(morpho, protocolName, navCalculator)` | `MorphoMarketsMeta`; marketIds under `metaInstancesRaw`. |
 | **StakeWiseV3VaultsMeta** | All StakeWise V3 vaults. Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Supplied` (vault shares → assets) + `Borrowed` (osToken debt) legs. Underlying token pinned in constructor. | `(underlyingToken, protocolName, navCalculator)` | `StakeWiseV3VaultsMeta`; vaults under `metaInstances`. |
-| **UniswapV3PoolsMeta** | LP of all Uniswap V3 pools. Instance coordinate = pool address. positionId = `abi.encode(npm, tokenId)` per NFT position. `Supplied` (in-range liquidity) + `Earned` (unclaimed fees) legs. NonfungiblePositionManager pinned in constructor. Per-pool NFT scan bounded at 256. | `(positionManager, protocolName, navCalculator)` | `UniswapV3PoolsMeta`; pools under `metaInstances`. |
+| **UniswapV3PoolsMeta** | LP of all Uniswap V3 pools. Instance coordinate = pool address. positionId = `abi.encode(npm, tokenId)` per NFT position. `Supplied` (in-range liquidity) + `Fees` (unclaimed fees) legs. NonfungiblePositionManager pinned in constructor. Per-pool NFT scan bounded at 256. | `(positionManager, protocolName, navCalculator)` | `UniswapV3PoolsMeta`; pools under `metaInstances`. |
 | **UniswapV2PoolsMeta** | LP of all Uniswap V2 pairs. Instance coordinate = pair address. positionId = `abi.encode(pair)`. One `Supplied` leg per token (dilution-adjusted pro-rata reserves). Also serves SushiSwap/PancakeSwap V2 forks. | `(protocolName, navCalculator)` | `UniswapV2PoolsMeta`; pairs under `metaInstances`. |
 | **PancakeSwapV3PoolsMeta** | Subclass of `UniswapV3PoolsMeta` overriding `slot0` for PancakeSwap V3's `uint32 feeProtocol`. Own NonfungiblePositionManager. | `(positionManager, protocolName, navCalculator)` | `PancakeSwapV3PoolsMeta`; pools under `metaInstances`. |
 | **PancakeSwapV2PoolsMeta** | Thin subclass of `UniswapV2PoolsMeta` (PancakeSwap V2 is a byte-for-byte V2 fork). | `(protocolName, navCalculator)` | `PancakeSwapV2PoolsMeta`; pairs under `metaInstances`. |
@@ -240,14 +242,14 @@ These adapters implement `IBalanceOracleAdapter` directly (not `MetaBalanceOracl
 | Adapter | Description | Constructor | Notes |
 |---------|-------------|-------------|-------|
 | **ERC20DefaultOracle** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default oracle; registered by `NAVCalculator.initialize`. |
-| **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Two legs per token: `Supplied` (staking principal) + `Earned` (claimable rewards). positionId = `abi.encode(stakeToken)`. | `(navCalculator)` | protocolId = `AAVE_V3_SAFETY_MODULE`. Mainnet only. |
-| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Supplied` + `Earned` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-oracle.md`. |
+| **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Two legs per token: `Supplied` (staking principal) + `Rewards` (claimable rewards). positionId = `abi.encode(stakeToken)`. | `(navCalculator)` | protocolId = `AAVE_V3_SAFETY_MODULE`. Mainnet only. |
+| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Supplied` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-oracle.md`. |
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
 | **DaiDsr** | DAI Savings Rate. positionId = `""` (account-global). `Supplied` kind. | `(dai, dsrManager, navCalculator)` | protocolId = `DAI_DSR`. |
 | **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family) and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; chain config key prefix `ERC4626Wrap_`. |
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Sums each account's open requests' `expectedAssetAmount` per payout asset. Payout-asset set discovered at runtime. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalManager, navCalculator)` | protocolId = `KELP_WITHDRAWAL`. Mainnet only. |
 | **LidoWithdrawalQueue** | Lido `WithdrawalQueueERC721`. Open (un-claimed) withdrawal requests summed into a native-ETH credit. Finalized → exact claimable ETH (`getClaimableEther`); not finalized → `amountOfStETH`. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalQueue, underlyingToken, navCalculator)` | protocolId = `LIDO_WITHDRAWAL`. Mainnet only. |
-| **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(rewardToken)`. `Earned` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. The framework's documented mutable-adapter exception (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |
+| **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(rewardToken)`. `Rewards` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. The framework's documented mutable-adapter exception (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |
 | **SkySavingsUsds** | Sky savings USDS. positionId = `abi.encode(savingsUsds)`. `Supplied` kind. | `(savingsUsds, navCalculator)` | protocolId = `SKY_SAVINGS`. |
 | **SparkLend** | Spark lending positions. Two legs per reserve (`Supplied`/`Collateral` + `Borrowed`). positionId = `abi.encode(pool, reserve)`. | `(dataProvider, navCalculator)` | protocolId = `SPARK_LEND`. Subclass of the Aave V3 lending logic. |
 | **StaderWithdrawalQueue** | Stader `UserWithdrawalManager` pending unstake requests. Sums `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. positionId = `""` (account-global). `Supplied` kind. | `(userWithdrawalManager, underlyingToken, navCalculator)` | protocolId = `STADER_WITHDRAWAL`. Mainnet only; underlying configured to WETH. |
@@ -278,7 +280,7 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
      - `isDebt`: `true` for debts, `false` for everything else.
      - `protocolId`: `PROTOCOL_ID`.
      - `positionId`: `abi.encode(...)` of the position's stable key; `""` for account-global positions.
-     - `positionKind`: one of `PositionKind.Wallet / Supplied / Borrowed / Collateral / Earned`.
+     - `positionKind`: one of `PositionKind.Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees`.
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
 
 5. Implement **`getOracleBalances`** and **`getOracleBalanceForAsset`** (per-asset amounts and debt flags). Meta-adapters return empty arrays for these (they are not used by the NAV path).
@@ -300,7 +302,9 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 | Lending supply as collateral | `Collateral` |
 | Debt | `Borrowed` |
 | Vault shares, staked tokens, LP principal | `Supplied` |
-| Unclaimed rewards or fees | `Earned` |
+| Staking principal | `Staking` |
+| Unclaimed reward tokens | `Rewards` |
+| Uncollected LP/protocol fees | `Fees` |
 
 ### 8.3 Minimal example (per-instance adapter)
 

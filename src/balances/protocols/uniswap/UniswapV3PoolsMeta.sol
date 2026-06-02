@@ -128,8 +128,8 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
             if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
             if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied);
-            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Earned);
-            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Earned);
+            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Rewards);
+            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Rewards);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);

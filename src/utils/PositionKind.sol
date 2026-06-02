@@ -7,8 +7,10 @@ pragma solidity ^0.8;
 ///      `PositionKind` provides human-readable category context on top of that.
 enum PositionKind {
     Wallet, // plain ERC20 / native-token balance held directly (ERC20DefaultOracle)
-    Supplied, // credit deployed into a protocol: lending supply, vault shares, staking principal, LP principal
+    Supplied, // credit deployed into a protocol: lending supply, vault shares, LP principal
     Borrowed, // debt owed to a protocol (isDebt = true)
     Collateral, // credit locked as collateral (e.g. Aave reserve with usageAsCollateralEnabled = true)
-    Earned // accrued but not yet claimed: rewards, uncollected LP fees
+    Staking, // staking principal: tokens locked in a staking contract (e.g. Safety Module, Umbrella)
+    Rewards, // accrued but not yet claimed reward tokens (e.g. CRV, CVX, BAL, AURA, COMP)
+    Fees // uncollected protocol or LP fees (e.g. Uniswap V3 position fees)
 }

@@ -251,7 +251,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(token)),
-                positionKind: PositionKind.Earned
+                positionKind: PositionKind.Rewards
             });
         }
 

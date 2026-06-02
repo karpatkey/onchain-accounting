@@ -558,10 +558,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address booster = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
         );
+        address balancerV2Vault = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerV2Vault")
+        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         // AURA token is resolved inside the constructor from Booster.minter().
-        return address(new AuraRewardsMetaBalanceAdapter(booster, protocol, navCalculator));
+        return address(new AuraRewardsMetaBalanceAdapter(booster, balancerV2Vault, protocol, navCalculator));
     }
 
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,

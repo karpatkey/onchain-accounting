@@ -729,8 +729,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAuraRewardsMeta(string memory name, address navAddr) internal returns (address) {
         address booster =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerV2Vault"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AuraRewardsMetaBalanceAdapter(booster, protocol, navAddr));
+        return address(new AuraRewardsMetaBalanceAdapter(booster, vault, protocol, navAddr));
     }
 
     function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {

@@ -8,6 +8,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {BalancerV3PoolLib} from "./balancer/BalancerV3PoolLib.sol";
 import {IStablePool} from "./balancer/IBalancerV3.sol";
+import {BalancerV2PoolLib, IBalancerV2Pool, IBalancerV2Vault} from "./balancer/BalancerV2PoolLib.sol";
 
 /// @title AuraRewardsMetaBalanceAdapter
 /// @author kpk
@@ -18,8 +19,8 @@ import {IStablePool} from "./balancer/IBalancerV3.sol";
 ///      (AURA_REWARDS / crvRewards) address widened to bytes32. The Balancer BPT pool address is
 ///      resolved on-chain via:
 ///        1. `auraRewards.pid()` → pool ID in the Aura Booster
-///        2. `Booster.poolInfo(pid).lptoken` → the Balancer V3 pool/BPT
-///        3. `BalancerV3PoolLib.poolBalanceOf(pool, stakedBpt, token)` → per-token share
+///        2. `Booster.poolInfo(pid).lptoken` → the Balancer V3 or V2 pool/BPT
+///        3. Pool-type detection (try `getStablePoolDynamicData()`) → V3 or V2 decomposition path
 ///      This eliminates the need to pass pool/gauge/pid as constructor args.
 ///
 /// @dev AURA token is resolved at construction from `Booster.minter()`:
@@ -59,16 +60,24 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
     /// @notice L2Coordinator for bridged AURA (address(0) on mainnet).
     IL2Coordinator private immutable _L2_COORDINATOR;
 
-    /// @param booster_       Aura Booster contract.
-    ///                       Mainnet: 0xA57b8d98dAE62B26Ec3bcC4a365338157060B234
-    ///                       Arbitrum / Base: 0x98Ef32edd24e2c92525E59afc4475C1242a30184
-    /// @param protocolName_  Human-readable name (e.g. "Aura").
-    /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address booster_, string memory protocolName_, address navCalculator_)
+    /// @notice Balancer V2 Vault address for V2 pool decomposition.
+    ///         Universal across all EVM chains: 0xBA12222222228d8Ba445958a75a0704d566BF2C8
+    ///         Pass address(0) to disable V2 pool support (V2 instances will emit no Supplied legs).
+    address public immutable BALANCER_V2_VAULT;
+
+    /// @param booster_           Aura Booster contract.
+    ///                           Mainnet: 0xA57b8d98dAE62B26Ec3bcC4a365338157060B234
+    ///                           Arbitrum / Base: 0x98Ef32edd24e2c92525E59afc4475C1242a30184
+    /// @param balancerV2Vault_   Balancer V2 Vault (0xBA12222222228d8Ba445958a75a0704d566BF2C8
+    ///                           on all EVM chains). Pass address(0) to disable V2 support.
+    /// @param protocolName_      Human-readable name (e.g. "Aura").
+    /// @param navCalculator_     The NAVCalculator contract for asset-registry access.
+    constructor(address booster_, address balancerV2Vault_, string memory protocolName_, address navCalculator_)
         MetaBalanceOracle(protocolName_, navCalculator_)
     {
         require(booster_.code.length > 0, "Booster must be a contract");
         BOOSTER = IAuraBooster(booster_);
+        BALANCER_V2_VAULT = balancerV2Vault_;
 
         // Detect mainnet vs L2 from Booster.minter():
         //   Mainnet  → minter IS the AURA token (auraOFT() absent or returns address(0))
@@ -115,23 +124,48 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
         // ── 1. Supplied legs: staked BPT decomposed into Balancer pool tokens ─
         if (stakedBpt > 0) {
-            address[] memory tokens = BalancerV3PoolLib.poolTokens(pool);
-            for (uint256 i; i < tokens.length; ++i) {
-                address tok = tokens[i];
-                if (assetFilter != address(0) && tok != assetFilter) continue;
-                (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
-                if (!found) continue;
-                uint256 amount = BalancerV3PoolLib.poolBalanceOf(pool, stakedBpt, tok);
-                if (amount == 0) continue;
-                tmp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: info,
-                    balanceOracle: address(this),
-                    amount: amount,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: pid,
-                    positionKind: PositionKind.Supplied
-                });
+            address[] memory tokens = _poolTokens(address(pool));
+            if (_isV3Pool(address(pool))) {
+                // V3 path: live-scaled-balance math + ERC4626 unwrapping via BalancerV3PoolLib
+                for (uint256 i; i < tokens.length; ++i) {
+                    address tok = tokens[i];
+                    if (assetFilter != address(0) && tok != assetFilter) continue;
+                    (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
+                    if (!found) continue;
+                    uint256 amount = BalancerV3PoolLib.poolBalanceOf(pool, stakedBpt, tok);
+                    if (amount == 0) continue;
+                    tmp[n++] = INAVCalculator.PositionBalance({
+                        balanceAsset: info,
+                        balanceOracle: address(this),
+                        amount: amount,
+                        isDebt: false,
+                        protocolId: PROTOCOL_ID,
+                        positionId: pid,
+                        positionKind: PositionKind.Supplied
+                    });
+                }
+            } else if (BALANCER_V2_VAULT != address(0)) {
+                // V2 path: raw Vault balances via BalancerV2PoolLib.
+                // shares() returns (tokens, amounts) together, excluding the self-BPT in composable pools.
+                bytes32 poolId = IBalancerV2Pool(address(pool)).getPoolId();
+                (address[] memory v2Toks, uint256[] memory v2Amts) =
+                    BalancerV2PoolLib.shares(BALANCER_V2_VAULT, poolId, address(pool), stakedBpt);
+                for (uint256 i; i < v2Toks.length; ++i) {
+                    address tok = v2Toks[i];
+                    if (assetFilter != address(0) && tok != assetFilter) continue;
+                    if (v2Amts[i] == 0) continue;
+                    (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
+                    if (!found) continue;
+                    tmp[n++] = INAVCalculator.PositionBalance({
+                        balanceAsset: info,
+                        balanceOracle: address(this),
+                        amount: v2Amts[i],
+                        isDebt: false,
+                        protocolId: PROTOCOL_ID,
+                        positionId: pid,
+                        positionKind: PositionKind.Supplied
+                    });
+                }
             }
         }
 
@@ -223,7 +257,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         IStablePool pool = _poolOf(auraRewards);
 
         address[] memory poolTokens = address(pool) != address(0)
-            ? BalancerV3PoolLib.poolTokens(pool)
+            ? _poolTokens(address(pool))
             : new address[](0);
 
         address[] memory rwd = new address[](_MAX_EXTRA + 2);
@@ -260,7 +294,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         address auraRewards = abi.decode(pid, (address));
         IStablePool pool = _poolOf(auraRewards);
         if (address(pool) == address(0)) return "";
-        address[] memory tokens = BalancerV3PoolLib.poolTokens(pool);
+        address[] memory tokens = _poolTokens(address(pool));
         if (tokens.length == 0) return "";
         string memory syms;
         for (uint256 i; i < tokens.length; ++i) {
@@ -387,12 +421,31 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         if (ok && ret.length >= 32) result = abi.decode(ret, (address));
     }
 
-    function _maxTokens(IStablePool pool) internal view returns (uint256) {
-        try pool.getStablePoolImmutableData() returns (IStablePool.StablePoolImmutableData memory d) {
-            return d.tokens.length;
-        } catch {
-            return 8;
+    /// @notice Returns true if `pool` is a Balancer V3 pool (has getStablePoolDynamicData()).
+    function _isV3Pool(address pool) internal view returns (bool ok) {
+        (ok,) = pool.staticcall(abi.encodeWithSignature("getStablePoolDynamicData()"));
+    }
+
+    /// @notice Returns the pool's underlying tokens, dispatching to V3 or V2 path.
+    function _poolTokens(address pool) internal view returns (address[] memory) {
+        if (_isV3Pool(pool)) {
+            return BalancerV3PoolLib.poolTokens(IStablePool(pool));
         }
+        if (BALANCER_V2_VAULT != address(0)) {
+            try IBalancerV2Pool(pool).getPoolId() returns (bytes32 poolId) {
+                return BalancerV2PoolLib.poolTokens(BALANCER_V2_VAULT, poolId, pool);
+            } catch {}
+        }
+        return new address[](0);
+    }
+
+    function _maxTokens(IStablePool pool) internal view returns (uint256) {
+        if (_isV3Pool(address(pool))) {
+            try pool.getStablePoolImmutableData() returns (IStablePool.StablePoolImmutableData memory d) {
+                return d.tokens.length;
+            } catch {}
+        }
+        return 8; // safe upper bound for V2 pools and fallback
     }
 }
 

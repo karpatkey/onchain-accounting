@@ -298,6 +298,48 @@ contract MockExtraRewardPoolWithStash {
     }
 }
 
+// ─── Balancer V2 mocks ────────────────────────────────────────────────────────
+
+/// @notice Mock Balancer V2 Vault — implements getPoolTokens.
+contract MockBalancerV2Vault {
+    mapping(bytes32 => address[]) private _tokens;
+    mapping(bytes32 => uint256[]) private _balances;
+
+    function setPool(bytes32 poolId, address[] memory tokens, uint256[] memory bals) external {
+        _tokens[poolId] = tokens;
+        _balances[poolId] = bals;
+    }
+
+    function getPoolTokens(bytes32 poolId)
+        external
+        view
+        returns (address[] memory tokens, uint256[] memory balances, uint256 lastChangeBlock)
+    {
+        return (_tokens[poolId], _balances[poolId], 0);
+    }
+}
+
+/// @notice Mock Balancer V2 Pool (no getStablePoolDynamicData — triggers V2 branch in adapter).
+contract MockBalancerV2Pool {
+    bytes32 private _poolId;
+    uint256 public totalSupply;
+
+    constructor(address vault, address tok0, address tok1, uint256 bal0, uint256 bal1) {
+        // Register with vault using a deterministic poolId
+        _poolId = bytes32(uint256(uint160(address(this))));
+        totalSupply = 1_000e18;
+        address[] memory tokens = new address[](2);
+        tokens[0] = tok0; tokens[1] = tok1;
+        uint256[] memory bals = new uint256[](2);
+        bals[0] = bal0; bals[1] = bal1;
+        if (vault != address(0)) MockBalancerV2Vault(vault).setPool(_poolId, tokens, bals);
+    }
+
+    function getPoolId() external view returns (bytes32) { return _poolId; }
+    function balanceOf(address) external pure returns (uint256) { return 0; }
+    // No getStablePoolDynamicData() — this is what makes it a V2 pool
+}
+
 // ─── Main test contract ────────────────────────────────────────────────────────
 
 contract AuraRewardsMetaBalanceAdapterTest is Test {
@@ -369,7 +411,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder = new MockAuraBaseRewardPool(address(bal), 0);
         boosterMainnet.setPool(0, address(pool));
 
-        meta = new AuraRewardsMetaBalanceAdapter(address(boosterMainnet), "Aura", address(nav));
+        meta = new AuraRewardsMetaBalanceAdapter(address(boosterMainnet), address(0), "Aura", address(nav));
 
         // L2 setup
         auraL2Token = new MockToken("AURA", 18);
@@ -377,7 +419,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         l2Coord = new MockL2Coordinator(address(auraL2Token), 3e17); // mintRate = 0.3 AURA per BAL
         boosterL2 = new MockBooster(address(l2Coord));
         boosterL2.setPool(0, address(pool));
-        metaL2 = new AuraRewardsMetaBalanceAdapter(address(boosterL2), "Aura", address(nav));
+        metaL2 = new AuraRewardsMetaBalanceAdapter(address(boosterL2), address(0), "Aura", address(nav));
     }
 
     // ─── Instance helpers ─────────────────────────────────────────────────────
@@ -703,5 +745,83 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         string memory label = meta.describePosition(abi.encode(address(rewarder)));
         // Tokens in pool order: tok0 = "GHO", tok1 = "USDC" → "GHO/USDC Aura"
         assertEq(label, "GHO/USDC Aura");
+    }
+
+    // ─── 17. Balancer V2 pool support ────────────────────────────────────────
+
+    function test_v2pool_suppliedLegs_decomposedViaVault() public {
+        // Deploy a mock Balancer V2 pool and mock Vault
+        MockBalancerV2Vault vault = new MockBalancerV2Vault();
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
+            address(vault), address(tok0), address(tok1), 500e18, 500e6
+        );
+
+        // Wire up: booster pid=1 → v2Pool as lptoken
+        boosterMainnet.setPool(1, address(v2Pool));
+
+        // Deploy Aura meta with the mock vault address
+        AuraRewardsMetaBalanceAdapter v2Meta = new AuraRewardsMetaBalanceAdapter(
+            address(boosterMainnet), address(vault), "Aura", address(nav)
+        );
+
+        // Rewarder for the V2 pool: pid=1, staked=100e18 (10% of 1000e18 totalSupply)
+        MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
+        v2Rewarder.setBalance(alice, 100e18);
+
+        INAVCalculator.PositionBalance[] memory pos =
+            v2Meta.getOraclePositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
+
+        uint256 suppliedCount;
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].positionKind == PositionKind.Supplied) suppliedCount++;
+        }
+        assertEq(suppliedCount, 2, "2 Supplied legs from V2 Vault decomposition");
+
+        // 10% of 500e18 GHO = 50e18
+        INAVCalculator.PositionBalance memory ghoPos = _find(pos, address(tok0));
+        assertEq(ghoPos.amount, 50e18, "V2 GHO share = 50");
+
+        // 10% of 500e6 USDC = 50e6
+        INAVCalculator.PositionBalance memory usdcPos = _find(pos, address(tok1));
+        assertEq(usdcPos.amount, 50e6, "V2 USDC share = 50");
+    }
+
+    function test_v2pool_instanceAssets_includesVaultTokens() public {
+        MockBalancerV2Vault vault = new MockBalancerV2Vault();
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
+            address(vault), address(tok0), address(tok1), 500e18, 500e6
+        );
+        boosterMainnet.setPool(1, address(v2Pool));
+        AuraRewardsMetaBalanceAdapter v2Meta = new AuraRewardsMetaBalanceAdapter(
+            address(boosterMainnet), address(vault), "Aura", address(nav)
+        );
+        MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
+
+        address[] memory assets = v2Meta.underlyingAssetsSupportedForInstances(_single(address(v2Rewarder)));
+        // Should include: tok0, tok1 (pool tokens) + bal (rewardToken) + aura
+        assertGe(assets.length, 2, "at least the two pool tokens");
+    }
+
+    function test_v2pool_noVault_noSuppliedLegs_rewardsStillWork() public {
+        // Meta deployed with address(0) vault — V2 Supplied legs are skipped
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
+            address(0), address(tok0), address(tok1), 500e18, 500e6
+        );
+        boosterMainnet.setPool(1, address(v2Pool));
+        AuraRewardsMetaBalanceAdapter noVaultMeta = new AuraRewardsMetaBalanceAdapter(
+            address(boosterMainnet), address(0), "Aura", address(nav)
+        );
+        MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
+        v2Rewarder.setBalance(alice, 100e18);
+        v2Rewarder.setEarned(alice, 200e18); // BAL earned
+
+        INAVCalculator.PositionBalance[] memory pos =
+            noVaultMeta.getOraclePositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
+
+        // No Supplied legs (vault is address(0)) but BAL Earned leg present
+        for (uint256 i; i < pos.length; ++i) {
+            assertFalse(pos[i].positionKind == PositionKind.Supplied, "no Supplied legs without vault");
+        }
+        assertTrue(_has(pos, address(bal)), "BAL Earned leg still emitted");
     }
 }

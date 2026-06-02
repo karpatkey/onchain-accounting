@@ -4,9 +4,6 @@ Every `PositionBalance` and `Position` returned by the NAV stack carries three t
 form a stable, machine-readable identity for each position. This document explains what they are,
 how to decode them, and how to use them for indexing, reconciliation, and action routing.
 
-> **Replaces** the deprecated `position-detail-schema.md`, which documented the old string-based
-> fields (`protocol`, `positionDetail`, `positionId`). Those fields no longer exist.
-
 ---
 
 ## The three identity fields

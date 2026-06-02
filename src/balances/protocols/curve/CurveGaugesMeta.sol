@@ -5,7 +5,6 @@ import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CurvePoolLib} from "./CurvePoolLib.sol";
 
 /// @title CurveGaugesMetaBalanceAdapter
@@ -208,17 +207,6 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         if (pool == address(0)) return "";
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
-        return string.concat(_coinSymbols(coins), " gauge");
-    }
-
-    // ─── Internal helpers ─────────────────────────────────────────────────────
-
-    function _coinSymbols(address[] memory coins) private view returns (string memory result) {
-        for (uint256 i; i < coins.length; ++i) {
-            string memory sym;
-            try IERC20Metadata(coins[i]).symbol() returns (string memory s) { sym = s; }
-            catch { sym = "?"; }
-            result = i == 0 ? sym : string.concat(result, "/", sym);
-        }
+        return string.concat(CurvePoolLib.coinSymbols(coins), " gauge");
     }
 }

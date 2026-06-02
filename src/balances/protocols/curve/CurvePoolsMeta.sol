@@ -5,7 +5,6 @@ import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CurvePoolLib} from "./CurvePoolLib.sol";
 
 /// @title CurvePoolsMetaBalanceAdapter
@@ -108,7 +107,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         address pool = abi.decode(pid, (address));
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
-        return string.concat(_coinSymbols(coins), " LP");
+        return string.concat(CurvePoolLib.coinSymbols(coins), " LP");
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
@@ -119,15 +118,5 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         );
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
         return 0;
-    }
-
-    /// @dev Joins coin symbols with "/" (e.g. "USDC/DAI/USDT").
-    function _coinSymbols(address[] memory coins) private view returns (string memory result) {
-        for (uint256 i; i < coins.length; ++i) {
-            string memory sym;
-            try IERC20Metadata(coins[i]).symbol() returns (string memory s) { sym = s; }
-            catch { sym = "?"; }
-            result = i == 0 ? sym : string.concat(result, "/", sym);
-        }
     }
 }

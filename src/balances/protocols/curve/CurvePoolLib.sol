@@ -229,4 +229,18 @@ library CurvePoolLib {
         if (ok && data.length >= 32) return abi.decode(data, (address));
         return address(0);
     }
+
+    /// @notice Joins coin symbols with "/" — e.g. [USDC, DAI] → "USDC/DAI".
+    /// @dev Shared by CurvePoolsMeta and CurveGaugesMeta to avoid duplicate code.
+    function coinSymbols(address[] memory coins) internal view returns (string memory result) {
+        for (uint256 i; i < coins.length; ++i) {
+            string memory sym;
+            try IERC20Symbol(coins[i]).symbol() returns (string memory s) { sym = s; } catch { sym = "?"; }
+            result = i == 0 ? sym : string.concat(result, "/", sym);
+        }
+    }
+}
+
+interface IERC20Symbol {
+    function symbol() external view returns (string memory);
 }

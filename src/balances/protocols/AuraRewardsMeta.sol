@@ -116,16 +116,19 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
         uint256 stakedBpt = IAuraBaseRewardPool(auraRewards).balanceOf(account);
 
+        // Detect pool version once — used by _maxTokens, _poolTokens, and the branch below.
+        bool isV3 = _isV3Pool(address(pool));
+
         // Pre-allocate
         INAVCalculator.PositionBalance[] memory tmp =
-            new INAVCalculator.PositionBalance[](_maxTokens(pool) + 2 + _MAX_EXTRA);
+            new INAVCalculator.PositionBalance[](_maxTokens(pool, isV3) + 2 + _MAX_EXTRA);
         uint256 n;
         bytes memory pid = abi.encode(auraRewards);
 
         // ── 1. Supplied legs: staked BPT decomposed into Balancer pool tokens ─
         if (stakedBpt > 0) {
-            address[] memory tokens = _poolTokens(address(pool));
-            if (_isV3Pool(address(pool))) {
+            address[] memory tokens = _poolTokens(address(pool), isV3);
+            if (isV3) {
                 // V3 path: live-scaled-balance math + ERC4626 unwrapping via BalancerV3PoolLib
                 for (uint256 i; i < tokens.length; ++i) {
                     address tok = tokens[i];
@@ -147,7 +150,13 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
             } else if (BALANCER_V2_VAULT != address(0)) {
                 // V2 path: raw Vault balances via BalancerV2PoolLib.
                 // shares() returns (tokens, amounts) together, excluding the self-BPT in composable pools.
-                bytes32 poolId = IBalancerV2Pool(address(pool)).getPoolId();
+                bytes32 poolId;
+                bool poolIdOk;
+                try IBalancerV2Pool(address(pool)).getPoolId() returns (bytes32 _poolId) {
+                    poolId = _poolId;
+                    poolIdOk = true;
+                } catch {}
+                if (!poolIdOk) return positions; // non-standard V2 address — bail out gracefully
                 (address[] memory v2Toks, uint256[] memory v2Amts) =
                     BalancerV2PoolLib.shares(BALANCER_V2_VAULT, poolId, address(pool), stakedBpt);
                 for (uint256 i; i < v2Toks.length; ++i) {
@@ -206,9 +215,11 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 // Unwrap stash token → base token
                 address rewardToken = _unstash(rawToken);
 
-                // AURA from extra pool accumulates into the single AURA leg
+                // AURA from extra pool accumulates into the single AURA leg.
+                // On L2 the mintRate applies only to BAL earned on the main rewarder, not to
+                // arbitrary extra-reward tokens (LDO, stETH, etc.), so skip on L2.
                 uint256 extraEarned = _earned(extraPool, account);
-                totalAuraFromBal += _auraFrom(extraPool, extraEarned);
+                if (IS_MAINNET) totalAuraFromBal += _auraFrom(extraPool, extraEarned);
 
                 if (rewardToken == AURA_TOKEN || rewardToken == balToken) continue;
                 if (assetFilter != address(0) && rewardToken != assetFilter) continue;
@@ -257,7 +268,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         IStablePool pool = _poolOf(auraRewards);
 
         address[] memory poolTokens = address(pool) != address(0)
-            ? _poolTokens(address(pool))
+            ? _poolTokens(address(pool), _isV3Pool(address(pool)))
             : new address[](0);
 
         address[] memory rwd = new address[](_MAX_EXTRA + 2);
@@ -294,7 +305,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         address auraRewards = abi.decode(pid, (address));
         IStablePool pool = _poolOf(auraRewards);
         if (address(pool) == address(0)) return "";
-        address[] memory tokens = _poolTokens(address(pool));
+        address[] memory tokens = _poolTokens(address(pool), _isV3Pool(address(pool)));
         if (tokens.length == 0) return "";
         string memory syms;
         for (uint256 i; i < tokens.length; ++i) {
@@ -427,8 +438,9 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @notice Returns the pool's underlying tokens, dispatching to V3 or V2 path.
-    function _poolTokens(address pool) internal view returns (address[] memory) {
-        if (_isV3Pool(pool)) {
+    /// @param isV3 Pre-computed result of `_isV3Pool(pool)` to avoid a redundant staticcall.
+    function _poolTokens(address pool, bool isV3) internal view returns (address[] memory) {
+        if (isV3) {
             return BalancerV3PoolLib.poolTokens(IStablePool(pool));
         }
         if (BALANCER_V2_VAULT != address(0)) {
@@ -439,8 +451,9 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         return new address[](0);
     }
 
-    function _maxTokens(IStablePool pool) internal view returns (uint256) {
-        if (_isV3Pool(address(pool))) {
+    /// @param isV3 Pre-computed result of `_isV3Pool(pool)` to avoid a redundant staticcall.
+    function _maxTokens(IStablePool pool, bool isV3) internal view returns (uint256) {
+        if (isV3) {
             try pool.getStablePoolImmutableData() returns (IStablePool.StablePoolImmutableData memory d) {
                 return d.tokens.length;
             } catch {}

@@ -15,8 +15,8 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balance
 ///         BalancerV2GaugesMeta adapter). The instance coordinate is the pool's **`bytes32` poolId, used directly**
 ///         (configured via `metaInstancesRaw`), since V2 identifies pools by poolId (the BPT address is its top
 ///         160 bits). Emits one `Supply` leg per underlying pool token. The Balancer V2 Vault is the chain-level
-///         constant pinned in the constructor. Identity derived on-chain (positionId = BPT address; name = BPT
-///         `name()`). See ADR 0010.
+///         constant pinned in the constructor. Identity derived on-chain (positionId = abi.encode(bytes32 poolId);
+///         name = BPT `name()`). See ADR 0010.
 contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
     using BalancerV2PoolLib for bytes32;
 

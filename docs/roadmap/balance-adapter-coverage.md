@@ -1,5 +1,7 @@
 # Balance-adapter coverage roadmap
 
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. One meta-adapter now covers every instance of 16 protocol families (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura). The active instance set for each is governed on NAVCalculator via `setMetaInstances` instead of deploying a contract per instance.
+
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance oracles, with the goal of growing NAV coverage one PR at a time.
 
 The Stader withdrawal-queue adapter (`src/balances/protocols/StaderWithdrawalQueue.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports a single aggregated credit position in the underlying asset. Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
@@ -45,19 +47,43 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Symbiotic**: similar shape to EigenLayer; vaults + delegations.
 - **Karak**: ditto.
 
+### DEX LP / AMM positions
+
+- **Balancer V3 pools + gauges**: ✅ covered — `BalancerV3PoolsMeta` + `BalancerV3GaugesMeta` (meta-adapters, ADR 0010).
+- **Balancer V2 pools + gauges**: ✅ covered — `BalancerV2PoolsMeta` + `BalancerV2GaugesMeta` (meta-adapters, ADR 0010).
+- **Uniswap V3**: ✅ covered — `UniswapV3PoolsMeta` (meta-adapter, ADR 0010).
+- **Uniswap V2**: ✅ covered — `UniswapV2PoolsMeta` (meta-adapter, ADR 0010).
+- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3PoolsMeta` (meta-adapter, ADR 0010).
+- **PancakeSwap V2**: ✅ covered — `PancakeSwapV2PoolsMeta` (meta-adapter, ADR 0010).
+- **Curve pools + gauges**: ✅ covered — `CurvePoolsMeta` + `CurveGaugesMeta` (meta-adapters, ADR 0010).
+
+### Liquid staking / restaking aggregators
+
+- **StakeWise V3 vaults**: ✅ covered — `StakeWiseV3VaultsMeta` (meta-adapter, ADR 0010).
+
+### Yield aggregator rewards
+
+- **Convex**: ✅ covered — `ConvexRewardsMeta` (meta-adapter, ADR 0010).
+- **Aura**: ✅ covered — `AuraRewardsMeta` (meta-adapter, ADR 0010).
+
 ### Yield / structured products
 
 - **Pendle PT/YT**: principal-token (PT) and yield-token (YT) positions in markets and SY vaults. Each Pendle market issues distinct PT and YT ERC20s; the underlying value is non-trivial (PT depends on time-to-maturity, YT depends on accrued yield since last redemption). One adapter per market or per-LP.
-- **Yearn V3 vaults**: only Morpho vaults are covered today via `MorphoVault.sol`; Yearn V3 vaults are pure ERC4626 and could share that adapter or get a thin wrapper.
-- **Beefy vaults**: ERC4626-shaped, same pattern as Morpho.
+- **Yearn V3 vaults**: pure ERC4626; could reuse the `ERC4626Wrap` adapter or get a thin wrapper.
+- **Beefy vaults**: ERC4626-shaped, same pattern.
 - **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultOracle` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
 - **Maple direct lending pools** (beyond syrupUSDC): pool tokens with withdrawal cooldowns.
 
 ### Money markets and credit
 
-- **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010) enabled on mainnet (supersedes per-comet `CompoundV3Comet.sol`).
+- **Morpho Vaults**: ✅ covered — `MorphoVaultsMeta` (meta-adapter, ADR 0010).
+- **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
+- **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
+- **Aave V2**: ✅ covered — `AaveV2InstancesMeta` (meta-adapter, ADR 0010).
+- **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
+- **Gearbox**: ✅ covered — `GearboxMarketsMeta` (meta-adapter, ADR 0010).
+- **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).
 - **Euler V2**: cluster-based lending; per-vault EVK accounting.
-- **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010) enabled on mainnet.
 - **Ajna**: pool-based lending; inflation-bearing buckets.
 
 ### RWA / off-chain backed

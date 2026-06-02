@@ -2,6 +2,14 @@
 
 All addresses listed below were deployed on 2026-04-29 / 2026-04-30 as part of the production rollout tracked in [PR #15](https://github.com/karpatkey/onchain-accounting/pull/15). Each address is linked to its respective block-explorer page.
 
+> **Post-PR #47 migration note (June 2026):** The balance adapter architecture was refactored to use
+> **meta-adapters** (ADR 0010). Per-instance adapters listed below (e.g. `AaveV3_Core`,
+> `MorphoVault_*`, `Convex_*`) remain at their deployed addresses but are now **disabled** in the
+> chain configs (`"enabled": false`) and superseded by meta-adapters (`AaveV3InstancesMeta`,
+> `MorphoVaultsMeta`, etc.). The new meta-adapters have `"deployed": ""` in chain config and are
+> **pending deployment** in the next production deploy session. Until then, the disabled per-instance
+> adapters continue to report positions correctly if manually re-enabled.
+
 Source of truth: `script/config/chains/{chainId}.json` per chain. Per-tx broadcast logs live in `broadcast/<script>/<chainId>/run-latest.json`.
 
 ---

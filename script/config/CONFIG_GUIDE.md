@@ -305,6 +305,36 @@ You should see the `deployed` field filled in!
 | `enabled` | boolean | `true` to deploy, `false` to skip |
 | `constructor` | object | Constructor parameters (chain-specific addresses) |
 | `deployed` | string | Deployed address (auto-filled by scripts) |
+| `metaInstances` | string[] | **Meta-adapters only.** Array of instance addresses (checksummed `address`) to register on NAVCalculator via `setMetaInstances`. Read by `06_Configure.s.sol`. |
+| `metaInstancesRaw` | string[] | **Meta-adapters only.** Array of raw `bytes32` values for adapters whose instance key is not an address (e.g. Morpho market IDs). Mutually exclusive with `metaInstances`. |
+
+#### Meta-adapter instance configuration
+
+Meta-adapters cover every instance of a protocol with a single deployed contract; the active instance set is pushed to NAVCalculator by `06_Configure.s.sol` via `setMetaInstances`. Use `metaInstances` for address-typed instance keys and `metaInstancesRaw` for `bytes32`-typed keys.
+
+Example — address-keyed meta-adapter (`CompoundV3CometsMeta`):
+
+```json
+"CompoundV3CometsMeta": {
+  "enabled": true,
+  "constructor": { "compoundRewards": "0x...", "rewardToken": "0x...", "protocol": "Compound V3" },
+  "metaInstances": ["0xcomet1", "0xcomet2"],
+  "deployed": ""
+}
+```
+
+Example — bytes32-keyed meta-adapter (`MorphoMarketsMeta`):
+
+```json
+"MorphoMarketsMeta": {
+  "enabled": true,
+  "constructor": { "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" },
+  "metaInstancesRaw": ["0xmarketId1bytes32", "0xmarketId2bytes32"],
+  "deployed": ""
+}
+```
+
+`06_Configure.s.sol` reads both fields and calls `NAVCalculator.setMetaInstances(adapter, instances)` for each meta-adapter that has a non-empty list.
 
 ## Adding a New Chain
 

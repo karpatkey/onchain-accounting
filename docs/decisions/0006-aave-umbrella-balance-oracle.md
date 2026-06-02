@@ -13,7 +13,7 @@ The Umbrella set on Mainnet today (verified via `RewardsController.getAllAssets(
 Ship a new, separate `AaveUmbrellaBalanceOracle` (`src/balances/protocols/AaveUmbrella.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
 
 ```solidity
-constructor(address rewardsController, address navCalculator, string memory protocol_)
+constructor(address rewardsController, address navCalculator)
 ```
 
 The `rewardsController` is the protocol's trust anchor — every other piece of information is discovered at runtime through it:
@@ -85,11 +85,11 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 
 ## Alternatives considered
 
-1. **Hardcode every stake-token, waToken, aToken, and reserve address as `address public constant` in source (mirroring ADR 0005).** Rejected because Umbrella, unlike the legacy SM, exposes a usable on-chain registry. The framework convention is *use the registry when it exists* (cf. `AaveV3InstanceBalanceOracle`), and a code change every time governance adds a stake token is friction the registry lets us avoid.
+1. **Hardcode every stake-token, waToken, aToken, and reserve address as `address public constant` in source (mirroring ADR 0005).** Rejected because Umbrella, unlike the legacy SM, exposes a usable on-chain registry. The framework convention is *use the registry when it exists* (cf. `AaveV3InstancesMetaBalanceAdapter`), and a code change every time governance adds a stake token is friction the registry lets us avoid.
 2. **Hybrid: pass the stake-token list via constructor but discover the rest dynamically.** Rejected because the stake-token list is the part most likely to change. Pinning the controller and discovering everything beneath it from a single trust anchor is a strict simplification.
 3. **Report positions in waToken or aToken units instead of the bare reserve.** Rejected because `NAVCalculator` does not have price feeds registered for waEth* or aEth* (only for the bare reserves). Adding four custom price feeds would be a larger surface area and require independent ADRs.
 4. **Reuse `AaveV3SafetyModuleBalanceOracle` and add Umbrella entries.** Rejected because the two protocols have entirely different read interfaces (`stkAAVE.previewRedeem` / `getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
-5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionDetail` strings preserve that breakdown for downstream accounting.
+5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionKind` values (`Supplied` for the staked principal, `Earned` for the claimable rewards) preserve that breakdown for downstream accounting.
 
 ## Reference
 

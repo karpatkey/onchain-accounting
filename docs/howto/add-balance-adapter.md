@@ -4,7 +4,7 @@ End-to-end walkthrough. Read [`/CLAUDE.md`](../../CLAUDE.md) and [`../onboarding
 
 The framework reference is [`src/balances/BALANCE_ADAPTERS.md`](../../src/balances/BALANCE_ADAPTERS.md). This doc is the *recipe*; that doc is the *spec*.
 
-Throughout, replace `MyProtocol` with your protocol name. Pick a name that's stable, recognizable, and matches the on-chain protocol identity (e.g., `AaveV3SafetyModule`, `MorphoVault`, `BalancerV3`).
+Throughout, replace `MyProtocol` with your protocol name. Pick a name that's stable, recognizable, and matches the on-chain protocol identity (e.g., `SparkLend`, `GearboxMarkets`, `BalancerV3Pools`).
 
 ---
 
@@ -16,26 +16,50 @@ Before writing code, answer:
 |---|---|
 | Which **assets** does this adapter report on? | Drives `underlyingAssetsSupported()`. List them as token addresses. |
 | For each asset, is the position a **credit** (supply, stake, LP) or **debt** (borrow)? | Drives `isDebt`. Each `PositionBalance` is "asset + amount + isDebt". |
-| Does the protocol have **multiple instances** (one per pool/market/vault)? | Two routes — see "Single-instance vs meta-adapter" below. |
+| Does the protocol have **multiple instances** (one per pool/market/vault)? | Two routes — see "Per-instance vs meta-adapter" below. |
 | Is there a **canonical underlying asset** (e.g., what the position is denominated in when valued)? | Adapters return amounts in the underlying token's decimals. The price registry will price the underlying. |
 | Are there **rewards** that should count toward NAV? | If yes, the adapter must include them as additional `PositionBalance` entries with the reward token as the underlying asset. |
 
 **Rule of thumb:** the adapter is a *view*. It reads protocol state and translates it into `PositionBalance[]`. It does not price, sign, or aggregate; NAVCalculator does that.
 
-### Single-instance vs meta-adapter
+### Per-instance vs meta-adapter
 
-If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 & PancakeSwap pools), prefer a **meta-adapter** over one contract per instance:
+If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 pools), prefer a **meta-adapter** over one contract per instance:
 
-- **Single-instance** (the default skeleton below): pin the pool/market/vault in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue) or when there is exactly one instance you care about.
-- **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`; derive identity on-chain from the instance coordinate. Adding a pool/vault later is a config TX, not a deploy. See `MorphoVaultsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
+- **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
+- **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`; derive identity on-chain from the instance coordinate. Adding a pool/vault later is a config TX, not a deploy. See `GearboxMarketsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
+
+Today 21 meta-adapters cover all major multi-instance protocols (Aave V2/V3, Compound V3, Morpho Vaults/Markets, Gearbox, Balancer V2/V3 pools + gauges, Aura, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2/V3, PancakeSwap V2/V3). For a new multi-instance protocol, a meta-adapter is almost always the right choice.
 
 ---
 
 ## 1. Write the adapter contract
 
-File: `src/balances/protocols/<protocol>/<MyProtocol>.sol`.
+File: `src/balances/protocols/<MyProtocol>.sol` (single-file) or `src/balances/protocols/<protocol>/<MyProtocol>.sol` (multi-file).
 
-Skeleton:
+### 1.1 Identity pattern
+
+Every `PositionBalance` now carries typed identity fields instead of free-form strings:
+
+| Field | Type | What to put |
+|---|---|---|
+| `protocolId` | `bytes32` | A constant from `src/utils/ProtocolIds.sol` — `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
+| `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time. See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
+| `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Supplied`, `Borrowed`, `Collateral`, `Earned`, or `Wallet`. |
+
+There are **no** `protocol_`, `positionDetail_`, or `positionId_` string constructor parameters. These fields were removed in PR #47.
+
+### 1.2 Adding a new ProtocolIds constant
+
+If no existing constant fits your protocol, add one to `src/utils/ProtocolIds.sol`:
+
+```solidity
+bytes32 internal constant MY_PROTOCOL = keccak256("my-protocol-v1");
+```
+
+Slug rules: lowercase ASCII, kebab-case, include the major version. Document the `positionId` ABI-encode schema in the NatSpec block at the top of the file.
+
+### 1.3 Per-instance adapter skeleton
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -43,54 +67,61 @@ pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {ArrayLib} from "src/utils/ArrayLib.sol";
 
-contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
+contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     /// @notice The protocol contract this adapter reads from.
     address public immutable PROTOCOL_CONTRACT;
 
     /// @notice NAVCalculator (asset registry source).
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3", "Morpho").
-    string private _protocol;
-    /// @notice JSON metadata BASE for the PositionBalance.positionDetail field — no closing `}`.
-    /// @dev Single-type adapters emit `string.concat(_positionDetail, "}")`. Multi-leg adapters
-    ///      use `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` from
-    ///      `src/utils/PositionType.sol`. See docs/howto/position-detail-schema.md.
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (most-specific immutable address —
-    ///         vault, comet, gauge, marketId, …). Used by frontends as a cross-block React key.
-    /// @dev Pass as constructor arg for almost every adapter. MorphoMarket is the documented
-    ///      exception: it derives `_positionId` automatically from `marketId` via
-    ///      `Strings.toHexString(uint256(marketId), 32)` — no `positionId_` constructor param.
-    string private _positionId;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL;
 
-    constructor(
-        address protocolContract_,
-        address navCalculator_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_
-    ) {
+    constructor(address protocolContract_, address navCalculator_) {
         if (protocolContract_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
         require(protocolContract_.code.length > 0, "Protocol contract must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
 
         PROTOCOL_CONTRACT = protocolContract_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
+
+    // ─── IERC165 ─────────────────────────────────────────────────────────────
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
+
+    // ─── IPositionDescribable ─────────────────────────────────────────────────
+
+    /// @inheritdoc IPositionDescribable
+    function protocolName() external pure returns (string memory) {
+        return "My Protocol";
+    }
+
+    /// @inheritdoc IPositionDescribable
+    /// @dev `positionId` is `abi.encode(protocolContract, asset)`.
+    function describePosition(bytes calldata positionId) external view returns (string memory) {
+        // Decode and return a human-readable label, e.g. from an ERC20 symbol call.
+        // Return "" if it cannot be derived.
+        if (positionId.length < 32) return "";
+        (, address asset) = abi.decode(positionId, (address, address));
+        try IERC20Metadata(asset).symbol() returns (string memory s) {
+            return string.concat(s, " supply");
+        } catch {
+            return "";
+        }
+    }
+
+    // ─── IBalanceOracleAdapter ────────────────────────────────────────────────
 
     function underlyingAssetsSupported() external view returns (address[] memory) {
         // Return the deduplicated list of assets this adapter reports on.
@@ -112,94 +143,48 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter {
         external view returns (INAVCalculator.PositionBalance[] memory positions)
     {
         // Filter by registered + supported assets, build PositionBalance entries.
+        // positionId is computed here, not stored. For a two-leg example see SparkLend.sol.
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        // ... intersection, loop, build entries:
+        // positions[n++] = INAVCalculator.PositionBalance({
+        //     balanceAsset: assetMeta,
+        //     balanceOracle: address(this),
+        //     amount: supplyAmount,
+        //     isDebt: false,
+        //     protocolId: PROTOCOL_ID,
+        //     positionId: abi.encode(PROTOCOL_CONTRACT, asset),
+        //     positionKind: PositionKind.Supplied
+        // });
     }
 }
 ```
 
 Reuse patterns from existing adapters:
 
-- **Single-instance, multi-asset:** `src/balances/protocols/aave/AaveV3Instance.sol`, `src/balances/protocols/compound/CompoundV3Comet.sol`.
-- **Single-asset wrapper (vault/staked):** `src/balances/protocols/morpho/MorphoVault.sol`, `src/balances/protocols/maker/DaiDsr.sol`.
-- **LP + rewards:** `src/balances/protocols/curve/Curve.sol`, `src/balances/protocols/balancer/BalancerV3.sol`, `src/balances/protocols/aura/Aura.sol`.
+- **Per-instance, multi-asset (supply + borrow legs):** `src/balances/protocols/SparkLend.sol`.
+- **Per-instance, single-asset vault:** `src/balances/protocols/Cap.sol`, `src/balances/protocols/DaiDsr.sol`.
+- **Meta-adapter, single-leg:** `src/balances/protocols/GearboxMarketsMeta.sol`, `src/balances/protocols/MorphoVaultsMeta.sol`.
+- **Meta-adapter, multi-leg (LP + rewards):** `src/balances/protocols/curve/CurveGaugesMeta.sol`, `src/balances/protocols/balancer/BalancerV3GaugesMeta.sol`.
 
 Conventions:
 
 - All addresses set in the constructor are **immutable**. No setters.
-- The three identity strings (`_protocol`, `_positionDetail`, `_positionId`) are **mandatory constructor params** as of PR #35 — they pin user-facing metadata into immutable storage and flow through every emitted `PositionBalance`. Schema reference: [`docs/howto/position-detail-schema.md`](position-detail-schema.md); canonical per-adapter values: [`script/config/adapter-identities.json`](../../script/config/adapter-identities.json). Exception: `MorphoMarket` takes only `marketId_` (positionId derived automatically via `Strings.toHexString`).
-- For each external call to the protocol, use a **minimal interface** declared at the bottom of the file (or in a sibling `I<Protocol>.sol`) — do not import the protocol's full library.
-- For asset metadata (symbol/decimals on the `PositionBalance.underlyingAsset` field), call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list. This is what `ERC20DefaultOracle` does.
-- `amount` in `PositionBalance` is **always positive**. Use `isDebt` to mark debt.
-- When emitting a `PositionBalance`, set `protocol = _protocol`, `positionId = _positionId`, and `positionDetail = string.concat(_positionDetail, "}")` for single-type adapters or `PositionType.withType(_positionDetail, PositionType.<CONSTANT>)` (from [`src/utils/PositionType.sol`](../../src/utils/PositionType.sol)) for multi-leg adapters.
+- `protocolId` is a `bytes32` constant declared at the class level (`bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL`). It is never a constructor param.
+- `positionId` is computed at query time via `abi.encode(...)`. It is never stored. The encode schema must match the NatSpec in `ProtocolIds.sol` for this protocol family.
+- `positionKind` is a `PositionKind` enum value (`Supplied`, `Borrowed`, `Collateral`, `Earned`, `Wallet`). It is never a string.
+- `amount` in `PositionBalance` is **always positive**. Use `isDebt = true` to mark debt.
+- `balanceOracle` is always `address(this)`. It is the audit trail.
+- For asset metadata on the `PositionBalance.balanceAsset` field, call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list.
+- Use a **minimal interface** for each external protocol call — declare it at the bottom of the file (or in a sibling `I<Protocol>.sol`). Do not import the protocol's full library.
+- Implement `IPositionDescribable` (`protocolName()` pure, `describePosition(bytes)` view). NAVCalculator's verbose read methods call these via try/catch, so they are non-breaking, but implementing them gives clients useful labels for free.
 
 ---
 
-## 2. Write the factory
-
-> **⚠ Aspirational section.** The factory framework (`BalanceAdapterFactoryBase`, `BalanceAdapterRegistry`, the `5_DeployAdapterFactories` script, etc.) is described in [ADR 0001](../decisions/0001-balance-adapter-factory-pattern.md) but is **not yet implemented in the codebase as of `4def473` (2026-05-06)**. `src/balances/factories/` does not exist. Until the framework lands, **skip this section** and use the current direct-deploy path:
->
-> 1. Skip writing a factory contract. Your adapter is a single Solidity file under `src/balances/protocols/<protocol>/` (or directly under `src/balances/protocols/` for single-file adapters).
-> 2. Add a `_deployIfEnabled("MyProtocol_<instance>")` call to `script/deploy/04_DeployBalanceAdapters.s.sol` so the production deploy picks it up. Wire dispatch via `_deployBalanceAdapter` (e.g. follow the pattern of `_deployMorphoVault`).
-> 3. Add the chain-config entry under `chains/<id>.json.balanceAdapters.MyProtocol_<instance>` with the constructor params your adapter needs.
-> 4. Registration on `NAVCalculator` happens via `script/deploy/06_Configure.s.sol`'s Safe TX bundle calling `addBalanceOracle(adapter)` directly — no factory in the loop.
-> 5. Skip §3 (factory tests), §5 (factory deploy block), and §6 (registry handoff) below; jump to §4 (adapter unit + fork tests) and §7 (Safe TX flow via `06_Configure`).
->
-> The aspirational instructions below describe the target end state; preserve them so the recipe is ready to use the moment ADR 0001 ships, but **do not** create `src/balances/factories/*` files in your PR until that framework is shipped.
-
-File: `src/balances/protocols/<protocol>/<MyProtocol>AdapterFactory.sol`.
-
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8;
-
-import {BalanceAdapterFactoryBase} from "src/balances/factories/BalanceAdapterFactoryBase.sol";
-import {IBalanceAdapterRegistry} from "src/balances/factories/IBalanceAdapterRegistry.sol";
-import {MyProtocolBalanceOracle} from "src/balances/protocols/<protocol>/MyProtocol.sol";
-
-contract MyProtocolAdapterFactory is BalanceAdapterFactoryBase {
-    constructor(address registry, address navCalculator, address initialOwner)
-        BalanceAdapterFactoryBase(keccak256("MyProtocol"), registry, navCalculator, initialOwner)
-    {}
-
-    function deploy(address protocolContract, string calldata protocol, string calldata positionDetail, bytes32 salt)
-        external onlyOwner returns (address adapter)
-    {
-        bytes memory initCode = abi.encodePacked(
-            type(MyProtocolBalanceOracle).creationCode,
-            abi.encode(protocolContract, protocol, positionDetail, NAV_CALCULATOR)
-        );
-        adapter = _deployCreate2(salt, initCode);
-        _track(adapter, true);
-        IBalanceAdapterRegistry(REGISTRY).register(adapter);
-        emit AdapterDeployed(adapter, salt);
-    }
-
-    function predict(address protocolContract, string calldata protocol, string calldata positionDetail, bytes32 salt)
-        external view returns (address)
-    {
-        bytes memory initCode = abi.encodePacked(
-            type(MyProtocolBalanceOracle).creationCode,
-            abi.encode(protocolContract, protocol, positionDetail, NAV_CALCULATOR)
-        );
-        return _predictCreate2(salt, keccak256(initCode));
-    }
-}
-```
-
-Notes:
-
-- `keccak256("MyProtocol")` becomes the registry's protocol key. Pick a name and **never change it** — the key is immutable on-chain.
-- Mirror `deploy` and `predict` parameter shapes exactly. Diverging breaks address determinism.
-- `NAV_CALCULATOR` is appended to the constructor args here so the factory knows the right NAVCalculator and adapters can't be deployed against the wrong one.
-
-Look at `src/balances/protocols/balancer/BalancerV3AdapterFactory.sol` or `src/balances/protocols/morpho/MorphoVaultAdapterFactory.sol` for working examples.
-
----
-
-## 3. Tests
+## 2. Tests
 
 Two files, both required for review.
 
-### 3.1 Unit test (mocks only)
+### 2.1 Unit test (mocks only)
 
 File: `test/balances/protocols/<MyProtocol>.t.sol`.
 
@@ -211,10 +196,11 @@ Cover:
 - `getOracleBalances` returns empty arrays for zero account.
 - `getOraclePositions` returns empty for zero account; respects `assetFilter`.
 - Non-registered assets (per `NAV_CALCULATOR.getRegisteredAssets()`) are dropped from `getOraclePositions`.
+- `PositionBalance` fields: assert `protocolId == ProtocolIds.MY_PROTOCOL`, `positionKind == PositionKind.Supplied` (or appropriate), and `positionId == abi.encode(...)` with the expected bytes.
 
-Use `MockNAVCalculator` (or whatever existing mock test files use — grep for `MockNAVCalculator`) and a thin mock of the protocol contract.
+Use `MockNAVCalculator` (grep for `MockNAVCalculator` in the test tree) and a thin mock of the protocol contract.
 
-### 3.2 Fork test (real protocol)
+### 2.2 Fork test (real protocol)
 
 File: `test/balances/protocols/fork/<MyProtocol>.fork.t.sol`.
 
@@ -238,87 +224,91 @@ Run with `FOUNDRY_PROFILE=slow` to throttle RPC.
 
 ---
 
-## 4. Wire chain config
+## 3. Wire chain config
 
 File: `script/config/chains/<chainId>.json`.
 
-Add an entry under `balanceAdapters`:
+Add an entry under `balanceAdapters`. For a **per-instance adapter** the constructor block lists only the protocol-specific addresses the adapter needs — no `protocol`, `positionDetail`, or `positionId` string fields:
 
 ```json
-"MyProtocol_<instance>": {
+"MyProtocol": {
   "enabled": true,
   "constructor": {
-    "protocolContract": "0x...",
-    "protocol": "My Protocol",
-    "positionDetail": "{\"protocol\":\"My Protocol\",\"product\":\"Lending\",\"name\":\"<instance>\"",
-    "positionId": "0x..."
+    "protocolContract": "0x..."
   },
   "deployed": ""
 }
 ```
 
-The key (`MyProtocol_<instance>`) is the lookup name used by `04_DeployBalanceAdapters.s.sol`. The constructor block must list **every parameter** the adapter takes, in any order — `ConfigReader.readAdapterParam` looks them up by name.
+For a **meta-adapter**, add a `metaInstances` array (the instance coordinates passed to `setMetaInstances` on NAVCalculator). The constructor block lists only chain-level constants (the protocol's global contracts). For example, the Gearbox meta-adapter:
 
-For multi-instance protocols (e.g., one Aave market per chain, one Morpho vault per asset), use the instance disambiguator in the key (`AaveV3_Core`, `AaveV3_Prime`, `MorphoVault_kpkUSDCPrime_V1`).
+```json
+"GearboxMarketsMeta": {
+  "enabled": true,
+  "constructor": {
+    "protocol": "Gearbox"
+  },
+  "metaInstances": [
+    "0x9396DCbf78fc526bb003665337C5E73b699571EF",
+    "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
+  ],
+  "deployed": ""
+}
+```
 
-For chains where the protocol does not exist, set `"enabled": false` (or omit the key entirely if you prefer; the deploy script skips disabled entries).
+Notes:
+
+- The key (`MyProtocol` or `MyProtocol_<instance>`) is the lookup name used by `04_DeployBalanceAdapters.s.sol`.
+- For multi-instance per-instance adapters, use an instance disambiguator in the key (`AaveV3_Core`, `AaveV3_Prime`).
+- For chains where the protocol does not exist, set `"enabled": false` or omit the key.
+- The `navCalculator` param is **not** listed in `constructor` — the deploy script resolves it automatically from the deployed NAVCalculatorProxy address.
 
 ---
 
-## 5. Wire the deploy script
+## 4. Wire the deploy script
 
 File: `script/deploy/04_DeployBalanceAdapters.s.sol`.
 
-Add a `_deployMyProtocol` helper that mirrors the existing ones (`_deployAaveV3SafetyModule`, `_deployBalancerV3`, etc.):
+Add a `_deployMyProtocol` helper that reads only the protocol-specific constructor addresses. No string identity params:
 
 ```solidity
 function _deployMyProtocol(string memory adapterName, address navCalculator) internal returns (address) {
     address protocolContract = vm.parseAddress(
         ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocolContract")
     );
-    string memory protocol =
-        ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-    string memory positionDetail =
-        ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-    string memory positionId =
-        ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-    MyProtocolBalanceOracle adapter =
-        new MyProtocolBalanceOracle(protocolContract, navCalculator, protocol, positionDetail, positionId);
+    MyProtocolBalanceOracle adapter = new MyProtocolBalanceOracle(protocolContract, navCalculator);
     return address(adapter);
 }
 ```
 
-Then add a dispatch entry in the script's main loop so the new key (or its prefix, depending on the existing pattern) routes here. Search the file for `if (Strings.equal(...))` or the existing dispatch table and add your case there.
+Then add a dispatch entry inside `_deployAdapter`:
 
-For factory-driven deployment, the equivalent is in `script/deploy/05_DeployAdapterFactories.s.sol` — add a `FactorySpec` entry following the existing pattern. Most new adapters today should ship with a factory, so do this in addition to `04`.
+```solidity
+if (_equals(adapterName, "MyProtocol") || _startsWith(adapterName, "MyProtocol_")) {
+    return _deployMyProtocol(adapterName, navCalculator);
+}
+```
+
+And a `_deployIfEnabled("MyProtocol")` call in `run()`.
+
+For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceOracle` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxMarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
 
 ---
 
-## 6. Deploy and register
+## 5. Deploy and register
 
 The full deploy ordering is in [`../../script/deploy/README.md`](../../script/deploy/README.md). For a new adapter on an existing chain:
 
 ```bash
-# Deploy the adapter (or factory, depending on your route)
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
-  --chain-id <chainId> \
-  --account $DEPLOYER_NAME \
-  --broadcast
-
-# (If factory-driven) deploy the factory
-forge script script/deploy/05_DeployAdapterFactories.s.sol \
   --chain-id <chainId> \
   --account $DEPLOYER_NAME \
   --broadcast
 ```
 
-`04` writes the deployed address back into `script/config/chains/<chainId>.json` under `balanceAdapters.MyProtocol_<instance>.deployed`. Verify it's there before opening the PR.
+`04` writes the deployed address back into `script/config/chains/<chainId>.json` under `balanceAdapters.MyProtocol.deployed`. Verify it's there before opening the PR.
 
-Registration:
-
-- **Factory route (preferred):** factory `deploy(...)` ends with `REGISTRY.register(adapter)` automatically. Nothing else to do.
-- **Pre-existing adapter / no factory yet:** the OIV Safe calls `BalanceAdapterRegistry.registerExternal(keccak256("MyProtocol"), adapter)`.
+Registration: the OIV Safe calls `NAVCalculator.addBalanceOracle(adapter)` via the `06_Configure.s.sol` Safe TX bundle. For meta-adapters, the same bundle also calls `setMetaInstances(adapter, instances[])` to wire the active instance set.
 
 Then verify on-chain:
 
@@ -328,7 +318,7 @@ cast call $NAVCalculator "isOracleRegistered(address)(bool)" $adapter --rpc-url 
 
 ---
 
-## 7. Refresh integration test snapshots
+## 6. Refresh integration test snapshots
 
 If your adapter affects NAV for an existing test account in `test/integration/accounts.json` (or you're adding a new test account that exercises it), run the bump script before opening the PR:
 
@@ -338,7 +328,7 @@ script/test/refresh-integration-snapshot.sh
 
 This regenerates the expected `navUsd8dp` values, optionally cross-checks against DeBank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
 
-## 8. Open the PR
+## 7. Open the PR
 
 PR checklist:
 
@@ -346,8 +336,9 @@ PR checklist:
 - [ ] `forge test --match-path "test/balances/protocols/MyProtocol*"` clean
 - [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/MyProtocol*"` clean
 - [ ] Chain config updated for every chain where the adapter applies
+- [ ] If a new `ProtocolIds` constant was added, it is documented in the NatSpec block of `src/utils/ProtocolIds.sol`
 - [ ] No unrelated files committed (run `git status` before staging)
 - [ ] PR description includes: protocol name, what the adapter reports, the chain(s) it's enabled on, any reward semantics, and the fork-test holder address used as ground truth
 - [ ] If the adapter changes NAV for an integration-test account, ran `script/test/refresh-integration-snapshot.sh` and committed the resulting `test/integration/accounts.json` diff
 
-If you're touching the deployment lifecycle (new factory, new role, new migration), also update or add the relevant ADR under [`../decisions/`](../decisions/).
+If you're touching the deployment lifecycle (new chain, new role, new migration), also update or add the relevant ADR under [`../decisions/`](../decisions/).

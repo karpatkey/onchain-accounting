@@ -112,7 +112,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Yield"
       },
-      "deployed": ""
+      "deployed": "0x5978b81e9BB36830A8CC534E754688E6ED71172d"
     },
     "MorphoVault_kpkUSDTPrime": {
       "enabled": true,
@@ -121,7 +121,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDT Prime"
       },
-      "deployed": ""
+      "deployed": "0xEdCF47DE576C820ecD1073159Fb7d913fb0e6477"
     },
     "MorphoVault_kpkETHYield": {
       "enabled": true,
@@ -130,7 +130,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk ETH Yield"
       },
-      "deployed": ""
+      "deployed": "0xd67153aeF275453c27D6ACd0d274622078B48f6A"
     },
     "MorphoMarket_wstETH_USDC": {
       "enabled": true,
@@ -385,7 +385,7 @@
         "protocol": "Aave",
         "positionDetail": "Savings GHO"
       },
-      "deployed": ""
+      "deployed": "0x89B0157921b4efb88dcF96F570d8c07D675Dc4f1"
     },
     "StakeWiseV3OsToken_osETH": {
       "enabled": true,
@@ -396,7 +396,7 @@
         "protocol": "Stakewise v3",
         "positionDetail": "osToken"
       },
-      "deployed": ""
+      "deployed": "0x8ECC77db1F9D2B1DFe3948B53D4D0e6c1569d50E"
     }
   },
   "bridgeAdapters": {

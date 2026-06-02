@@ -50,7 +50,7 @@
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Yield V2"
       },
-      "deployed": ""
+      "deployed": "0xf133b541b96D69B77be66ba926Cd11d14aB28DaF"
     },
     "MorphoMarket_sUSDS_USDC": {
       "enabled": true,

@@ -96,7 +96,8 @@ NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     # as Aave V3 Safety Module above (stkAAVE classified under aave2 by DeBank).
     "Aave V3": ["aave3", "aave2"],
     "Morpho": ["morphoblue"],
-    "Compound v3": ["compound3"],
+    "Compound v3": ["compound3"],  # legacy casing
+    "Compound V3": ["compound3"],  # canonical (meta-adapter)
     "Balancer V3": ["balancer3", "balancer2"],
     "Spark": ["spark"],
     "Curve": ["curve"],
@@ -158,10 +159,10 @@ class LegMatch:
     account: str
     chain_id: str
     account_label: str
-    protocol: str           # NAV protocol string (e.g. "Compound v3 USDC")
+    protocol: str           # NAV protocol name — from protocolName (new) or protocol (legacy)
     debank_id: str          # DeBank short id (e.g. "compound3"); "" for nav_only
-    position_id: str        # NAV positionId (hex adapter-instance identifier)
-    position_detail: dict   # NAV positionDetail JSON object
+    position_id: str        # NAV positionId (bytes hex, new) or hex addr string (legacy)
+    position_detail: dict   # NAV positionDetail JSON object (legacy; empty dict in new format)
     leg_kind: str           # e.g. "supply", "borrow", "reward", "fees", "staking"
     symbol: str
     is_debt: bool
@@ -406,14 +407,40 @@ def build_item_tokens(item: dict) -> str:
 
 
 def _leg_kind(pos: dict) -> str:
-    """Derive human-readable leg kind from positionDetail.type or isDebt.
-    Returns the canonical PositionType constant value (Supply/Borrow/Collateral/Staking/Rewards/Fees)."""
+    """Derive human-readable leg kind from positionKind (new) or positionDetail.type (legacy).
+
+    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Earned.
+    Legacy format: positionDetail.type is a string — "Supply"/"Borrow"/"Collateral"/"Staking"/etc.
+    """
+    # New format: positionKind uint8
+    if "positionKind" in pos:
+        kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Rewards"}
+        try:
+            return kind_map.get(int(pos["positionKind"]), "Supply")
+        except (ValueError, TypeError):
+            pass
+    # Legacy format: positionDetail.type
     det = pos.get("positionDetail", {})
     if isinstance(det, dict):
         t = det.get("type", "").strip()
         if t:
             return t
     return "Borrow" if pos.get("isDebt") else "Supply"
+
+
+def _nav_protocol(pos: dict) -> str:
+    """Extract the protocol name from a NAV position dict.
+
+    New format: protocolName field (human-readable string from IPositionDescribable).
+    Legacy format: protocol field (e.g. "Compound v3 USDC").
+    """
+    # New format first
+    name = pos.get("protocolName", "").strip()
+    if name:
+        return name
+    # Legacy format
+    # This helper is defined above; this line is unreachable
+    return ""
 
 
 # ── DeBank cache I/O ──────────────────────────────────────────────────────────
@@ -507,13 +534,13 @@ def render_unified_table(
     nav_pf_by_symbol: dict[str, tuple[int, dict]] = {}
 
     for idx, pos in enumerate(nav_positions):
-        if pos.get("protocol") == "wallet":
+        if _nav_protocol(pos) == "wallet":
             addr = pos.get("address", "").lower()
             nav_pf_by_addr.setdefault(addr, (idx, pos))
             sym_l = pos.get("symbol", "").lower()
             nav_pf_by_symbol.setdefault(sym_l, (idx, pos))
         else:
-            for did in debank_ids_for_nav_protocol(pos.get("protocol", "")):
+            for did in debank_ids_for_nav_protocol(_nav_protocol(pos)):
                 nav_adapters_by_debank.setdefault(did, []).append((idx, pos))
 
     def _nav_unit_price(pos: dict) -> Optional[float]:
@@ -581,13 +608,13 @@ def render_unified_table(
                 amt = _nav_amount_float(best_pos)
                 usd = _nav_usd(best_pos)
                 label = _leg_kind(best_pos)
-                results.append((best_pos.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                results.append((_nav_protocol(best_pos), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 if leg_matches_out is not None:
                     db_amt = float(tok.get("amount", 0))
                     db_price = float(tok.get("price", 0))
                     leg_matches_out.append(LegMatch(
                         account=account, chain_id=chain_id, account_label=account_label,
-                        protocol=best_pos.get("protocol", ""),
+                        protocol=_nav_protocol(best_pos),
                         debank_id=short_id,
                         position_id=best_pos.get("positionId", ""),
                         position_detail=best_pos.get("positionDetail", {}),
@@ -639,7 +666,7 @@ def render_unified_table(
         for idx, p in candidates:
             # Group by (protocol, positionId) so different adapter instances (e.g. different
             # Comet markets, different Curve pools) are never merged into the same LP group.
-            key = (p.get("protocol", ""), p.get("positionId", ""))
+            key = (_nav_protocol(p), p.get("positionId", ""))
             groups.setdefault(key, []).append((idx, p))
 
         for group in groups.values():
@@ -668,7 +695,7 @@ def render_unified_table(
                 amt = _nav_amount_float(p)
                 usd = _nav_usd(p)
                 label = _leg_kind(p)
-                results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                results.append((_nav_protocol(p), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 stage2_added = True
                 if leg_matches_out is not None:
                     matched_db_tok = all_item_toks_by_sym.get(sym.lower())
@@ -677,7 +704,7 @@ def render_unified_table(
                     db_usd = (db_amt * db_price) if (db_amt is not None and db_price is not None) else None
                     leg_matches_out.append(LegMatch(
                         account=account, chain_id=chain_id, account_label=account_label,
-                        protocol=p.get("protocol", ""),
+                        protocol=_nav_protocol(p),
                         debank_id=short_id,
                         position_id=p.get("positionId", ""),
                         position_detail=p.get("positionDetail", {}),
@@ -707,11 +734,11 @@ def render_unified_table(
                 amt = _nav_amount_float(p)
                 usd = _nav_usd(p)
                 label = _leg_kind(p)
-                results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                results.append((_nav_protocol(p), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                 if leg_matches_out is not None:
                     leg_matches_out.append(LegMatch(
                         account=account, chain_id=chain_id, account_label=account_label,
-                        protocol=p.get("protocol", ""),
+                        protocol=_nav_protocol(p),
                         debank_id=short_id,
                         position_id=p.get("positionId", ""),
                         position_detail=p.get("positionDetail", {}),
@@ -745,11 +772,11 @@ def render_unified_table(
                     amt = _nav_amount_float(p)
                     usd = _nav_usd(p)
                     label = _leg_kind(p)
-                    results.append((p.get("protocol", ""), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
+                    results.append((_nav_protocol(p), f"{label} {sym} {fmt_amt(amt)}", fmt_usd(usd)))
                     if leg_matches_out is not None:
                         leg_matches_out.append(LegMatch(
                             account=account, chain_id=chain_id, account_label=account_label,
-                            protocol=p.get("protocol", ""),
+                            protocol=_nav_protocol(p),
                             debank_id=short_id,
                             position_id=p.get("positionId", ""),
                             position_detail=p.get("positionDetail", {}),
@@ -916,7 +943,7 @@ def render_unified_table(
                         elif unregistered:
                             hint = f"Token(s) not in NAV registry: {', '.join(unregistered[:4])}"
                         else:
-                            hint = "Adapter registered but no matching position (zero balance or positionDetail mismatch)"
+                            hint = "Adapter registered but no matching position (zero balance or position identity mismatch)"
                         coverage_gaps_out.append({
                             "account": account,
                             "account_label": account_label,
@@ -1104,7 +1131,7 @@ def render_unified_table(
             usd = _nav_usd(pos)
             is_debt = pos.get("isDebt", False)
             sign = "−" if is_debt else ""
-            proto = pos.get("protocol", "")
+            proto = _nav_protocol(pos)
             det = pos.get("positionDetail", {})
             det_product = det.get("product", "") if isinstance(det, dict) else str(det)
             det_type = det.get("type", "") if isinstance(det, dict) else ""

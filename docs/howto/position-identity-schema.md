@@ -74,7 +74,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `cap` | `(address vault)` |
 | `erc4626` | `(address vault)` |
 | `dai-dsr` | `""` (account-global) |
-| `sky-savings` | `""` (account-global) |
+| `sky-savings` | `(address savingsContract)` |
 | `merkl` | `(address rewardToken)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
@@ -135,57 +135,307 @@ const key = keccak256(abi.encode(
 
 ---
 
-## Decoding `positionId` — worked examples
+## Adapter reference — positionId decode and legs
 
-### Aave V3 supply/borrow
+The table below and the TypeScript examples cover every adapter in the codebase. All
+decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants come from
+`ProtocolIds.sol` (`keccak256(toUtf8Bytes("<slug>"))`).
+
+### PositionKind summary per adapter
+
+| Adapter | `protocolId` slug | Legs emitted (`PositionKind`) |
+|---|---|---|
+| `ERC20DefaultOracle` | `wallet` | `Wallet` |
+| `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
+| `AaveV2InstancesMeta` | `aave-v2-lending` | `Supplied`, `Collateral`, `Borrowed` |
+| `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
+| `AaveV3SafetyModule` | `aave-v3-safety-module` | `Supplied`, `Earned` |
+| `AaveUmbrella` | `aave-v3-umbrella` | `Supplied`, `Earned` |
+| `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
+| `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
+| `GearboxMarketsMeta` | `gearbox-v3` | `Supplied` |
+| `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
+| `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
+| `CompoundV3CometsMeta` | `compound-v3` | `Supplied`, `Borrowed`, `Collateral`, `Earned` |
+| `StakeWiseV3VaultsMeta` | `stakewise-v3` | `Supplied`, `Borrowed` |
+| `BalancerV3PoolsMeta` | `balancer-v3-pool` | `Supplied` |
+| `BalancerV3GaugesMeta` | `balancer-v3-gauge` | `Supplied`, `Earned` |
+| `BalancerV2PoolsMeta` | `balancer-v2-pool` | `Supplied` |
+| `BalancerV2GaugesMeta` | `balancer-v2-gauge` | `Supplied`, `Earned` |
+| `CurvePoolsMeta` | `curve-pool` | `Supplied` |
+| `CurveGaugesMeta` | `curve-gauge` | `Supplied`, `Earned` |
+| `ConvexRewardsMeta` | `convex` | `Supplied`, `Earned` |
+| `AuraRewardsMeta` | `aura` | `Supplied`, `Earned` |
+| `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Earned` |
+| `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
+| `Cap` | `cap` | `Supplied` |
+| `ERC4626Wrap` | `erc4626` | `Supplied` |
+| `DaiDsr` | `dai-dsr` | `Supplied` |
+| `SkySavingsUsds` | `sky-savings` | `Supplied` |
+| `MerklRewards` | `merkl` | `Earned` |
+| `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
+| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
+| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` |
+
+---
+
+### Decode examples
 
 ```typescript
 import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
-
-const AAVE_V3_LENDING = keccak256(toUtf8Bytes("aave-v3-lending"));
 const abi = AbiCoder.defaultAbiCoder();
-
-function decodeAaveV3(pos) {
-  if (pos.protocolId !== AAVE_V3_LENDING) throw new Error("wrong protocol");
-  const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
-  return { pool, reserve };
-}
-
-// Action routing from identity:
-if (pos.positionKind === PositionKind.Borrowed) {
-  await pool.repay(reserve, pos.amount, 2 /* variable */, account);
-} else if (pos.positionKind === PositionKind.Supplied || pos.positionKind === PositionKind.Collateral) {
-  await pool.withdraw(reserve, pos.amount, account);
-}
 ```
 
-### Uniswap V3 LP + fees
+#### ERC20 wallets — `wallet`
 
 ```typescript
-const UNISWAP_V3 = keccak256(toUtf8Bytes("uniswap-v3"));
+// positionId = "" — no decode needed, balanceAsset.asset is the token
+// positionKind = Wallet
+```
 
-function decodeUniV3(pos) {
-  const [npm, tokenId] = abi.decode(["address", "uint256"], pos.positionId);
-  return { npm, tokenId };
-}
+#### Aave V3 / Aave V2 / Spark — `aave-v3-lending` / `aave-v2-lending` / `spark-lend`
 
-// Both the LP principal (Supplied) and the fee legs (Earned) share the same
-// positionId — same NFT, different kind:
-const { npm, tokenId } = decodeUniV3(pos);
+Per-reserve positionId: each supply, collateral, and borrow leg for the same reserve shares
+one positionId; different reserves have different positionIds.
+
+```typescript
+const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
+// pool   — IPool (V3) / ILendingPool (V2) / SparkPool
+// reserve — the underlying ERC20 (USDC, WETH, …)
+
+// Action routing:
+// Borrowed  → pool.repay(reserve, pos.amount, 2, account)
+// Supplied  → pool.withdraw(reserve, pos.amount, account)
+// Collateral → pool.withdraw(reserve, pos.amount, account)  (if health factor allows)
+```
+
+#### Aave V3 Safety Module — `aave-v3-safety-module`
+
+```typescript
+const [stakeToken] = abi.decode(["address"], pos.positionId);
+// stakeToken — stkAAVE, stkABPT, stkABPTv2, or stkGHO
+// Supplied   → staked principal (denominated in the stake token's STAKED_TOKEN())
+// Earned     → claimable AAVE rewards
+```
+
+#### Aave Umbrella — `aave-v3-umbrella`
+
+```typescript
+const [stakeToken] = abi.decode(["address"], pos.positionId);
+// stakeToken — UmbrellaStakeToken (e.g. stkwaEthUSDC.v1, stkGHO.v1)
+// Supplied   → principal, denominated in the bare reserve (USDC, WETH, GHO …)
+// Earned     → claimable rewards, same bare reserve denomination
+```
+
+#### Morpho Vaults — `morpho-vaults`
+
+```typescript
+const [vault] = abi.decode(["address"], pos.positionId);
+// vault — MetaMorpho ERC4626 vault address
+// Supplied → convertToAssets(balanceOf(account)), denominated in vault.asset()
+```
+
+#### Morpho Markets — `morpho-markets`
+
+Per-reserve positionId (same as Aave): one positionId per (collateralToken, loanToken) market.
+
+```typescript
+const [marketId] = abi.decode(["bytes32"], pos.positionId);
+// marketId — Morpho Blue market ID (keccak of MarketParams)
+// Collateral → collateral token supplied
+// Supplied   → loan token supplied (lending side)
+// Borrowed   → loan token borrowed
+```
+
+#### Gearbox V3 — `gearbox-v3`
+
+```typescript
+const [market] = abi.decode(["address"], pos.positionId);
+// market — Gearbox V3 ERC4626 farming pool
+// Supplied → convertToAssets(balanceOf(account))
+```
+
+#### Fluid fTokens — `fluid-ftokens`
+
+```typescript
+const [fToken] = abi.decode(["address"], pos.positionId);
+// fToken — Fluid fToken (ERC4626 lending vault)
+// Supplied → convertToAssets(balanceOf(account))
+```
+
+#### Fluid Vaults — `fluid-vaults`
+
+```typescript
+const [vault] = abi.decode(["address"], pos.positionId);
+// vault — Fluid T1 vault contract
+// Collateral → aggregated collateral across all of account's NFT positions
+// Borrowed   → aggregated debt
+```
+
+#### Compound V3 — `compound-v3`
+
+```typescript
+const [comet] = abi.decode(["address"], pos.positionId);
+// comet — Comet market (e.g. cUSDCv3, cWETHv3)
+// Supplied    → base-token supply
+// Borrowed    → base-token borrow
+// Collateral  → individual collateral asset legs
+// Earned      → COMP rewards (claimable)
+```
+
+#### StakeWise V3 — `stakewise-v3`
+
+```typescript
+const [vault] = abi.decode(["address"], pos.positionId);
+// vault — StakeWise V3 ERC4626-like vault
+// Supplied → vault shares → underlying (ETH / GNO)
+// Borrowed → minted osToken debt → underlying equivalent
+```
+
+#### Balancer V3 Pools — `balancer-v3-pool`
+
+```typescript
+const [pool] = abi.decode(["address"], pos.positionId);
+// pool — Balancer V3 pool / BPT address
+// Supplied → one leg per pool token (wallet-held, unstaked BPT)
+```
+
+#### Balancer V3 Gauges — `balancer-v3-gauge`
+
+```typescript
+const [gauge] = abi.decode(["address"], pos.positionId);
+// gauge — Balancer V3 liquidity gauge
+// Supplied → one leg per pool token (gauge-staked BPT share)
+// Earned   → BAL + extra reward token legs
+```
+
+#### Balancer V2 Pools — `balancer-v2-pool`
+
+The instance coordinate IS the raw bytes32 poolId (not an address). The BPT address is its
+top 160 bits.
+
+```typescript
+const [poolId] = abi.decode(["bytes32"], pos.positionId);
+const bpt = "0x" + poolId.slice(2, 42);          // top 20 bytes of poolId
+// Supplied → one leg per underlying pool token (wallet-held BPT)
+```
+
+#### Balancer V2 Gauges — `balancer-v2-gauge`
+
+```typescript
+const [gauge] = abi.decode(["address"], pos.positionId);
+// gauge — Balancer V2 liquidity gauge (child or root)
+// Supplied → one leg per pool token (gauge-staked BPT share)
+// Earned   → BAL + extra reward token legs
+```
+
+#### Curve Pools — `curve-pool`
+
+```typescript
+const [pool] = abi.decode(["address"], pos.positionId);
+// pool — Curve pool address (also LP token for classic/TriCryptoNG pools)
+// Supplied → one leg per registered pool coin (wallet-held LP, pro-rata)
+```
+
+#### Curve Gauges — `curve-gauge`
+
+```typescript
+const [gauge] = abi.decode(["address"], pos.positionId);
+// gauge — Curve liquidity gauge
+// Supplied → one leg per pool coin (staked LP share, pro-rata)
+// Earned   → CRV (lower-bound) + extra reward token legs
+```
+
+#### Convex — `convex`
+
+```typescript
+const [rewarder] = abi.decode(["address"], pos.positionId);
+// rewarder — Convex BaseRewardPool address
+// Supplied → one leg per underlying Curve pool coin (staked LP, pro-rata)
+// Earned   → CRV, CVX, and extra reward token legs
+```
+
+#### Aura — `aura`
+
+```typescript
+const [auraRewards] = abi.decode(["address"], pos.positionId);
+// auraRewards — Aura BaseRewardPool4626 address
+// Supplied → one leg per Balancer pool token (staked BPT share)
+// Earned   → BAL, AURA, and extra reward token legs
+```
+
+#### Uniswap V3 / PancakeSwap V3 — `uniswap-v3` / `pancakeswap-v3`
+
+Per-NFT positionId: each NFT (tokenId) gets its own positionId. Multiple NFTs in the same
+pool each have a distinct positionId. All legs of one NFT (token0 liquidity, token1
+liquidity, token0 fees, token1 fees) share the same positionId.
+
+```typescript
+const [npm, tokenId] = abi.decode(["address", "uint256"], pos.positionId);
+// npm     — NonfungiblePositionManager (canonical per chain)
+// tokenId — NFT token ID
+// Supplied → in-range liquidity (token0 and token1 legs)
+// Earned   → unclaimed fee legs (token0 and token1)
+
+// Collect fees:
 if (pos.positionKind === PositionKind.Earned) {
-  await npmContract.collect({ tokenId, recipient: account, amount0Max, amount1Max });
+  await npmContract.collect({ tokenId, recipient: account, amount0Max: MAX, amount1Max: MAX });
 }
 ```
 
-### Morpho market
+#### Uniswap V2 / PancakeSwap V2 — `uniswap-v2` / `pancakeswap-v2`
 
 ```typescript
-const MORPHO_MARKETS = keccak256(toUtf8Bytes("morpho-markets"));
+const [pair] = abi.decode(["address"], pos.positionId);
+// pair — UniswapV2Pair / PancakeSwap V2 Pair address
+// Supplied → two legs: token0 and token1 pro-rata from wallet-held LP
+```
 
-function decodeMorphoMarket(pos) {
-  const [marketId] = abi.decode(["bytes32"], pos.positionId);
-  return { marketId };
-}
+#### Cap — `cap`
+
+```typescript
+const [vault] = abi.decode(["address"], pos.positionId);
+// vault — Cap cUSD token address
+// Supplied → account's cUSD redeemable value in underlying (USDC, etc.)
+```
+
+#### ERC4626 wrapper — `erc4626`
+
+```typescript
+const [wrapper] = abi.decode(["address"], pos.positionId);
+// wrapper — ERC4626 share token (e.g. waEthLidoGHO stata-token)
+// Supplied → convertToAssets(balanceOf(account)) in wrapper.asset()
+```
+
+#### DAI Savings Rate — `dai-dsr`
+
+```typescript
+// positionId = "" — account-global, one position per account
+// Supplied → DAI balance in the DSR (chi-adjusted)
+```
+
+#### Sky Savings (sUSDS) — `sky-savings`
+
+```typescript
+const [savingsContract] = abi.decode(["address"], pos.positionId);
+// savingsContract — SavingsUSDS contract address
+// Supplied → USDS balance (convertToAssets(balanceOf(account)))
+```
+
+#### Merkl rewards — `merkl`
+
+```typescript
+const [rewardToken] = abi.decode(["address"], pos.positionId);
+// rewardToken — the ERC20 reward token
+// Earned → unclaimed allocation (proof-cached; may be stale between proof updates)
+```
+
+#### Lido / Stader / Kelp withdrawal queues — `lido-withdrawal` / `stader-withdrawal` / `kelp-withdrawal`
+
+```typescript
+// positionId = "" — account-global; one position per account per queue
+// Supplied → summed ETH owed across all open (unclaimed) request IDs
+// balanceAsset is the underlying (native ETH sentinel for Lido/Stader, the LST asset for Kelp)
 ```
 
 ---

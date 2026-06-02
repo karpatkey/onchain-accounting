@@ -289,7 +289,7 @@ Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on N
 
 If the production Safe(s) are deployed and signers are available, prefer **Path A** — it's the cleanest end state (Safe holds roles from moment 1, no EOA-admin window) and uses the standard Safe UI flow that auditors and signers are already familiar with. **Path B** is appropriate if signers aren't available or if you specifically need the EOA-broadcast simplicity for some part of the operation.
 
-`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 52 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
+`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal `_balanceAdapterNames()` lists must stay in sync (same length, same entries). If you see drift between them, that's a bug.
 
 ---
 

@@ -24,7 +24,7 @@ import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMa
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
-import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
+import {ConvexRewardsMetaBalanceAdapter} from "src/balances/protocols/ConvexRewardsMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
@@ -548,8 +548,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "CurveGaugesMeta")) {
             return _deployCurveGaugesMeta(name, navAddr);
         }
-        if (_startsWith(name, "Convex_")) {
-            return _deployConvex(name, navAddr);
+        if (_equals(name, "ConvexRewardsMeta")) {
+            return _deployConvexRewardsMeta(name, navAddr);
         }
         if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
@@ -698,12 +698,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
     }
 
-    function _deployConvex(string memory name, address navAddr) internal returns (address) {
-        address rewarder =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewarder"));
-        address lpToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "lpToken"));
-        return address(new ConvexBalanceOracle(rewarder, lpToken, navAddr));
+    function _deployConvexRewardsMeta(string memory name, address navAddr) internal returns (address) {
+        address booster = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
+        address cvxToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {

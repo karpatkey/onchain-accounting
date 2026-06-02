@@ -127,7 +127,7 @@
       "deployed": "0xb812cc304Cb417B635470681160e75CfFb0006b0"
     },
     "MorphoVault_kpkETHPrime_V1": {
-      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
@@ -138,7 +138,7 @@
       "deployed": "0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7"
     },
     "MorphoVault_kpkETHPrime_V2": {
-      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
@@ -149,7 +149,7 @@
       "deployed": "0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512"
     },
     "MorphoVault_kpkUSDCPrime_V1": {
-      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
@@ -160,7 +160,7 @@
       "deployed": "0x07978693C01f70373e89d196DfcfcA18a6C02d6C"
     },
     "MorphoVault_kpkUSDCPrime_V2": {
-      "$superseded": "Disabled — superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by MorphoVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
@@ -182,7 +182,7 @@
       "deployed": ""
     },
     "MorphoVaultsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via setMetaInstances in 06_Configure (from `metaInstances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below — the NAV calculator now learns the Morpho-vault universe from this list.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via setMetaInstances in 06_Configure (from `metaInstances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below \u2014 the NAV calculator now learns the Morpho-vault universe from this list.",
       "enabled": true,
       "constructor": {
         "protocol": "Morpho"
@@ -363,7 +363,7 @@
       "deployed": "0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b"
     },
     "GearboxMarketsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "protocol": "Gearbox"
@@ -375,7 +375,7 @@
       "deployed": ""
     },
     "GearboxMarket_kpkWETH": {
-      "$superseded": "Disabled — superseded by GearboxMarketsMeta (ADR 0010). Market still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by GearboxMarketsMeta (ADR 0010). Market still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "market": "0x9396DCbf78fc526bb003665337C5E73b699571EF",
@@ -386,7 +386,7 @@
       "deployed": "0x04E39d917E0D515384B3C027658a8b2f401ECEb0"
     },
     "GearboxMarket_kpkwstETH": {
-      "$superseded": "Disabled — superseded by GearboxMarketsMeta (ADR 0010). Market still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by GearboxMarketsMeta (ADR 0010). Market still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "market": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64",
@@ -397,7 +397,7 @@
       "deployed": "0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941"
     },
     "BalancerV3PoolsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "protocol": "Balancer V3"
@@ -409,7 +409,7 @@
       "deployed": ""
     },
     "BalancerV3GaugesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
@@ -422,7 +422,7 @@
       "deployed": ""
     },
     "BalancerV2PoolsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 pool's wallet-held BPT, decomposed pro-rata into the underlying tokens (composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply()). The instance coordinate is the raw 32-byte poolId (metaInstancesRaw below), NOT an address — the BPT address is derived on-chain as address(uint160(uint256(poolId) >> 96)). positionId derived on-chain = the BPT address; name = the BPT name(). Gauge-staked BPT is the separate BalancerV2GaugesMeta adapter. Disabled: no fund holds Balancer V2 positions today — the example instance is B-80BAL-20WETH, enable + add poolIds via setMetaInstancesRaw when a position is opened.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 pool's wallet-held BPT, decomposed pro-rata into the underlying tokens (composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply()). The instance coordinate is the raw 32-byte poolId (metaInstancesRaw below), NOT an address \u2014 the BPT address is derived on-chain as address(uint160(uint256(poolId) >> 96)). positionId derived on-chain = the BPT address; name = the BPT name(). Gauge-staked BPT is the separate BalancerV2GaugesMeta adapter. Disabled: no fund holds Balancer V2 positions today \u2014 the example instance is B-80BAL-20WETH, enable + add poolIds via setMetaInstancesRaw when a position is opened.",
       "enabled": false,
       "constructor": {
         "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
@@ -434,7 +434,7 @@
       "deployed": ""
     },
     "BalancerV2GaugesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 gauge's staked BPT (decomposed pro-rata like BalancerV2PoolsMeta) + claimable BAL and extra reward tokens. The instance coordinate is the gauge address (metaInstances below); the BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Wallet-held (unstaked) BPT is the separate BalancerV2PoolsMeta adapter. Disabled: no fund holds Balancer V2 gauge positions today — the example instance is the B-stETH-STABLE gauge, enable + add gauges via setMetaInstances when a position is opened.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 gauge's staked BPT (decomposed pro-rata like BalancerV2PoolsMeta) + claimable BAL and extra reward tokens. The instance coordinate is the gauge address (metaInstances below); the BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Wallet-held (unstaked) BPT is the separate BalancerV2PoolsMeta adapter. Disabled: no fund holds Balancer V2 gauge positions today \u2014 the example instance is the B-stETH-STABLE gauge, enable + add gauges via setMetaInstances when a position is opened.",
       "enabled": false,
       "constructor": {
         "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
@@ -447,7 +447,7 @@
       "deployed": ""
     },
     "BalancerV3_rETH_WETH": {
-      "$superseded": "Disabled — superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
@@ -460,7 +460,7 @@
       "deployed": "0x854BC9A5445495396De4cc228A5f945C680c2d4A"
     },
     "BalancerV3_GHO_USDT_USDC": {
-      "$superseded": "Disabled — superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by BalancerV3PoolsMeta + BalancerV3GaugesMeta (ADR 0010). Pool still queried via BalancerV3PoolsMeta.metaInstances; gauge via BalancerV3GaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
@@ -529,7 +529,7 @@
       "deployed": ""
     },
     "Curve_weETH_WETH": {
-      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
@@ -540,7 +540,7 @@
       "deployed": "0xAF8A9F7b37925973615Eaa787AefA3f388D32101"
     },
     "Curve_crvUSD_USDC": {
-      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
@@ -551,7 +551,7 @@
       "deployed": "0x9eFcd3aE461a4F5769365B25673053FB08cc76B9"
     },
     "Curve_crvUSD_USDT": {
-      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
@@ -562,7 +562,7 @@
       "deployed": "0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc"
     },
     "Curve_RLUSD_USDC": {
-      "$superseded": "Disabled — superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CurvePoolsMeta + CurveGaugesMeta (ADR 0010). Pool still queried via CurvePoolsMeta.metaInstances; gauge via CurveGaugesMeta.metaInstances.",
       "enabled": false,
       "constructor": {
         "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
@@ -572,8 +572,24 @@
       },
       "deployed": "0x18dddd49116deB8ed90fdD7a2236a06F83127dd5"
     },
-    "Convex_weETH_WETH": {
+    "ConvexRewardsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "booster": "0xF403C135812408BFbE8713b5A23a04b3D48AAE31",
+        "cvxToken": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
+        "protocol": "Convex"
+      },
+      "metaInstances": [
+        "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
+        "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
+        "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
+        "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3"
+      ],
+      "deployed": ""
+    },
+    "Convex_weETH_WETH": {
+      "enabled": false,
       "constructor": {
         "rewarder": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
         "lpToken": "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
@@ -584,7 +600,7 @@
       "deployed": "0x0c2582167fB2c636eBa3b63fff1c4b186E643956"
     },
     "Convex_crvUSD_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "rewarder": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
         "lpToken": "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
@@ -595,7 +611,7 @@
       "deployed": "0x5F598A4B588766c41b0dE5A93B91E03f00C60A77"
     },
     "Convex_crvUSD_USDT": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "rewarder": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
         "lpToken": "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
@@ -606,7 +622,7 @@
       "deployed": "0x69BCa825DDCd25394BBF3DA313ece4e63642898d"
     },
     "Convex_RLUSD_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "rewarder": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3",
         "lpToken": "0xD001aE433f254283FeCE51d4ACcE8c53263aa186",
@@ -617,7 +633,7 @@
       "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
     },
     "FluidFTokensMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "protocol": "Fluid"
@@ -633,7 +649,7 @@
       "deployed": ""
     },
     "Fluid_fToken_USDC": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
@@ -644,7 +660,7 @@
       "deployed": ""
     },
     "Fluid_fToken_USDT": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
@@ -655,7 +671,7 @@
       "deployed": ""
     },
     "Fluid_fToken_WETH": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
@@ -666,7 +682,7 @@
       "deployed": ""
     },
     "Fluid_fToken_wstETH": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
@@ -677,7 +693,7 @@
       "deployed": ""
     },
     "Fluid_fToken_GHO": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
@@ -688,7 +704,7 @@
       "deployed": ""
     },
     "Fluid_fToken_sUSDe": {
-      "$superseded": "Disabled — superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidFTokensMeta (ADR 0010). fToken still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
@@ -699,7 +715,7 @@
       "deployed": ""
     },
     "FluidVaultsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
       "enabled": true,
       "constructor": {
         "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
@@ -713,7 +729,7 @@
       "deployed": ""
     },
     "Fluid_Vault_wstETH_USDC": {
-      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
@@ -725,7 +741,7 @@
       "deployed": ""
     },
     "Fluid_Vault_weETH_wstETH": {
-      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
@@ -737,7 +753,7 @@
       "deployed": ""
     },
     "Fluid_Vault_sUSDe_USDC": {
-      "$superseded": "Disabled — superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by FluidVaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
@@ -749,7 +765,7 @@
       "deployed": ""
     },
     "CompoundV3CometsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (setMetaInstances, from metaInstances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -767,7 +783,7 @@
       "deployed": ""
     },
     "CompoundV3_USDC": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -780,7 +796,7 @@
       "deployed": ""
     },
     "CompoundV3_USDS": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -793,7 +809,7 @@
       "deployed": ""
     },
     "CompoundV3_USDT": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -806,7 +822,7 @@
       "deployed": ""
     },
     "CompoundV3_WBTC": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -819,7 +835,7 @@
       "deployed": ""
     },
     "CompoundV3_WETH": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -832,7 +848,7 @@
       "deployed": ""
     },
     "CompoundV3_wstETH": {
-      "$superseded": "Disabled — superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by CompoundV3CometsMeta (ADR 0010). Comet still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
@@ -858,7 +874,7 @@
       "deployed": ""
     },
     "StakeWiseV3Vault_Genesis": {
-      "$superseded": "Disabled — superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
@@ -870,7 +886,7 @@
       "deployed": ""
     },
     "StakeWiseV3Vault_MetaVault": {
-      "$superseded": "Disabled — superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by StakeWiseV3VaultsMeta (ADR 0010). Vault still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
@@ -941,7 +957,7 @@
       "deployed": ""
     },
     "UniswapV3_WBTC_WETH_3000": {
-      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
@@ -965,7 +981,7 @@
       "comment": "Disabled: COW has no Chainlink price feed on Mainnet, so the COW leg of any in-range position would be silently dropped, understating NAV by ~half. Re-enable once a COW price feed is registered in assets.json."
     },
     "UniswapV3_USDC_WETH_500": {
-      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
@@ -977,7 +993,7 @@
       "deployed": ""
     },
     "UniswapV3_WETH_USDT_3000": {
-      "$superseded": "Disabled — superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
+      "$superseded": "Disabled \u2014 superseded by UniswapV3PoolsMeta (ADR 0010). Pool still queried via metaInstances.",
       "enabled": false,
       "constructor": {
         "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",

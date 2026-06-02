@@ -18,7 +18,7 @@ import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/Gea
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMeta.sol";
-import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
+import {ConvexRewardsMetaBalanceAdapter} from "../../src/balances/protocols/ConvexRewardsMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
@@ -110,11 +110,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("CurvePoolsMeta"); // Meta-adapter: all Curve pools (wallet LP); pool set on NAV
         _deployIfEnabled("CurveGaugesMeta"); // Meta-adapter: all Curve gauges (staked LP + CRV + rewards); gauge set on NAV
 
-        // --- Convex (one per rewarder — Mainnet) ---
-        _deployIfEnabled("Convex_weETH_WETH"); // ETH Alpha
-        _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
-        _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
-        _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
+        // --- Convex meta-adapter (ADR 0010: all Convex pools; rewarder set on NAV) ---
+        _deployIfEnabled("ConvexRewardsMeta"); // Meta-adapter: all Convex rewarders; instance set on NAV
 
         // --- Fluid Lending (meta-adapter: all fTokens; fToken set on NAV, ADR 0010) ---
         _deployIfEnabled("FluidFTokensMeta");
@@ -262,8 +259,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // Convex adapters
-        if (_startsWith(adapterName, "Convex_")) {
-            return _deployConvex(adapterName, navCalculator);
+        if (_equals(adapterName, "ConvexRewardsMeta")) {
+            return _deployConvexRewardsMeta(adapterName, navCalculator);
         }
 
         // AaveV3 Safety Module: a single multi-token adapter per chain (ADR 0002).
@@ -470,16 +467,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
     }
 
-    function _deployConvex(string memory adapterName, address navCalculator) internal returns (address) {
-        address rewarder = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewarder")
+    function _deployConvexRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address booster = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
         );
-        address lpToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken")
+        address cvxToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "cvxToken")
         );
-
-        ConvexBalanceOracle adapter = new ConvexBalanceOracle(rewarder, lpToken, navCalculator);
-        return address(adapter);
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navCalculator));
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {

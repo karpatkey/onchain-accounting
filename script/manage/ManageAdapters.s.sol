@@ -4,8 +4,6 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
-import {ConfigReader} from "../utils/ConfigReader.sol";
-import {IBalances} from "../../src/balances/IBalances.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {InvoiceDataLib} from "../../src/bridge/InvoiceDataLib.sol";
 import {IPrices} from "../../src/prices/IPrices.sol";
@@ -40,27 +38,6 @@ contract ManageAdapters is BaseDeployScript {
         // _setPriceFeed(0x1234..., 0x5678..., "Chainlink", 86400);
         // _authorizeBridgeAdapter(0x1234...);
         // _registerAsset("USDC  ", 0x1234...);
-        //
-        // Batch several new adapters into ONE Safe TX (addresses read from chains/<id>.json by name).
-        // Run with --rpc-url so already-registered/undeployed names are skipped. Per chain, e.g.:
-        // string[] memory names = new string[](1);
-        // names[0] = "ERC4626Wrap_sGHO";
-        // _addBalanceOraclesByName(names);
-
-        // --- PR #49: register newly deployed Alpha balance oracles via Safe batch ---
-        if (currentChainId == 1) {
-            string[] memory names = new string[](5);
-            names[0] = "MorphoVault_kpkUSDCYield";
-            names[1] = "MorphoVault_kpkUSDTPrime";
-            names[2] = "MorphoVault_kpkETHYield";
-            names[3] = "StakeWiseV3OsToken_osETH";
-            names[4] = "ERC4626Wrap_sGHO";
-            _addBalanceOraclesByName(names);
-        } else if (currentChainId == 42161) {
-            string[] memory names = new string[](1);
-            names[0] = "MorphoVault_kpkUSDCYieldV2";
-            _addBalanceOraclesByName(names);
-        }
     }
 
     /// @notice Adds a balance oracle to NAVCalculator
@@ -83,87 +60,6 @@ contract ManageAdapters is BaseDeployScript {
 
         console2.log("Safe transaction generated:", filename);
         console2.log("Balance oracle to add:", adapter);
-    }
-
-    /// @notice Generates a single Safe TX batch registering several balance oracles at once.
-    /// @dev Reads each adapter's deployed address from chains/<id>.json by config name, so no
-    ///      addresses are hardcoded. Run 04_DeployBalanceAdapters.s.sol first to populate them.
-    ///      Idempotent: requires --rpc-url and skips names whose deployed address is missing or
-    ///      already registered (addBalanceOracle reverts DuplicateBalanceOracle on a registered
-    ///      oracle, so only genuinely-new adapters are batched). On mainnet the EIGEN price-feed
-    ///      registerAsset is appended to the same batch. Output: <chainSlug>-nav-wiring.json.
-    /// @param adapterNames Config names under balanceAdapters (e.g. "ERC4626Wrap_sGHO").
-    function _addBalanceOraclesByName(string[] memory adapterNames) internal {
-        require(adapterNames.length > 0, "No adapter names provided");
-        address navProxy = readDeployedAddress("NAVCalculatorProxy");
-        require(navProxy != address(0), "NAVCalculator not deployed");
-        require(navProxy.code.length > 0, "No code at NAVCalculator proxy. Provide --rpc-url.");
-
-        address[] memory toAdd = new address[](adapterNames.length);
-        uint256 count;
-        for (uint256 i = 0; i < adapterNames.length; i++) {
-            address deployed = _readDeployedBalanceAdapter(adapterNames[i]);
-            if (deployed == address(0)) {
-                console2.log("  SKIP (not deployed):", adapterNames[i]);
-                continue;
-            }
-            if (IBalances(navProxy).isOracleRegistered(deployed)) {
-                console2.log("  SKIP (already registered):", adapterNames[i], deployed);
-                continue;
-            }
-            toAdd[count++] = deployed;
-            console2.log("  Batched addBalanceOracle:", adapterNames[i], deployed);
-        }
-
-        // Mainnet also registers the EIGEN price feed (Chainlink EIGEN/USD, 86400s heartbeat) in the same
-        // batch — see assets.json + docs/howto/add-price-feed.md. registerAsset reverts if EIGEN is already
-        // registered, so only include it while new.
-        uint256 extra = currentChainId == 1 ? 1 : 0;
-        require(count + extra > 0, "Nothing to add (all skipped)");
-
-        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](count + extra);
-        for (uint256 i = 0; i < count; i++) {
-            transactions[i] =
-                SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.addBalanceOracle, (toAdd[i])));
-        }
-        if (extra == 1) {
-            transactions[count] = SafeTxBuilder.call(
-                navProxy,
-                0,
-                abi.encodeCall(
-                    NAVCalculator.registerAsset,
-                    (
-                        0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83, // EIGEN
-                        0xf2917e602C2dCa458937fad715bb1E465305A4A1, // Chainlink EIGEN/USD
-                        IPrices.PriceType.Chainlink,
-                        86_400
-                    )
-                )
-            );
-            console2.log("  Batched registerAsset: EIGEN 0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83");
-        }
-
-        string memory slug = currentChainId == 1 ? "eth" : currentChainId == 42161 ? "arb" : vm.toString(currentChainId);
-        string memory filename = string(abi.encodePacked(slug, "-nav-wiring.json"));
-
-        writeSafeTx(
-            filename,
-            "NAV v2 wiring",
-            string(abi.encodePacked("Wires ", vm.toString(transactions.length), " tx(s) into NAV v2")),
-            transactions
-        );
-
-        console2.log("Safe transaction generated:", filename);
-        console2.log("Transactions batched:", transactions.length);
-    }
-
-    /// @notice Reads a deployed balance-adapter address from the chain config by name.
-    /// @dev Mirrors the config read in 06_2_AddBalanceOracles.s.sol. Returns address(0) if unset.
-    function _readDeployedBalanceAdapter(string memory adapterName) internal view returns (address) {
-        string memory deployed =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "deployed");
-        if (bytes(deployed).length == 0) return address(0);
-        return vm.parseAddress(deployed);
     }
 
     /// @notice Removes a balance oracle from NAVCalculator

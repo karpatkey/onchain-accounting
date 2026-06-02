@@ -8,8 +8,7 @@ pragma solidity ^0.8;
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → ""  (empty bytes)
-///        AAVE_V3_LENDING / V2             → (address pool)
-///        SPARK                            → (address pool, address reserve)
+///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        MORPHO_MARKETS                  → (bytes32 marketId)

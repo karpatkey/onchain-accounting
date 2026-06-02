@@ -96,8 +96,9 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
             // Filter: only positions in this pool.
             if (t0 != token0 || t1 != token1 || f != fee) continue;
 
-            // positionId is per-NFT: each tokenId is an independently managed position (its own
-            // tick range and liquidity). _instancePositionId does not apply here; see MetaBalanceOracle.
+            // positionId is per-NFT: each tokenId is an independently managed position (its own tick
+            // range and liquidity), same pattern as Aave V3/V2 per-reserve. _instancePositionId does
+            // not apply here; see MetaBalanceOracle.
             bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
 
             uint256 liq0;

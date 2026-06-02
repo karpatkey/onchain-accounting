@@ -65,8 +65,8 @@ library ProtocolIds {
     bytes32 internal constant SPARK_LEND = keccak256("spark-lend");
 
     // Curve / Convex / Aura
-    bytes32 internal constant CURVE = keccak256("curve");             // per-instance adapter (legacy)
-    bytes32 internal constant CURVE_POOL = keccak256("curve-pool");   // wallet LP → (address pool)
+    bytes32 internal constant CURVE = keccak256("curve"); // per-instance adapter (legacy)
+    bytes32 internal constant CURVE_POOL = keccak256("curve-pool"); // wallet LP → (address pool)
     bytes32 internal constant CURVE_GAUGE = keccak256("curve-gauge"); // gauge-staked LP → (address gauge)
     bytes32 internal constant CONVEX = keccak256("convex");
     bytes32 internal constant AURA = keccak256("aura");

@@ -10,7 +10,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         exactly against the real mainnet Aave V2 market and real holders (pure supplier + supply/borrow). Both
 ///         adapters share one BalancesHarnessForFork.
 contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
-
     address public constant DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d;
     address public constant LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
     address public constant STETH = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84;

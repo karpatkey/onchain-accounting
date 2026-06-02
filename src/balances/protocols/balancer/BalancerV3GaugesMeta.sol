@@ -264,12 +264,11 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         return count + 1;
     }
 
-    function _row(
-        INAVCalculator.Asset memory asset,
-        uint256 amount,
-        bytes memory positionId,
-        PositionKind kind
-    ) private view returns (INAVCalculator.PositionBalance memory) {
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory)
+    {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceOracle: address(this),

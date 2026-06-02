@@ -51,8 +51,8 @@ contract MockToken {
 contract MockAuraToken {
     // solhint-disable-next-line var-name-mixedcase
     uint256 public INIT_MINT_AMOUNT; // slot 0
-    uint256 public totalSupply;      // slot 1
-    uint256 public minterMinted;     // slot 2 — read by assembly in _readSlot2
+    uint256 public totalSupply; // slot 1
+    uint256 public minterMinted; // slot 2 — read by assembly in _readSlot2
 
     string public symbol = "AURA";
     uint8 public decimals = 18;
@@ -87,7 +87,7 @@ contract MockAuraToken {
             // Only serve raw 32-byte slot reads; reject everything else
             if iszero(eq(calldatasize(), 32)) { revert(0, 0) }
             let slot := calldataload(0)
-            let val  := sload(slot)
+            let val := sload(slot)
             mstore(0, val)
             return(0, 32)
         }
@@ -128,11 +128,7 @@ contract MockBooster {
         _lptoken[pid] = lptoken;
     }
 
-    function poolInfo(uint256 pid)
-        external
-        view
-        returns (address lptoken, address, address, address, address, bool)
-    {
+    function poolInfo(uint256 pid) external view returns (address lptoken, address, address, address, address, bool) {
         return (_lptoken[pid], address(0), address(0), address(0), address(0), false);
     }
 
@@ -218,12 +214,29 @@ contract MockStablePool {
 
     // ── IERC20 stubs ──────────────────────────────────────────────────────────
 
-    function totalSupply() external view returns (uint256) { return _totalSupply; }
-    function balanceOf(address) external pure returns (uint256) { return 0; }
-    function transfer(address, uint256) external pure returns (bool) { return false; }
-    function transferFrom(address, address, uint256) external pure returns (bool) { return false; }
-    function allowance(address, address) external pure returns (uint256) { return 0; }
-    function approve(address, uint256) external pure returns (bool) { return false; }
+    function totalSupply() external view returns (uint256) {
+        return _totalSupply;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function transfer(address, uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function allowance(address, address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function approve(address, uint256) external pure returns (bool) {
+        return false;
+    }
 
     // ── IStablePool ────────────────────────────────────────────────────────────
 
@@ -329,14 +342,21 @@ contract MockBalancerV2Pool {
         _poolId = bytes32(uint256(uint160(address(this))));
         totalSupply = 1_000e18;
         address[] memory tokens = new address[](2);
-        tokens[0] = tok0; tokens[1] = tok1;
+        tokens[0] = tok0;
+        tokens[1] = tok1;
         uint256[] memory bals = new uint256[](2);
-        bals[0] = bal0; bals[1] = bal1;
+        bals[0] = bal0;
+        bals[1] = bal1;
         if (vault != address(0)) MockBalancerV2Vault(vault).setPool(_poolId, tokens, bals);
     }
 
-    function getPoolId() external view returns (bytes32) { return _poolId; }
-    function balanceOf(address) external pure returns (uint256) { return 0; }
+    function getPoolId() external view returns (bytes32) {
+        return _poolId;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
     // No getStablePoolDynamicData() — this is what makes it a V2 pool
 }
 
@@ -393,9 +413,9 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         // emissionsMinted = totalSupply - INIT_MINT_AMOUNT - minterMinted = 50M - 50M - 0 = 0
         // cliff = 0 / 1 = 0; supply > 0 so the early-return guard is bypassed
         aura = new MockAuraToken(
-            AURA_INIT_MINT,  // INIT_MINT_AMOUNT
-            AURA_INIT_MINT,  // totalSupply (= INIT_MINT_AMOUNT → emissionsMinted=0)
-            0,               // minterMinted (slot 2)
+            AURA_INIT_MINT, // INIT_MINT_AMOUNT
+            AURA_INIT_MINT, // totalSupply (= INIT_MINT_AMOUNT → emissionsMinted=0)
+            0, // minterMinted (slot 2)
             AURA_REDUCTION_PER_CLIFF,
             AURA_TOTAL_CLIFFS,
             AURA_EMISSIONS_MAX
@@ -429,11 +449,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         ins[0] = bytes32(uint256(uint160(r)));
     }
 
-    function _count(INAVCalculator.PositionBalance[] memory pos, PositionKind k)
-        internal
-        pure
-        returns (uint256 n)
-    {
+    function _count(INAVCalculator.PositionBalance[] memory pos, PositionKind k) internal pure returns (uint256 n) {
         for (uint256 i; i < pos.length; ++i) {
             if (pos[i].positionKind == k) n++;
         }
@@ -691,8 +707,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad instance
         instances[1] = bytes32(uint256(uint160(address(rewarder))));
 
-        INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
 
         assertGt(pos.length, 0, "good rewarder still returns positions");
     }
@@ -711,13 +726,17 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         // Expected: tok0, tok1 (pool), bal (main reward), aura, ldo (extra)
         assertEq(assets.length, 5, "pool tokens + BAL + AURA + LDO");
 
-        bool hasTok0; bool hasTok1; bool hasBal; bool hasAura; bool hasLdo;
+        bool hasTok0;
+        bool hasTok1;
+        bool hasBal;
+        bool hasAura;
+        bool hasLdo;
         for (uint256 i; i < assets.length; ++i) {
             if (assets[i] == address(tok0)) hasTok0 = true;
             if (assets[i] == address(tok1)) hasTok1 = true;
-            if (assets[i] == address(bal))  hasBal  = true;
+            if (assets[i] == address(bal)) hasBal = true;
             if (assets[i] == address(aura)) hasAura = true;
-            if (assets[i] == address(ldo))  hasLdo  = true;
+            if (assets[i] == address(ldo)) hasLdo = true;
         }
         assertTrue(hasTok0 && hasTok1 && hasBal && hasAura && hasLdo, "all expected assets present");
     }
@@ -752,17 +771,14 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
     function test_v2pool_suppliedLegs_decomposedViaVault() public {
         // Deploy a mock Balancer V2 pool and mock Vault
         MockBalancerV2Vault vault = new MockBalancerV2Vault();
-        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
-            address(vault), address(tok0), address(tok1), 500e18, 500e6
-        );
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(address(vault), address(tok0), address(tok1), 500e18, 500e6);
 
         // Wire up: booster pid=1 → v2Pool as lptoken
         boosterMainnet.setPool(1, address(v2Pool));
 
         // Deploy Aura meta with the mock vault address
-        AuraRewardsMetaBalanceAdapter v2Meta = new AuraRewardsMetaBalanceAdapter(
-            address(boosterMainnet), address(vault), "Aura", address(nav)
-        );
+        AuraRewardsMetaBalanceAdapter v2Meta =
+            new AuraRewardsMetaBalanceAdapter(address(boosterMainnet), address(vault), "Aura", address(nav));
 
         // Rewarder for the V2 pool: pid=1, staked=100e18 (10% of 1000e18 totalSupply)
         MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
@@ -788,13 +804,10 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
     function test_v2pool_instanceAssets_includesVaultTokens() public {
         MockBalancerV2Vault vault = new MockBalancerV2Vault();
-        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
-            address(vault), address(tok0), address(tok1), 500e18, 500e6
-        );
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(address(vault), address(tok0), address(tok1), 500e18, 500e6);
         boosterMainnet.setPool(1, address(v2Pool));
-        AuraRewardsMetaBalanceAdapter v2Meta = new AuraRewardsMetaBalanceAdapter(
-            address(boosterMainnet), address(vault), "Aura", address(nav)
-        );
+        AuraRewardsMetaBalanceAdapter v2Meta =
+            new AuraRewardsMetaBalanceAdapter(address(boosterMainnet), address(vault), "Aura", address(nav));
         MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
 
         address[] memory assets = v2Meta.underlyingAssetsSupportedForInstances(_single(address(v2Rewarder)));
@@ -804,13 +817,10 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
     function test_v2pool_noVault_noSuppliedLegs_rewardsStillWork() public {
         // Meta deployed with address(0) vault — V2 Supplied legs are skipped
-        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(
-            address(0), address(tok0), address(tok1), 500e18, 500e6
-        );
+        MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(address(0), address(tok0), address(tok1), 500e18, 500e6);
         boosterMainnet.setPool(1, address(v2Pool));
-        AuraRewardsMetaBalanceAdapter noVaultMeta = new AuraRewardsMetaBalanceAdapter(
-            address(boosterMainnet), address(0), "Aura", address(nav)
-        );
+        AuraRewardsMetaBalanceAdapter noVaultMeta =
+            new AuraRewardsMetaBalanceAdapter(address(boosterMainnet), address(0), "Aura", address(nav));
         MockAuraBaseRewardPool v2Rewarder = new MockAuraBaseRewardPool(address(bal), 1);
         v2Rewarder.setBalance(alice, 100e18);
         v2Rewarder.setEarned(alice, 200e18); // BAL earned

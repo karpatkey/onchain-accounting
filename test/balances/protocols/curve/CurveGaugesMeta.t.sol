@@ -34,24 +34,24 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
     MockCurveGauge gauge;
 
     function setUp() public {
-        nav     = new Mock_NAVCalculator();
-        minter  = new MockCurveMinter();
+        nav = new Mock_NAVCalculator();
+        minter = new MockCurveMinter();
 
-        usdc      = new MockCurveToken("USDC",   6);
-        dai       = new MockCurveToken("DAI",   18);
-        crv       = new MockCurveToken("CRV",   18);
-        ldoReward = new MockCurveToken("LDO",   18);
+        usdc = new MockCurveToken("USDC", 6);
+        dai = new MockCurveToken("DAI", 18);
+        crv = new MockCurveToken("CRV", 18);
+        ldoReward = new MockCurveToken("LDO", 18);
 
-        nav.registerAsset(address(usdc),      6,  "USDC");
-        nav.registerAsset(address(dai),       18, "DAI");
-        nav.registerAsset(address(crv),       18, "CRV");
+        nav.registerAsset(address(usdc), 6, "USDC");
+        nav.registerAsset(address(dai), 18, "DAI");
+        nav.registerAsset(address(crv), 18, "CRV");
         nav.registerAsset(address(ldoReward), 18, "LDO");
 
         // Pool IS the LP token
         address[] memory coins = new address[](2);
         coins[0] = address(usdc);
         coins[1] = address(dai);
-        pool  = new MockCurvePool(coins);
+        pool = new MockCurvePool(coins);
         gauge = new MockCurveGauge(address(pool));
 
         meta = new CurveGaugesMetaBalanceAdapter(address(minter), address(crv), "Curve", address(nav));
@@ -75,7 +75,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
     function test_stakedLp_decomposes_proRata() public {
         // 1000 LP total; alice stakes 100 (10%)
         pool.setTotalSupply(1_000e18);
-        pool.setPoolBalance(0, 500e6);  // 500 USDC
+        pool.setPoolBalance(0, 500e6); // 500 USDC
         pool.setPoolBalance(1, 500e18); // 500 DAI
         gauge.setStaked(alice, 100e18);
 
@@ -86,7 +86,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         uint256 supplied = _countKind(pos, PositionKind.Supplied);
         assertEq(supplied, 2, "2 Supplied legs");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
-        assertEq(pos[0].amount, 50e6);  // 10% of 500 USDC
+        assertEq(pos[0].amount, 50e6); // 10% of 500 USDC
         assertEq(pos[1].balanceAsset.asset, address(dai));
         assertEq(pos[1].amount, 50e18); // 10% of 500 DAI
         assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Supplied));
@@ -238,8 +238,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad gauge
         instances[1] = bytes32(uint256(uint160(address(gauge))));
 
-        INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
         assertGt(pos.length, 0, "good gauge still returned");
     }
 
@@ -255,8 +254,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
     function test_instanceAssets_coinsAndCrv() public {
         gauge.addRewardToken(address(ldoReward));
 
-        address[] memory assets =
-            meta.underlyingAssetsSupportedForInstances(_instance(address(gauge)));
+        address[] memory assets = meta.underlyingAssetsSupportedForInstances(_instance(address(gauge)));
 
         // Should contain USDC, DAI (pool coins) + CRV (minter) + LDO (extra reward)
         assertEq(assets.length, 4);

@@ -85,20 +85,18 @@ library CurvePoolLib {
             tmp[n++] = coin;
         }
         coins = new address[](n);
-        for (uint256 i; i < n; ++i) coins[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            coins[i] = tmp[i];
+        }
     }
 
     /// @notice Returns the pool's stored balance for coin at index `i`.
     ///         Tries `uint256` index selector first, falls back to `int128`.
     function getPoolBalance(address pool, uint256 i) internal view returns (uint256) {
-        (bool ok, bytes memory data) = pool.staticcall(
-            abi.encodeWithSignature("balances(uint256)", i)
-        );
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("balances(uint256)", i));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
 
-        (ok, data) = pool.staticcall(
-            abi.encodeWithSignature("balances(int128)", int128(int256(i)))
-        );
+        (ok, data) = pool.staticcall(abi.encodeWithSignature("balances(int128)", int128(int256(i))));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
         return 0;
     }
@@ -106,9 +104,7 @@ library CurvePoolLib {
     /// @notice Returns the LP token's total supply.
     ///         Tries ERC20 `totalSupply()` first, then the StableSwap-NG storage-var variant.
     function getTotalSupply(address lpToken) internal view returns (uint256) {
-        (bool ok, bytes memory data) = lpToken.staticcall(
-            abi.encodeWithSignature("totalSupply()")
-        );
+        (bool ok, bytes memory data) = lpToken.staticcall(abi.encodeWithSignature("totalSupply()"));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
 
         // StableSwap-NG exposes total_supply as a public state variable
@@ -132,9 +128,7 @@ library CurvePoolLib {
 
     /// @notice Returns gauge-staked LP balance (gauges are ERC20-tokenized since V2).
     function gaugeStaked(address gauge, address account) internal view returns (uint256) {
-        (bool ok, bytes memory data) = gauge.staticcall(
-            abi.encodeWithSignature("balanceOf(address)", account)
-        );
+        (bool ok, bytes memory data) = gauge.staticcall(abi.encodeWithSignature("balanceOf(address)", account));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
         return 0;
     }
@@ -142,9 +136,7 @@ library CurvePoolLib {
     /// @notice Derives the LP token from a gauge via `lp_token()`.
     ///         Returns address(0) if not available (unusual, defensive).
     function gaugeLpToken(address gauge) internal view returns (address) {
-        (bool ok, bytes memory data) = gauge.staticcall(
-            abi.encodeWithSignature("lp_token()")
-        );
+        (bool ok, bytes memory data) = gauge.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length >= 32) return abi.decode(data, (address));
         return address(0);
     }
@@ -157,22 +149,15 @@ library CurvePoolLib {
     ///         (or via eth_call to the gauge), which we cannot do in a view function.
     /// @param minter The Curve Minter contract (0xd061D61a4d941c39E5453435B6345Dc261C2fcE0 on mainnet).
     ///               Pass address(0) to skip CRV computation (L2 / non-mainnet deployments).
-    function crvClaimableLb(address gauge, address minter, address account)
-        internal
-        view
-        returns (uint256)
-    {
+    function crvClaimableLb(address gauge, address minter, address account) internal view returns (uint256) {
         if (minter == address(0)) return 0;
 
-        (bool ok1, bytes memory d1) = gauge.staticcall(
-            abi.encodeWithSignature("integrate_fraction(address)", account)
-        );
+        (bool ok1, bytes memory d1) = gauge.staticcall(abi.encodeWithSignature("integrate_fraction(address)", account));
         if (!ok1 || d1.length < 32) return 0;
         uint256 integrateFraction = abi.decode(d1, (uint256));
 
-        (bool ok2, bytes memory d2) = minter.staticcall(
-            abi.encodeWithSignature("minted(address,address)", account, gauge)
-        );
+        (bool ok2, bytes memory d2) =
+            minter.staticcall(abi.encodeWithSignature("minted(address,address)", account, gauge));
         if (!ok2 || d2.length < 32) return 0;
         uint256 alreadyMinted = abi.decode(d2, (uint256));
 
@@ -182,9 +167,7 @@ library CurvePoolLib {
     /// @notice Returns the extra reward token address at slot `i` (V2+ gauges).
     ///         Returns address(0) if the slot is empty or the method does not exist.
     function rewardToken(address gauge, uint256 i) internal view returns (address) {
-        (bool ok, bytes memory data) = gauge.staticcall(
-            abi.encodeWithSignature("reward_tokens(uint256)", i)
-        );
+        (bool ok, bytes memory data) = gauge.staticcall(abi.encodeWithSignature("reward_tokens(uint256)", i));
         if (ok && data.length >= 32) return abi.decode(data, (address));
         return address(0);
     }
@@ -192,14 +175,9 @@ library CurvePoolLib {
     /// @notice Claimable amount of `token` for `account` from a V3+ gauge.
     ///         Returns the stale-but-view-safe value from claimable_reward().
     ///         Note: V3 gauges update rewards at most hourly; value may be stale.
-    function claimableReward(address gauge, address account, address token)
-        internal
-        view
-        returns (uint256)
-    {
-        (bool ok, bytes memory data) = gauge.staticcall(
-            abi.encodeWithSignature("claimable_reward(address,address)", account, token)
-        );
+    function claimableReward(address gauge, address account, address token) internal view returns (uint256) {
+        (bool ok, bytes memory data) =
+            gauge.staticcall(abi.encodeWithSignature("claimable_reward(address,address)", account, token));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
         return 0;
     }
@@ -215,17 +193,13 @@ library CurvePoolLib {
 
     function _coin(address pool, uint256 i) private view returns (address) {
         // Try uint256 index (all modern pools: StableSwap 0.2+, StableSwap-NG, Crypto*, TriCryptoNG)
-        (bool ok, bytes memory data) = pool.staticcall(
-            abi.encodeWithSignature("coins(uint256)", i)
-        );
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("coins(uint256)", i));
         if (ok && data.length >= 32) {
             address coin = abi.decode(data, (address));
             if (coin != address(0)) return coin;
         }
         // Fallback: int128 index (original StableSwap, Vyper 0.1.x)
-        (ok, data) = pool.staticcall(
-            abi.encodeWithSignature("coins(int128)", int128(int256(i)))
-        );
+        (ok, data) = pool.staticcall(abi.encodeWithSignature("coins(int128)", int128(int256(i))));
         if (ok && data.length >= 32) return abi.decode(data, (address));
         return address(0);
     }
@@ -235,7 +209,12 @@ library CurvePoolLib {
     function coinSymbols(address[] memory coins) internal view returns (string memory result) {
         for (uint256 i; i < coins.length; ++i) {
             string memory sym;
-            try IERC20Symbol(coins[i]).symbol() returns (string memory s) { sym = s; } catch { sym = "?"; }
+            try IERC20Symbol(coins[i]).symbol() returns (string memory s) {
+                sym = s;
+            }
+                catch {
+                sym = "?";
+            }
             result = i == 0 ? sym : string.concat(result, "/", sym);
         }
     }

@@ -273,7 +273,8 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_getOraclePositions_emptyWhenAssetUnregistered() public {
         address unregistered = makeAddr("unregisteredAsset");
-        LidoWithdrawalQueueBalanceOracle freshOracle = new LidoWithdrawalQueueBalanceOracle(address(queue), unregistered, address(balances));
+        LidoWithdrawalQueueBalanceOracle freshOracle =
+            new LidoWithdrawalQueueBalanceOracle(address(queue), unregistered, address(balances));
         queue.pushRequest(alice, 1, 5e18, false);
 
         INAVCalculator.PositionBalance[] memory positions = freshOracle.getOraclePositions(alice, address(0));

@@ -19,8 +19,16 @@ contract MockToken {
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
 
-    constructor(string memory s, uint8 d) { symbol = s; decimals = d; totalSupply = 1_000_000e18; }
-    function mint(address to, uint256 amt) external { balanceOf[to] += amt; totalSupply += amt; }
+    constructor(string memory s, uint8 d) {
+        symbol = s;
+        decimals = d;
+        totalSupply = 1_000_000e18;
+    }
+
+    function mint(address to, uint256 amt) external {
+        balanceOf[to] += amt;
+        totalSupply += amt;
+    }
 }
 
 /// @notice Mock Curve pool that is also the LP token (self-LP, uint256 indices).
@@ -33,17 +41,31 @@ contract MockCurvePool {
     constructor(address[] memory c) {
         coins_ = c;
         totalSupply = 1_000e18;
-        for (uint256 i; i < c.length; ++i) _bal[i] = 100_000e18;
+        for (uint256 i; i < c.length; ++i) {
+            _bal[i] = 100_000e18;
+        }
     }
 
     function coins(uint256 i) external view returns (address) {
         if (i >= coins_.length) revert("oor");
         return coins_[i];
     }
-    function balances(uint256 i) external view returns (uint256) { return _bal[i]; }
-    function setPoolBalance(uint256 i, uint256 amt) external { _bal[i] = amt; }
-    function setTotalSupply(uint256 ts) external { totalSupply = ts; }
-    function setWalletBalance(address a, uint256 amt) external { balanceOf[a] = amt; }
+
+    function balances(uint256 i) external view returns (uint256) {
+        return _bal[i];
+    }
+
+    function setPoolBalance(uint256 i, uint256 amt) external {
+        _bal[i] = amt;
+    }
+
+    function setTotalSupply(uint256 ts) external {
+        totalSupply = ts;
+    }
+
+    function setWalletBalance(address a, uint256 amt) external {
+        balanceOf[a] = amt;
+    }
 }
 
 /// @notice Mock extra rewarder (direct token, no stash wrapper).
@@ -51,15 +73,26 @@ contract MockExtraRewarder {
     address public rewardToken;
     mapping(address => uint256) private _earned;
 
-    constructor(address tok) { rewardToken = tok; }
-    function setEarned(address a, uint256 amt) external { _earned[a] = amt; }
-    function earned(address a) external view returns (uint256) { return _earned[a]; }
+    constructor(address tok) {
+        rewardToken = tok;
+    }
+
+    function setEarned(address a, uint256 amt) external {
+        _earned[a] = amt;
+    }
+
+    function earned(address a) external view returns (uint256) {
+        return _earned[a];
+    }
 }
 
 /// @notice Mock extra rewarder whose rewardToken() is a stash wrapper.
 contract MockStashWrapper {
     address public token; // underlying token
-    constructor(address underlying) { token = underlying; }
+
+    constructor(address underlying) {
+        token = underlying;
+    }
 }
 
 contract MockExtraRewarderWithStash {
@@ -70,9 +103,17 @@ contract MockExtraRewarderWithStash {
         stashToken = new MockStashWrapper(underlying);
     }
 
-    function rewardToken() external view returns (address) { return address(stashToken); }
-    function setEarned(address a, uint256 amt) external { _earned[a] = amt; }
-    function earned(address a) external view returns (uint256) { return _earned[a]; }
+    function rewardToken() external view returns (address) {
+        return address(stashToken);
+    }
+
+    function setEarned(address a, uint256 amt) external {
+        _earned[a] = amt;
+    }
+
+    function earned(address a) external view returns (uint256) {
+        return _earned[a];
+    }
 }
 
 /// @notice Mock Convex BaseRewardPool.
@@ -90,26 +131,44 @@ contract MockConvexRewarder {
         pid_ = pid;
     }
 
-    function pid() external view returns (uint256) { return pid_; }
-    function earned(address a) external view returns (uint256) { return _earned[a]; }
-    function setStaked(address a, uint256 amt) external { balanceOf[a] = amt; }
-    function setEarned(address a, uint256 amt) external { _earned[a] = amt; }
-    function addExtra(address e) external { _extras.push(e); }
-    function extraRewardsLength() external view returns (uint256) { return _extras.length; }
-    function extraRewards(uint256 i) external view returns (address) { return _extras[i]; }
+    function pid() external view returns (uint256) {
+        return pid_;
+    }
+
+    function earned(address a) external view returns (uint256) {
+        return _earned[a];
+    }
+
+    function setStaked(address a, uint256 amt) external {
+        balanceOf[a] = amt;
+    }
+
+    function setEarned(address a, uint256 amt) external {
+        _earned[a] = amt;
+    }
+
+    function addExtra(address e) external {
+        _extras.push(e);
+    }
+
+    function extraRewardsLength() external view returns (uint256) {
+        return _extras.length;
+    }
+
+    function extraRewards(uint256 i) external view returns (address) {
+        return _extras[i];
+    }
 }
 
 /// @notice Mock Convex Booster.
 contract MockConvexBooster {
     mapping(uint256 => address) private _lptoken;
 
-    function setPool(uint256 pid, address lp) external { _lptoken[pid] = lp; }
+    function setPool(uint256 pid, address lp) external {
+        _lptoken[pid] = lp;
+    }
 
-    function poolInfo(uint256 pid)
-        external
-        view
-        returns (address lptoken, address, address, address, address, bool)
-    {
+    function poolInfo(uint256 pid) external view returns (address lptoken, address, address, address, address, bool) {
         return (_lptoken[pid], address(0), address(0), address(0), address(0), false);
     }
 }
@@ -121,7 +180,9 @@ contract MockCvxToken {
     string public symbol = "CVX";
     mapping(address => uint256) public balanceOf;
 
-    function setTotalSupply(uint256 ts) external { totalSupply = ts; }
+    function setTotalSupply(uint256 ts) external {
+        totalSupply = ts;
+    }
 }
 
 // ─── Test contract ────────────────────────────────────────────────────────────
@@ -143,24 +204,25 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
     address alice = makeAddr("alice");
 
     function setUp() public {
-        nav     = new Mock_NAVCalculator();
+        nav = new Mock_NAVCalculator();
         booster = new MockConvexBooster();
-        cvx     = new MockCvxToken();
+        cvx = new MockCvxToken();
 
-        usdc = new MockToken("USDC",  6);
+        usdc = new MockToken("USDC", 6);
         weth = new MockToken("WETH", 18);
-        crv  = new MockToken("CRV",  18);
-        ldo  = new MockToken("LDO",  18);
+        crv = new MockToken("CRV", 18);
+        ldo = new MockToken("LDO", 18);
 
-        nav.registerAsset(address(usdc), 6,  "USDC");
+        nav.registerAsset(address(usdc), 6, "USDC");
         nav.registerAsset(address(weth), 18, "WETH");
-        nav.registerAsset(address(crv),  18, "CRV");
-        nav.registerAsset(address(ldo),  18, "LDO");
-        nav.registerAsset(address(cvx),  18, "CVX");
+        nav.registerAsset(address(crv), 18, "CRV");
+        nav.registerAsset(address(ldo), 18, "LDO");
+        nav.registerAsset(address(cvx), 18, "CVX");
 
         // Pool IS the LP token (self-LP), 50/50 USDC/WETH
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(weth);
+        coins[0] = address(usdc);
+        coins[1] = address(weth);
         pool = new MockCurvePool(coins);
         pool.setPoolBalance(0, 500e6);
         pool.setPoolBalance(1, 500e18);
@@ -170,9 +232,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         rewarder = new MockConvexRewarder(address(pool), address(crv), 42);
         booster.setPool(42, address(pool));
 
-        meta = new ConvexRewardsMetaBalanceAdapter(
-            address(booster), address(cvx), "Convex", address(nav)
-        );
+        meta = new ConvexRewardsMetaBalanceAdapter(address(booster), address(cvx), "Convex", address(nav));
     }
 
     function _instance(address r) internal pure returns (bytes32[] memory ins) {
@@ -199,9 +259,9 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         uint256 supplied = _count(pos, PositionKind.Supplied);
         assertEq(supplied, 2, "2 Supplied legs (USDC + WETH)");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
-        assertEq(pos[0].amount, 50e6);   // 10% of 500 USDC
+        assertEq(pos[0].amount, 50e6); // 10% of 500 USDC
         assertEq(pos[1].balanceAsset.asset, address(weth));
-        assertEq(pos[1].amount, 50e18);  // 10% of 500 WETH
+        assertEq(pos[1].amount, 50e18); // 10% of 500 WETH
         assertFalse(pos[0].isDebt);
     }
 
@@ -282,9 +342,8 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
     }
 
     function test_noCvxToken_noCvxLeg() public {
-        ConvexRewardsMetaBalanceAdapter noCvx = new ConvexRewardsMetaBalanceAdapter(
-            address(booster), address(0), "Convex", address(nav)
-        );
+        ConvexRewardsMetaBalanceAdapter noCvx =
+            new ConvexRewardsMetaBalanceAdapter(address(booster), address(0), "Convex", address(nav));
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -362,8 +421,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead))));
         instances[1] = bytes32(uint256(uint160(address(rewarder))));
 
-        INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
         assertGt(pos.length, 0, "good rewarder returned");
     }
 
@@ -384,16 +442,20 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    function _count(INAVCalculator.PositionBalance[] memory pos, PositionKind k)
-        internal pure returns (uint256 n)
-    {
-        for (uint256 i; i < pos.length; ++i) if (pos[i].positionKind == k) n++;
+    function _count(INAVCalculator.PositionBalance[] memory pos, PositionKind k) internal pure returns (uint256 n) {
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].positionKind == k) n++;
+        }
     }
 
     function _find(INAVCalculator.PositionBalance[] memory pos, address asset)
-        internal pure returns (INAVCalculator.PositionBalance memory)
+        internal
+        pure
+        returns (INAVCalculator.PositionBalance memory)
     {
-        for (uint256 i; i < pos.length; ++i) if (pos[i].balanceAsset.asset == asset) return pos[i];
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].balanceAsset.asset == asset) return pos[i];
+        }
         revert("not found");
     }
 }

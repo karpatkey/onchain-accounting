@@ -35,9 +35,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
     // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
 
@@ -63,8 +61,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         if (coins.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         bytes memory pid = abi.encode(pool);
-        INAVCalculator.PositionBalance[] memory tmp =
-            new INAVCalculator.PositionBalance[](coins.length);
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](coins.length);
         uint256 n;
 
         for (uint256 i; i < coins.length; ++i) {
@@ -90,7 +87,9 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i; i < n; ++i) positions[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
     }
 
     /// @inheritdoc MetaBalanceOracle
@@ -113,9 +112,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
     function _balanceOf(address token, address account) private view returns (uint256) {
-        (bool ok, bytes memory data) = token.staticcall(
-            abi.encodeWithSignature("balanceOf(address)", account)
-        );
+        (bool ok, bytes memory data) = token.staticcall(abi.encodeWithSignature("balanceOf(address)", account));
         if (ok && data.length >= 32) return abi.decode(data, (uint256));
         return 0;
     }

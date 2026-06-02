@@ -19,9 +19,7 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev Returns an empty array (rather than reverting) when the vault asset is unregistered or the balance is

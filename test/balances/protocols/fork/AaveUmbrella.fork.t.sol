@@ -87,10 +87,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[2] = WETH;
         assets[3] = GHO;
         balances = _deployBalancesForOracle(assets);
-        oracle = new AaveUmbrellaBalanceOracle(
-            address(REWARDS_CONTROLLER),
-            address(balances)
-        );
+        oracle = new AaveUmbrellaBalanceOracle(address(REWARDS_CONTROLLER), address(balances));
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────

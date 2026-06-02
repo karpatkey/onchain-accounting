@@ -22,9 +22,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the pool (BPT) address. Emits one Supply leg per registered pool token for the account's

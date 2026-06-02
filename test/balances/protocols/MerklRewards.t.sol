@@ -627,7 +627,6 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(arbOnly[0].amount, 100 ether);
         assertFalse(arbOnly[0].isDebt);
         assertEq(arbOnly[0].balanceOracle, address(oracle));
-
     }
 
     function test_getOraclePositions_skipsClaimedAndStale() public {

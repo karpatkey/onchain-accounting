@@ -448,7 +448,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployCurvePoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         return address(new CurvePoolsMetaBalanceAdapter(protocol, navCalculator));
     }
 
@@ -459,7 +460,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address crvToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "crvToken")
         );
-        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
     }
 
@@ -622,7 +624,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address withdrawalManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalManager")
         );
-        KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(withdrawalManager, navCalculator);
+        KelpWithdrawalQueueBalanceOracle adapter =
+            new KelpWithdrawalQueueBalanceOracle(withdrawalManager, navCalculator);
         return address(adapter);
     }
 
@@ -657,8 +660,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceOracle adapter =
-            new MerklRewardsBalanceOracle(distributor, navCalculator, chainConfig.admin);
+        MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(distributor, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 

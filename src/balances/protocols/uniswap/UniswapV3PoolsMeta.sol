@@ -110,8 +110,17 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
             }
 
             (uint256 fee0, uint256 fee1) = _computeFees(
-                pool, tick, fgGlobal0, fgGlobal1, tickLower, tickUpper, liquidity,
-                fgInside0Last, fgInside1Last, tokensOwed0, tokensOwed1
+                pool,
+                tick,
+                fgGlobal0,
+                fgGlobal1,
+                tickLower,
+                tickUpper,
+                liquidity,
+                fgInside0Last,
+                fgInside1Last,
+                tokensOwed0,
+                tokensOwed1
             );
 
             if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
@@ -158,12 +167,11 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
-    function _row(
-        INAVCalculator.Asset memory asset,
-        uint256 amount,
-        bytes memory positionId,
-        PositionKind kind
-    ) private view returns (INAVCalculator.PositionBalance memory) {
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory)
+    {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceOracle: address(this),
@@ -212,11 +220,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    function _ticksFeeGrowthOutside(address pool, int24 tick)
-        private
-        view
-        returns (uint256 fgOut0, uint256 fgOut1)
-    {
+    function _ticksFeeGrowthOutside(address pool, int24 tick) private view returns (uint256 fgOut0, uint256 fgOut1) {
         (,, uint256 _fgOut0, uint256 _fgOut1,,,,) = IUniswapV3Pool(pool).ticks(tick);
         return (_fgOut0, _fgOut1);
     }

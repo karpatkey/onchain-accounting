@@ -85,7 +85,7 @@ interface INAVCalculator is IBalances {
     ///      indexing, or reconciliation — use the typed fields on `position` for those purposes.
     struct VerbosePosition {
         Position position;
-        string protocolName;  // e.g. "Aave V3", "Morpho"
+        string protocolName; // e.g. "Aave V3", "Morpho"
         string positionLabel; // e.g. "USDC supply", "USDC/WETH 0.05% LP"
     }
 

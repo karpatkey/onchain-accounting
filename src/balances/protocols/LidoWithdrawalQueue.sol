@@ -143,8 +143,13 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Lido"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "stETH withdrawal queue"; }
+    function protocolName() external pure returns (string memory) {
+        return "Lido";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "stETH withdrawal queue";
+    }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset)

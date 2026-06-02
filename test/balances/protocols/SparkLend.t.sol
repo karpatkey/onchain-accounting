@@ -7,15 +7,30 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 contract MockAavePoolAddressesProvider {
     address public pool;
-    constructor(address pool_) { pool = pool_; }
-    function getPool() external view returns (address) { return pool; }
-    function getLendingPool() external view returns (address) { return pool; }
+
+    constructor(address pool_) {
+        pool = pool_;
+    }
+
+    function getPool() external view returns (address) {
+        return pool;
+    }
+
+    function getLendingPool() external view returns (address) {
+        return pool;
+    }
 }
 
 contract MockAddressesProviderSource {
     MockAavePoolAddressesProvider public ap;
-    constructor(address pool_) { ap = new MockAavePoolAddressesProvider(pool_); }
-    function ADDRESSES_PROVIDER() external view returns (address) { return address(ap); }
+
+    constructor(address pool_) {
+        ap = new MockAavePoolAddressesProvider(pool_);
+    }
+
+    function ADDRESSES_PROVIDER() external view returns (address) {
+        return address(ap);
+    }
 }
 
 contract MockAaveProtocolDataProvider {

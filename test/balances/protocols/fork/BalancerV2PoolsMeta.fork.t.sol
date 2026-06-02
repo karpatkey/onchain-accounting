@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
 interface IBalV2Vault {
     function getPoolTokens(bytes32 poolId)
         external

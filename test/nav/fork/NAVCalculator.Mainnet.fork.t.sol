@@ -144,7 +144,8 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveOracle = aaveMeta;
         AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
-        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
+        compoundV3Comet =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
         morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
         daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
 

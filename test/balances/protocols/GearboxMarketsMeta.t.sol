@@ -101,7 +101,6 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
         assertEq(p[0].balanceOracle, address(meta));
         assertEq(p[0].positionId, abi.encode(address(marketA)));
 
-
         assertEq(p[1].balanceAsset.asset, address(wsteth));
         assertEq(p[1].amount, 4e18);
         assertEq(p[1].positionId, abi.encode(address(marketB)));

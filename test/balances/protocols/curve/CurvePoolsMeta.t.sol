@@ -31,10 +31,10 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
     function setUp() public {
         nav = new Mock_NAVCalculator();
         usdc = new MockCurveToken("USDC", 6);
-        dai  = new MockCurveToken("DAI",  18);
+        dai = new MockCurveToken("DAI", 18);
         weth = new MockCurveToken("WETH", 18);
-        nav.registerAsset(address(usdc), 6,  "USDC");
-        nav.registerAsset(address(dai),  18, "DAI");
+        nav.registerAsset(address(usdc), 6, "USDC");
+        nav.registerAsset(address(dai), 18, "DAI");
         nav.registerAsset(address(weth), 18, "WETH");
 
         meta = new CurvePoolsMetaBalanceAdapter("Curve", address(nav));
@@ -60,10 +60,11 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
     function test_selfLp_walletBalance_decomposedProRata() public {
         // Pool IS the LP token; 50/50 USDC/DAI split, 1000 LP total
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
-        pool.setPoolBalance(0, 500e6);   // 500 USDC
-        pool.setPoolBalance(1, 500e18);  // 500 DAI
+        pool.setPoolBalance(0, 500e6); // 500 USDC
+        pool.setPoolBalance(1, 500e18); // 500 DAI
         pool.setTotalSupply(1_000e18);
         pool.setWalletBalance(alice, 100e18); // 10% of pool
 
@@ -83,7 +84,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_selfLp_positionIdentity() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
         pool.setWalletBalance(alice, 100e18);
 
@@ -97,7 +99,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_selfLp_noWalletBalance_empty() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
         // no wallet balance set
 
@@ -108,7 +111,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_selfLp_assetFilter_onlyMatchingCoin() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
         pool.setWalletBalance(alice, 100e18);
 
@@ -122,7 +126,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         // weth is registered, but use a new unregistered token
         MockCurveToken unregistered = new MockCurveToken("UNKN", 18);
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(unregistered);
+        coins[0] = address(usdc);
+        coins[1] = address(unregistered);
         MockCurvePool pool = new MockCurvePool(coins);
         pool.setWalletBalance(alice, 100e18);
 
@@ -134,7 +139,9 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_selfLp_threeCoinPool() public {
         address[] memory coins = new address[](3);
-        coins[0] = address(usdc); coins[1] = address(dai); coins[2] = address(weth);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
+        coins[2] = address(weth);
         MockCurvePool pool = new MockCurvePool(coins);
         pool.setPoolBalance(0, 300e6);
         pool.setPoolBalance(1, 300e18);
@@ -155,7 +162,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         //   lpToken.minter() → pool
         // CurvePoolLib.getPool(lpToken) discovers the pool via minter(), then reads coins()/balances().
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
 
         // 1. Deploy LP token with a placeholder minter (will be updated after pool is known)
         MockCurveLpToken lpToken = new MockCurveLpToken(address(0));
@@ -183,7 +191,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_int128Pool_coinsAndBalances_readCorrectly() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePoolInt128 pool = new MockCurvePoolInt128(coins);
         pool.setPoolBalance(0, 400e6);
         pool.setPoolBalance(1, 400e18);
@@ -195,7 +204,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
         assertEq(pos.length, 2);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
-        assertEq(pos[0].amount, 40e6);  // 10% of 400 USDC
+        assertEq(pos[0].amount, 40e6); // 10% of 400 USDC
         assertEq(pos[1].balanceAsset.asset, address(dai));
         assertEq(pos[1].amount, 40e18); // 10% of 400 DAI
     }
@@ -204,7 +213,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_multiPool_fanOut() public {
         address[] memory coins2 = new address[](2);
-        coins2[0] = address(usdc); coins2[1] = address(dai);
+        coins2[0] = address(usdc);
+        coins2[1] = address(dai);
         MockCurvePool poolA = new MockCurvePool(coins2);
         poolA.setWalletBalance(alice, 100e18);
 
@@ -217,14 +227,14 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(poolA))));
         instances[1] = bytes32(uint256(uint160(address(poolB))));
 
-        INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
         assertEq(pos.length, 3); // 2 from poolA + 1 from poolB
     }
 
     function test_badInstance_isolated() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool good = new MockCurvePool(coins);
         good.setWalletBalance(alice, 100e18);
 
@@ -232,8 +242,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad instance
         instances[1] = bytes32(uint256(uint160(address(good))));
 
-        INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
         assertEq(pos.length, 2); // only good pool's coins
     }
 
@@ -241,11 +250,11 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_instanceAssets_returnsCoins() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
 
-        address[] memory assets =
-            meta.underlyingAssetsSupportedForInstances(_instance(address(pool)));
+        address[] memory assets = meta.underlyingAssetsSupportedForInstances(_instance(address(pool)));
         assertEq(assets.length, 2);
         assertEq(assets[0], address(usdc));
         assertEq(assets[1], address(dai));
@@ -255,7 +264,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     function test_describePosition_formatsSymbols() public {
         address[] memory coins = new address[](2);
-        coins[0] = address(usdc); coins[1] = address(dai);
+        coins[0] = address(usdc);
+        coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
 
         string memory label = meta.describePosition(abi.encode(address(pool)));

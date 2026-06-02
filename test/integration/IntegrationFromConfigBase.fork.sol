@@ -690,8 +690,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployCurveGaugesMeta(string memory name, address navAddr) internal returns (address) {
-        address minter =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "minter"));
+        address minter = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "minter"));
         address crvToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "crvToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
@@ -699,8 +698,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployConvexRewardsMeta(string memory name, address navAddr) internal returns (address) {
-        address booster = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
-        address cvxToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
+        address booster =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
+        address cvxToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
     }

@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
 interface IERC4626Min {
     function asset() external view returns (address);
 }

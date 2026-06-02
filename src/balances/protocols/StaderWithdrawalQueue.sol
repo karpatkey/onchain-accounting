@@ -136,8 +136,13 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Stader"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "ETHx withdrawal queue"; }
+    function protocolName() external pure returns (string memory) {
+        return "Stader";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "ETHx withdrawal queue";
+    }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset)

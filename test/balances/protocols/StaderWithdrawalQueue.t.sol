@@ -234,7 +234,8 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         // The constructor only requires non-zero, not contract-shaped, for `underlyingToken_`, so a
         // bare EOA-style address is enough to demonstrate the asset-registry filtering behaviour.
         address unregisteredAsset = makeAddr("unregisteredAsset");
-        StaderWithdrawalQueueBalanceOracle freshOracle = new StaderWithdrawalQueueBalanceOracle(address(manager), unregisteredAsset, address(balances));
+        StaderWithdrawalQueueBalanceOracle freshOracle =
+            new StaderWithdrawalQueueBalanceOracle(address(manager), unregisteredAsset, address(balances));
 
         manager.pushRequest(
             alice,
@@ -266,7 +267,6 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].amount, 1e18);
         assertFalse(positions[0].isDebt);
-
     }
 
     function test_getOraclePositions_zeroBalanceProducesEmpty() public view {

@@ -160,11 +160,9 @@ contract AdapterConsistencyTest is Test {
         INAVCalculator.PositionBalance[] memory positions2 = customOracle.getOraclePositions(alice, address(0));
 
         // Both should have protocol and positionDetail
-        if (positions1.length > 0) {
-        }
+        if (positions1.length > 0) {}
 
-        if (positions2.length > 0) {
-        }
+        if (positions2.length > 0) {}
     }
 
     // ============================================
@@ -193,9 +191,7 @@ contract AdapterConsistencyTest is Test {
 
         for (uint256 i = 0; i < positions2.length; i++) {
             assertEq(
-                positions2[i].balanceAsset.asset,
-                address(usdc),
-                "CustomOracle: Filtered positions should match filter"
+                positions2[i].balanceAsset.asset, address(usdc), "CustomOracle: Filtered positions should match filter"
             );
         }
     }

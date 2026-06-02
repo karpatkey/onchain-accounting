@@ -6,6 +6,7 @@ import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFToken
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 /// @title FluidFTokensMetaParityForkTest
 /// @notice Proves the Fluid fTokens meta-adapter reproduces the per-fToken FluidFTokenBalanceOracle exactly,
 ///         against the real mainnet fUSDC vault with a deal-and-deposit position. Both adapters share one

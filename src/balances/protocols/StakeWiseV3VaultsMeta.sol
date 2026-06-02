@@ -6,6 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+
 /// @notice Interface for interacting with StakeWise v3 vaults
 interface IStakeWiseVault {
     /// @notice Converts a given amount of vault shares to the underlying asset amount
@@ -100,13 +101,11 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    function _row(
-        INAVCalculator.Asset memory asset,
-        uint256 amount,
-        bool isDebt,
-        bytes memory pid,
-        PositionKind kind
-    ) private view returns (INAVCalculator.PositionBalance memory) {
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory)
+    {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceOracle: address(this),

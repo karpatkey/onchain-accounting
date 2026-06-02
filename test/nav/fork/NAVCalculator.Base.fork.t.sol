@@ -80,7 +80,8 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveOracle = aaveMeta;
 
-        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
+        compoundV3Comet =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
 
         morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 

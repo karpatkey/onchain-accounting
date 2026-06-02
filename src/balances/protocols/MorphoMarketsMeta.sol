@@ -125,13 +125,11 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @notice Assembles a single PositionBalance row with this adapter's identity.
-    function _row(
-        INAVCalculator.Asset memory asset,
-        uint256 amount,
-        bool isDebt,
-        bytes memory pid,
-        PositionKind kind
-    ) private view returns (INAVCalculator.PositionBalance memory) {
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory)
+    {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceOracle: address(this),

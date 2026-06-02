@@ -60,7 +60,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         MetaBalanceOracle(protocolName_, navCalculator_)
     {
         CURVE_MINTER = minter_;
-        CRV_TOKEN    = crvToken_;
+        CRV_TOKEN = crvToken_;
     }
 
     // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
@@ -163,7 +163,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i; i < n; ++i) positions[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
     }
 
     /// @inheritdoc MetaBalanceOracle
@@ -173,9 +175,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         if (lpToken == address(0)) return new address[](0);
         address pool = CurvePoolLib.getPool(lpToken);
 
-        address[] memory coins = pool != address(0)
-            ? CurvePoolLib.getCoins(pool)
-            : new address[](0);
+        address[] memory coins = pool != address(0) ? CurvePoolLib.getCoins(pool) : new address[](0);
 
         // Collect extra reward tokens
         address[] memory extraTmp = new address[](CurvePoolLib.MAX_COINS);
@@ -189,9 +189,13 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         // Merge: coins + CRV (if Minter set) + extra rewards
         uint256 crvSlot = CURVE_MINTER != address(0) ? 1 : 0;
         address[] memory all = new address[](coins.length + crvSlot + extraN);
-        for (uint256 i; i < coins.length; ++i) all[i] = coins[i];
+        for (uint256 i; i < coins.length; ++i) {
+            all[i] = coins[i];
+        }
         if (crvSlot > 0) all[coins.length] = CRV_TOKEN;
-        for (uint256 i; i < extraN; ++i) all[coins.length + crvSlot + i] = extraTmp[i];
+        for (uint256 i; i < extraN; ++i) {
+            all[coins.length + crvSlot + i] = extraTmp[i];
+        }
         return all;
     }
 

@@ -122,7 +122,6 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos[0].balanceOracle, address(oracle));
         assertEq(pos[0].positionId, abi.encode(address(vaultA)));
 
-
         // vaultB position (rate applied)
         assertEq(pos[1].balanceAsset.asset, address(weth));
         assertEq(pos[1].amount, 1e18);

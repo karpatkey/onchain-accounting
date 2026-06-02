@@ -89,15 +89,15 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         (bool ok, bytes memory l2Data) = minter.staticcall(abi.encodeWithSignature("auraOFT()"));
         address maybeOft = (ok && l2Data.length >= 32) ? abi.decode(l2Data, (address)) : address(0);
         if (maybeOft != address(0)) {
-            IS_MAINNET          = false;
-            _L2_COORDINATOR     = IL2Coordinator(minter);
-            AURA_TOKEN          = maybeOft;
-            _IAURA              = IAuraToken(address(0));
+            IS_MAINNET = false;
+            _L2_COORDINATOR = IL2Coordinator(minter);
+            AURA_TOKEN = maybeOft;
+            _IAURA = IAuraToken(address(0));
         } else {
-            IS_MAINNET          = true;
-            AURA_TOKEN          = minter;
-            _IAURA              = IAuraToken(minter);
-            _L2_COORDINATOR     = IL2Coordinator(address(0));
+            IS_MAINNET = true;
+            AURA_TOKEN = minter;
+            _IAURA = IAuraToken(minter);
+            _L2_COORDINATOR = IL2Coordinator(address(0));
         }
     }
 
@@ -206,7 +206,8 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         if (lenOk) {
             uint256 cap = extraLen > _MAX_EXTRA ? _MAX_EXTRA : extraLen;
             for (uint256 i; i < cap; ++i) {
-                (bool eOk, address extraPool) = _safeUintAddr(auraRewards, abi.encodeWithSignature("extraRewards(uint256)", i));
+                (bool eOk, address extraPool) =
+                    _safeUintAddr(auraRewards, abi.encodeWithSignature("extraRewards(uint256)", i));
                 if (!eOk || extraPool == address(0)) continue;
 
                 address rawToken = _safeAddr(extraPool, abi.encodeWithSignature("rewardToken()"));
@@ -241,9 +242,9 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         // ── 4. Earned leg: AURA (aggregated from main + extra pools) ─────────
-        if (totalAuraFromBal > 0 && AURA_TOKEN != address(0)
-            && (assetFilter == address(0) || assetFilter == AURA_TOKEN))
-        {
+        if (
+            totalAuraFromBal > 0 && AURA_TOKEN != address(0) && (assetFilter == address(0) || assetFilter == AURA_TOKEN)
+        ) {
             (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(AURA_TOKEN);
             if (found) {
                 tmp[n++] = INAVCalculator.PositionBalance({
@@ -259,7 +260,9 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i; i < n; ++i) positions[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
     }
 
     /// @inheritdoc MetaBalanceOracle
@@ -267,9 +270,8 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         address auraRewards = _toAddress(instance);
         IStablePool pool = _poolOf(auraRewards);
 
-        address[] memory poolTokens = address(pool) != address(0)
-            ? _poolTokens(address(pool), _isV3Pool(address(pool)))
-            : new address[](0);
+        address[] memory poolTokens =
+            address(pool) != address(0) ? _poolTokens(address(pool), _isV3Pool(address(pool))) : new address[](0);
 
         address[] memory rwd = new address[](_MAX_EXTRA + 2);
         uint256 rn;
@@ -286,14 +288,21 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 address raw = _safeAddr(ep, abi.encodeWithSignature("rewardToken()"));
                 address tok = _unstash(raw);
                 bool dup;
-                for (uint256 j; j < rn; ++j) if (rwd[j] == tok) { dup = true; break; }
+                for (uint256 j; j < rn; ++j) {
+                    if (rwd[j] == tok) dup = true;
+                    break;
+                }
                 if (!dup) rwd[rn++] = tok;
             }
         }
 
         address[] memory all = new address[](poolTokens.length + rn);
-        for (uint256 i; i < poolTokens.length; ++i) all[i] = poolTokens[i];
-        for (uint256 i; i < rn; ++i) all[poolTokens.length + i] = rwd[i];
+        for (uint256 i; i < poolTokens.length; ++i) {
+            all[i] = poolTokens[i];
+        }
+        for (uint256 i; i < rn; ++i) {
+            all[poolTokens.length + i] = rwd[i];
+        }
         return all;
     }
 
@@ -310,7 +319,12 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         string memory syms;
         for (uint256 i; i < tokens.length; ++i) {
             string memory s;
-            try IERC20Metadata(tokens[i]).symbol() returns (string memory sym) { s = sym; } catch { s = "?"; }
+            try IERC20Metadata(tokens[i]).symbol() returns (string memory sym) {
+                s = sym;
+            }
+                catch {
+                s = "?";
+            }
             syms = i == 0 ? s : string.concat(syms, "/", s);
         }
         return string.concat(syms, " Aura");
@@ -322,9 +336,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
     function _poolOf(address auraRewards) internal view returns (IStablePool) {
         (bool pidOk, uint256 pid) = _safeUint(auraRewards, abi.encodeWithSignature("pid()"));
         if (!pidOk) return IStablePool(address(0));
-        try BOOSTER.poolInfo(pid) returns (
-            address lptoken, address, address, address, address, bool
-        ) {
+        try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {
             return IStablePool(lptoken);
         } catch {
             return IStablePool(address(0));
@@ -344,14 +356,10 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     function _applyMultiplier(address rewarderAddr, uint256 amount) internal view returns (uint256) {
-        (bool ok1, uint256 multiplier) = _safeUint(
-            address(BOOSTER),
-            abi.encodeWithSignature("getRewardMultipliers(address)", rewarderAddr)
-        );
-        (bool ok2, uint256 denom) = _safeUint(
-            address(BOOSTER),
-            abi.encodeWithSignature("REWARD_MULTIPLIER_DENOMINATOR()")
-        );
+        (bool ok1, uint256 multiplier) =
+            _safeUint(address(BOOSTER), abi.encodeWithSignature("getRewardMultipliers(address)", rewarderAddr));
+        (bool ok2, uint256 denom) =
+            _safeUint(address(BOOSTER), abi.encodeWithSignature("REWARD_MULTIPLIER_DENOMINATOR()"));
         if (!ok1 || !ok2 || denom == 0) return amount;
         return (amount * multiplier) / denom;
     }

@@ -25,9 +25,7 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        POOL = IAavePoolAddressesProvider(
-            IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER()
-        ).getPool();
+        POOL = IAavePoolAddressesProvider(IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER()).getPool();
     }
 
     // ─── IERC165 ─────────────────────────────────────────────────────────────
@@ -38,8 +36,13 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    function protocolName() external pure returns (string memory) { return "Spark"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "lending position"; }
+    function protocolName() external pure returns (string memory) {
+        return "Spark";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "lending position";
+    }
 
     // ─── IBalanceOracleAdapter ────────────────────────────────────────────────
 
@@ -72,12 +75,24 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
         for (uint256 i; i < reserves.length; ++i) {
             (uint256 supply, uint256 debt,) = _reserveData(account, reserves[i]);
             if (supply == 0 && debt == 0) continue;
-            uint256 net; bool d;
-            if (supply >= debt) { net = supply - debt; } else { net = debt - supply; d = true; }
-            tmpA[n] = reserves[i]; tmpV[n] = net; tmpD[n] = d; ++n;
+            uint256 net;
+            bool d;
+            if (supply >= debt) net = supply - debt;
+            else net = debt - supply;
+            d = true;
+            tmpA[n] = reserves[i];
+            tmpV[n] = net;
+            tmpD[n] = d;
+            ++n;
         }
-        assets = new address[](n); amounts = new uint256[](n); isDebtArr = new bool[](n);
-        for (uint256 i; i < n; ++i) { assets[i] = tmpA[i]; amounts[i] = tmpV[i]; isDebtArr[i] = tmpD[i]; }
+        assets = new address[](n);
+        amounts = new uint256[](n);
+        isDebtArr = new bool[](n);
+        for (uint256 i; i < n; ++i) {
+            assets[i] = tmpA[i];
+            amounts[i] = tmpV[i];
+            isDebtArr[i] = tmpD[i];
+        }
     }
 
     /// @notice Separate Supply/Collateral and Borrow legs per reserve (main NAV path).
@@ -90,7 +105,9 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
         address[] memory reserves = _reserveAddresses();
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         address[] memory regAddrs = new address[](reg.length);
-        for (uint256 i; i < reg.length; ++i) regAddrs[i] = reg[i].asset;
+        for (uint256 i; i < reg.length; ++i) {
+            regAddrs[i] = reg[i].asset;
+        }
 
         address[] memory active = ArrayLib.intersection(reserves, regAddrs);
         if (active.length == 0) return new INAVCalculator.PositionBalance[](0);
@@ -99,7 +116,8 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
         if (assetFilter != address(0)) {
             bool found;
             for (uint256 i; i < active.length; ++i) {
-                if (active[i] == assetFilter) { found = true; break; }
+                if (active[i] == assetFilter) found = true;
+                break;
             }
             if (!found) return new INAVCalculator.PositionBalance[](0);
             active = new address[](1);
@@ -141,7 +159,9 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i; i < n; ++i) positions[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
@@ -149,7 +169,9 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
     function _reserveAddresses() internal view returns (address[] memory addrs) {
         IProtocolDataProvider.TokenData[] memory tokens = DATA_PROVIDER.getAllReservesTokens();
         addrs = new address[](tokens.length);
-        for (uint256 i; i < tokens.length; ++i) addrs[i] = tokens[i].tokenAddress;
+        for (uint256 i; i < tokens.length; ++i) {
+            addrs[i] = tokens[i].tokenAddress;
+        }
     }
 
     function _isReserve(address asset) internal view returns (bool) {
@@ -183,7 +205,10 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface IProtocolDataProvider {
-    struct TokenData { string symbol; address tokenAddress; }
+    struct TokenData {
+        string symbol;
+        address tokenAddress;
+    }
 
     function getAllReservesTokens() external view returns (TokenData[] memory);
     function getUserReserveData(address asset, address user)

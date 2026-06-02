@@ -63,8 +63,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
         wrapper = new MockERC4626Wrapper(address(underlying));
         // Stub `isAssetRegistered(underlying) -> true` so the constructor check passes.
         _stubAssetRegistered();
-        oracle = new ERC4626WrapBalanceOracle(address(wrapper), address(mockBalances)
-        );
+        oracle = new ERC4626WrapBalanceOracle(address(wrapper), address(mockBalances));
     }
 
     /// @dev Stubs both:
@@ -90,8 +89,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_nonContractWrapper() public {
         vm.expectRevert("Wrapper must be a contract");
-        new ERC4626WrapBalanceOracle(address(0xdead), address(mockBalances)
-        );
+        new ERC4626WrapBalanceOracle(address(0xdead), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
@@ -104,8 +102,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
         MockERC4626Wrapper otherWrapper = new MockERC4626Wrapper(address(otherUnderlying));
         // `mockBalances.isAssetRegistered(otherUnderlying)` falls back to default `false`.
         vm.expectRevert("Wrapper underlying must be a NAV-registered asset");
-        new ERC4626WrapBalanceOracle(address(otherWrapper), address(mockBalances)
-        );
+        new ERC4626WrapBalanceOracle(address(otherWrapper), address(mockBalances));
     }
 
     function test_constructor_stores_immutables() public view {

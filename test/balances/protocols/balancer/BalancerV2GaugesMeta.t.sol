@@ -106,7 +106,7 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
         assertEq(pos.length, 3, "2 staking + 1 reward");
         assertEq(pos[2].balanceAsset.asset, address(reward));
         assertEq(pos[2].amount, 7e18);
-            }
+    }
 
     function test_zeroStake_onlyRewards() public {
         gauge.addRewardToken(address(reward));

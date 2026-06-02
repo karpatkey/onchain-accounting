@@ -113,8 +113,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Aave V3"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "safety module"; }
+    function protocolName() external pure returns (string memory) {
+        return "Aave V3";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "safety module";
+    }
 
     //
     // IBalanceOracleAdapter

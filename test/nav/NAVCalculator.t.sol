@@ -134,7 +134,7 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position memory pos,
         address expectedAsset,
         string memory, /* expectedProtocol — replaced by protocolId in new struct */
-        string memory  /* expectedPositionDetail — replaced by positionKind in new struct */
+        string memory /* expectedPositionDetail — replaced by positionKind in new struct */
     ) internal pure {
         assertEq(pos.balanceAsset.asset, expectedAsset, "Asset mismatch");
     }

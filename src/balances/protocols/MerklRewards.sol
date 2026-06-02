@@ -160,8 +160,13 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Merkl"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "claimable rewards"; }
+    function protocolName() external pure returns (string memory) {
+        return "Merkl";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "claimable rewards";
+    }
 
     /// @inheritdoc IBalanceOracleAdapter
     /// @notice Open-universe oracle: Merkl distributes arbitrary tokens, so the universe of supported assets is

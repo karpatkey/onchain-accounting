@@ -139,9 +139,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         // ── 3. Earned leg: CVX derived from CRV earned ───────────────────────
-        if (CVX_TOKEN != address(0) && crvEarned > 0
-            && (assetFilter == address(0) || assetFilter == CVX_TOKEN))
-        {
+        if (CVX_TOKEN != address(0) && crvEarned > 0 && (assetFilter == address(0) || assetFilter == CVX_TOKEN)) {
             uint256 cvxAmount = _cvxMintAmount(crvEarned);
             if (cvxAmount > 0) {
                 (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(CVX_TOKEN);
@@ -205,13 +203,15 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i; i < n; ++i) positions[i] = tmp[i];
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
     }
 
     /// @inheritdoc MetaBalanceOracle
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         address rewarder = _toAddress(instance);
-        address lpToken  = _lpTokenOf(rewarder);
+        address lpToken = _lpTokenOf(rewarder);
 
         address[] memory coins;
         if (lpToken != address(0)) {
@@ -238,14 +238,21 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 (bool wOk, address ul) = _safeAddr(raw, abi.encodeWithSignature("token()"));
                 address tok = (wOk && ul != address(0)) ? ul : raw;
                 bool dup;
-                for (uint256 j; j < rn; ++j) if (rewards[j] == tok) { dup = true; break; }
+                for (uint256 j; j < rn; ++j) {
+                    if (rewards[j] == tok) dup = true;
+                    break;
+                }
                 if (!dup) rewards[rn++] = tok;
             }
         }
 
         address[] memory all = new address[](coins.length + rn);
-        for (uint256 i; i < coins.length; ++i) all[i] = coins[i];
-        for (uint256 i; i < rn; ++i) all[coins.length + i] = rewards[i];
+        for (uint256 i; i < coins.length; ++i) {
+            all[i] = coins[i];
+        }
+        for (uint256 i; i < rn; ++i) {
+            all[coins.length + i] = rewards[i];
+        }
         return all;
     }
 
@@ -264,7 +271,12 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         string memory syms;
         for (uint256 i; i < coins.length; ++i) {
             string memory s;
-            try IERC20Metadata(coins[i]).symbol() returns (string memory sym) { s = sym; } catch { s = "?"; }
+            try IERC20Metadata(coins[i]).symbol() returns (string memory sym) {
+                s = sym;
+            }
+                catch {
+                s = "?";
+            }
             syms = i == 0 ? s : string.concat(syms, "/", s);
         }
         return string.concat(syms, " Convex");
@@ -278,9 +290,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         if (address(BOOSTER) == address(0)) return address(0);
         (bool pidOk, uint256 pid) = _safeUint(rewarder, abi.encodeWithSignature("pid()"));
         if (!pidOk) return address(0);
-        try BOOSTER.poolInfo(pid) returns (
-            address lptoken, address, address, address, address, bool
-        ) {
+        try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {
             return lptoken;
         } catch {
             return address(0);
@@ -329,14 +339,7 @@ interface IConvexBooster {
     function poolInfo(uint256 pid)
         external
         view
-        returns (
-            address lptoken,
-            address token,
-            address gauge,
-            address crvRewards,
-            address stash,
-            bool shutdown
-        );
+        returns (address lptoken, address token, address gauge, address crvRewards, address stash, bool shutdown);
 }
 
 interface IConvexRewarder {

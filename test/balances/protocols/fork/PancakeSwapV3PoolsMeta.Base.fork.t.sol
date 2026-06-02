@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
 /// @title PancakeSwapV3PoolsMetaParityForkTest (Base)
 /// @notice Validates the PancakeSwap V3 pools meta-adapter against the real Base WETH/COW 0.25% pool. The key
 ///         check is that the `_slot0` override decodes PancakeSwap's `uint32 feeProtocol` (Uniswap's `uint8` read

@@ -23,13 +23,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
     // ── Mainnet constants ─────────────────────────────────────────────────────
 
-    address public constant BOOSTER   = 0xA57b8d98dAE62B26Ec3bcC4a365338157060B234;
-    address public constant AURA      = 0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
-    address public constant BAL       = 0xba100000625a3754423978a60c9317c58a424e3D;
-    address public constant POOL      = 0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D;
+    address public constant BOOSTER = 0xA57b8d98dAE62B26Ec3bcC4a365338157060B234;
+    address public constant AURA = 0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
+    address public constant BAL = 0xba100000625a3754423978a60c9317c58a424e3D;
+    address public constant POOL = 0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D;
 
     // Registered underlying pool tokens
-    address public constant GHO  = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
+    address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
@@ -61,7 +61,9 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         assets[4] = USDC;
         balances = _deployBalancesForOracle(assets);
 
-        meta = new AuraRewardsMetaBalanceAdapter(BOOSTER, 0xBA12222222228d8Ba445958a75a0704d566BF2C8, "Aura", address(balances));
+        meta = new AuraRewardsMetaBalanceAdapter(
+            BOOSTER, 0xBA12222222228d8Ba445958a75a0704d566BF2C8, "Aura", address(balances)
+        );
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -71,12 +73,10 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         ins[0] = bytes32(uint256(uint160(r)));
     }
 
-    function _countKind(INAVCalculator.PositionBalance[] memory pos, PositionKind k)
-        internal
-        pure
-        returns (uint256 n)
-    {
-        for (uint256 i; i < pos.length; ++i) if (pos[i].positionKind == k) n++;
+    function _countKind(INAVCalculator.PositionBalance[] memory pos, PositionKind k) internal pure returns (uint256 n) {
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].positionKind == k) n++;
+        }
     }
 
     function _sumAsset(INAVCalculator.PositionBalance[] memory pos, address asset)
@@ -90,14 +90,12 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
     }
 
     function _staked(address rewarder, address account) internal view returns (uint256) {
-        (bool ok, bytes memory data) =
-            rewarder.staticcall(abi.encodeWithSignature("balanceOf(address)", account));
+        (bool ok, bytes memory data) = rewarder.staticcall(abi.encodeWithSignature("balanceOf(address)", account));
         return (ok && data.length >= 32) ? abi.decode(data, (uint256)) : 0;
     }
 
     function _earned(address rewarder, address account) internal view returns (uint256) {
-        (bool ok, bytes memory data) =
-            rewarder.staticcall(abi.encodeWithSignature("earned(address)", account));
+        (bool ok, bytes memory data) = rewarder.staticcall(abi.encodeWithSignature("earned(address)", account));
         return (ok && data.length >= 32) ? abi.decode(data, (uint256)) : 0;
     }
 
@@ -105,13 +103,12 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice Verify that rewarder.pid() → Booster.poolInfo(pid).lptoken matches POOL.
     function test_poolResolution_fromBooster() public view {
-        (bool pidOk, bytes memory pidData) =
-            REWARDER.staticcall(abi.encodeWithSignature("pid()"));
+        (bool pidOk, bytes memory pidData) = REWARDER.staticcall(abi.encodeWithSignature("pid()"));
         assertTrue(pidOk, "pid() call succeeded");
         uint256 pid = abi.decode(pidData, (uint256));
         assertEq(pid, PID, "rewarder.pid() = 246");
 
-        (address lptoken,,,,, ) = IAuraBooster(BOOSTER).poolInfo(pid);
+        (address lptoken,,,,,) = IAuraBooster(BOOSTER).poolInfo(pid);
         assertEq(lptoken, POOL, "Booster.poolInfo(246).lptoken = GHO/USDT/USDC pool");
     }
 

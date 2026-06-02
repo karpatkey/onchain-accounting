@@ -118,5 +118,4 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     function unsafeDeployOpts() internal pure returns (UUPSDeployOptions memory opts) {
         opts.unsafeSkipAllChecks = true;
     }
-
 }

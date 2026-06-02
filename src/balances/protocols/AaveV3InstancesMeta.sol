@@ -31,9 +31,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
@@ -115,13 +113,11 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @notice Assembles a single PositionBalance row with this adapter's identity.
-    function _row(
-        INAVCalculator.Asset memory asset,
-        uint256 amount,
-        bool isDebt,
-        bytes memory pid,
-        PositionKind kind
-    ) internal view returns (INAVCalculator.PositionBalance memory) {
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
+        internal
+        view
+        returns (INAVCalculator.PositionBalance memory)
+    {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceOracle: address(this),

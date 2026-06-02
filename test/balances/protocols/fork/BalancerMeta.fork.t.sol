@@ -5,6 +5,7 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
 /// @title BalancerMetaParityForkTest
 /// @notice Proves the split (BalancerV3PoolsMeta = wallet LP, BalancerV3GaugesMeta = staked LP + rewards) reproduces the
 ///         original combined BalancerV3PoolBalanceOracle per token, against the real mainnet Aave GHO/USDT/USDC pool

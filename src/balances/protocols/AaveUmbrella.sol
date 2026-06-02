@@ -94,8 +94,13 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Aave Umbrella"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "umbrella stake"; }
+    function protocolName() external pure returns (string memory) {
+        return "Aave Umbrella";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "umbrella stake";
+    }
 
     //
     // IBalanceOracleAdapter

@@ -123,8 +123,13 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function protocolName() external pure returns (string memory) { return "Kelp DAO"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "rsETH withdrawal queue"; }
+    function protocolName() external pure returns (string memory) {
+        return "Kelp DAO";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "rsETH withdrawal queue";
+    }
 
     /// @inheritdoc IBalanceOracleAdapter
     function getOracleBalanceForAsset(address account, address asset)

@@ -451,11 +451,7 @@ contract BalanceAdapterInvariantTest is Test {
         assertEq(positions1.length, positions2.length, "Position count should be consistent");
 
         for (uint256 i = 0; i < positions1.length; i++) {
-            assertEq(
-                positions1[i].protocolId,
-                positions2[i].protocolId,
-                "ProtocolId should be consistent"
-            );
+            assertEq(positions1[i].protocolId, positions2[i].protocolId, "ProtocolId should be consistent");
             assertEq(
                 uint8(positions1[i].positionKind),
                 uint8(positions2[i].positionKind),

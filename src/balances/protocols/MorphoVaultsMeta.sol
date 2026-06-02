@@ -56,7 +56,7 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceOracle {
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: abi.encode(address(vault)),
+            positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied
         });
         return positions;

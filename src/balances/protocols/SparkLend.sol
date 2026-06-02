@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
@@ -14,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         Reads the reserve list from the Protocol Data Provider and emits up to two legs per
 ///         reserve (aToken balance → Supplied/Collateral, variable debt → Borrowed).
 ///         Stable debt is ignored — Aave/Spark deprecated it; all active debt is variable.
-contract SparkLendBalanceOracle is IBalanceOracleAdapter {
+contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the first element of `positionId`.
     address public immutable POOL;
@@ -31,7 +32,8 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter {
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────

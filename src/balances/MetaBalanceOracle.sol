@@ -229,6 +229,17 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
         return address(uint160(uint256(instance)));
     }
 
+    /// @notice Returns the positionId bytes for a given instance coordinate.
+    /// @dev Default: encodes the instance as an address (address-keyed protocols).
+    ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
+    ///      Adapters where positionId varies per leg rather than per instance do NOT use this hook —
+    ///      they compute positionId inline in _instancePositions:
+    ///        - Aave V3 / Aave V2: abi.encode(pool, reserve) — one positionId per reserve
+    ///        - Uniswap V3 / PancakeSwap V3: abi.encode(npm, tokenId) — one positionId per NFT
+    function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
+        return abi.encode(_toAddress(instance));
+    }
+
     /// @notice Looks up an asset's registry metadata.
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.

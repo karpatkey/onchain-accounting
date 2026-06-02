@@ -54,7 +54,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         IStablePool pool = IStablePool(gauge.lp_token());
-        bytes memory positionId = abi.encode(address(gauge));
+        bytes memory positionId = _instancePositionId(instance);
 
         address[] memory tokens = pool.poolTokens();
         // Worst case: one Staking leg per pool token + one Rewards leg per (pool token also a reward) + BAL +
@@ -260,7 +260,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         if (assetFilter != address(0) && token != assetFilter) return count;
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) return count;
-        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Earned);
+        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Rewards);
         return count + 1;
     }
 

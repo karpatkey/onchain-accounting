@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -19,7 +20,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      the account's open requests (`expectedAssetAmount`) and emits one credit position per asset.
 ///      The supported-asset set is discovered at runtime from `lrtConfig().getSupportedAssetList()`
 ///      rather than hardcoded, mirroring the dynamic-discovery pattern in `AaveUmbrella.sol`.
-contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
+contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Constants
     //
@@ -120,7 +121,8 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {

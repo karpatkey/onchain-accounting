@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -14,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
 ///      Until claimed, the value lives as ETH owed by the manager. This oracle sums all of the
 ///      account's open requests into a single position denominated in `UNDERLYING_TOKEN` (typically WETH).
-contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
+contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Errors
     //
@@ -133,7 +134,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {

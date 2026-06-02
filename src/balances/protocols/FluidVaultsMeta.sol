@@ -47,7 +47,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
         (address collToken, address debtToken) = FluidVaultLib.tokens(vault);
         (uint256 collateral, uint256 debt) = FluidVaultLib.aggregate(vault, VAULT_RESOLVER, account);
 
-        bytes memory pid = abi.encode(vault);
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;

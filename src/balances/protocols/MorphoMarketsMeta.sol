@@ -60,7 +60,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         Position memory pos = MORPHO.position(marketId, account);
-        bytes memory pid = abi.encode(instance);
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](3);
         uint256 count;
@@ -105,6 +105,12 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         } catch {
             return "";
         }
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    /// @dev Morpho market instance is a raw bytes32 marketId, not an address.
+    function _instancePositionId(bytes32 instance) internal pure override returns (bytes memory) {
+        return abi.encode(instance);
     }
 
     /// @notice Projected loan-token supply/borrow amounts for the account (ADR 0004: expectedMarketBalances).

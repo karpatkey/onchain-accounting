@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -49,7 +50,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///
 ///      Cooldown / unstake-window state does not affect `balanceOf`, so this adapter reports total
 ///      staked principal regardless of which window the user is in.
-contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
+contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
     ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
     ///      while preventing a misbehaving fallback (cf. WETH9 dispatching unknown selectors to
@@ -91,7 +92,8 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -247,7 +249,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Earned
+                    positionKind: PositionKind.Rewards
                 });
             }
         }

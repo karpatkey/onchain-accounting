@@ -5,6 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -20,7 +21,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         fabricate amounts. The owner is trusted only to keep the cache fresh; failure to do so makes NAV
 ///         under-count rewards but never over-count.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
+contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -157,7 +158,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -249,7 +251,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(token)),
-                positionKind: PositionKind.Earned
+                positionKind: PositionKind.Rewards
             });
         }
 

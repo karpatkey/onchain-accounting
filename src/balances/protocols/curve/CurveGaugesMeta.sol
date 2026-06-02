@@ -17,12 +17,12 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      Per-gauge positions emitted:
 ///        1. **Supplied** legs — one per registered pool coin, pro-rata from the staked LP balance.
 ///           Uses the same LP decomposition logic as CurvePoolsMetaBalanceAdapter.
-///        2. **Earned** leg for CRV — lower-bound estimate via `integrate_fraction − minter.minted`.
+///        2. **Rewards** leg for CRV — lower-bound estimate via `integrate_fraction − minter.minted`.
 ///           Only emitted when CURVE_MINTER is set (see below) and the gauge exposes
 ///           `integrate_fraction()`. This is a LOWER BOUND — it is stale between checkpoints
 ///           (deposit/withdraw/claim) and may read 0 for recently-transferred gauge tokens.
 ///           For accurate CRV, call `gauge.claimable_tokens(account)` via eth_call (state mutation).
-///        3. **Earned** legs — one per registered extra reward token (V2+ gauges).
+///        3. **Rewards** legs — one per registered extra reward token (V2+ gauges).
 ///           Read via `reward_tokens(i)` + `claimable_reward(account, token)`.
 ///           V3 gauges update rewards at most hourly; values may be stale between checkpoints.
 ///
@@ -73,6 +73,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address gauge = _toAddress(instance);
+        bytes memory pid = _instancePositionId(instance);
 
         uint256 stakedLp = CurvePoolLib.gaugeStaked(gauge, account);
 
@@ -90,7 +91,6 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                     uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
                     if (totalSupply > 0) {
                         address[] memory coins = CurvePoolLib.getCoins(pool);
-                        bytes memory pid = abi.encode(gauge);
 
                         for (uint256 i; i < coins.length; ++i) {
                             address coin = coins[i];
@@ -118,7 +118,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
             }
         }
 
-        // ── 2. Earned leg: CRV lower-bound (stale between checkpoints) ─────────
+        // ── 2. Rewards leg: CRV lower-bound (stale between checkpoints) ─────────
         // Skip if assetFilter is set and is not CRV
         if (assetFilter == address(0) || assetFilter == CRV_TOKEN) {
             uint256 crvLb = CurvePoolLib.crvClaimableLb(gauge, CURVE_MINTER, account);
@@ -131,14 +131,14 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                         amount: crvLb,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
-                        positionId: abi.encode(gauge),
-                        positionKind: PositionKind.Earned
+                        positionId: pid,
+                        positionKind: PositionKind.Rewards
                     });
                 }
             }
         }
 
-        // ── 3. Earned legs: extra reward tokens (V2+ gauges) ──────────────────
+        // ── 3. Rewards legs: extra reward tokens (V2+ gauges) ──────────────────
         for (uint256 i; i < CurvePoolLib.MAX_COINS; ++i) {
             address rewardTok = CurvePoolLib.rewardToken(gauge, i);
             if (rewardTok == address(0)) break;
@@ -157,8 +157,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                 amount: amount,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
-                positionId: abi.encode(gauge),
-                positionKind: PositionKind.Earned
+                positionId: pid,
+                positionKind: PositionKind.Rewards
             });
         }
 

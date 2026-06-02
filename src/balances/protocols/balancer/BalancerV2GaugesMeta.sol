@@ -63,7 +63,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         address bpt = gauge.lp_token();
-        bytes memory positionId = abi.encode(address(gauge));
+        bytes memory positionId = _instancePositionId(instance);
 
         uint256 rewardCount = _rewardCount(gauge);
 
@@ -268,7 +268,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceOracle {
         if (assetFilter != address(0) && token != assetFilter) return count;
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) return count;
-        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Earned);
+        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Rewards);
         return count + 1;
     }
 

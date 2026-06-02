@@ -60,6 +60,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
             (uint256 aTokenBalance,, uint256 variableDebt,,,,,, bool usageAsCollateral) =
                 dp.getUserReserveData(asset, account);
 
+            // positionId is per-reserve (pool + asset); _instancePositionId does not apply.
             bytes memory pid = abi.encode(pool, asset);
 
             if (aTokenBalance > 0) {

@@ -536,7 +536,7 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 `04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if `chains/<chainId>.json.balanceAdapters.<name>.enabled == true`. This means the `run()` list is the **union** across chains; per-chain selection happens through the config file.
 
-The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 for the authoritative source):
+The current `run()` list (check the `_deployIfEnabled(...)` calls in `run()` within `04_DeployBalanceAdapters.s.sol` for the authoritative source):
 
 **Aave V3 (one instance per market):** `AaveV3_Core`, `AaveV3_Prime`, `AaveV3_Arbitrum`, `AaveV3_Base`, `AaveV3_Optimism`, `AaveV3_Gnosis`
 

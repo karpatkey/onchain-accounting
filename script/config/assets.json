@@ -284,6 +284,12 @@
         "pricefeed": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
         "heartbeat": 86400
       },
+      "EIGEN": {
+        "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
+        "type": "Chainlink",
+        "pricefeed": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
+        "heartbeat": 86400
+      },
       "AURA": {
         "address": "0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF",
         "type": "None",

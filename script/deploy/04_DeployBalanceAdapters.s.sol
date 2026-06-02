@@ -22,6 +22,7 @@ import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/Balancer
 import {Aura} from "../../src/balances/protocols/Aura.sol";
 import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
+import {ERC4626WrapBalanceOracle} from "../../src/balances/protocols/ERC4626Wrap.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -63,6 +64,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVault_kpkETHPrime_V2"); // Mainnet — ETH Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCPrime_V1"); // Mainnet — USD Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCYield"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDTPrime"); // Mainnet — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkETHYield"); // Mainnet — ETH Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
 
         // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
@@ -111,8 +115,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
         _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
 
+        // --- StakeWise V3 osToken (Mainnet — ETH Alpha) ---
+        // osETH is priced as a WETH-equivalent balance position: the adapter converts osETH→WETH via
+        // OsTokenVaultController.convertToAssets and reports it under the (registered) WETH asset, so
+        // osETH itself is never registered as a NAV asset.
+        _deployIfEnabled("StakeWiseV3OsToken_osETH");
+
+        // --- ERC-4626 wrappers (Mainnet — USD Alpha) ---
+        _deployIfEnabled("ERC4626Wrap_sGHO"); // Savings GHO (sGHO), underlying GHO
+
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3*, and AaveV3SafetyModule_stkAAVE adapters
+        // CompoundV3, DaiDsr, SkySavingsUsds, StakeWiseV3Vault, and AaveV3SafetyModule_stkAAVE adapters
         // exist in this repo but are NOT used by either Alpha fund, so they are not wired here.
 
         vm.stopBroadcast();
@@ -244,6 +257,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 OsToken adapters
         if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
             return _deployStakeWiseV3OsToken(adapterName, navCalculator);
+        }
+
+        // ERC-4626 wrapper adapters (e.g. sGHO)
+        if (_startsWith(adapterName, "ERC4626Wrap_")) {
+            return _deployERC4626Wrap(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -487,6 +505,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
         StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
             osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, navCalculator
         );
+        return address(adapter);
+    }
+
+    function _deployERC4626Wrap(string memory adapterName, address navCalculator) internal returns (address) {
+        address wrapper = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "wrapper")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        string memory positionDetail =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
+
+        ERC4626WrapBalanceOracle adapter =
+            new ERC4626WrapBalanceOracle(wrapper, protocol, positionDetail, navCalculator);
         return address(adapter);
     }
 

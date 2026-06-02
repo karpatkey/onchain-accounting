@@ -172,6 +172,7 @@ Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: sa
 | **BalancerV3** | Balancer V3 positions. | |
 | **CompoundV3Comet** | Compound V3 Comet: base borrow, collaterals, rewards. | Constructor: protocol string (e.g. "Compound v3 USDC"). Uses NAVCalculator for asset metadata. |
 | **DaiDsr** | DAI Savings Rate. | |
+| **ERC4626Wrap** | Generic ERC-4626 wrapper (e.g. Savings GHO / sGHO); reports `convertToAssets(balanceOf)` in `asset()`. | Constructor: `(wrapper, protocol, positionDetail, navCalculator)`. Credit-only. Morpho vaults use the dedicated MorphoVault adapter. |
 | **GMX** | GMX positions. | |
 | **MorphoMarket** | Morpho market positions. | |
 | **SkySavingsUsds** | Sky savings USDS. | |

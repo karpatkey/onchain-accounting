@@ -5,7 +5,6 @@ import {
     AaveV3InstancesMetaBalanceAdapter,
     IAaveAddressesProviderSource
 } from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
 
@@ -41,13 +40,8 @@ contract AaveV2InstancesMetaBalanceAdapter is AaveV3InstancesMetaBalanceAdapter 
 
     /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 64) return "";
-        (, address reserve) = abi.decode(pid, (address, address));
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            return string.concat(sym, " position");
-        } catch {
-            return "";
-        }
+        if (pid.length < 32) return "";
+        return string.concat(_protocolName, " lending");
     }
 }
 

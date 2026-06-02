@@ -47,8 +47,8 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `protocolId` slug | `positionId` = `abi.encode(...)` |
 |---|---|
 | `wallet` | `""` (empty bytes) |
-| `aave-v3-lending` | `(address pool, address reserve)` |
-| `aave-v2-lending` | `(address pool, address reserve)` |
+| `aave-v3-lending` | `(address pool)` |
+| `aave-v2-lending` | `(address pool)` |
 | `spark-lend` | `(address pool, address reserve)` |
 | `aave-v3-safety-module` | `(address stakeToken)` |
 | `aave-v3-umbrella` | `(address stakeToken)` |
@@ -147,11 +147,14 @@ const abi = AbiCoder.defaultAbiCoder();
 
 function decodeAaveV3(pos) {
   if (pos.protocolId !== AAVE_V3_LENDING) throw new Error("wrong protocol");
-  const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
-  return { pool, reserve };
+  const [pool] = abi.decode(["address"], pos.positionId);
+  return { pool };
 }
 
 // Action routing from identity:
+// pool comes from positionId; reserve comes from balanceAsset.asset (one leg per asset)
+const [pool] = abi.decode(["address"], pos.positionId);
+const reserve = pos.balanceAsset.asset;
 if (pos.positionKind === PositionKind.Borrowed) {
   await pool.repay(reserve, pos.amount, 2 /* variable */, account);
 } else if (pos.positionKind === PositionKind.Supplied || pos.positionKind === PositionKind.Collateral) {

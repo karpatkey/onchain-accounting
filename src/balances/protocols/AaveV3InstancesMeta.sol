@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "./SparkLend.sol";
@@ -44,7 +43,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         IProtocolDataProvider dp = IProtocolDataProvider(_toAddress(instance));
-        address pool = _poolOf(dp);
+        bytes memory pid = _instancePositionId(instance);
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 2);
@@ -59,8 +58,6 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
 
             (uint256 aTokenBalance,, uint256 variableDebt,,,,,, bool usageAsCollateral) =
                 dp.getUserReserveData(asset, account);
-
-            bytes memory pid = abi.encode(pool, asset);
 
             if (aTokenBalance > 0) {
                 PositionKind kind = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
@@ -91,16 +88,16 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     /// @inheritdoc MetaBalanceOracle
     /// @dev `virtual` so the Aave V2 subclass can override.
     function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
-        if (pid.length < 64) return "";
-        (, address reserve) = abi.decode(pid, (address, address));
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            return string.concat(sym, " position");
-        } catch {
-            return "";
-        }
+        if (pid.length < 32) return "";
+        return string.concat(_protocolName, " lending");
     }
 
-    /// @notice Resolves the instance's Pool address (used as first element of positionId).
+    /// @inheritdoc MetaBalanceOracle
+    function _instancePositionId(bytes32 instance) internal view override returns (bytes memory) {
+        return abi.encode(_poolOf(IProtocolDataProvider(_toAddress(instance))));
+    }
+
+    /// @notice Resolves the instance's Pool address (encoded as positionId).
     /// @dev `virtual` so the Aave V2 subclass can resolve the pool via `getLendingPool()` instead of `getPool()`
     ///      (V2's LendingPoolAddressesProvider uses the former).
     function _poolOf(IProtocolDataProvider dp) internal view virtual returns (address) {

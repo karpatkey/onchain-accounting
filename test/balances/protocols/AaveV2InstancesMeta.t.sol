@@ -96,8 +96,9 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
         assertEq(p[0].balanceAsset.asset, address(usdc));
         assertEq(p[0].amount, 1000e6);
         assertFalse(p[0].isDebt);
-        // positionId is abi.encode(pool, reserve); protocolId = AAVE_V2_LENDING
-        assertEq(p[0].positionId, abi.encode(LENDING_POOL, address(usdc)));
+        // positionId is abi.encode(pool); protocolId = AAVE_V2_LENDING
+        assertEq(p[0].positionId, abi.encode(LENDING_POOL));
+        assertEq(p[1].positionId, abi.encode(LENDING_POOL));
 
         assertEq(p[1].balanceAsset.asset, address(weth));
         assertEq(p[1].amount, 5e17);

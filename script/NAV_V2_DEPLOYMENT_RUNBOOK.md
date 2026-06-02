@@ -289,7 +289,7 @@ Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on N
 
 If the production Safe(s) are deployed and signers are available, prefer **Path A** — it's the cleanest end state (Safe holds roles from moment 1, no EOA-admin window) and uses the standard Safe UI flow that auditors and signers are already familiar with. **Path B** is appropriate if signers aren't available or if you specifically need the EOA-broadcast simplicity for some part of the operation.
 
-`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 51 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
+`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 52 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
 
 ---
 
@@ -542,7 +542,7 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Single-instance protocols:** `SparkLend`, `AaveV3SafetyModule_stkGHO`, `Cap`
 
-**Morpho Vaults:** `MorphoVault_kpkETHPrime_V1`, `MorphoVault_kpkETHPrime_V2`, `MorphoVault_kpkUSDCPrime_V1`, `MorphoVault_kpkUSDCPrime_V2`, `MorphoVault_kpkUSDCYield` (Mainnet), `MorphoVault_kpkUSDTPrime` (Mainnet), `MorphoVault_kpkETHYield` (Mainnet), `MorphoVault_kpkUSDCYieldV1` (Arbitrum)
+**Morpho Vaults:** `MorphoVault_kpkETHPrime_V1`, `MorphoVault_kpkETHPrime_V2`, `MorphoVault_kpkUSDCPrime_V1`, `MorphoVault_kpkUSDCPrime_V2`, `MorphoVault_kpkUSDCYield` (Mainnet), `MorphoVault_kpkUSDTPrime` (Mainnet), `MorphoVault_kpkETHYield` (Mainnet), `MorphoVault_kpkUSDCYieldV1` (Arbitrum), `MorphoVault_kpkUSDCYieldV2` (Arbitrum)
 
 **Morpho Markets (USD Alpha + Mainnet/Arbitrum):** `MorphoMarket_wstETH_USDC`, `MorphoMarket_cbBTC_USDC`, `MorphoMarket_wstUSR_USDC`, `MorphoMarket_ETHPlus_USDC`, `MorphoMarket_WBTC_USDC`, `MorphoMarket_RLP_USDC`, `MorphoMarket_syrupUSDC_USDC`, `MorphoMarket_sUSDS_USDT`, `MorphoMarket_sUSDS_USDC`
 

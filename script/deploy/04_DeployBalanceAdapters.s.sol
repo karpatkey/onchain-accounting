@@ -68,6 +68,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVault_kpkUSDTPrime"); // Mainnet — USD Alpha
         _deployIfEnabled("MorphoVault_kpkETHYield"); // Mainnet — ETH Alpha
         _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
+        _deployIfEnabled("MorphoVault_kpkUSDCYieldV2"); // Arbitrum — USD Alpha
 
         // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
         _deployIfEnabled("MorphoMarket_wstETH_USDC");

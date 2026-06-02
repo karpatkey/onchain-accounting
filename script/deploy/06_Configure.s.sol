@@ -135,7 +135,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](51);
+        names = new string[](52);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -157,6 +157,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVault_kpkUSDTPrime";
         names[i++] = "MorphoVault_kpkETHYield";
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
+        names[i++] = "MorphoVault_kpkUSDCYieldV2";
         // Morpho Markets
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";

@@ -89,7 +89,7 @@ contract AddBalanceOracles is BaseDeployScript {
     /// @notice Adapter name list — kept in sync with 06_Configure.s.sol._balanceAdapterNames().
     ///         ERC20Default is excluded (created by NAVCalculator.initialize(), always registered).
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](51);
+        names = new string[](52);
         uint256 i = 0;
         names[i++] = "AaveV3_Core";
         names[i++] = "AaveV3_Prime";
@@ -108,6 +108,7 @@ contract AddBalanceOracles is BaseDeployScript {
         names[i++] = "MorphoVault_kpkUSDTPrime";
         names[i++] = "MorphoVault_kpkETHYield";
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
+        names[i++] = "MorphoVault_kpkUSDCYieldV2";
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";
         names[i++] = "MorphoMarket_wstUSR_USDC";

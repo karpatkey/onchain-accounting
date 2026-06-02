@@ -45,7 +45,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the comet address. Emits a base `Supplied`/`Borrowed` leg, a `Collateral` leg per
-    ///      collateral, and an `Rewards` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
+    ///      collateral, and a `Rewards` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view

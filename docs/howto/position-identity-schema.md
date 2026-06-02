@@ -108,7 +108,7 @@ PositionBalance({
     amount:        1_500_000_000,          // 1 500.000000 USDC
     isDebt:        false,
     protocolId:    keccak256("wallet"),
-    positionId:    "",                     // account-global, no protocol key
+    positionId:    abi.encode(0xA0b8…6eB48),  // abi.encode(asset)
     positionKind:  PositionKind.Wallet
 })
 ```
@@ -921,7 +921,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 
 | `protocolId` slug | `positionId` = `abi.encode(...)` |
 |---|---|
-| `wallet` | `""` (empty bytes) |
+| `wallet` | `(address asset)` |
 | `aave-v3-lending` | `(address pool, address reserve)` |
 | `aave-v2-lending` | `(address pool, address reserve)` |
 | `spark-lend` | `(address pool, address reserve)` |
@@ -957,7 +957,8 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `bridge-escrow` | `(address escrow, address token)` |
 
 **Empty positionId** means the position is account-global for that protocol — there is only ever
-one such position per account (e.g. DAI Savings Rate, Lido withdrawal queue).
+one such position per account (e.g. DAI Savings Rate, Lido withdrawal queue). Note: `wallet`
+positions are NOT account-global — each uses `abi.encode(asset)` to identify the specific token.
 
 ---
 
@@ -1066,7 +1067,8 @@ const abi = AbiCoder.defaultAbiCoder();
 #### ERC20 wallets — `wallet`
 
 ```typescript
-// positionId = "" — no decode needed, balanceAsset.asset is the token
+const [asset] = abi.decode(["address"], pos.positionId);
+// asset — the ERC20 token address (same as balanceAsset.asset)
 // positionKind = Wallet
 ```
 

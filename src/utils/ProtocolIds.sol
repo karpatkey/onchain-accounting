@@ -7,7 +7,7 @@ pragma solidity ^0.8;
 ///      — narrow enough that the client knows how to decode without runtime sniffing.
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
-///        WALLET                          → ""  (empty bytes)
+///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)

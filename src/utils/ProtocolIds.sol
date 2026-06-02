@@ -14,6 +14,8 @@ pragma solidity ^0.8;
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
 ///        BALANCER_V3_GAUGE / V2_GAUGE / AURA / CONVEX → (address gauge)
+///        CURVE_POOL                              → (address pool)
+///        CURVE_GAUGE                             → (address gauge)
 ///        BALANCER_V2_POOL                → (bytes32 poolId)
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address npm, uint256 tokenId)
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
@@ -62,7 +64,9 @@ library ProtocolIds {
     bytes32 internal constant SPARK_LEND = keccak256("spark-lend");
 
     // Curve / Convex / Aura
-    bytes32 internal constant CURVE = keccak256("curve");
+    bytes32 internal constant CURVE = keccak256("curve");             // per-instance adapter (legacy)
+    bytes32 internal constant CURVE_POOL = keccak256("curve-pool");   // wallet LP → (address pool)
+    bytes32 internal constant CURVE_GAUGE = keccak256("curve-gauge"); // gauge-staked LP → (address gauge)
     bytes32 internal constant CONVEX = keccak256("convex");
     bytes32 internal constant AURA = keccak256("aura");
 

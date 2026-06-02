@@ -245,7 +245,7 @@ Every NAV position that was successfully matched to a Debank item appears in a p
 
 | Column | Meaning |
 |---|---|
-| Leg | Leg kind: Supply / Borrow / Reward / Staked / fees / etc. — from `positionDetail.type` |
+| Leg | Leg kind: Supplied / Borrowed / Earned / Collateral / Wallet / etc. — from `positionKind` (the `PositionKind` enum value) |
 | Side | `+` credit, `−` debt |
 | NAV amount | Token amount as reported by the balance adapter (8+ decimal precision) |
 | DB amount | Token amount reported by Debank for the same leg |

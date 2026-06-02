@@ -47,8 +47,6 @@ Every `PositionBalance` now carries typed identity fields instead of free-form s
 | `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time. See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
 | `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Supplied`, `Borrowed`, `Collateral`, `Earned`, or `Wallet`. |
 
-There are **no** `protocol_`, `positionDetail_`, or `positionId_` string constructor parameters. These fields were removed in PR #47.
-
 ### 1.2 Adding a new ProtocolIds constant
 
 If no existing constant fits your protocol, add one to `src/utils/ProtocolIds.sol`:
@@ -228,7 +226,7 @@ Run with `FOUNDRY_PROFILE=slow` to throttle RPC.
 
 File: `script/config/chains/<chainId>.json`.
 
-Add an entry under `balanceAdapters`. For a **per-instance adapter** the constructor block lists only the protocol-specific addresses the adapter needs — no `protocol`, `positionDetail`, or `positionId` string fields:
+Add an entry under `balanceAdapters`. For a **per-instance adapter** the constructor block lists only the protocol-specific addresses the adapter needs:
 
 ```json
 "MyProtocol": {

@@ -33,7 +33,7 @@ NAV v2 is a single, chain-local system. Each supported chain has:
 
 The NAVCalculator routes price lookups through an embedded `Prices` contract (Chainlink or Custom per asset) and position lookups through the registered balance oracles. Both are pluggable by adding/removing adapters — the proxy never needs to be upgraded to add new protocols.
 
-**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance oracle, plus the inflight bridged-out escrow balance. No oracle can lie about another oracle's asset — positions are keyed on `(oracle, underlyingAsset)` tuples.
+**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance oracle, plus the inflight bridged-out escrow balance. No oracle can lie about another oracle's asset — positions are keyed on `(oracle, balanceAsset, protocolId, positionId, positionKind)` tuples.
 
 ---
 
@@ -506,21 +506,21 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 | Adapter prefix | Constructor params | Applicable chains |
 |---------------|-------------------|-------------------|
-| `AaveV3_*` | `dataProvider`, `protocol` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
-| `CompoundV3_*` | `compoundRewards`, `comet`, `rewardToken`, `protocol` | Mainnet |
-| `SparkLend`, `SparkLend_*` | `dataProvider`, `protocol` | Mainnet (current wiring uses the bare `SparkLend`; the `SparkLend_*` prefix is supported for future multi-market use) |
-| `MorphoMarket_*` | `morpho`, `marketId`, `protocol` | Mainnet, Arbitrum, Base (per-chain via config `enabled` flag) |
-| `MorphoVault_*` | `vault`, `protocol`, `positionDetail` | Mainnet |
-| `GearboxMarket_*` | `market`, `protocol`, `positionDetail` | Mainnet |
-| `Cap` | `cUsd`, `stcUsd`, `usdc`, `protocol`, `positionDetail` | Mainnet |
-| `Curve_*` | `gauge`, `protocol`, `positionDetail` | Mainnet |
-| `Convex_*` | `rewarder`, `lpToken`, `protocol`, `positionDetail` | Mainnet |
-| `AaveV3SafetyModule_*` | `stakeToken`, `protocol`, `positionDetail` | Mainnet |
-| `BalancerV3_*` | `pool`, `gauge`, `balancerMinter`, `protocol` | Mainnet |
-| `Aura_*` | `pool`, `gauge`, `booster`, `pid`, `protocol`, `positionDetail` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
-| `StakeWiseV3Vault_*` | `underlyingToken`, `vault`, `protocol`, `positionDetail` | Mainnet |
-| `DaiDsr` | `dai`, `dsrManager`, `protocol`, `positionDetail` | Mainnet |
-| `SkySavingsUsds` | `savingsUsds`, `protocol`, `positionDetail` | Mainnet |
+| `AaveV3_*` | `dataProvider` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
+| `CompoundV3_*` | `compoundRewards`, `comet`, `rewardToken` | Mainnet |
+| `SparkLend`, `SparkLend_*` | `dataProvider` | Mainnet (current wiring uses the bare `SparkLend`; the `SparkLend_*` prefix is supported for future multi-market use) |
+| `MorphoMarket_*` | `morpho`, `marketId` | Mainnet, Arbitrum, Base (per-chain via config `enabled` flag) |
+| `MorphoVault_*` | `vault` | Mainnet |
+| `GearboxMarket_*` | `market` | Mainnet |
+| `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
+| `Curve_*` | `gauge` | Mainnet |
+| `Convex_*` | `rewarder`, `lpToken` | Mainnet |
+| `AaveV3SafetyModule_*` | `stakeToken` | Mainnet |
+| `BalancerV3_*` | `pool`, `gauge`, `balancerMinter` | Mainnet |
+| `Aura_*` | `pool`, `gauge`, `booster`, `pid` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
+| `StakeWiseV3Vault_*` | `underlyingToken`, `vault` | Mainnet |
+| `DaiDsr` | `dai`, `dsrManager` | Mainnet |
+| `SkySavingsUsds` | `savingsUsds` | Mainnet |
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
@@ -1112,7 +1112,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 
 **New instance of an existing protocol (e.g. a new Curve pool):**
 
-1. Add a config entry to `chains/<chainId>.json.balanceAdapters.Curve_<pool>` with the constructor params (`gauge`, `protocol`, `positionDetail`) and `"deployed": ""`.
+1. Add a config entry to `chains/<chainId>.json.balanceAdapters.Curve_<pool>` with the constructor param (`gauge`) and `"deployed": ""`.
 2. Add `_deployIfEnabled("Curve_<pool>")` inside `04_DeployBalanceAdapters.s.sol`'s `run()` function.
 3. Add `"Curve_<pool>"` to `_balanceAdapterNames()` in `06_Configure.s.sol`.
 4. Run `forge build` + `forge test` to confirm nothing regressed.

@@ -4,7 +4,7 @@
 
 ## Context
 
-The first version of `AaveV3SafetyModuleBalanceOracle` (`src/balances/protocols/aave/AaveV3SafetyModule.sol`) followed the same shape as every other balance adapter in the framework: **one immutable instance per stake token**. Constructor: `(stakeToken, protocol, positionDetail, navCalculator)`. The adapter reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract at construction and pins them as immutables.
+The first version of `AaveV3SafetyModuleBalanceOracle` (`src/balances/protocols/aave/AaveV3SafetyModule.sol`) followed the same shape as every other balance adapter in the framework: **one immutable instance per stake token**. Constructor: `(stakeToken, navCalculator)`. The adapter reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract at construction and pins them as immutables.
 
 This is **already token-agnostic at the bytecode level** — the same compiled contract handles stkAAVE, stkABPT, stkGHO. To support a new stake token you call the factory with a different `stakeToken` parameter and get a different deterministic address. With CREATE2, that's a single call.
 
@@ -27,10 +27,10 @@ Consolidate into **a single multi-token Safety Module adapter per chain**, with 
 Concretely:
 
 - The adapter inherits `Ownable`. Admin = the OIV Safe.
-- Storage holds a list of `StakeTokenInfo { stakedToken, rewardToken, positionDetail }` entries, indexed by stake-token address.
-- Admin functions `addStakeToken(stakeToken, positionDetail)` and `removeStakeToken(stakeToken)` mutate the list. Adding queries `STAKED_TOKEN()` / `REWARD_TOKEN()` from the contract and pins them in storage; removing prunes the entry.
+- Storage holds a list of `StakeTokenInfo { stakedToken, rewardToken }` entries, indexed by stake-token address.
+- Admin functions `addStakeToken(stakeToken)` and `removeStakeToken(stakeToken)` mutate the list. Adding queries `STAKED_TOKEN()` / `REWARD_TOKEN()` from the contract and pins them in storage; removing prunes the entry.
 - The constructor accepts an initial list so the deploy + initial registration happens atomically.
-- `getOraclePositions(account, assetFilter)` emits **one position per (stakeToken, role) pair** so attribution is preserved. A user with both stkGHO and stkAAVE balances sees three distinct positions: GHO with `positionDetail = "stkGHO"`, AAVE with `positionDetail = "stkGHO"` (the rewards), and AAVE with `positionDetail = "stkAAVE"` (stake + rewards merged into one entry because stkAAVE's staked and reward tokens are both AAVE).
+- `getOraclePositions(account, assetFilter)` emits **one position per (stakeToken, role) pair** so attribution is preserved. A user with both stkGHO and stkAAVE balances sees three distinct positions: GHO as `Supplied` (stkGHO principal), AAVE as `Earned` (stkGHO rewards), and AAVE as `Supplied`/`Earned` (stkAAVE stake + rewards, merged into one entry because stkAAVE's staked and reward tokens are both AAVE). The stakeToken is encoded in each `positionId`.
 - `getOracleBalanceForAsset(account, asset)` returns the **summed** balance across all registered stake tokens for that asset.
 - The factory deploys a single canonical instance per chain. `PROTOCOL_KEY` is unchanged: `keccak256("AaveV3SafetyModule")`. The new factory `deploy` signature takes the initial stake-token list, the admin address, the protocol name, and a salt.
 - Migration (Mainnet): the existing single-token stkGHO adapter is unregistered via `BalanceAdapterRegistry.unregister`, the new multi-token adapter is deployed (initial list = `[stkGHO]`), and the registry registers the new adapter on `NAVCalculator`. The old adapter stays on-chain but is no longer queried.
@@ -41,7 +41,7 @@ Concretely:
 
 - One adapter address per chain regardless of how many stake tokens are supported. Less ops surface (fewer `BalanceAdapterRegistry` registrations, fewer NAV oracle entries, fewer addresses for off-chain consumers to know about).
 - Adding a new Safety Module stake token (e.g., a future Umbrella token) is a single admin call rather than a factory deploy + register flow.
-- Per-token attribution is preserved via `positionDetail` on each `PositionBalance`.
+- Per-token attribution is preserved via `positionId` (encoding the stakeToken address) on each `PositionBalance`.
 - `getOracleBalanceForAsset` collapses cross-stake-token AAVE rewards into a single number, which is what NAV consumers actually want for "how much AAVE does this account have effective claim on."
 
 **Negative / things to watch:**

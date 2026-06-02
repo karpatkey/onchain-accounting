@@ -23,8 +23,8 @@ The `rewardsController` is the protocol's trust anchor — every other piece of 
 - **Bare reserve per reward token.** The adapter calls `IAToken.UNDERLYING_ASSET_ADDRESS()` with `try/catch`; aTokens return the bare reserve, and any reward token that does not implement that getter (e.g. plain GHO) is treated as already-bare.
 For each stake position the adapter emits up to two `PositionBalance` entries:
 
-- Staking leg: `(<bareReserve>, type="Staking")` — principal denominated in the bare reserve. The `underlyingAsset` field disambiguates which stake token the position belongs to.
-- Rewards leg: `(<bareReserve>, type="Rewards")` — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
+- Staking leg (`positionKind = Supplied`) — principal denominated in the bare reserve. The `positionId` (encoding the stakeToken address) disambiguates which stake token the position belongs to.
+- Rewards leg (`positionKind = Earned`) — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
 
 Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstanceBalanceOracle` uses for unregistered Aave reserves.
 
@@ -44,7 +44,7 @@ The adapter still pins **one** address — the `RewardsController` — as constr
 
 ## Reward-token forward compatibility
 
-Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls the full `(rewardTokens[], amounts[])` tuple via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and emits one `Rewards` leg per non-zero entry whose mapped bare reserve equals the stake token's staked-side bare reserve. If governance adds an extra reward token whose bare reserve differs (e.g. an AAVE incentive on top of the aToken reward), it would be silently dropped — `_claimableRewardInBareReserve` only sums entries that map to the same `wantedBareReserve`. This is conservative by design: surfacing AAVE rewards inside an entry whose `underlyingAsset` is USDC would mis-price them. If/when multi-reward Umbrella stake tokens go live, the framework can either extend this adapter to emit additional `(rewardBareReserve, "<symbol> Rewards <bare>")` legs or rely on the existing `ERC20DefaultOracle` to surface the held AAVE balance separately.
+Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls the full `(rewardTokens[], amounts[])` tuple via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and emits one `Rewards` leg per non-zero entry whose mapped bare reserve equals the stake token's staked-side bare reserve. If governance adds an extra reward token whose bare reserve differs (e.g. an AAVE incentive on top of the aToken reward), it would be silently dropped — `_claimableRewardInBareReserve` only sums entries that map to the same `wantedBareReserve`. This is conservative by design: surfacing AAVE rewards inside an entry whose `balanceAsset` is USDC would mis-price them. If/when multi-reward Umbrella stake tokens go live, the framework can either extend this adapter to emit additional `Earned` legs per reward bare reserve or rely on the existing `ERC20DefaultOracle` to surface the held AAVE balance separately.
 
 ## Debank cross-check classification
 

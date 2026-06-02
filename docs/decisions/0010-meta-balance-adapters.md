@@ -29,7 +29,7 @@ Adopt route 2. Introduce a second adapter class alongside `IBalanceOracleAdapter
   - `_metaInstances` (a plain `bytes32[]` per oracle) holds the configured set; `getMetaInstances(oracle)` exposes it; `_metaInstanceTotal` is a running count used only to size the NAV read buffer.
   - `setMetaInstances` is gated by the existing `MANAGER` role — the same privilege that already governs `addBalanceOracle`. It applies to any registered oracle; only meta-adapters read the set, so it is inert for others.
   - **The NAVCalculator read path is unchanged**: it calls `getOraclePositions(account, assetFilter)` on every oracle as before. Meta-adapters pull their own set inside that call, so there is no meta-specific branch (and no per-oracle ERC165 flag) in the hot path. This also keeps `NAVCalculator` under the EIP-170 code-size limit, which a routing branch would have exceeded.
-- Per-instance identity (`positionId`, `positionDetail`) is **derived on-chain** from the instance coordinate (e.g. `positionId = vaultAddress.toHexString()`, `name` read from the vault's ERC20 `name()`). Nothing instance-specific is stored in config.
+- Per-instance identity (`protocolId`, `positionId`, `positionKind`) is **derived on-chain** from the instance coordinate (e.g. `positionId = abi.encode(vaultAddress)`, `describePosition()` reads the vault's ERC20 `name()`). Nothing instance-specific is stored in config.
 
 All meta-adapter contracts use the `…MetaBalanceAdapter` suffix (the abstract base stays `MetaBalanceOracle` / `IMetaBalanceOracleAdapter`; the per-instance `*BalanceOracle` adapters they supersede keep the repo's existing suffix).
 

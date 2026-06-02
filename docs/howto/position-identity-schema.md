@@ -98,18 +98,6 @@ enum PositionKind {
 }
 ```
 
-**Mapping from old `positionDetail.type` values:**
-
-| Old string | New `PositionKind` |
-|---|---|
-| `"Supply"` | `Supplied` |
-| `"Staking"` | `Supplied` (staking principal is a credit position) |
-| `"Borrow"` | `Borrowed` |
-| `"Collateral"` | `Collateral` |
-| `"Rewards"` | `Earned` |
-| `"Fees"` | `Earned` |
-| *(wallet)* | `Wallet` |
-
 `Collateral` is kept distinct from `Supplied` because collateral cannot be freely withdrawn —
 a consumer routing to a "withdraw" action needs to know this.
 
@@ -238,27 +226,6 @@ navLens.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose position
 Labels come from each oracle's `IPositionDescribable` implementation. If an oracle doesn't
 implement it, both fields are empty strings. **Never use these strings for identity, indexing,
 or reconciliation** — they are display-only and may change as labels evolve.
-
----
-
-## What changed from the old schema
-
-| Old field | New field | Notes |
-|---|---|---|
-| `string protocol` | `bytes32 protocolId` | `keccak256` slug; exact equality instead of string matching |
-| `string positionDetail` (JSON) | `bytes positionId` + `PositionKind positionKind` | abi-encoded key + typed enum; no JSON parsing |
-| `string positionId` (hex address) | part of `bytes positionId` | now properly abi-encoded with all keys |
-| `Asset underlyingAsset` | `Asset balanceAsset` | renamed to "the asset the amount is denominated in" |
-
-**What consumers stop doing:**
-- JSON parsing `positionDetail`
-- String-matching `protocol` across deployments
-- Maintaining off-chain decode tables per protocol
-
-**What consumers start doing:**
-- Switch on `protocolId` → `abi.decode` with the known schema
-- Branch on `positionKind` for action routing
-- Use the reconciliation key as a stable primary index
 
 ---
 

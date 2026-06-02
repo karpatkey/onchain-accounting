@@ -235,7 +235,7 @@ Meta-adapters extend `MetaBalanceOracle`. The instance set is configured on NAVC
 
 ### 7.2 Per-instance singleton adapters (12)
 
-These adapters implement `IBalanceOracleAdapter` directly (not `MetaBalanceOracle`). Each is a single immutable deployment. Constructors take protocol contract addresses and `navCalculator`; there are **no** `protocol_`, `positionDetail_`, or `positionId_` string constructor params — identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
+These adapters implement `IBalanceOracleAdapter` directly (not `MetaBalanceOracle`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 
 | Adapter | Description | Constructor | Notes |
 |---------|-------------|-------------|-------|

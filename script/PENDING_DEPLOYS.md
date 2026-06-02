@@ -64,8 +64,8 @@ Sorted by family.
 
 | Key | Notes |
 |---|---|
-| `AaveV3SafetyModule` | stkGHO. ⚠ different from the existing production-deployed `AaveV3SafetyModule_stkGHO` recorded in DEPLOYED_ADDRESSES.md — verify whether this entry is a redeploy under the renamed key or an additional one before broadcasting. ⚠ **Constructor + identity strings changed in PR #35**: every balance adapter now takes `(protocol_, positionDetail_, positionId_)`; this adapter's canonical values are now `protocol="Aave V3"`, `product="Safety Module"` (was `product="Staking"` mid-PR). Existing production bytecode predates the constructor change → different bytecode and CREATE2 address. Either rename the production entry to `AaveV3SafetyModule_stkGHO_legacy` and add the new one as `AaveV3SafetyModule`, or migrate cleanly via Safe TX bundle: `addBalanceOracle(<new>)` + `removeBalanceOracle(<old>)` in one transaction. Don't double-register both. |
-| `AaveUmbrella` | Aave V4 Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1). Canonical identity per `adapter-identities.json`: `protocol="Aave V3"`, `product="Umbrella"`; per-leg `type` is bare `"Staking"`/`"Rewards"` (underlyingAsset disambiguates the stake token; the per-symbol prefix from earlier drafts was dropped). |
+| `AaveV3SafetyModule` | stkGHO. ⚠ different from the existing production-deployed `AaveV3SafetyModule_stkGHO` recorded in DEPLOYED_ADDRESSES.md — verify whether this entry is a redeploy under the renamed key or an additional one before broadcasting. |
+| `AaveUmbrella` | Aave V4 Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1). Discovers available stake tokens dynamically via `RewardsController.getAllAssets()`. |
 | `AaveV2_Mainnet` | aTokens only — V2 lending. `aave2` is now in `supportedDeBankProtocols` for chain 1 (DeBank reports stkAAVE under `aave2`); the comparison-report's `aave2` matcher pairs against both V2 lending and the Safety Module. Canonical `positionId` source: Pool address (not dataProvider). |
 
 **StakeWise V3 (3)**
@@ -211,19 +211,11 @@ Deduplicate market IDs across the 13 vaults. Cross-reference against the `market
 
 ---
 
-## 4.5 MorphoMarket — constructor + identity rewrite
+## 4.5 MorphoMarket — protocol name rewrite
 
-PR #35 made two changes to `MorphoMarket` that both invalidate existing production bytecode:
+PR #35 changed the protocol display name from `"Morpho Blue - <pair>"` → `"Morpho - <pair>"` (CLAUDE.md naming convention; `feedback_morpho_naming` memory). The currently-deployed mainnet/Base/Arbitrum `MorphoMarket_*` adapters predate this change, so their bytecode AND CREATE2 address differ from any fresh deploy.
 
-1. **Protocol string**: `"Morpho Blue - <pair>"` → `"Morpho - <pair>"` (CLAUDE.md naming convention; `feedback_morpho_naming` memory).
-2. **Constructor signature**: `positionId_` parameter dropped. `_positionId` is now derived inside the constructor via `Strings.toHexString(uint256(marketId_), 32)`. New signature: `(morpho_, marketId_, protocol_, positionDetail_, navCalculator_)`.
-
-The currently-deployed mainnet/Base/Arbitrum `MorphoMarket_*` adapters predate both changes, so their bytecode AND CREATE2 address differ from any fresh deploy. After PR #35 merges:
-
-- Integration tests (which deploy adapters ephemerally on a fork from the new chain config) return `"Morpho - <pair>"` with auto-derived positionId ✓
-- Production NAVCalculator queries the deployed adapters and gets back `"Morpho Blue - <pair>"` from their bytecode
-
-Action: **redeploy** every `MorphoMarket_*` adapter and update `chains/<id>.json.balanceAdapters.<key>.deployed`. Note that chain configs already had `positionId` fields removed for MorphoMarket entries (see `adapter-identities.json` — MorphoMarket is the only `$positionIdNote` exception).
+Action: **redeploy** every `MorphoMarket_*` adapter and update `chains/<id>.json.balanceAdapters.<key>.deployed`.
 
 **Affected adapters:** 12 on mainnet, 2 on Base, 1 on Arbitrum (per `chains/<id>.json` entries). Use the standard `04_DeployBalanceAdapters.s.sol` flow — but **first wipe the existing `deployed` fields** so the script doesn't think they're already up. Pre-redeploy step:
 
@@ -242,21 +234,7 @@ json.dump(c, open('script/config/chains/1.json','w'), indent=2)
 
 Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. The Safe TX bundle from `06_Configure.s.sol` will need to call `addBalanceOracle(<new>)` AND `removeBalanceOracle(<old>)` for each affected adapter — old + new addresses both kept in chain config until cutover.
 
-## 4.6 Aave V3 / V2 / Spark — `positionId` source change
-
-PR #35's `adapter-identities.json` flags a canonical `positionId` source change for Aave-family lending adapters: **`dataProvider` → Pool address**. Currently-deployed instances were constructed with the dataProvider address; new instances per the canonical template will deploy at a different CREATE2 address.
-
-Affected currently-deployed adapters (per `DEPLOYED_ADDRESSES.md`):
-- `AaveV3_Core` / `AaveV3_Prime` (mainnet), `AaveV3_Optimism`, `AaveV3_Gnosis`, `AaveV3_Arbitrum`, `AaveV3_Base`
-- `SparkLend` (mainnet)
-
-Plus the AaveV3 protocol string realignment: `"Aave V3 Core"` / `"Aave V3 Prime"` → bare `"Aave V3"` (with `product="Lending"`, `name="Core Instance"`/`"Prime Instance"`).
-
-Same migration pattern as §4.5: wipe `deployed` fields for the affected entries, redeploy via `04_DeployBalanceAdapters.s.sol`, then bundle `addBalanceOracle(<new>) + removeBalanceOracle(<old>)` per adapter in the per-chain Safe TX.
-
-This is a coordinated migration with §4.5 — both touch the same lending-family adapters and benefit from being bundled per chain to minimize Safe-signer rounds.
-
-## 4.7 WBTC + AAVE asset registration on mainnet
+## 4.6 WBTC + AAVE asset registration on mainnet
 
 PR #35 added WBTC and AAVE to `script/manage/RegisterAssets.s.sol` (indices 29 and 30). They are also added to integration test `_symbolsForChain` (indices 31/32) — so the integration harness counts their wallet legs. Production has not yet registered them.
 
@@ -316,11 +294,11 @@ forge script script/manage/RegisterAssets.s.sol --rpc-url $ARBITRUM_URL --sig 'r
 
 Mainnet bundle includes:
 - `registerAsset(EURC, 0x1aBaEA1f…, Chainlink, 86400)` — register EURC token
-- `registerAsset(WBTC, …, Chainlink, …)` — new in PR #35 (§4.7)
-- `registerAsset(AAVE, …, Chainlink, …)` — new in PR #35 (§4.7)
+- `registerAsset(WBTC, …, Chainlink, …)` — new in PR #35 (§4.6)
+- `registerAsset(AAVE, …, Chainlink, …)` — new in PR #35 (§4.6)
 - `setPriceFeed(ETHx, <ethxOracle>, Custom, 0)` — point ETHx at the freshly-deployed feed
 - `addBalanceOracle(<adapter>)` × 25 — register every new balance adapter (24 from earlier scope + 1 ERC4626Wrap_waEthLidoGHO landed in PR #35)
-- (if §4.5/§4.6 migrations bundled here) `addBalanceOracle(<new>) + removeBalanceOracle(<old>)` per redeployed MorphoMarket / AaveV3 / AaveV2 / Spark entry
+- (if §4.5 migration bundled here) `addBalanceOracle(<new>) + removeBalanceOracle(<old>)` per redeployed MorphoMarket entry
 
 Other chains: `addBalanceOracle(...)` × 3 (op), 9 (base), 9 (arb).
 
@@ -355,7 +333,7 @@ These were identified during the audit but aren't blocked on PR #35:
 1. **kpk vault catalog expansion**: 8 mainnet vaults + 1 Arbitrum vault still need their config blocks added (§2). Plus rename `MorphoVault_kpkEURC_V1` → `_kpkEURCYield_V2`. Deploy via Phase A pattern.
 2. **Markets-per-vault enumeration** (§3): enumerate `withdrawQueue` for each kpk vault, deduplicate market IDs, cross-reference vs existing `MorphoMarket_*` configs, add the gaps.
 3. **`AaveV3SafetyModule` naming alignment**: chain config has `AaveV3SafetyModule` (no suffix), DEPLOYED_ADDRESSES.md mentions `AaveV3SafetyModule_stkGHO`. Reconcile before broadcasting (avoid double-deploy or accidental rename).
-4. **MorphoMarket + Aave family redeploys (§4.5 / §4.6)**: redeploy MorphoMarket on 3 chains and Aave V3/V2/Spark on 5 chains under the new constructor + identity strings. Bundle the `addBalanceOracle(new) + removeBalanceOracle(old)` per chain.
+4. **MorphoMarket redeploys (§4.5)**: redeploy MorphoMarket on 3 chains under the updated protocol name. Bundle the `addBalanceOracle(new) + removeBalanceOracle(old)` per chain.
 
 ---
 

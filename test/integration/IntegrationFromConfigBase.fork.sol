@@ -14,45 +14,32 @@ import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
-import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
-import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
-import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Aura} from "src/balances/protocols/Aura.sol";
 import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
-import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
-import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
-import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
-import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
-import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
-import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {PancakeSwapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
-import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 // Price feed adapters (Mainnet)
@@ -537,32 +524,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "CompoundV3CometsMeta")) {
             return _deployCompoundV3CometsMeta(name, navAddr);
         }
-        if (_startsWith(name, "CompoundV3_")) {
-            return _deployCompoundV3(name, navAddr);
-        }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             return _deploySparkLend(name, navAddr);
         }
         if (_equals(name, "MorphoMarketsMeta")) {
             return _deployMorphoMarketsMeta(name, navAddr);
         }
-        if (_startsWith(name, "MorphoMarket_")) {
-            return _deployMorphoMarket(name, navAddr);
-        }
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
-        }
-        if (_startsWith(name, "MorphoVault_")) {
-            return _deployMorphoVault(name, navAddr);
         }
         if (_startsWith(name, "ERC4626Wrap_")) {
             return _deployERC4626Wrap(name, navAddr);
         }
         if (_equals(name, "GearboxMarketsMeta")) {
             return _deployGearboxMarketsMeta(name, navAddr);
-        }
-        if (_startsWith(name, "GearboxMarket_")) {
-            return _deployGearboxMarket(name, navAddr);
         }
         if (_equals(name, "Cap")) {
             return _deployCap(navAddr);
@@ -591,9 +566,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(name, navAddr);
         }
-        if (_startsWith(name, "BalancerV3_")) {
-            return _deployBalancerV3(name, navAddr);
-        }
         if (_startsWith(name, "Aura_")) {
             return _deployAura(name, navAddr);
         }
@@ -603,29 +575,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "AaveV2InstancesMeta")) {
             return _deployAaveV2InstancesMeta(name, navAddr);
         }
-        if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
-            return _deployAaveV2(name, navAddr);
-        }
         if (_equals(name, "FluidFTokensMeta")) {
             return _deployFluidFTokensMeta(name, navAddr);
         }
         if (_equals(name, "FluidVaultsMeta")) {
             return _deployFluidVaultsMeta(name, navAddr);
         }
-        if (_startsWith(name, "Fluid_fToken_")) {
-            return _deployFluidFToken(name, navAddr);
-        }
-        if (_startsWith(name, "Fluid_Vault_")) {
-            return _deployFluidVault(name, navAddr);
-        }
         if (_equals(name, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(name, navAddr);
         }
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
-        }
-        if (_startsWith(name, "StakeWiseV3Vault_")) {
-            return _deployStakeWiseV3Vault(name, navAddr);
         }
         if (_equals(name, "UniswapV3PoolsMeta")) {
             return _deployUniswapV3PoolsMeta(name, navAddr);
@@ -635,18 +595,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(name, navAddr);
-        }
-        if (_startsWith(name, "UniswapV2_")) {
-            return _deployUniswapV2(name, navAddr);
-        }
-        if (_startsWith(name, "UniswapV3_")) {
-            return _deployUniswapV3Pool(name, navAddr);
-        }
-        if (_startsWith(name, "PancakeSwapV2_")) {
-            return _deployPancakeSwapV2(name, navAddr);
-        }
-        if (_startsWith(name, "PancakeSwapV3_")) {
-            return _deployPancakeSwapV3Pool(name, navAddr);
         }
         return address(0);
     }
@@ -663,15 +611,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new SparkLendBalanceOracle(dataProvider, navAddr));
     }
 
-    function _deployCompoundV3(string memory name, address navAddr) internal returns (address) {
-        address compoundRewards =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
-        address comet = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "comet"));
-        address rewardToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
-        return address(new CompoundV3Comet(compoundRewards, comet, rewardToken, navAddr));
-    }
-
     function _deployCompoundV3CometsMeta(string memory name, address navAddr) internal returns (address) {
         address compoundRewards =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
@@ -679,13 +618,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navAddr));
-    }
-
-    function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {
-        address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
-        bytes32 marketId =
-            vm.parseBytes32(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "marketId"));
-        return address(new MorphoMarketBalanceOracle(morpho, marketId, navAddr));
     }
 
     function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
@@ -730,20 +662,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
-        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
-        return address(new MorphoVaultBalanceOracle(vault, navAddr));
-    }
-
     function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
         address wrapper =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
         return address(new ERC4626WrapBalanceOracle(wrapper, navAddr));
-    }
-
-    function _deployGearboxMarket(string memory name, address navAddr) internal returns (address) {
-        address market = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "market"));
-        return address(new GearboxMarketBalanceOracle(market, navAddr));
     }
 
     function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
@@ -782,14 +704,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr));
     }
 
-    function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
-        address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
-        address balancerMinter =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
-        return address(new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, navAddr));
-    }
-
     function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
         // The integration test owns the adapter (admin = msg.sender once we vm.startPrank(admin)) so
         // it can call submitProof during setup. Production deploys use chainConfig.admin instead — see
@@ -810,27 +724,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new Aura(pool, gauge, booster, pid, navAddr));
     }
 
-    function _deployAaveV2(string memory name, address navAddr) internal returns (address) {
-        address dataProvider =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new AaveV2InstanceBalanceOracle(dataProvider, navAddr));
-    }
-
     function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new AaveV2InstancesMetaBalanceAdapter(protocol, navAddr));
-    }
-
-    function _deployFluidFToken(string memory name, address navAddr) internal returns (address) {
-        address fToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "fToken"));
-        return address(new FluidFTokenBalanceOracle(fToken, navAddr));
-    }
-
-    function _deployFluidVault(string memory name, address navAddr) internal returns (address) {
-        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
-        address vaultResolver =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
-        return address(new FluidVaultBalanceOracle(vault, vaultResolver, navAddr));
     }
 
     function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {
@@ -854,42 +750,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navAddr));
     }
 
-    function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
-        address underlyingToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
-        return address(new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, navAddr));
-    }
-
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navAddr));
-    }
-
-    function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
-        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
-        return address(new UniswapV2BalanceOracle(pair, navAddr));
-    }
-
-    function _deployUniswapV3Pool(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
-        address positionManager =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
-        return address(new UniswapV3PoolBalanceOracle(pool, positionManager, navAddr));
-    }
-
-    function _deployPancakeSwapV2(string memory name, address navAddr) internal returns (address) {
-        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
-        return address(new PancakeSwapV2BalanceOracle(pair, navAddr));
-    }
-
-    function _deployPancakeSwapV3Pool(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
-        address positionManager =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
-        return address(new PancakeSwapV3PoolBalanceOracle(pool, positionManager, navAddr));
     }
 
     function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {

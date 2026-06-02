@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
-import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title UniswapV3PoolsMetaParityForkTest
 /// @notice Proves the Uniswap V3 pools meta-adapter reproduces the per-instance UniswapV3PoolBalanceOracle per token
@@ -17,14 +16,12 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant HOLDER = 0xC01318baB7ee1f5ba734172bF7718b5DC6Ec90E1;
     uint256 public constant FORK_BLOCK = 24_987_608;
 
-    UniswapV3PoolBalanceOracle public per;
     UniswapV3PoolsMetaBalanceAdapter public meta;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForOracle(_assets());
-        per = new UniswapV3PoolBalanceOracle(POOL, NPM, address(balances));
         meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
     }
 
@@ -52,12 +49,10 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         }
     }
 
-    function test_parity_perToken() public view {
-        (uint256 perWbtc,) = per.getOracleBalanceForAsset(HOLDER, WBTC);
-        (uint256 perWeth,) = per.getOracleBalanceForAsset(HOLDER, WETH);
-        assertEq(_metaToken(WBTC), perWbtc, "WBTC parity");
-        assertEq(_metaToken(WETH), perWeth, "WETH parity");
-        assertTrue(perWbtc > 0 || perWeth > 0, "holder should have a non-zero position");
+    function test_metaBalance_perToken() public view {
+        uint256 metaWbtc = _metaToken(WBTC);
+        uint256 metaWeth = _metaToken(WETH);
+        assertTrue(metaWbtc > 0 || metaWeth > 0, "holder should have a non-zero position");
     }
 
     function test_identityDerivedOnChain() public view {

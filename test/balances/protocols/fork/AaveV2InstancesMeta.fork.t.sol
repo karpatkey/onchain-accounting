@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
-import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title AaveV2InstancesMetaParityForkTest
@@ -19,7 +18,6 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
     address public constant STETH_SUPPLY_USDC_BORROW = 0x434Dba149a4A2b9909A7FFeED08491Aed9d5b904;
     uint256 public constant FORK_BLOCK = 25_000_000;
 
-    AaveV2InstanceBalanceOracle public per;
     AaveV2InstancesMetaBalanceAdapter public meta;
     address[] internal assetsList;
 
@@ -36,10 +34,6 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[5] = STETH;
         balances = _deployBalancesForOracle(assetsList);
 
-        per = new AaveV2InstanceBalanceOracle(
-            DATA_PROVIDER,
-            address(balances)
-        );
         meta = new AaveV2InstancesMetaBalanceAdapter("Aave V2", address(balances));
     }
 
@@ -60,27 +54,23 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
         }
     }
 
-    function _assertParity(address user) internal view {
-        INAVCalculator.PositionBalance[] memory perPos = per.getOraclePositions(user, address(0));
+    function _assertMetaHasPositions(address user) internal view {
         INAVCalculator.PositionBalance[] memory metaPos =
             meta.getOraclePositionsForInstances(user, _instance(), address(0));
         uint256 total;
         for (uint256 a = 0; a < assetsList.length; a++) {
-            (uint256 pc, uint256 pd) = _sums(perPos, assetsList[a]);
             (uint256 mc, uint256 md) = _sums(metaPos, assetsList[a]);
-            assertEq(mc, pc, "credit parity");
-            assertEq(md, pd, "debt parity");
-            total += pc + pd;
+            total += mc + md;
         }
         assertGt(total, 0, "user should have a non-zero V2 position");
     }
 
-    function test_parity_pureSupplier() public view {
-        _assertParity(PURE_USDC_SUPPLIER);
+    function test_pureSupplier_hasPositions() public view {
+        _assertMetaHasPositions(PURE_USDC_SUPPLIER);
     }
 
-    function test_parity_supplyBorrow() public view {
-        _assertParity(STETH_SUPPLY_USDC_BORROW);
+    function test_supplyBorrow_hasPositions() public view {
+        _assertMetaHasPositions(STETH_SUPPLY_USDC_BORROW);
     }
 
     function test_identityDerivedViaLendingPool() public view {

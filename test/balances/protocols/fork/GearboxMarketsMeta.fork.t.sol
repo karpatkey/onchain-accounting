@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
-import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 interface IERC4626Min {
     function asset() external view returns (address);
@@ -18,7 +17,6 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant HOLDER = 0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C;
     uint256 public constant FORK_BLOCK = 24_068_807;
 
-    GearboxMarketBalanceOracle public per;
     GearboxMarketsMetaBalanceAdapter public meta;
 
     function setUp() public override {
@@ -28,7 +26,6 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
 
         balances = _deployBalancesForOracle(WETH);
-        per = new GearboxMarketBalanceOracle(MARKET, address(balances));
         meta = new GearboxMarketsMetaBalanceAdapter("Gearbox", address(balances));
     }
 
@@ -37,15 +34,13 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
         ins[0] = bytes32(uint256(uint160(MARKET)));
     }
 
-    function test_parity() public view {
-        (uint256 perAmt,) = per.getOracleBalanceForAsset(HOLDER, WETH);
+    function test_metaBalance() public view {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(HOLDER, _instance(), address(0));
         uint256 metaAmt;
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].balanceAsset.asset == WETH) metaAmt += p[i].amount;
         }
-        assertEq(metaAmt, perAmt, "WETH supply parity");
-        assertGt(perAmt, 0, "holder should have a kpkWETH position");
+        assertGt(metaAmt, 0, "holder should have a kpkWETH position");
     }
 
     function test_identityDerivedOnChain() public view {

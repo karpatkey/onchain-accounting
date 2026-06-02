@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockCometRich, MockCompoundRewardsConfigurable} from "test/balances/protocols/CompoundV3Comet.t.sol";
+import {MockCometRich, MockCompoundRewardsConfigurable} from "test/balances/protocols/CompoundV3Mocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 contract MetaTok {

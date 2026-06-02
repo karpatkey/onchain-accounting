@@ -5,8 +5,8 @@ import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
@@ -146,9 +146,9 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav).
         AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
 
-        compoundV3Comet = new CompoundV3Comet(compoundRewardContract, cUsdCv3, compound, address(nav));
+        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
 
-        morphoBlueOracle = new MorphoMarketBalanceOracle(morphoBlue, marketIdSusdsUsdt, address(nav));
+        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
         daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
 

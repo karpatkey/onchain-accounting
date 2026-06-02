@@ -156,7 +156,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](67);
+        names = new string[](42);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
@@ -178,45 +178,17 @@ contract Configure is BaseDeployScript {
         // Fluid meta-adapters (ADR 0010): fToken / T1-vault sets configured via setMetaInstances
         names[i++] = "FluidFTokensMeta";
         names[i++] = "FluidVaultsMeta";
-        // Morpho Vaults
-        names[i++] = "MorphoVault_kpkETHPrime_V1";
-        names[i++] = "MorphoVault_kpkETHPrime_V2";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V1";
-        names[i++] = "MorphoVault_kpkUSDCPrime_V2";
-        names[i++] = "MorphoVault_kpkUSDCYieldV1";
         // Morpho Vaults meta-adapter (ADR 0010): instance set configured via setMetaInstances
         names[i++] = "MorphoVaultsMeta";
         // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
         names[i++] = "MorphoMarketsMeta";
-        // Morpho Markets
-        names[i++] = "MorphoMarket_wstETH_USDC";
-        names[i++] = "MorphoMarket_cbBTC_USDC";
-        names[i++] = "MorphoMarket_wstUSR_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_USDC";
-        names[i++] = "MorphoMarket_WBTC_USDC";
-        names[i++] = "MorphoMarket_RLP_USDC";
-        names[i++] = "MorphoMarket_syrupUSDC_USDC";
-        names[i++] = "MorphoMarket_sUSDS_USDT";
-        names[i++] = "MorphoMarket_sUSDS_USDC";
-        names[i++] = "MorphoMarket_ETHPlus_WETH";
-        names[i++] = "MorphoMarket_wstETH_WETH";
-        names[i++] = "MorphoMarket_weETH_WETH";
-        names[i++] = "MorphoMarket_rsETH_WETH";
-        names[i++] = "MorphoMarket_cbETH_USDC";
-        // Gearbox
-        names[i++] = "GearboxMarketsMeta"; // Meta-adapter (ADR 0010): market set configured via setMetaInstances
-        names[i++] = "GearboxMarket_kpkWETH";
-        names[i++] = "GearboxMarket_kpkwstETH";
+        // Gearbox meta-adapter (ADR 0010): market set configured via setMetaInstances
+        names[i++] = "GearboxMarketsMeta";
         // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via setMetaInstances
         names[i++] = "BalancerV3PoolsMeta";
         names[i++] = "BalancerV3GaugesMeta";
         names[i++] = "BalancerV2PoolsMeta";
         names[i++] = "BalancerV2GaugesMeta";
-        // Balancer V3 (per-pool — superseded by the meta-adapters above)
-        names[i++] = "BalancerV3_rETH_WETH";
-        names[i++] = "BalancerV3_GHO_USDT_USDC"; // Mainnet — USD Alpha
-        names[i++] = "BalancerV3_GHO_USDC_USDT"; // Arbitrum — USD Alpha
-        names[i++] = "BalancerV3_GHO_USDC"; // Base — USD Alpha
         // Aura
         names[i++] = "Aura_rETH_WETH";
         names[i++] = "Aura_GHO_USDT_USDC";
@@ -240,7 +212,6 @@ contract Configure is BaseDeployScript {
         names[i++] = "LidoWithdrawalQueue";
         // StakeWise V3 (Mainnet) — osETH itself is a Custom-priced ERC20 (osToken_PriceOracle), not a balance adapter
         names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
-        names[i++] = "StakeWiseV3Vault_Genesis";
         // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances
         names[i++] = "UniswapV3PoolsMeta"; // Mainnet
         names[i++] = "UniswapV2PoolsMeta";

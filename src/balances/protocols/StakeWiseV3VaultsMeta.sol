@@ -6,7 +6,17 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IStakeWiseVault} from "src/balances/protocols/StakeWiseV3Vault.sol";
+/// @notice Interface for interacting with StakeWise v3 vaults
+interface IStakeWiseVault {
+    /// @notice Converts a given amount of vault shares to the underlying asset amount
+    function convertToAssets(uint256 shares) external view returns (uint256);
+
+    /// @notice Gets the amount of vault shares owned by an account
+    function getShares(address account) external view returns (uint256);
+
+    /// @notice Gets the amount of osTokens minted against an account's position
+    function osTokenPositions(address account) external view returns (uint256);
+}
 
 /// @title StakeWise V3 Vaults Meta Balance Adapter
 /// @author kpk

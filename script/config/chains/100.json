@@ -25,8 +25,19 @@
       },
       "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
-    "AaveV3_Gnosis": {
+    "AaveV3InstancesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Gnosis, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Aave V3"
+      },
+      "metaInstances": [
+        "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717"
+      ],
+      "deployed": ""
+    },
+    "AaveV3_Gnosis": {
+      "enabled": false,
       "constructor": {
         "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
         "protocol": "Aave V3",

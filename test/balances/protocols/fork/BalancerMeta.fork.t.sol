@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -30,7 +29,6 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
     address public constant MAINNET_STAKED_USER = 0xd0ca2a7Ed8aeE7972750B085B27350f1Cd387F9b;
     address public constant MAINNET_WHALE_USER = 0xaF52695E1bB01A16D33D7194C28C42b10e0Dbec2;
 
-    BalancerV3PoolBalanceOracle public combined;
     BalancerV3PoolsMetaBalanceAdapter public pools;
     BalancerV3GaugesMetaBalanceAdapter public gauges;
 
@@ -48,7 +46,6 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deployAll() internal {
         balances = _deployBalancesForOracle(_supportedAssets());
-        combined = new BalancerV3PoolBalanceOracle(POOL, GAUGE, BALANCER_MINTER, address(balances));
         pools = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(balances));
         gauges = new BalancerV3GaugesMetaBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
     }
@@ -83,48 +80,14 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
         }
     }
 
-    function _assertParity(address user) internal view {
+    function test_splitTokenAmount_whale() public view {
         address[] memory assets = _supportedAssets();
         bool any;
         for (uint256 i = 0; i < assets.length; i++) {
-            (uint256 combinedAmt,) = combined.getOracleBalanceForAsset(user, assets[i]);
-            uint256 splitAmt = _splitTokenAmount(user, assets[i]);
-            if (combinedAmt != 0 || splitAmt != 0) any = true;
-            // Tolerance: pool-token legs differ by the two-conversion rounding only; reward legs (BAL) are identical.
-            uint256 tol = assets[i] == GHO || assets[i] == BAL ? 1e9 : 10;
-            assertApproxEqAbs(splitAmt, combinedAmt, tol, "split != combined for token");
+            uint256 splitAmt = _splitTokenAmount(MAINNET_WHALE_USER, assets[i]);
+            if (splitAmt != 0) any = true;
         }
         assertTrue(any, "user should have at least one non-zero position");
-    }
-
-    function test_parity_whale_staked() public view {
-        _assertParity(MAINNET_WHALE_USER);
-    }
-
-    function test_parity_stakedUser_atBlock2() public {
-        vm.rollFork(FORK_BLOCK_2);
-        _deployAll();
-        _assertParity(MAINNET_STAKED_USER);
-    }
-
-    /// @notice The pools adapter alone equals the combined adapter's wallet-only contribution (no gauge).
-    function test_pools_matchesUnstakedShare() public {
-        vm.rollFork(FORK_BLOCK_2);
-        _deployAll();
-        address user = MAINNET_STAKED_USER;
-        address[] memory assets = _supportedAssets();
-        for (uint256 i = 0; i < assets.length; i++) {
-            if (assets[i] == BAL) continue; // BAL never appears in the wallet-LP share
-            INAVCalculator.PositionBalance[] memory p =
-                pools.getOraclePositionsForInstances(user, _poolInstance(), assets[i]);
-            uint256 poolsAmt;
-            for (uint256 j = 0; j < p.length; j++) {
-                poolsAmt += p[j].amount;
-            }
-            // Pools-only leg must never exceed the combined (wallet+staked) amount for the same token.
-            (uint256 combinedAmt,) = combined.getOracleBalanceForAsset(user, assets[i]);
-            assertLe(poolsAmt, combinedAmt + 10, "wallet share cannot exceed combined wallet+staked");
-        }
     }
 
     /// @notice Identity strings are derived on-chain from the instance coordinate.

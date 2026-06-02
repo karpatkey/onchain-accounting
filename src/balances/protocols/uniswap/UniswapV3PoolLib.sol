@@ -6,7 +6,63 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
-import {IUniswapV3Pool, INonfungiblePositionManager} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+/// @notice Minimal Uniswap V3 pool interface (only the views this adapter needs).
+interface IUniswapV3Pool {
+    function token0() external view returns (address);
+    function token1() external view returns (address);
+    function fee() external view returns (uint24);
+    function tickSpacing() external view returns (int24);
+    function feeGrowthGlobal0X128() external view returns (uint256);
+    function feeGrowthGlobal1X128() external view returns (uint256);
+    function slot0()
+        external
+        view
+        returns (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext,
+            uint8 feeProtocol,
+            bool unlocked
+        );
+    function ticks(int24 tick)
+        external
+        view
+        returns (
+            uint128 liquidityGross,
+            int128 liquidityNet,
+            uint256 feeGrowthOutside0X128,
+            uint256 feeGrowthOutside1X128,
+            int56 tickCumulativeOutside,
+            uint160 secondsPerLiquidityOutsideX128,
+            uint32 secondsOutside,
+            bool initialized
+        );
+}
+
+/// @notice Minimal NPM interface (ERC721Enumerable surface + `positions`).
+interface INonfungiblePositionManager {
+    function balanceOf(address owner) external view returns (uint256);
+    function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256);
+    function positions(uint256 tokenId)
+        external
+        view
+        returns (
+            uint96 nonce,
+            address operator,
+            address token0,
+            address token1,
+            uint24 fee,
+            int24 tickLower,
+            int24 tickUpper,
+            uint128 liquidity,
+            uint256 feeGrowthInside0LastX128,
+            uint256 feeGrowthInside1LastX128,
+            uint128 tokensOwed0,
+            uint128 tokensOwed1
+        );
+}
 
 /// @title UniswapV3PoolLib
 /// @author kpk

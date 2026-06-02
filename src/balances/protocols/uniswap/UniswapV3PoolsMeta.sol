@@ -7,7 +7,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IUniswapV3Pool, INonfungiblePositionManager} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
+import {IUniswapV3Pool, INonfungiblePositionManager} from "src/balances/protocols/uniswap/UniswapV3PoolLib.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";

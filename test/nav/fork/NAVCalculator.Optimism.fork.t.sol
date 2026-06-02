@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
@@ -40,7 +40,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     address public cUsdtCv3 = address(0x995E394b8B2437aC8Ce61Ee0bC610D617962B214);
     address public compoundRewardContract = address(0x443EA0340cb75a160F31A440722dec7b5bc3C2E9);
 
-    CompoundV3Comet public compoundV3UsdtComet;
+    CompoundV3CometsMetaBalanceAdapter public compoundV3UsdtComet;
 
     /// @dev Pinned to a known-good block. See NAVCalculator.Mainnet.fork.t.sol for rationale.
     uint256 public constant FORK_BLOCK = 150_944_800;
@@ -98,11 +98,11 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         nav.addBalanceOracle(address(aaveOracle));
 
         compoundV3Comet =
-            this.createCompoundOracle(compoundRewardContract, cUsdCv3, compound, "Compound v3 USDC", address(nav));
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
         nav.addBalanceOracle(address(compoundV3Comet));
 
         compoundV3UsdtComet =
-            this.createCompoundOracle(compoundRewardContract, cUsdtCv3, compound, "Compound v3 USDT", address(nav));
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3 USDT", address(nav));
         nav.addBalanceOracle(address(compoundV3UsdtComet));
     }
 }

@@ -6,50 +6,38 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
-import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV2InstancesMeta.sol";
 import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
-import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
-import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
-import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
-import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
 import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
-import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {Aura} from "../../src/balances/protocols/Aura.sol";
-import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
-import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
-import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {LidoWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
-import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
-import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
 import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
-import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 import {
     PancakeSwapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
@@ -83,19 +71,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
         _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)
-        _deployIfEnabled("AaveV2_Mainnet"); // per-instance — superseded by AaveV2InstancesMeta
 
         // --- Compound V3 (one instance per Comet) ---
         _deployIfEnabled("CompoundV3CometsMeta"); // Meta-adapter: all Compound V3 comets; comet set on NAV (ADR 0010)
-        _deployIfEnabled("CompoundV3_USDC"); // Mainnet, Optimism, Arbitrum, Base
-        _deployIfEnabled("CompoundV3_USDS"); // Mainnet, Base
-        _deployIfEnabled("CompoundV3_USDT"); // Mainnet, Optimism, Arbitrum
-        _deployIfEnabled("CompoundV3_WETH"); // Mainnet, Optimism, Arbitrum, Base
-        _deployIfEnabled("CompoundV3_WBTC"); // Mainnet
-        _deployIfEnabled("CompoundV3_wstETH"); // Mainnet
-        _deployIfEnabled("CompoundV3_USDCe"); // Arbitrum (legacy USDC.e)
-        _deployIfEnabled("CompoundV3_USDbC"); // Base
-        _deployIfEnabled("CompoundV3_AERO"); // Base
 
         // --- Spark Lend (Mainnet only) ---
         _deployIfEnabled("SparkLend");
@@ -109,50 +87,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Cap Finance (Mainnet only) ---
         _deployIfEnabled("Cap");
 
-        // --- Morpho Vaults (one per vault) ---
-        _deployIfEnabled("MorphoVault_kpkETHPrime_V1"); // Mainnet — ETH Alpha
-        _deployIfEnabled("MorphoVault_kpkETHPrime_V2"); // Mainnet — ETH Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V1"); // Mainnet — USD Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
-        _deployIfEnabled("MorphoVault_kpkEURC_V1"); // Mainnet — EUR Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
+        // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
 
-        // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
-        _deployIfEnabled("MorphoMarket_wstETH_USDC");
-        _deployIfEnabled("MorphoMarket_cbBTC_USDC"); // Mainnet + Base (different marketIds)
-        _deployIfEnabled("MorphoMarket_wstUSR_USDC");
-        _deployIfEnabled("MorphoMarket_ETHPlus_USDC");
-        _deployIfEnabled("MorphoMarket_WBTC_USDC");
-        _deployIfEnabled("MorphoMarket_RLP_USDC");
-        _deployIfEnabled("MorphoMarket_syrupUSDC_USDC"); // Mainnet + Arbitrum
-        _deployIfEnabled("MorphoMarket_sUSDS_USDT"); // Mainnet
-        _deployIfEnabled("MorphoMarket_sUSDS_USDC"); // Arbitrum
-
-        // --- Morpho Markets (ETH Alpha — Mainnet + Base) ---
-        _deployIfEnabled("MorphoMarket_ETHPlus_WETH"); // Mainnet
-        _deployIfEnabled("MorphoMarket_wstETH_WETH"); // Mainnet + Base
-        _deployIfEnabled("MorphoMarket_weETH_WETH"); // Mainnet + Base
-        _deployIfEnabled("MorphoMarket_rsETH_WETH"); // Mainnet
-        _deployIfEnabled("MorphoMarket_cbETH_USDC"); // Base — USD Alpha
-
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
-        _deployIfEnabled("GearboxMarket_kpkWETH"); // per-market — superseded by GearboxMarketsMeta
-        _deployIfEnabled("GearboxMarket_kpkwstETH"); // per-market — superseded by GearboxMarketsMeta
 
         // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
         _deployIfEnabled("BalancerV3PoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
         _deployIfEnabled("BalancerV3GaugesMeta"); // Meta-adapter: all Balancer V3 gauges (staked LP + rewards); gauge set on NAV
         _deployIfEnabled("BalancerV2PoolsMeta"); // Meta-adapter: all Balancer V2 pools (wallet LP); poolId set on NAV
         _deployIfEnabled("BalancerV2GaugesMeta"); // Meta-adapter: all Balancer V2 gauges (staked LP + rewards); gauge set on NAV
-
-        // --- Balancer V3 (one per pool — superseded by the meta-adapters above) ---
-        _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
-        _deployIfEnabled("BalancerV3_GHO_USDT_USDC"); // Mainnet — USD Alpha (Boosted GHO/USDT/USDC underlying; Aura adapter wraps it)
-        _deployIfEnabled("BalancerV3_GHO_USDC_USDT"); // Arbitrum — USD Alpha (Boosted GHO/USDC/USDT underlying)
-        _deployIfEnabled("BalancerV3_GHO_USDC"); // Base — USD Alpha (Boosted GHO/USDC underlying)
 
         // --- Aura (one per pool) ---
         _deployIfEnabled("Aura_rETH_WETH"); // Mainnet — ETH Alpha
@@ -174,28 +120,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Fluid Lending (meta-adapter: all fTokens; fToken set on NAV, ADR 0010) ---
         _deployIfEnabled("FluidFTokensMeta");
-        _deployIfEnabled("Fluid_fToken_USDC"); // per-fToken — superseded by FluidFTokensMeta
-        _deployIfEnabled("Fluid_fToken_USDT"); // Mainnet, Arbitrum, Polygon
-        _deployIfEnabled("Fluid_fToken_WETH"); // Mainnet, Arbitrum, Base, Polygon
-        _deployIfEnabled("Fluid_fToken_wstETH"); // Mainnet, Arbitrum, Base, Polygon
-        _deployIfEnabled("Fluid_fToken_GHO"); // Mainnet, Arbitrum, Base
-        _deployIfEnabled("Fluid_fToken_sUSDe"); // Mainnet, Arbitrum, Base
-        _deployIfEnabled("Fluid_fToken_USDtb"); // Mainnet
-        _deployIfEnabled("Fluid_fToken_ARB"); // Arbitrum
-        _deployIfEnabled("Fluid_fToken_EURC"); // Base
-        _deployIfEnabled("Fluid_fToken_WPOL"); // Polygon
-        _deployIfEnabled("Fluid_fToken_AUSD"); // Polygon
 
         // --- Fluid Vaults (meta-adapter: all T1 vaults; vault set on NAV, ADR 0010) ---
         _deployIfEnabled("FluidVaultsMeta");
-
-        // --- Fluid Vaults (one adapter per T1 vault — superseded by FluidVaultsMeta) ---
-        // ETH/USDC vault is intentionally NOT wired — needs to confirm whether the vault uses
-        // the native ETH sentinel (ERC-7528) or WETH on the supply leg. Add the config entry
-        // and the matching `_deployIfEnabled` row in a follow-up.
-        _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
-        _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
-        _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet
 
         // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
         _deployIfEnabled("StaderWithdrawalQueue");
@@ -208,22 +135,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
-        _deployIfEnabled("StakeWiseV3Vault_Genesis"); // per-vault — superseded by StakeWiseV3VaultsMeta
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
 
         // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
-        _deployIfEnabled("UniswapV3_WBTC_WETH_3000"); // per-pool — superseded by UniswapV3PoolsMeta
 
-        // --- PancakeSwap V2 (meta-adapter + per-pair) ---
+        // --- PancakeSwap V2 (meta-adapter) ---
         _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
-        _deployIfEnabled("PancakeSwapV2_ETH_COW"); // per-pair — superseded by PancakeSwapV2PoolsMeta
 
-        // --- PancakeSwap V3 (meta-adapter + per-pool) ---
+        // --- PancakeSwap V3 (meta-adapter) ---
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // Base — meta-adapter: all PancakeSwap V3 pools
-        _deployIfEnabled("PancakeSwapV3_WETH_COW"); // per-pool — superseded by PancakeSwapV3PoolsMeta
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
@@ -281,13 +204,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return address(0);
         }
 
-        // AaveV2 adapters (Aave V2's data provider has the same getUserReserveData / getAllReservesTokens
-        // ABI as V3, so the V2 adapter is a thin subclass — see src/balances/protocols/AaveV2Instance.sol)
+        // AaveV2 meta-adapter (per-instance adapters removed — superseded by AaveV2InstancesMeta)
         if (_equals(adapterName, "AaveV2InstancesMeta")) {
             return _deployAaveV2InstancesMeta(adapterName, navCalculator);
-        }
-        if (_equals(adapterName, "AaveV2") || _startsWith(adapterName, "AaveV2_")) {
-            return _deployAaveV2(adapterName, navCalculator);
         }
 
         // AaveV3 adapters
@@ -300,12 +219,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployAaveV3(adapterName, navCalculator);
         }
 
-        // CompoundV3 adapters
+        // CompoundV3 meta-adapter (per-instance adapters removed — superseded by CompoundV3CometsMeta)
         if (_equals(adapterName, "CompoundV3CometsMeta")) {
             return _deployCompoundV3CometsMeta(adapterName, navCalculator);
-        }
-        if (_startsWith(adapterName, "CompoundV3_")) {
-            return _deployCompoundV3(adapterName, navCalculator);
         }
 
         // SparkLend adapters (bare name for single-instance, prefix for future multi-market)
@@ -313,14 +229,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deploySparkLend(adapterName, navCalculator);
         }
 
-        // Morpho Markets meta-adapter (one adapter for all markets; marketId set lives on NAVCalculator — ADR 0010)
+        // Morpho Markets meta-adapter (per-instance adapters removed — superseded by MorphoMarketsMeta)
         if (_equals(adapterName, "MorphoMarketsMeta")) {
             return _deployMorphoMarketsMeta(adapterName, navCalculator);
-        }
-
-        // MorphoBlue adapters
-        if (_startsWith(adapterName, "MorphoMarket_")) {
-            return _deployMorphoMarket(adapterName, navCalculator);
         }
 
         // DAI DSR
@@ -333,22 +244,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deploySkySavingsUsds(navCalculator);
         }
 
-        // Morpho Vaults meta-adapter (one adapter for all vaults; instance set lives on NAVCalculator — ADR 0010)
+        // Morpho Vaults meta-adapter (per-instance adapters removed — superseded by MorphoVaultsMeta)
         if (_equals(adapterName, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
         }
 
-        // Morpho Vault adapters
-        if (_startsWith(adapterName, "MorphoVault_")) {
-            return _deployMorphoVault(adapterName, navCalculator);
-        }
-
-        // Gearbox Market adapters
+        // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxMarketsMeta)
         if (_equals(adapterName, "GearboxMarketsMeta")) {
             return _deployGearboxMarketsMeta(adapterName, navCalculator);
-        }
-        if (_startsWith(adapterName, "GearboxMarket_")) {
-            return _deployGearboxMarket(adapterName, navCalculator);
         }
 
         // Cap Finance adapter
@@ -390,22 +293,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployBalancerV2GaugesMeta(adapterName, navCalculator);
         }
 
-        // Balancer V3 adapters
-        if (_startsWith(adapterName, "BalancerV3_")) {
-            return _deployBalancerV3(adapterName, navCalculator);
-        }
-
         // Aura adapters
         if (_startsWith(adapterName, "Aura_")) {
             return _deployAura(adapterName, navCalculator);
         }
 
-        // StakeWise V3 Vault adapters
+        // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
         if (_equals(adapterName, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(adapterName, navCalculator);
-        }
-        if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
-            return _deployStakeWiseV3Vault(adapterName, navCalculator);
         }
 
         // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
@@ -414,16 +309,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
         if (_equals(adapterName, "FluidVaultsMeta")) {
             return _deployFluidVaultsMeta(adapterName, navCalculator);
-        }
-
-        // Fluid Lending fToken adapters (one per fToken instance)
-        if (_startsWith(adapterName, "Fluid_fToken_")) {
-            return _deployFluidFToken(adapterName, navCalculator);
-        }
-
-        // Fluid Vault adapters (one per T1 vault instance)
-        if (_startsWith(adapterName, "Fluid_Vault_")) {
-            return _deployFluidVault(adapterName, navCalculator);
         }
 
         // Stader withdrawal queue
@@ -446,7 +331,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMerklRewards(adapterName, navCalculator);
         }
 
-        // Uniswap/PancakeSwap meta-adapters (one adapter for all pools/pairs; instance set lives on NAV — ADR 0010)
+        // Uniswap/PancakeSwap meta-adapters (per-instance adapters removed — superseded by meta-adapters)
         if (_equals(adapterName, "UniswapV3PoolsMeta")) {
             return _deployUniswapV3PoolsMeta(adapterName, navCalculator);
         }
@@ -457,34 +342,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
         }
 
-        // Uniswap V3 adapters (one instance per pool)
-        if (_startsWith(adapterName, "UniswapV3_")) {
-            return _deployUniswapV3(adapterName, navCalculator);
-        }
-
-        // PancakeSwap V2 adapters (one instance per pair) — reuses UniswapV2BalanceOracle.
-        if (_startsWith(adapterName, "PancakeSwapV2_")) {
-            return _deployPancakeSwapV2(adapterName, navCalculator);
-        }
-
-        // PancakeSwap V3 adapters (one instance per pool) — separate contract from UniswapV3 due to
-        // PCS V3's `slot0().feeProtocol` being uint32 (vs Uniswap V3's uint8). See PancakeSwapV3Pool.sol NatSpec.
-        if (_startsWith(adapterName, "PancakeSwapV3_")) {
-            return _deployPancakeSwapV3(adapterName, navCalculator);
-        }
-
         // Unknown adapter type
         console2.log("Unknown adapter type:", adapterName);
         return address(0);
-    }
-
-    function _deployAaveV2(string memory adapterName, address navCalculator) internal returns (address) {
-        address dataProvider = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
-        );
-
-        AaveV2InstanceBalanceOracle adapter = new AaveV2InstanceBalanceOracle(dataProvider, navCalculator);
-        return address(adapter);
     }
 
     /// @notice Deploys the Aave V2 instances meta-adapter. Constructor takes (protocol, navCalculator); the
@@ -514,19 +374,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployCompoundV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address compoundRewards = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "compoundRewards")
-        );
-        address comet =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "comet"));
-        address rewardToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardToken")
-        );
-        CompoundV3Comet adapter = new CompoundV3Comet(compoundRewards, comet, rewardToken, navCalculator);
-        return address(adapter);
-    }
-
     /// @notice Deploys the Compound V3 comets meta-adapter. Constructor takes (compoundRewards, rewardToken,
     ///         protocol, navCalculator) — chain-level constants; the comet set is configured on NAVCalculator
     ///         via setMetaInstances in 06 (ADR 0010).
@@ -551,17 +398,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         SparkLendBalanceOracle adapter = new SparkLendBalanceOracle(dataProvider, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployMorphoMarket(string memory adapterName, address navCalculator) internal returns (address) {
-        address morpho = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
-        );
-        string memory marketIdStr =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "marketId");
-        bytes32 marketId = vm.parseBytes32(marketIdStr);
-        MorphoMarketBalanceOracle adapter = new MorphoMarketBalanceOracle(morpho, marketId, navCalculator);
         return address(adapter);
     }
 
@@ -598,14 +434,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployMorphoVault(string memory adapterName, address navCalculator) internal returns (address) {
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-
-        MorphoVaultBalanceOracle adapter = new MorphoVaultBalanceOracle(vault, navCalculator);
-        return address(adapter);
-    }
-
     /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (protocol, navCalculator); the set of
     ///         vaults to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
@@ -613,15 +441,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
         MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployGearboxMarket(string memory adapterName, address navCalculator) internal returns (address) {
-        address market = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
-        );
-
-        GearboxMarketBalanceOracle adapter = new GearboxMarketBalanceOracle(market, navCalculator);
         return address(adapter);
     }
 
@@ -746,19 +565,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployBalancerV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
-        address gauge =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
-        address balancerMinter = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
-        );
-
-        BalancerV3PoolBalanceOracle adapter = new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, navCalculator);
-        return address(adapter);
-    }
-
     function _deployAura(string memory adapterName, address navCalculator) internal returns (address) {
         address pool =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
@@ -776,17 +582,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployStakeWiseV3Vault(string memory adapterName, address navCalculator) internal returns (address) {
-        address underlyingToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
-        );
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-
-        StakeWiseV3VaultBalanceOracle adapter = new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, navCalculator);
-        return address(adapter);
-    }
-
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,
     ///         navCalculator); the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
     function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
@@ -798,15 +593,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
             new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployFluidFToken(string memory adapterName, address navCalculator) internal returns (address) {
-        address fToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "fToken")
-        );
-
-        FluidFTokenBalanceOracle adapter = new FluidFTokenBalanceOracle(fToken, navCalculator);
         return address(adapter);
     }
 
@@ -829,17 +615,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         FluidVaultsMetaBalanceAdapter adapter =
             new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployFluidVault(string memory adapterName, address navCalculator) internal returns (address) {
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-        address vaultResolver = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
-        );
-
-        FluidVaultBalanceOracle adapter = new FluidVaultBalanceOracle(vault, vaultResolver, navCalculator);
         return address(adapter);
     }
 
@@ -902,17 +677,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployUniswapV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
-        address positionManager = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
-        );
-
-        UniswapV3PoolBalanceOracle adapter = new UniswapV3PoolBalanceOracle(pool, positionManager, navCalculator);
-        return address(adapter);
-    }
-
     /// @notice Deploys the Uniswap V3 pools meta-adapter. Constructor takes (positionManager, protocol,
     ///         navCalculator); the pool set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
     function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
@@ -955,50 +719,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
         }
         return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
-    }
-
-    function _deployPancakeSwapV2(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "PancakeSwapV2_<pair>": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "pair": "0x...",
-        //       "protocol": "PancakeSwap V2",
-        //       "positionDetail": "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
-        // PancakeSwapV2BalanceOracle is a thin (SparkLend-style) subclass of UniswapV2BalanceOracle
-        // — see src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
-        address pair =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
-
-        PancakeSwapV2BalanceOracle adapter = new PancakeSwapV2BalanceOracle(pair, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployPancakeSwapV3(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "PancakeSwapV3_<pool>": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "pool": "0x...",
-        //       "positionManager": "0x46A1...",
-        //       "protocol": "PancakeSwap V3",
-        //       "positionDetail": "{\"protocol\":\"PancakeSwap V3\",\"pool\":\"WETH/COW 0.25%\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
-        // Separate contract from UniswapV3PoolBalanceOracle: PCS V3's slot0().feeProtocol is uint32
-        // (vs Uniswap V3's uint8). See src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol NatSpec.
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
-        address positionManager = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
-        );
-
-        PancakeSwapV3PoolBalanceOracle adapter = new PancakeSwapV3PoolBalanceOracle(pool, positionManager, navCalculator);
-        return address(adapter);
     }
 
     /// @notice Helper to read deployed adapter address

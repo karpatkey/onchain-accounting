@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
-import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title PancakeSwapV3PoolsMetaParityForkTest (Base)
 /// @notice Validates the PancakeSwap V3 pools meta-adapter against the real Base WETH/COW 0.25% pool. The key
@@ -20,14 +19,12 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
     address public constant HOLDER = 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669;
     uint256 public constant FORK_BLOCK = 45_520_000;
 
-    PancakeSwapV3PoolBalanceOracle public per;
     PancakeSwapV3PoolsMetaBalanceAdapter public meta;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForOracle(_assets());
-        per = new PancakeSwapV3PoolBalanceOracle(POOL, NPM, address(balances));
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
     }
 
@@ -48,12 +45,8 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
         ins[0] = bytes32(uint256(uint160(POOL)));
     }
 
-    /// @notice The slot0 uint32-feeProtocol override decodes on a real PCS pool: the call succeeds (no revert) and
-    ///         matches the per-instance adapter per token.
-    function test_slot0Override_and_parity() public view {
-        (uint256 perWeth,) = per.getOracleBalanceForAsset(HOLDER, BASE_WETH);
-        (uint256 perCow,) = per.getOracleBalanceForAsset(HOLDER, BASE_COW);
-
+    /// @notice The slot0 uint32-feeProtocol override decodes on a real PCS pool: the call succeeds (no revert).
+    function test_slot0Override_noRevert() public view {
         uint256 metaWeth;
         uint256 metaCow;
         INAVCalculator.PositionBalance[] memory p =
@@ -62,7 +55,8 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
             if (p[i].balanceAsset.asset == BASE_WETH) metaWeth += p[i].amount;
             if (p[i].balanceAsset.asset == BASE_COW) metaCow += p[i].amount;
         }
-        assertEq(metaWeth, perWeth, "WETH parity");
-        assertEq(metaCow, perCow, "COW parity");
+        // holder's position is closed (liquidity 0), so amounts are zero — the key assertion is no revert.
+        assertEq(metaWeth, 0, "WETH (closed position)");
+        assertEq(metaCow, 0, "COW (closed position)");
     }
 }

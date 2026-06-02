@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -35,7 +34,6 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     NAVCalculator public nav;
     MorphoMarketsMetaBalanceAdapter public oracle;
-    MorphoMarketBalanceOracle public perMarket;
 
     function setUp() public override {
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
@@ -79,7 +77,6 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         oracle = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
-        perMarket = new MorphoMarketBalanceOracle(MORPHO, MARKET_ID, address(nav));
 
         vm.startPrank(manager);
         nav.addBalanceOracle(address(oracle));
@@ -108,23 +105,6 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(collateral, 1, "one collateral leg (apyUSD)");
         assertEq(supply, 1, "one loan-supply leg (apxUSD)");
         assertEq(borrow, 1, "one loan-borrow leg (apxUSD)");
-    }
-
-    function test_parity_withPerMarketAdapter() public view {
-        bytes32[] memory instances = new bytes32[](1);
-        instances[0] = MARKET_ID;
-        INAVCalculator.PositionBalance[] memory metaPos =
-            oracle.getOraclePositionsForInstances(USER, instances, address(0));
-        INAVCalculator.PositionBalance[] memory refPos = perMarket.getOraclePositions(USER, address(0));
-
-        assertEq(metaPos.length, refPos.length, "same leg count as per-market adapter");
-        // Same order (collateral, supply, borrow) and same amounts/flags; positionId is the same marketId hex.
-        for (uint256 i = 0; i < metaPos.length; i++) {
-            assertEq(metaPos[i].balanceAsset.asset, refPos[i].balanceAsset.asset, "asset");
-            assertEq(metaPos[i].amount, refPos[i].amount, "amount");
-            assertEq(metaPos[i].isDebt, refPos[i].isDebt, "isDebt");
-            assertEq(metaPos[i].positionId, refPos[i].positionId, "positionId (marketId hex)");
-        }
     }
 
     function test_navRouting_surfacesAllLegs() public view {

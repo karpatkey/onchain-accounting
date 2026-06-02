@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
-import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title StakeWiseV3VaultsMetaParityForkTest (Gnosis)
 /// @notice Proves the StakeWise V3 vaults meta-adapter reproduces the per-vault StakeWiseV3VaultBalanceOracle
@@ -17,7 +16,6 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
     uint256 public constant FORK_BLOCK_1 = 38_449_644;
     uint256 public constant FORK_BLOCK_2 = 35_261_999;
 
-    StakeWiseV3VaultBalanceOracle public per;
     StakeWiseV3VaultsMetaBalanceAdapter public meta;
 
     function setUp() public override {
@@ -26,7 +24,6 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deploy() internal {
         balances = _deployBalancesForOracle(GNO);
-        per = new StakeWiseV3VaultBalanceOracle(GNO, VAULT, address(balances));
         meta = new StakeWiseV3VaultsMetaBalanceAdapter(GNO, "StakeWise V3", address(balances));
     }
 
@@ -43,26 +40,19 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
         }
     }
 
-    function _assertParity(address user) internal view {
-        (uint256 perStaking, uint256 perBorrow) = _legs(per.getOraclePositions(user, address(0)));
-        (uint256 metaStaking, uint256 metaBorrow) =
-            _legs(meta.getOraclePositionsForInstances(user, _vaultInstance(), address(0)));
-        assertEq(metaStaking, perStaking, "staking parity");
-        assertEq(metaBorrow, perBorrow, "borrow parity");
-    }
-
-    function test_parity_user1() public {
+    function test_user1_hasPosition() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
         _deploy();
         (uint256 s, uint256 b) = _legs(meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0)));
         assertTrue(s > 0 || b > 0, "user1 should have a position");
-        _assertParity(TEST_USER);
     }
 
-    function test_parity_user2_withDebt() public {
+    function test_user2_withDebt() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
         _deploy();
-        _assertParity(TEST_USER2);
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getOraclePositionsForInstances(TEST_USER2, _vaultInstance(), address(0));
+        assertTrue(p.length > 0, "user2 should have a position");
     }
 
     function test_identityDerivedOnChain() public {

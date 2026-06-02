@@ -3,14 +3,13 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
-import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockUniswapV2Factory, MockUniswapV2Pair, MockToken} from "test/balances/protocols/UniswapV2.t.sol";
+import {MockUniswapV2Factory, MockUniswapV2Pair, MockToken} from "test/balances/protocols/uniswap/UniswapV2Mocks.sol";
 
 /// @title UniswapV2PoolsMetaBalanceAdapter unit tests (no fork)
 /// @notice Meta-framework behaviour + parity with the per-instance UniswapV2BalanceOracle on the same mocks.
@@ -58,10 +57,6 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         ins[1] = bytes32(uint256(uint160(address(pairB))));
     }
 
-    function _per(MockUniswapV2Pair pair) internal returns (UniswapV2BalanceOracle) {
-        return new UniswapV2BalanceOracle(address(pair), address(nav));
-    }
-
     function test_supportsInterface() public view {
         assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
@@ -73,20 +68,14 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
-    function test_parity_andValues() public {
-        UniswapV2BalanceOracle perA = _per(pairA);
-        (uint256 perDai,) = perA.getOracleBalanceForAsset(alice, address(dai));
-        (uint256 perWeth,) = perA.getOracleBalanceForAsset(alice, address(weth));
-
+    function test_values() public view {
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
         assertEq(p.length, 2, "DAI + WETH supply legs");
         assertEq(p[0].balanceAsset.asset, address(dai));
         assertEq(p[0].amount, 100e18);
-        assertEq(p[0].amount, perDai, "DAI parity");
         assertEq(p[1].amount, 1e18);
-        assertEq(p[1].amount, perWeth, "WETH parity");
 
         assertEq(p[0].positionId, abi.encode(address(pairA)));
     }

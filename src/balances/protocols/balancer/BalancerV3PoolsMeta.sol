@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IStablePool} from "../BalancerV3.sol";
+import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
 /// @title Balancer V3 Pools Meta Balance Adapter

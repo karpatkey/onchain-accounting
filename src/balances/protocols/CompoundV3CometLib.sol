@@ -2,9 +2,73 @@
 pragma solidity ^0.8;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {ICompoundRewards, CometExtInterface, CometInterface} from "src/balances/protocols/CompoundV3Comet.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+
+interface ICompoundRewards {
+    /// @notice Some chains return a 4th `multiplier` value; the adapter detects via `data.length`.
+    function rewardConfig(address comet) external view returns (address token, uint64 rescaleFactor, bool shouldUpscale);
+
+    function rewardsClaimed(address comet, address src) external view returns (uint256);
+}
+
+interface CometExtInterface {
+    function collateralBalanceOf(address account, address asset) external view returns (uint256);
+
+    function getAssetInfo(uint8 i)
+        external
+        view
+        returns (
+            uint8 offset,
+            address asset,
+            address priceFeed,
+            uint64 scale,
+            uint64 borrowCollateralFactor,
+            uint64 liquidateCollateralFactor,
+            uint64 liquidationFactor,
+            uint128 supplyCap
+        );
+
+    function numAssets() external view returns (uint8);
+
+    function userBasic(address account)
+        external
+        view
+        returns (
+            int104 principal,
+            uint64 baseTrackingIndex,
+            uint64 baseTrackingAccrued,
+            uint16 assetsIn,
+            uint8 reserved
+        );
+
+    function totalsBasic()
+        external
+        view
+        returns (
+            uint64 baseSupplyIndex,
+            uint64 baseBorrowIndex,
+            uint64 trackingSupplyIndex,
+            uint64 trackingBorrowIndex,
+            uint104 totalSupplyBase,
+            uint104 totalBorrowBase,
+            uint40 lastAccrualTime,
+            uint8 pauseFlags
+        );
+
+    function baseScale() external view returns (uint256);
+    function getUtilization() external view returns (uint256);
+    function getSupplyRate(uint256 utilization) external view returns (uint256);
+    function getBorrowRate(uint256 utilization) external view returns (uint256);
+    function baseMinForRewards() external view returns (uint256);
+    function baseTrackingSupplySpeed() external view returns (uint256);
+    function baseTrackingBorrowSpeed() external view returns (uint256);
+    function trackingIndexScale() external view returns (uint256);
+}
+
+interface CometInterface {
+    function baseToken() external view returns (address);
+}
 
 /// @title CompoundV3CometLib
 /// @author kpk

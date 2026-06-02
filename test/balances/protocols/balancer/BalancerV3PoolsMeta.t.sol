@@ -7,7 +7,7 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IStablePool} from "src/balances/protocols/BalancerV3.sol";
+import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";

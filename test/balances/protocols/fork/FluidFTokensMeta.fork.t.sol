@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
-import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -18,7 +17,6 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
 
     address public user = makeAddr("fluidUser");
 
-    FluidFTokenBalanceOracle public per;
     FluidFTokensMetaBalanceAdapter public meta;
 
     function setUp() public override {
@@ -35,7 +33,6 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         balances = _deployBalancesForOracle(USDC);
-        per = new FluidFTokenBalanceOracle(F_USDC, address(balances));
         meta = new FluidFTokensMetaBalanceAdapter("Fluid", address(balances));
     }
 
@@ -44,11 +41,9 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         ins[0] = bytes32(uint256(uint160(F_USDC)));
     }
 
-    function test_parity() public view {
-        (uint256 perAmt,) = per.getOracleBalanceForAsset(user, USDC);
+    function test_metaBalance() public view {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(user, _instance(), address(0));
         assertEq(p.length, 1);
-        assertEq(p[0].amount, perAmt, "USDC supply parity");
         assertApproxEqAbs(p[0].amount, 50_000e6, 1, "approx deposited assets");
         assertEq(p[0].positionId, abi.encode(F_USDC));
     }

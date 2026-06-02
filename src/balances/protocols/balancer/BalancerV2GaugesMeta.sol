@@ -7,7 +7,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IGaugeV3, IBalancerMinter, ITokenAdmin} from "src/balances/protocols/BalancerV3.sol";
+import {IGaugeV3, IBalancerMinter, ITokenAdmin} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balancer/BalancerV2PoolLib.sol";
 
 // solhint-disable func-name-mixedcase

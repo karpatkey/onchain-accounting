@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {IStablePool} from "../BalancerV3.sol";
+import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 
 /// @title BalancerV3PoolLib
 /// @author kpk

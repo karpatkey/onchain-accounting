@@ -1,7 +1,54 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IFluidVaultT1, IFluidVaultResolver} from "src/balances/protocols/FluidVault.sol";
+/// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to
+///         read the vault's collateral/debt tokens at construction time.
+interface IFluidVaultT1 {
+    struct ConstantViews {
+        address liquidity;
+        address factory;
+        address adminImplementation;
+        address secondaryImplementation;
+        address supplyToken;
+        address borrowToken;
+        uint8 supplyDecimals;
+        uint8 borrowDecimals;
+        uint256 vaultId;
+        bytes32 liquiditySupplyExchangePriceSlot;
+        bytes32 liquidityBorrowExchangePriceSlot;
+        bytes32 liquidityUserSupplySlot;
+        bytes32 liquidityUserBorrowSlot;
+    }
+
+    function constantsView() external view returns (ConstantViews memory);
+}
+
+/// @notice Minimal Fluid VaultResolver interface — only the views the adapter calls at runtime.
+interface IFluidVaultResolver {
+    /// @notice All NFT IDs owned by `user` across every Fluid vault.
+    function positionsNftIdOfUser(address user) external view returns (uint256[] memory nftIds);
+
+    /// @notice Vault address that minted `nftId`.
+    function vaultByNftId(uint256 nftId) external view returns (address vault);
+
+    /// @notice Per-NFT position details.
+    function positionByNftId(uint256 nftId) external view returns (UserPosition memory userPosition);
+
+    struct UserPosition {
+        uint256 nftId;
+        address owner;
+        bool isLiquidated;
+        bool isSupplyPosition;
+        int256 tick;
+        uint256 tickId;
+        uint256 beforeSupply;
+        uint256 beforeBorrow;
+        uint256 beforeDustBorrow;
+        uint256 supply;
+        uint256 borrow;
+        uint256 dustBorrow;
+    }
+}
 
 /// @title FluidVaultLib
 /// @author kpk

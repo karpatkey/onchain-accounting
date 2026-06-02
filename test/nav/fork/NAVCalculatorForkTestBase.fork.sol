@@ -9,8 +9,7 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
@@ -23,8 +22,8 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     address public safe = address(0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
 
     AaveV3InstanceBalanceOracle public aaveOracle;
-    CompoundV3Comet public compoundV3Comet;
-    MorphoMarketBalanceOracle public morphoBlueOracle;
+    IBalanceOracleAdapter public compoundV3Comet;
+    IBalanceOracleAdapter public morphoBlueOracle;
     DaiDsrBalanceOracle public daiDsr;
     sXDAI_PriceOracle public savingsXdaiPrice;
     sDAI_PriceOracle public sdaiPriceOracle;
@@ -121,14 +120,4 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         opts.unsafeSkipAllChecks = true;
     }
 
-    // Helper for try-catch in child (needs to be external)
-    function createCompoundOracle(
-        address compoundRewardContract_,
-        address comet_,
-        address compound_,
-        string memory, /* protocol_ — unused after constructor simplification */
-        address nav_
-    ) external returns (CompoundV3Comet) {
-        return new CompoundV3Comet(compoundRewardContract_, comet_, compound_, nav_);
-    }
 }

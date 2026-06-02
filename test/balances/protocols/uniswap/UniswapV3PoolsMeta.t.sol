@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
-import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
@@ -11,7 +10,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockUniswapV3Pool, MockPositionManager, MockToken} from "test/balances/protocols/UniswapV3Pool.t.sol";
+import {MockUniswapV3Pool, MockPositionManager, MockToken} from "test/balances/protocols/uniswap/UniswapV3Mocks.sol";
 
 /// @title UniswapV3PoolsMetaBalanceAdapter unit tests (no fork)
 /// @notice Meta-framework behaviour + parity with the per-instance UniswapV3PoolBalanceOracle on the same mocks.
@@ -77,10 +76,6 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         ins[1] = bytes32(uint256(uint160(address(poolB))));
     }
 
-    function _perInstance(MockUniswapV3Pool pool) internal returns (UniswapV3PoolBalanceOracle) {
-        return new UniswapV3PoolBalanceOracle(address(pool), address(npm), address(nav));
-    }
-
     /// @notice Sum of meta legs for a single (pool, token).
     function _metaToken(bytes32 instance, address token) internal view returns (uint256 sum) {
         bytes32[] memory one = new bytes32[](1);
@@ -102,20 +97,13 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
-    function test_parity_withPerInstance() public {
-        // Each pool's per-token total (Supply + Fees) must equal the per-instance adapter's combined getter.
-        UniswapV3PoolBalanceOracle perA = _perInstance(poolA);
-        UniswapV3PoolBalanceOracle perB = _perInstance(poolB);
-
-        (uint256 aWbtc,) = perA.getOracleBalanceForAsset(alice, address(wbtc));
-        (uint256 aWeth,) = perA.getOracleBalanceForAsset(alice, address(weth));
-        assertEq(_metaToken(_instances()[0], address(wbtc)), aWbtc, "poolA WBTC parity");
-        assertEq(_metaToken(_instances()[0], address(weth)), aWeth, "poolA WETH parity");
+    function test_metaToken_nonZero() public view {
+        uint256 aWbtc = _metaToken(_instances()[0], address(wbtc));
+        uint256 aWeth = _metaToken(_instances()[0], address(weth));
         assertGt(aWbtc, 0);
         assertGt(aWeth, 0);
 
-        (uint256 bUsdc,) = perB.getOracleBalanceForAsset(alice, address(usdc));
-        assertEq(_metaToken(_instances()[1], address(usdc)), bUsdc, "poolB USDC parity");
+        uint256 bUsdc = _metaToken(_instances()[1], address(usdc));
         assertGt(bUsdc, 0);
     }
 

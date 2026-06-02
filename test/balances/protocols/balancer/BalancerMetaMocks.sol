@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {IStablePool} from "src/balances/protocols/BalancerV3.sol";
+import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Minimal ERC20-metadata token used as a Balancer pool token or reward token. Deliberately has no

@@ -5,6 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -16,7 +17,7 @@ import "src/errors.sol";
 /// @dev This oracle reads the asset registry from NAVCalculator and returns balance-only positions for all registered assets
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-contract ERC20DefaultOracle is IBalanceOracleAdapter {
+contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Reference to NAVCalculator for asset registry access
@@ -155,12 +156,9 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "Wallet";

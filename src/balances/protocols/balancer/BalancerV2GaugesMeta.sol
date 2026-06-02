@@ -63,7 +63,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         address bpt = gauge.lp_token();
-        bytes memory positionId = abi.encode(address(gauge));
+        bytes memory positionId = _instancePositionId(instance);
 
         uint256 rewardCount = _rewardCount(gauge);
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -23,7 +24,7 @@ interface ISavingsUSDS is IERC4626 {
 /// @title SavingsUSDS Balance Oracle
 /// @notice Balance oracle for Savings USDS (sUSDS), an ERC4626 yield-bearing vault for USDS stablecoin
 /// This contract provides balance information by converting sUSDS vault shares to their underlying USDS value
-contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
+contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Libraries
     //
@@ -100,12 +101,9 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "Sky";

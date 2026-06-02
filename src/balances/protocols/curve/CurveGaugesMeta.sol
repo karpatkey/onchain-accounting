@@ -73,6 +73,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         address gauge = _toAddress(instance);
+        bytes memory pid = _instancePositionId(instance);
 
         uint256 stakedLp = CurvePoolLib.gaugeStaked(gauge, account);
 
@@ -90,7 +91,6 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                     uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
                     if (totalSupply > 0) {
                         address[] memory coins = CurvePoolLib.getCoins(pool);
-                        bytes memory pid = abi.encode(gauge);
 
                         for (uint256 i; i < coins.length; ++i) {
                             address coin = coins[i];
@@ -131,7 +131,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                         amount: crvLb,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
-                        positionId: abi.encode(gauge),
+                        positionId: pid,
                         positionKind: PositionKind.Earned
                     });
                 }
@@ -157,7 +157,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                 amount: amount,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
-                positionId: abi.encode(gauge),
+                positionId: pid,
                 positionKind: PositionKind.Earned
             });
         }

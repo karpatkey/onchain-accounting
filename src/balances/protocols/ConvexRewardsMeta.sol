@@ -83,7 +83,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
             new INAVCalculator.PositionBalance[](CurvePoolLib.MAX_COINS + 2 + _MAX_EXTRA);
         uint256 n;
 
-        bytes memory pid = abi.encode(rewarder);
+        bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Supplied legs: staked LP → underlying Curve pool tokens ────────
         if (stakedLp > 0) {

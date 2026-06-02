@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -22,7 +23,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      equals the ETH paid on claim (verified on-chain; it can differ only on a negative rebase
 ///      between request and finalization, where Lido caps the payout). NAVCalculator prices it via
 ///      the registered ETH feed.
-contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
+contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Constants
     //
@@ -140,7 +141,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {

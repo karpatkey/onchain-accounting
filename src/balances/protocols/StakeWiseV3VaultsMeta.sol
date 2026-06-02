@@ -66,7 +66,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
         uint256 vaultAssets = vault.convertToAssets(vault.getShares(account));
         uint256 mintedOs = vault.convertToAssets(vault.osTokenPositions(account));
 
-        bytes memory pid = abi.encode(address(vault));
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;

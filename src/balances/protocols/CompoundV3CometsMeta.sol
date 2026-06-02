@@ -56,7 +56,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         CompoundV3CometLib.AccountData memory d =
             CompoundV3CometLib.accountData(comet, COMPOUND_REWARDS, REWARD_TOKEN, account);
 
-        bytes memory pid = abi.encode(comet);
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](d.collateralAssets.length + 2);

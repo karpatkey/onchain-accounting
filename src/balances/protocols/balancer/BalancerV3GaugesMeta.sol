@@ -54,7 +54,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         IStablePool pool = IStablePool(gauge.lp_token());
-        bytes memory positionId = abi.encode(address(gauge));
+        bytes memory positionId = _instancePositionId(instance);
 
         address[] memory tokens = pool.poolTokens();
         // Worst case: one Staking leg per pool token + one Rewards leg per (pool token also a reward) + BAL +

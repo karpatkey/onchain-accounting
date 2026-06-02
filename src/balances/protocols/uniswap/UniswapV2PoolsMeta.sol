@@ -35,16 +35,17 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         address pair = _toAddress(instance);
+        bytes memory pid = _instancePositionId(instance);
         (address token0, address token1, uint256 amount0, uint256 amount1) = UniswapV2PairLib.pairAmounts(pair, account);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
 
         (INAVCalculator.Asset memory a0, bool f0) = _eligible(token0, assetFilter);
-        if (f0 && amount0 > 0) temp[count++] = _row(a0, amount0, pair);
+        if (f0 && amount0 > 0) temp[count++] = _row(a0, amount0, pid);
 
         (INAVCalculator.Asset memory a1, bool f1) = _eligible(token1, assetFilter);
-        if (f1 && amount1 > 0) temp[count++] = _row(a1, amount1, pair);
+        if (f1 && amount1 > 0) temp[count++] = _row(a1, amount1, pid);
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i = 0; i < count; i++) {
@@ -70,7 +71,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, address pair)
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId)
         private
         view
         returns (INAVCalculator.PositionBalance memory)
@@ -81,7 +82,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: abi.encode(pair),
+            positionId: positionId,
             positionKind: PositionKind.Supplied
         });
     }

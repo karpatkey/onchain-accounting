@@ -51,7 +51,7 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceOracle {
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: abi.encode(address(market)),
+            positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied
         });
         return positions;

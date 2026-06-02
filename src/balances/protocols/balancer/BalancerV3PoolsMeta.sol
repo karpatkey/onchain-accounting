@@ -40,7 +40,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         }
 
         address[] memory tokens = pool.poolTokens();
-        bytes memory positionId = abi.encode(address(pool));
+        bytes memory positionId = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](tokens.length);
         uint256 count;

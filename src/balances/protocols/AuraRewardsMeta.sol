@@ -123,7 +123,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.PositionBalance[] memory tmp =
             new INAVCalculator.PositionBalance[](_maxTokens(pool, isV3) + 2 + _MAX_EXTRA);
         uint256 n;
-        bytes memory pid = abi.encode(auraRewards);
+        bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Supplied legs: staked BPT decomposed into Balancer pool tokens ─
         if (stakedBpt > 0) {

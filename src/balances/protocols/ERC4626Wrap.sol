@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -26,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         errors loud (rather than silently producing a zero-value adapter). A defensive
 ///         runtime check also drops positions if the asset gets later unregistered via
 ///         `nav.unregisterAsset`, mirroring the conservative pattern in the Morpho vaults adapter.
-contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
+contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -87,12 +88,9 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
     //
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "ERC4626";

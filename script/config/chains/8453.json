@@ -7,7 +7,7 @@
   "chainlinkSequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
@@ -25,8 +25,88 @@
       },
       "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
-    "AaveV3_Base": {
+    "AaveV3InstancesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Base, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Aave V3"
+      },
+      "metaInstances": [
+        "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad"
+      ],
+      "deployed": ""
+    },
+    "MorphoMarketsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        "protocol": "Morpho"
+      },
+      "metaInstancesRaw": [
+        "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
+        "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+        "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
+        "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea"
+      ],
+      "deployed": ""
+    },
+    "BalancerV3PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC pool legs, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "protocol": "Balancer V3"
+      },
+      "metaInstances": [
+        "0x7AB124EC4029316c2A42F713828ddf2a192B36db"
+      ],
+      "deployed": ""
+    },
+    "BalancerV3GaugesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC gauge legs, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "balancerMinter": "0x0c5538098EBe88175078972F514C9e101D325D4F",
+        "protocol": "Balancer V3"
+      },
+      "metaInstances": [
+        "0x70DB188E5953f67a4B16979a2ceA26248b315401"
+      ],
+      "deployed": ""
+    },
+    "FluidFTokensMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "protocol": "Fluid"
+      },
+      "metaInstances": [
+        "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169",
+        "0x9272D6153133175175Bc276512B2336BE3931CE9",
+        "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5",
+        "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631"
+      ],
+      "deployed": ""
+    },
+    "CompoundV3CometsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
+      "enabled": true,
+      "constructor": {
+        "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
+        "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
+        "protocol": "Compound V3"
+      },
+      "metaInstances": [
+        "0x784efeB622244d2348d4F2522f8860B96fbEcE89",
+        "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
+        "0xb125E6687d4313864e53df431d5425969c15Eb2F",
+        "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
+        "0x46e6b214b524310239732D51387075E0e70970bf"
+      ],
+      "deployed": ""
+    },
+    "AaveV3_Base": {
+      "enabled": false,
       "constructor": {
         "dataProvider": "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad",
         "protocol": "Aave V3",
@@ -36,7 +116,7 @@
       "deployed": "0xbf7d1dd7aedE0841f563584E39cA8b69F4Ca29B1"
     },
     "MorphoMarket_cbETH_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
@@ -46,7 +126,7 @@
       "deployed": "0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f"
     },
     "MorphoMarket_cbBTC_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
@@ -56,7 +136,7 @@
       "deployed": "0x2F77a41C17C7cAb30cc320112b649ab8B070617E"
     },
     "MorphoMarket_wstETH_WETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
@@ -66,7 +146,7 @@
       "deployed": "0xd96Af38c9685B724b9C7e0646D7Ea19e13402867"
     },
     "MorphoMarket_weETH_WETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "marketId": "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea",
@@ -75,8 +155,21 @@
       },
       "deployed": "0xDdBb3444421a4c4F142fE9544bf7Cd404663745e"
     },
-    "Aura_GHO_USDC": {
+    "AuraRewardsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
+        "balancerV2Vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+        "protocol": "Aura"
+      },
+      "metaInstances": [
+        "0x28a002a98F4DA7A7B541b5e4d7a42E0F64E4aeF1"
+      ],
+      "deployed": ""
+    },
+    "Aura_GHO_USDC": {
+      "enabled": false,
       "constructor": {
         "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
         "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
@@ -89,7 +182,7 @@
       "deployed": "0x286Ae1f0Ee0BE577acE2F087ad98c2F3C71ddDb0"
     },
     "BalancerV3_GHO_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
         "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
@@ -101,7 +194,7 @@
       "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
     },
     "Fluid_fToken_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169",
         "protocol": "Fluid",
@@ -111,7 +204,7 @@
       "deployed": ""
     },
     "Fluid_fToken_WETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0x9272D6153133175175Bc276512B2336BE3931CE9",
         "protocol": "Fluid",
@@ -121,7 +214,7 @@
       "deployed": ""
     },
     "Fluid_fToken_wstETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5",
         "protocol": "Fluid",
@@ -131,7 +224,7 @@
       "deployed": ""
     },
     "Fluid_fToken_GHO": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631",
         "protocol": "Fluid",
@@ -141,7 +234,7 @@
       "deployed": ""
     },
     "CompoundV3_AERO": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
         "comet": "0x784efeB622244d2348d4F2522f8860B96fbEcE89",
@@ -153,7 +246,7 @@
       "deployed": ""
     },
     "CompoundV3_USDbC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
         "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
@@ -165,7 +258,7 @@
       "deployed": ""
     },
     "CompoundV3_USDC": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
         "comet": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
@@ -177,7 +270,7 @@
       "deployed": ""
     },
     "CompoundV3_USDS": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
         "comet": "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
@@ -189,7 +282,7 @@
       "deployed": ""
     },
     "CompoundV3_WETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
         "comet": "0x46e6b214b524310239732D51387075E0e70970bf",
@@ -211,7 +304,20 @@
       "deployed": "",
       "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
     },
+    "PancakeSwapV3PoolsMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (setMetaInstances, from metaInstances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+      "enabled": false,
+      "constructor": {
+        "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+        "protocol": "PancakeSwap V3"
+      },
+      "metaInstances": [
+        "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
+      ],
+      "deployed": ""
+    },
     "PancakeSwapV3_WETH_COW": {
+      "$superseded": "Disabled \u2014 superseded by PancakeSwapV3PoolsMeta (ADR 0010), and independently gated on a Base COW price feed (see comment below).",
       "enabled": false,
       "constructor": {
         "pool": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF",

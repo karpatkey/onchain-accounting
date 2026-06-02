@@ -60,7 +60,7 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
   "chainlinkSequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
   "nativeTokenSymbol": "ETH",
   "addresses": {
-    "safeMultisig": "0x...",
+    "securityCouncil": "0x...",
     "admin": "0x...",
     "manager": "0x..."
   },
@@ -104,8 +104,8 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 | `explorerApiKey` | string | API key for verification (use env var) |
 | `chainlinkSequencerFeed` | address | L2 sequencer uptime feed (use 0x0 for L1) |
 | `nativeTokenSymbol` | string | Native token symbol (ETH, xDAI, etc.) |
-| `addresses.safeMultisig` | address | Safe multisig for this chain |
-| `addresses.admin` | address | Admin (DEFAULT_ADMIN_ROLE) |
+| `addresses.securityCouncil` | address | Security-council Safe — end-state admin (step 07), not a deploy participant |
+| `addresses.admin` | address | DEFAULT_ADMIN_ROLE — the deployer EOA during deploy (EOA flow) |
 | `addresses.manager` | address | Manager role for NAV and bridge |
 | `deployed.*` | address | Deployed implementation and proxy addresses (written by scripts) |
 | `balanceAdapters` | object | Balance adapter config per adapter: `enabled`, `constructor`, `deployed` |
@@ -170,7 +170,7 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 
 Deployment does **not** use a single `dev-input.json`. User-provided values live in:
 
-- **`config/chains/{chainId}.json`** — Per chain: `addresses` (safeMultisig, admin, manager), `deployed`, `balanceAdapters`, `bridgeAdapters`. Scripts read these for each chain.
+- **`config/chains/{chainId}.json`** — Per chain: `addresses` (securityCouncil, admin, manager), `deployed`, `balanceAdapters`, `bridgeAdapters`. Scripts read these for each chain.
 - **`config/assets.json`** — Tokens and price feed data per chain (`tokens.{chainId}.{symbol}` with address, type, pricefeed, heartbeat). Used for NAVCalculator initial assets and BridgeEscrow asset registry; see [assets.json](#assetsjson).
 
 The long template below is **deprecated** (single global dev-input is not used). For bridge adapter callbacks, see the table under "Bridge adapters: callbacks" in this file; CCTP and Superchain use `authorizeAdapter` only.
@@ -184,7 +184,7 @@ The long template below is **deprecated** (single global dev-input is not used).
     "description": "Deployment configuration for onchain-accounting system"
   },
   "global": {
-    "safeMultisigAddress": "",
+    "securityCouncilAddress": "",
     "admin": "",
     "manager": ""
   },
@@ -367,7 +367,7 @@ The long template below is **deprecated** (single global dev-input is not used).
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `safeMultisigAddress` | Your Safe multisig address (same on all chains) | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
+| `securityCouncilAddress` | Your Safe multisig address (same on all chains) | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
 | `admin` | Address with DEFAULT_ADMIN_ROLE (typically the Safe) | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5` |
 | `manager` | Address with MANAGER role for operations | `0x1234...` or Safe |
 
@@ -489,7 +489,7 @@ After deployment, addresses are saved to `deployments/{chainId}-addresses.json`.
   "chainName": "mainnet",
   "timestamp": "2024-01-15T10:30:00Z",
   "deployer": "0x1234...",
-  "safeMultisig": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
+  "securityCouncil": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
   "create2Deployer": "0xabcd...",
   "core": {
     "NAVCalculator": {
@@ -704,7 +704,7 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
 
 ### Pre-Deployment
 
-- [ ] Fill `script/config/chains/{chainId}.json` with `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (per chain)
+- [ ] Fill `script/config/chains/{chainId}.json` with `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (per chain)
 - [ ] Add initial assets for NAVCalculator with correct price feeds (e.g. in `assets.json`)
 - [ ] Add asset symbols for BridgeEscrow (with addresses per chain)
 - [ ] Enable/disable adapters per chain in chain config
@@ -738,7 +738,7 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
 ```json
 {
   "global": {
-    "safeMultisigAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
+    "securityCouncilAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
     "admin": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5",
     "manager": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5"
   },

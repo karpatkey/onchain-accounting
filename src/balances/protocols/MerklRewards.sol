@@ -8,7 +8,8 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Merkl Rewards Balance Oracle (proof-cached)
 /// @author kpk
@@ -40,20 +41,13 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     // State
     //
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MERKL;
+
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
 
     /// @notice NAVCalculator — used to look up registered Asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
-
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Merkl").
-    string public PROTOCOL;
-
-    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
-    string public POSITION_DETAIL;
-
-    /// @notice Stable hex identifier for this adapter instance (distributor address).
-    string private _positionId;
 
     /// @notice Cached allocations: `allocations[user][token] = (cumulativeAmount, root, submittedAt)`.
     mapping(address user => mapping(address token => CachedAllocation)) public allocations;
@@ -96,18 +90,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
 
     /// @param distributor_     The Merkl Distributor address. Must be a contract.
     /// @param navCalculator_   The NAVCalculator address. Must be a contract.
-    /// @param protocol_        Protocol identifier (e.g. "Merkl").
-    /// @param positionDetail_  JSON metadata base without closing `}`.
-    /// @param positionId_      Stable hex identifier for this adapter instance (distributor address).
     /// @param initialOwner_    Owner authorized to call `submitProof` / `clearAllocation`. Should be the OIV Safe.
-    constructor(
-        address distributor_,
-        address navCalculator_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address initialOwner_
-    ) Ownable(initialOwner_) {
+    constructor(address distributor_, address navCalculator_, address initialOwner_) Ownable(initialOwner_) {
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
@@ -116,9 +100,6 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
 
         DISTRIBUTOR = distributor_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        PROTOCOL = protocol_;
-        POSITION_DETAIL = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -177,6 +158,14 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Merkl";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "claimable rewards";
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -254,13 +243,13 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable {
             uint256 bal = _unclaimed(account, token);
             if (bal == 0) continue;
             tmp[count++] = INAVCalculator.PositionBalance({
-                underlyingAsset: meta,
+                balanceAsset: meta,
                 balanceOracle: address(this),
                 amount: bal,
                 isDebt: false,
-                protocol: PROTOCOL,
-                positionDetail: PositionType.withType(POSITION_DETAIL, PositionType.REWARDS),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(token)),
+                positionKind: PositionKind.Earned
             });
         }
 

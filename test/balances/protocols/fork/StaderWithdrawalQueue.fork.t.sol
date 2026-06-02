@@ -25,14 +25,7 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForOracle(MAINNET_WETH);
-        oracle = new StaderWithdrawalQueueBalanceOracle(
-            USER_WITHDRAWAL_MANAGER,
-            MAINNET_WETH,
-            "Stader",
-            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\"",
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new StaderWithdrawalQueueBalanceOracle(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -52,15 +45,10 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_getOraclePositions_realHolder() public view {
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, MAINNET_WETH);
+        assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Stader");
-        assertEq(
-            positions[0].positionDetail,
-            "{\"protocol\":\"Stader\",\"product\":\"WithdrawalQueue\",\"type\":\"Staking\"}"
-        );
     }
 
     function test_getOracleBalances_realHolder() public view {

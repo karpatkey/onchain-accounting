@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8;
+
+import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {CurvePoolLib} from "./CurvePoolLib.sol";
+
+/// @title CurveGaugesMetaBalanceAdapter
+/// @author kpk
+/// @notice One immutable adapter that reports an account's **gauge-staked** LP position across any
+///         configured Curve gauge, plus all claimable rewards (CRV and extra tokens).
+///
+/// @dev Instance coordinate: `bytes32(uint256(uint160(gauge)))` — the gauge address widened to bytes32.
+///
+///      Per-gauge positions emitted:
+///        1. **Supplied** legs — one per registered pool coin, pro-rata from the staked LP balance.
+///           Uses the same LP decomposition logic as CurvePoolsMetaBalanceAdapter.
+///        2. **Earned** leg for CRV — lower-bound estimate via `integrate_fraction − minter.minted`.
+///           Only emitted when CURVE_MINTER is set (see below) and the gauge exposes
+///           `integrate_fraction()`. This is a LOWER BOUND — it is stale between checkpoints
+///           (deposit/withdraw/claim) and may read 0 for recently-transferred gauge tokens.
+///           For accurate CRV, call `gauge.claimable_tokens(account)` via eth_call (state mutation).
+///        3. **Earned** legs — one per registered extra reward token (V2+ gauges).
+///           Read via `reward_tokens(i)` + `claimable_reward(account, token)`.
+///           V3 gauges update rewards at most hourly; values may be stale between checkpoints.
+///
+///      Supported gauge types (see CurvePoolLib for full gauge-type taxonomy):
+///        - LiquidityGaugeV1: CRV via Minter, no extra rewards
+///        - LiquidityGaugeV2/V3/V4/V5: CRV + up to 8 extra rewards
+///        - RewardsOnlyGauge (L2): extra rewards only, no CRV (CURVE_MINTER = address(0))
+///        - ChildGauge (L2 xchain): extra rewards only (CRV bridged via ChildGaugeFactory, not
+///          directly claimable in a view — pass CURVE_MINTER = address(0) for L2 deployments)
+///
+///      CURVE_MINTER: the Curve Minter on Ethereum mainnet is 0xd061D61a4d941c39E5453435B6345Dc261C2fcE0.
+///      On L2 chains (Arbitrum, Optimism, Base, Polygon) pass address(0) to disable CRV tracking.
+///      The LP decomposition into underlying tokens is always attempted regardless of the minter.
+///
+///      positionId = abi.encode(address gauge)
+///
+///      Wallet-held (unstaked) LP positions are handled separately by CurvePoolsMetaBalanceAdapter.
+contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_GAUGE;
+
+    /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
+    address public immutable CURVE_MINTER;
+
+    /// @notice CRV token address. On Ethereum mainnet: 0xD533a949740bb3306d119CC777fa900bA034cd52.
+    ///         Provided at construction so unit tests can substitute a mock and L2 deployments
+    ///         can pass address(0) when CRV is not bridged.
+    address public immutable CRV_TOKEN;
+
+    /// @param minter_        Curve Minter (0xd061D61a4d941c39E5453435B6345Dc261C2fcE0 on mainnet,
+    ///                       address(0) on L2 to disable CRV tracking).
+    /// @param crvToken_      CRV token address (0xD533...034cd52 on mainnet, address(0) to skip).
+    /// @param protocolName_  Human-readable name (e.g. "Curve").
+    /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
+    constructor(address minter_, address crvToken_, string memory protocolName_, address navCalculator_)
+        MetaBalanceOracle(protocolName_, navCalculator_)
+    {
+        CURVE_MINTER = minter_;
+        CRV_TOKEN = crvToken_;
+    }
+
+    // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
+
+    /// @inheritdoc MetaBalanceOracle
+    function _instancePositions(address account, bytes32 instance, address assetFilter)
+        internal
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        address gauge = _toAddress(instance);
+
+        uint256 stakedLp = CurvePoolLib.gaugeStaked(gauge, account);
+
+        // Pre-allocate generously: up to MAX_COINS Supplied + 1 CRV Earned + MAX_COINS extra Earned
+        uint256 maxLegs = CurvePoolLib.MAX_COINS * 2 + 1;
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](maxLegs);
+        uint256 n;
+
+        // ── 1. Supplied legs: staked LP decomposed into underlying tokens ──────
+        if (stakedLp > 0) {
+            address lpToken = CurvePoolLib.gaugeLpToken(gauge);
+            if (lpToken != address(0)) {
+                address pool = CurvePoolLib.getPool(lpToken);
+                if (pool != address(0)) {
+                    uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
+                    if (totalSupply > 0) {
+                        address[] memory coins = CurvePoolLib.getCoins(pool);
+                        bytes memory pid = abi.encode(gauge);
+
+                        for (uint256 i; i < coins.length; ++i) {
+                            address coin = coins[i];
+                            if (assetFilter != address(0) && coin != assetFilter) continue;
+
+                            (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(coin);
+                            if (!found) continue;
+
+                            uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
+                            uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
+                            if (amount == 0) continue;
+
+                            tmp[n++] = INAVCalculator.PositionBalance({
+                                balanceAsset: assetInfo,
+                                balanceOracle: address(this),
+                                amount: amount,
+                                isDebt: false,
+                                protocolId: PROTOCOL_ID,
+                                positionId: pid,
+                                positionKind: PositionKind.Supplied
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 2. Earned leg: CRV lower-bound (stale between checkpoints) ─────────
+        // Skip if assetFilter is set and is not CRV
+        if (assetFilter == address(0) || assetFilter == CRV_TOKEN) {
+            uint256 crvLb = CurvePoolLib.crvClaimableLb(gauge, CURVE_MINTER, account);
+            if (crvLb > 0) {
+                (INAVCalculator.Asset memory crvInfo, bool found) = _getAssetInfo(CRV_TOKEN);
+                if (found) {
+                    tmp[n++] = INAVCalculator.PositionBalance({
+                        balanceAsset: crvInfo,
+                        balanceOracle: address(this),
+                        amount: crvLb,
+                        isDebt: false,
+                        protocolId: PROTOCOL_ID,
+                        positionId: abi.encode(gauge),
+                        positionKind: PositionKind.Earned
+                    });
+                }
+            }
+        }
+
+        // ── 3. Earned legs: extra reward tokens (V2+ gauges) ──────────────────
+        for (uint256 i; i < CurvePoolLib.MAX_COINS; ++i) {
+            address rewardTok = CurvePoolLib.rewardToken(gauge, i);
+            if (rewardTok == address(0)) break;
+            if (rewardTok == CRV_TOKEN) continue; // already accounted for via Minter
+            if (assetFilter != address(0) && rewardTok != assetFilter) continue;
+
+            (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(rewardTok);
+            if (!found) continue;
+
+            uint256 amount = CurvePoolLib.claimableReward(gauge, account, rewardTok);
+            if (amount == 0) continue;
+
+            tmp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: assetInfo,
+                balanceOracle: address(this),
+                amount: amount,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(gauge),
+                positionKind: PositionKind.Earned
+            });
+        }
+
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i; i < n; ++i) {
+            positions[i] = tmp[i];
+        }
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
+        address gauge = _toAddress(instance);
+        address lpToken = CurvePoolLib.gaugeLpToken(gauge);
+        if (lpToken == address(0)) return new address[](0);
+        address pool = CurvePoolLib.getPool(lpToken);
+
+        address[] memory coins = pool != address(0) ? CurvePoolLib.getCoins(pool) : new address[](0);
+
+        // Collect extra reward tokens
+        address[] memory extraTmp = new address[](CurvePoolLib.MAX_COINS);
+        uint256 extraN;
+        for (uint256 i; i < CurvePoolLib.MAX_COINS; ++i) {
+            address tok = CurvePoolLib.rewardToken(gauge, i);
+            if (tok == address(0)) break;
+            extraTmp[extraN++] = tok;
+        }
+
+        // Merge: coins + CRV (if Minter set) + extra rewards
+        uint256 crvSlot = CURVE_MINTER != address(0) ? 1 : 0;
+        address[] memory all = new address[](coins.length + crvSlot + extraN);
+        for (uint256 i; i < coins.length; ++i) {
+            all[i] = coins[i];
+        }
+        if (crvSlot > 0) all[coins.length] = CRV_TOKEN;
+        for (uint256 i; i < extraN; ++i) {
+            all[coins.length + crvSlot + i] = extraTmp[i];
+        }
+        return all;
+    }
+
+    // ─── IPositionDescribable ─────────────────────────────────────────────────
+
+    /// @inheritdoc MetaBalanceOracle
+    function describePosition(bytes calldata pid) external view override returns (string memory) {
+        if (pid.length < 32) return "";
+        address gauge = abi.decode(pid, (address));
+        address lpToken = CurvePoolLib.gaugeLpToken(gauge);
+        if (lpToken == address(0)) return "";
+        address pool = CurvePoolLib.getPool(lpToken);
+        if (pool == address(0)) return "";
+        address[] memory coins = CurvePoolLib.getCoins(pool);
+        if (coins.length == 0) return "";
+        return string.concat(CurvePoolLib.coinSymbols(coins), " gauge");
+    }
+}

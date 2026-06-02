@@ -13,31 +13,34 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 
 // Balance adapters
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {AaveV2InstanceBalanceOracle} from "src/balances/protocols/AaveV2Instance.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
+import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
-import {MorphoVaultBalanceOracle} from "src/balances/protocols/MorphoVault.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
-import {GearboxMarketBalanceOracle} from "src/balances/protocols/GearboxMarket.sol";
+import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
-import {CurveBalanceOracle} from "src/balances/protocols/Curve.sol";
-import {ConvexBalanceOracle} from "src/balances/protocols/Convex.sol";
+import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
+import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
+import {ConvexRewardsMetaBalanceAdapter} from "src/balances/protocols/ConvexRewardsMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
-import {BalancerV3PoolBalanceOracle} from "src/balances/protocols/BalancerV3.sol";
-import {Aura} from "src/balances/protocols/Aura.sol";
+import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
+import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
+import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
+import {AuraRewardsMetaBalanceAdapter} from "src/balances/protocols/AuraRewardsMeta.sol";
 import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
-import {FluidFTokenBalanceOracle} from "src/balances/protocols/FluidFToken.sol";
-import {FluidVaultBalanceOracle} from "src/balances/protocols/FluidVault.sol";
+import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
+import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "src/balances/protocols/StakeWiseV3OsToken.sol";
-import {StakeWiseV3VaultBalanceOracle} from "src/balances/protocols/StakeWiseV3Vault.sol";
-import {UniswapV2BalanceOracle} from "src/balances/protocols/UniswapV2.sol";
-import {UniswapV3PoolBalanceOracle} from "src/balances/protocols/uniswap/UniswapV3Pool.sol";
-import {PancakeSwapV2BalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
-import {PancakeSwapV3PoolBalanceOracle} from "src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
+import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
+import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
+import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
+import {PancakeSwapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
+import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
@@ -47,6 +50,7 @@ import {sUSDe_PriceOracle} from "src/prices/protocols/sUSDe_Price.sol";
 import {syrupUSDC_PriceOracle} from "src/prices/protocols/syrupUSDC_Price.sol";
 import {wstETH_PriceOracle} from "src/prices/protocols/wstETH_Price.sol";
 import {rETH_PriceOracle} from "src/prices/protocols/rETH_Price.sol";
+import {osToken_PriceOracle} from "src/prices/protocols/osToken_Price.sol";
 import {cbETH_PriceOracle} from "src/prices/protocols/cbETH_Price.sol";
 import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
 import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
@@ -70,7 +74,7 @@ import "src/constants.sol";
 /// @notice Per-chain integration test harness that mirrors the deploy pipeline:
 ///         deploys NAVCalculator + every enabled price feed adapter (assets.json) + every enabled
 ///         balance adapter (chains/<id>.json), registers all assets and balance oracles, then reads
-///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_2 + RegisterAssets
+///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_Configure + RegisterAssets
 ///         end-to-end inside a forked-mainnet test.
 /// @dev Deployment dispatch is duplicated from script/deploy/{03,04}*.sol so the test can avoid the
 ///      chain-config writes those scripts perform via ConfigReader.writeAdapterAddress.
@@ -103,6 +107,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Config names parallel to `_deployedBalanceAdapters` (used to read per-adapter config such as
+    ///         a meta-adapter's `metaInstances` list after registration).
+    string[] internal _deployedBalanceAdapterNames;
+
     /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
     ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
     ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
@@ -127,6 +135,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
@@ -149,6 +158,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         _registerAllAssets();
         _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
+        _configureMetaInstances();
         _seedMerklProofs();
         vm.stopPrank();
     }
@@ -195,6 +205,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
             _tryDeployPriceFeed("ETHx", _deployEthx);
+            _tryDeployPriceFeed("osETH", _deployOsEth);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -208,6 +219,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         } else if (_chainId == 100) {
             _tryDeployPriceFeed("sXDAI", _deploySxdai);
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
+            _tryDeployPriceFeed("osGNO", _deployOsGno);
         }
         // Optimism: no Custom adapters.
     }
@@ -228,6 +240,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_chainId == 100 && _equals(symbol, "sDAI")) {
             return "sXDAI";
+        }
+        if (_chainId == 100 && _equals(symbol, "osGNO")) {
+            return "osGNO";
         }
         return string(abi.encodePacked(symbol, "_L2"));
     }
@@ -298,6 +313,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkHeartbeat"));
         return address(new rETH_PriceOracle(rEth, ethUsd, ethUsdHb));
+    }
+
+    function _deployOsEth() internal returns (address) {
+        return _deployOsToken("osETH");
+    }
+
+    function _deployOsGno() internal returns (address) {
+        return _deployOsToken("osGNO");
+    }
+
+    function _deployOsToken(string memory name) internal returns (address) {
+        address osToken = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osToken"));
+        address controller =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osTokenVaultController"));
+        address underlyingUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkOracle"));
+        uint256 hb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkHeartbeat"));
+        return address(new osToken_PriceOracle(osToken, controller, underlyingUsd, hb));
     }
 
     function _deployCbEth() internal returns (address) {
@@ -474,41 +508,48 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 continue;
             }
             _deployedBalanceAdapters.push(adapter);
+            _deployedBalanceAdapterNames.push(n);
             console2.log("[balanceAdapter]", n, adapter);
         }
     }
 
     function _deployBalanceAdapter(string memory name) internal returns (address) {
         address navAddr = address(nav);
+        if (_equals(name, "AaveV3InstancesMeta")) {
+            return _deployAaveV3InstancesMeta(name, navAddr);
+        }
         if (_startsWith(name, "AaveV3_")) {
             return _deployAaveV3(name, navAddr);
         }
-        if (_startsWith(name, "CompoundV3_")) {
-            return _deployCompoundV3(name, navAddr);
+        if (_equals(name, "CompoundV3CometsMeta")) {
+            return _deployCompoundV3CometsMeta(name, navAddr);
         }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             return _deploySparkLend(name, navAddr);
         }
-        if (_startsWith(name, "MorphoMarket_")) {
-            return _deployMorphoMarket(name, navAddr);
+        if (_equals(name, "MorphoMarketsMeta")) {
+            return _deployMorphoMarketsMeta(name, navAddr);
         }
-        if (_startsWith(name, "MorphoVault_")) {
-            return _deployMorphoVault(name, navAddr);
+        if (_equals(name, "MorphoVaultsMeta")) {
+            return _deployMorphoVaultsMeta(name, navAddr);
         }
         if (_startsWith(name, "ERC4626Wrap_")) {
             return _deployERC4626Wrap(name, navAddr);
         }
-        if (_startsWith(name, "GearboxMarket_")) {
-            return _deployGearboxMarket(name, navAddr);
+        if (_equals(name, "GearboxMarketsMeta")) {
+            return _deployGearboxMarketsMeta(name, navAddr);
         }
         if (_equals(name, "Cap")) {
             return _deployCap(navAddr);
         }
-        if (_startsWith(name, "Curve_")) {
-            return _deployCurve(name, navAddr);
+        if (_equals(name, "CurvePoolsMeta")) {
+            return _deployCurvePoolsMeta(name, navAddr);
         }
-        if (_startsWith(name, "Convex_")) {
-            return _deployConvex(name, navAddr);
+        if (_equals(name, "CurveGaugesMeta")) {
+            return _deployCurveGaugesMeta(name, navAddr);
+        }
+        if (_equals(name, "ConvexRewardsMeta")) {
+            return _deployConvexRewardsMeta(name, navAddr);
         }
         if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
@@ -516,44 +557,47 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "AaveUmbrella")) {
             return _deployAaveUmbrella(name, navAddr);
         }
-        if (_startsWith(name, "BalancerV3_")) {
-            return _deployBalancerV3(name, navAddr);
+        if (_equals(name, "BalancerV3PoolsMeta")) {
+            return _deployBalancerV3PoolsMeta(name, navAddr);
         }
-        if (_startsWith(name, "Aura_")) {
-            return _deployAura(name, navAddr);
+        if (_equals(name, "BalancerV3GaugesMeta")) {
+            return _deployBalancerV3GaugesMeta(name, navAddr);
+        }
+        if (_equals(name, "BalancerV2PoolsMeta")) {
+            return _deployBalancerV2PoolsMeta(name, navAddr);
+        }
+        if (_equals(name, "BalancerV2GaugesMeta")) {
+            return _deployBalancerV2GaugesMeta(name, navAddr);
+        }
+        if (_equals(name, "AuraRewardsMeta")) {
+            return _deployAuraRewardsMeta(name, navAddr);
         }
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
-        if (_startsWith(name, "AaveV2_") || _equals(name, "AaveV2")) {
-            return _deployAaveV2(name, navAddr);
+        if (_equals(name, "AaveV2InstancesMeta")) {
+            return _deployAaveV2InstancesMeta(name, navAddr);
         }
-        if (_startsWith(name, "Fluid_fToken_")) {
-            return _deployFluidFToken(name, navAddr);
+        if (_equals(name, "FluidFTokensMeta")) {
+            return _deployFluidFTokensMeta(name, navAddr);
         }
-        if (_startsWith(name, "Fluid_Vault_")) {
-            return _deployFluidVault(name, navAddr);
+        if (_equals(name, "FluidVaultsMeta")) {
+            return _deployFluidVaultsMeta(name, navAddr);
         }
         if (_equals(name, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(name, navAddr);
         }
-        if (_startsWith(name, "StakeWiseV3OsToken_")) {
-            return _deployStakeWiseV3OsToken(name, navAddr);
+        if (_equals(name, "StakeWiseV3VaultsMeta")) {
+            return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
-        if (_startsWith(name, "StakeWiseV3Vault_")) {
-            return _deployStakeWiseV3Vault(name, navAddr);
+        if (_equals(name, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(name, navAddr);
         }
-        if (_startsWith(name, "UniswapV2_")) {
-            return _deployUniswapV2(name, navAddr);
+        if (_equals(name, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(name, navAddr);
         }
-        if (_startsWith(name, "UniswapV3_")) {
-            return _deployUniswapV3Pool(name, navAddr);
-        }
-        if (_startsWith(name, "PancakeSwapV2_")) {
-            return _deployPancakeSwapV2(name, navAddr);
-        }
-        if (_startsWith(name, "PancakeSwapV3_")) {
-            return _deployPancakeSwapV3Pool(name, navAddr);
+        if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
+            return _deployUniswapV2PoolsMeta(name, navAddr);
         }
         return address(0);
     }
@@ -561,74 +605,75 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAaveV3(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new AaveV3InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
+        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
     }
 
     function _deploySparkLend(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new SparkLendBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
+        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
     }
 
-    function _deployCompoundV3(string memory name, address navAddr) internal returns (address) {
+    function _deployCompoundV3CometsMeta(string memory name, address navAddr) internal returns (address) {
         address compoundRewards =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
-        address comet = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "comet"));
         address rewardToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new CompoundV3Comet(compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navAddr)
-        );
+        return address(new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navAddr));
     }
 
-    function _deployMorphoMarket(string memory name, address navAddr) internal returns (address) {
-        address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
-        bytes32 marketId =
-            vm.parseBytes32(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "marketId"));
+    function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        return address(new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navAddr));
+        return address(new MorphoVaultsMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployMorphoVault(string memory name, address navAddr) internal returns (address) {
+    function _deployBalancerV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new BalancerV3PoolsMetaBalanceAdapter(protocol, navAddr));
+    }
+
+    function _deployBalancerV3GaugesMeta(string memory name, address navAddr) internal returns (address) {
+        address balancerMinter =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navAddr));
+    }
+
+    function _deployBalancerV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navAddr));
+        return address(new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navAddr));
+    }
+
+    function _deployBalancerV2GaugesMeta(string memory name, address navAddr) internal returns (address) {
+        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+        address balancerMinter =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navAddr));
+    }
+
+    function _deployMorphoMarketsMeta(string memory name, address navAddr) internal returns (address) {
+        address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navAddr));
+    }
+
+    function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
         address wrapper =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new ERC4626WrapBalanceOracle(wrapper, protocol, positionDetail, positionId, navAddr));
+        return address(new ERC4626WrapBalanceOracle(wrapper, navAddr));
     }
 
-    function _deployGearboxMarket(string memory name, address navAddr) internal returns (address) {
-        address market = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "market"));
+    function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navAddr));
+        return address(new GearboxMarketsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployCap(address navAddr) internal returns (address) {
@@ -636,64 +681,39 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address stcUsd =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "usdc"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "positionId");
-        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, positionId, navAddr));
+        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, navAddr));
     }
 
-    function _deployCurve(string memory name, address navAddr) internal returns (address) {
-        address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
+    function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new CurveBalanceOracle(gauge, protocol, positionDetail, positionId, navAddr));
+        return address(new CurvePoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployConvex(string memory name, address navAddr) internal returns (address) {
-        address rewarder =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewarder"));
-        address lpToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "lpToken"));
+    function _deployCurveGaugesMeta(string memory name, address navAddr) internal returns (address) {
+        address minter = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "minter"));
+        address crvToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "crvToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, positionId, navAddr));
+        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
+    }
+
+    function _deployConvexRewardsMeta(string memory name, address navAddr) internal returns (address) {
+        address booster =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
+        address cvxToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new AaveV3SafetyModuleBalanceOracle(navAddr, protocol, positionDetail, positionId));
+        return address(new AaveV3SafetyModuleBalanceOracle(navAddr));
     }
 
     function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
         address rewardsController =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr, protocol, positionDetail, positionId));
-    }
-
-    function _deployBalancerV3(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
-        address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
-        address balancerMinter =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new BalancerV3PoolBalanceOracle(pool, gauge, balancerMinter, protocol, positionDetail, positionId, navAddr)
-        );
+        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr));
     }
 
     function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
@@ -702,57 +722,35 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        address adapter =
-            address(new MerklRewardsBalanceOracle(distributor, navAddr, protocol, positionDetail, positionId, admin));
+        address adapter = address(new MerklRewardsBalanceOracle(distributor, navAddr, admin));
         _merklOracle = adapter;
         return adapter;
     }
 
-    function _deployAura(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
-        address gauge = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "gauge"));
+    function _deployAuraRewardsMeta(string memory name, address navAddr) internal returns (address) {
         address booster =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
-        uint256 pid = vm.parseUint(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pid"));
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerV2Vault"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new Aura(pool, gauge, booster, pid, protocol, positionDetail, positionId, navAddr));
+        return address(new AuraRewardsMetaBalanceAdapter(booster, vault, protocol, navAddr));
     }
 
-    function _deployAaveV2(string memory name, address navAddr) internal returns (address) {
-        address dataProvider =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
+    function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navAddr));
+        return address(new AaveV2InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployFluidFToken(string memory name, address navAddr) internal returns (address) {
-        address fToken = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "fToken"));
+    function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, positionId, navAddr));
+        return address(new FluidFTokensMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployFluidVault(string memory name, address navAddr) internal returns (address) {
-        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
+    function _deployFluidVaultsMeta(string memory name, address navAddr) internal returns (address) {
         address vaultResolver =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, positionId, navAddr));
+        return address(new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navAddr));
     }
 
     function _deployStaderWithdrawalQueue(string memory name, address navAddr) internal returns (address) {
@@ -761,92 +759,36 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new StaderWithdrawalQueueBalanceOracle(
-                userWithdrawalManager, underlyingToken, protocol, positionDetail, positionId, navAddr
-            )
-        );
+        return address(new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navAddr));
     }
 
-    function _deployStakeWiseV3OsToken(string memory name, address navAddr) internal returns (address) {
-        address osToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osToken"));
+    function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        address osTokenVaultController = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
-        );
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new StakeWiseV3OsTokenBalanceOracle(
-                osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, positionId, navAddr
-            )
-        );
+        return address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navAddr));
     }
 
-    function _deployStakeWiseV3Vault(string memory name, address navAddr) internal returns (address) {
-        address underlyingToken =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new StakeWiseV3VaultBalanceOracle(underlyingToken, vault, protocol, positionDetail, positionId, navAddr)
-        );
-    }
-
-    function _deployUniswapV2(string memory name, address navAddr) internal returns (address) {
-        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new UniswapV2BalanceOracle(pair, protocol, positionDetail, positionId, navAddr));
-    }
-
-    function _deployUniswapV3Pool(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+    function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return
-            address(
-                new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navAddr)
-            );
+        return address(new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
     }
 
-    function _deployPancakeSwapV2(string memory name, address navAddr) internal returns (address) {
-        address pair = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pair"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, positionId, navAddr));
-    }
-
-    function _deployPancakeSwapV3Pool(string memory name, address navAddr) internal returns (address) {
-        address pool = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "pool"));
+    function _deployPancakeSwapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionDetail");
-        string memory positionId = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionId");
-        return address(
-            new PancakeSwapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navAddr)
-        );
+        return address(new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
+    }
+
+    function _deployUniswapV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
+        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        if (_equals(name, "PancakeSwapV2PoolsMeta")) {
+            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navAddr));
+        }
+        return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
     // -----------------------------------------------------------------------
@@ -932,6 +874,37 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
     }
 
+    /// @notice Applies each meta-adapter's `metaInstances` config to NAVCalculator (ADR 0010). This is how the
+    ///         NAV calculator is told which instances of a protocol to query — e.g. the Morpho-vault universe.
+    /// @dev Runs after registration (setMetaInstances requires the oracle to be registered) and within the same
+    ///      `admin` prank that holds MANAGER. Adapters with no `metaInstances` config are skipped.
+    function _configureMetaInstances() internal {
+        for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
+            address a = _deployedBalanceAdapters[i];
+            string memory name = _deployedBalanceAdapterNames[i];
+
+            // Union address-keyed (`metaInstances`, widened) + raw bytes32 (`metaInstancesRaw`, e.g. marketIds).
+            address[] memory addrs =
+                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "metaInstances");
+            bytes32[] memory raw =
+                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "metaInstancesRaw");
+            if (addrs.length + raw.length == 0) continue;
+
+            bytes32[] memory instances = new bytes32[](addrs.length + raw.length);
+            for (uint256 j = 0; j < addrs.length; j++) {
+                instances[j] = bytes32(uint256(uint160(addrs[j])));
+            }
+            for (uint256 j = 0; j < raw.length; j++) {
+                instances[addrs.length + j] = raw[j];
+            }
+
+            // No try/catch: the per-instance adapters are disabled in config, so a failed setMetaInstances must
+            // fail the run loudly rather than silently omit the migrated positions from snapshots/asserts.
+            nav.setMetaInstances(a, instances);
+            console2.log("[meta] setMetaInstances", name, instances.length);
+        }
+    }
+
     /// @notice Pre-populates the MerklRewards adapter cache from `merkl-proofs.json` (regenerated on
     ///         every snapshot bump). Tolerant of missing/empty/stale fixtures: silently skips the
     ///         chain block if not present, logs and continues on per-entry verification failure.
@@ -1006,7 +979,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
     function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](33);
+            string[] memory s = new string[](34);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -1040,6 +1013,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[30] = "EURC";
             s[31] = "WBTC";
             s[32] = "AAVE";
+            s[33] = "osETH";
             return s;
         }
         if (chainId == 42161) {
@@ -1059,7 +1033,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return s;
         }
         if (chainId == 100) {
-            string[] memory s = new string[](7);
+            string[] memory s = new string[](8);
             s[0] = "xDAI";
             s[1] = "WXDAI";
             s[2] = "WETH";
@@ -1067,6 +1041,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[4] = "USDCe";
             s[5] = "sDAI";
             s[6] = "GHO";
+            s[7] = "osGNO";
             return s;
         }
         if (chainId == 8453) {
@@ -1136,16 +1111,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     // -----------------------------------------------------------------------
 
     /// @notice Serializes one Position to a JSON object string.
-    /// @dev Protocol/positionDetail strings are written verbatim — our adapters use
-    ///      plain ASCII labels with no quotes or backslashes, so no escaping is needed.
     function _positionToJson(INAVCalculator.Position memory pos) internal pure returns (string memory out) {
         out = string.concat(
             '{"symbol":"',
-            pos.underlyingAsset.symbol,
+            pos.balanceAsset.symbol,
             '","address":"',
-            vm.toString(pos.underlyingAsset.asset),
+            vm.toString(pos.balanceAsset.asset),
             '","decimals":',
-            vm.toString(uint256(pos.underlyingAsset.decimals))
+            vm.toString(uint256(pos.balanceAsset.decimals))
         );
         out = string.concat(out, ',"amount":"', vm.toString(pos.amount), '","isDebt":', pos.isDebt ? "true" : "false");
         out = string.concat(
@@ -1157,16 +1130,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             '","priceDecimals":',
             vm.toString(uint256(pos.priceDecimals))
         );
-        // positionDetail is a JSON object — embed unquoted so inner keys aren't double-encoded.
         out = string.concat(
             out,
-            ',"protocol":"',
-            pos.protocol,
-            '","positionDetail":',
-            pos.positionDetail,
-            ',"positionId":"',
-            pos.positionId,
-            '"}'
+            ',"protocolId":"',
+            vm.toString(pos.protocolId),
+            '","positionId":"',
+            vm.toString(pos.positionId),
+            '","positionKind":',
+            vm.toString(uint256(uint8(pos.positionKind))),
+            "}"
         );
     }
 

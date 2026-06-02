@@ -7,7 +7,7 @@
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "xDAI",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
@@ -25,8 +25,19 @@
       },
       "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
-    "AaveV3_Gnosis": {
+    "AaveV3InstancesMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Gnosis, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Aave V3"
+      },
+      "metaInstances": [
+        "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717"
+      ],
+      "deployed": ""
+    },
+    "AaveV3_Gnosis": {
+      "enabled": false,
       "constructor": {
         "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
         "protocol": "Aave V3",
@@ -67,6 +78,9 @@
     },
     "wstETH_L2": {
       "deployed": "0x17A50CCeCCD6E168Fcea22A3B5830a2cB389E557"
+    },
+    "osGNO": {
+      "deployed": ""
     }
   }
 }

@@ -7,7 +7,8 @@ import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave v3 Safety Module Balance Oracle (multi-token, hardcoded)
 /// @author kpk
@@ -59,6 +60,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @dev Internal record describing one Safety Module stake token. Keeping the staked / reward addresses as constants
     ///      (rather than reading them from the contract at deploy time) keeps the adapter purely view-friendly and means
     ///      a misconfiguration in source code is the only way to ship a wrong wiring — caught at review time.
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
+
     struct StakeTokenRecord {
         address stakeToken;
         address stakedToken;
@@ -73,33 +76,15 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance (e.g. "Aave V3 Safety Module").
-    string public PROTOCOL;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance
-    string private _positionId;
-
     //
     // Constructor
     //
 
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
-    /// @param protocol_ Protocol identifier emitted on every PositionBalance (e.g. "Aave V3 Safety Module").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance.
-    constructor(
-        address navCalculator,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_
-    ) {
+    constructor(address navCalculator) {
         if (navCalculator == address(0)) revert InvalidArguments();
         require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
         NAV_CALCULATOR = INAVCalculator(navCalculator);
-        PROTOCOL = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -126,6 +111,14 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Aave V3";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "safety module";
     }
 
     //
@@ -220,13 +213,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                         IStakeToken(r.stakeToken).previewRedeem(IStakeToken(r.stakeToken).balanceOf(account));
                     if (stakedAmount != 0) {
                         tmp[count++] = INAVCalculator.PositionBalance({
-                            underlyingAsset: assetMeta,
+                            balanceAsset: assetMeta,
                             balanceOracle: address(this),
                             amount: stakedAmount,
                             isDebt: false,
-                            protocol: PROTOCOL,
-                            positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-                            positionId: _positionId
+                            protocolId: PROTOCOL_ID,
+                            positionId: abi.encode(address(r.stakeToken)),
+                            positionKind: PositionKind.Supplied
                         });
                     }
                 }
@@ -239,13 +232,13 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                     uint256 rewards = IStakeToken(r.stakeToken).getTotalRewardsBalance(account);
                     if (rewards != 0) {
                         tmp[count++] = INAVCalculator.PositionBalance({
-                            underlyingAsset: assetMeta,
+                            balanceAsset: assetMeta,
                             balanceOracle: address(this),
                             amount: rewards,
                             isDebt: false,
-                            protocol: PROTOCOL,
-                            positionDetail: PositionType.withType(_positionDetail, PositionType.REWARDS),
-                            positionId: _positionId
+                            protocolId: PROTOCOL_ID,
+                            positionId: abi.encode(address(r.stakeToken)),
+                            positionKind: PositionKind.Earned
                         });
                     }
                 }

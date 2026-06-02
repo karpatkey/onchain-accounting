@@ -170,7 +170,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         // Find DAI position
         int256 daiValue = 0;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].underlyingAsset.asset == address(dai)) {
+            if (positions[i].balanceAsset.asset == address(dai)) {
                 daiValue = positions[i].value;
                 break;
             }

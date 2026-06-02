@@ -103,7 +103,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
         // Verify all positions are for USDC
         for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].underlyingAsset.asset, address(usdc), "All positions should be for USDC");
+            assertEq(positions[i].balanceAsset.asset, address(usdc), "All positions should be for USDC");
         }
 
         // Verify no duplicate positions (check by balanceOracle address)
@@ -238,7 +238,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
         // Verify all position assets are registered
         for (uint256 i = 0; i < positions.length; i++) {
-            address asset = positions[i].underlyingAsset.asset;
+            address asset = positions[i].balanceAsset.asset;
             assertTrue(nav.isAssetRegistered(asset), "All position assets should be registered");
         }
 

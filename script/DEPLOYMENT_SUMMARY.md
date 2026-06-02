@@ -1,8 +1,10 @@
 # Deployment System Summary
 
+> **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
+
 ## ✅ What Has Been Implemented
 
-This deployment system implements the complete deployment architecture with **Safe multisig control** and **CREATE2 deterministic addresses** across multiple chains.
+This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 deterministic addresses** across multiple chains, handing admin to a security-council Safe at the end (step 07).
 
 ### Core Infrastructure
 
@@ -24,12 +26,13 @@ This deployment system implements the complete deployment architecture with **Sa
 
 | Script | Purpose | Output |
 |--------|---------|--------|
-| `01_DeployImplementations.s.sol` | Deploy NAVCalculator and BridgeEscrow **implementations** (CREATE2 via canonical deployer 0x4e59...). Run without `--broadcast`: generates Safe TX JSON (2 txs). Run with `--broadcast`: deploys via EOA. Same impl addresses on all chains. | Safe TX JSON and/or saved addresses |
-| `02_DeployProxies.s.sol` | Deploy placeholder + NAV + Bridge **proxies** and **initialize** them via EOA (canonical CREATE2). Default: one atomic tx via `AtomicProxyDeployer`. Set `USE_LEGACY_DEPLOY=1` for legacy multi-tx path. Run **per chain**. Grants MANAGER to config manager. | Proxy addresses (same on all chains); saved to config |
-| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters (per-chain, config-driven) | Adapter addresses in config |
-| `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters (per-chain, config-driven) | Adapter addresses in config |
+| `01_DeployImplementations.s.sol` (`01_2` = NAV only) | Deploy `PriceFeedLib` + `NavRegistryLib` libraries then NAVCalculator (and BridgeEscrow) **implementations** via EOA `--broadcast` (CREATE2, canonical deployer 0x4e59...). Same impl addresses on all chains; run once. | Saved impl/library addresses |
+| `02_DeployProxies.s.sol` (`02_2` = NAV only) | Deploy placeholder + NAV + Bridge **proxies** and **initialize** them via EOA (canonical CREATE2). Default: one atomic tx via `AtomicProxyDeployer`, granting DEFAULT_ADMIN + MANAGER to `admin`/`manager` (= deployer EOA). `USE_LEGACY_DEPLOY=1` for legacy multi-tx. Run **per chain**. | Proxy addresses (same on all chains); saved to config |
+| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
+| `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Superchain; per-chain) | Adapter addresses in config |
-| `06_Configure.s.sol` | Generate Safe TX JSON to grant MANAGER, add balance oracles to NAV, authorize bridge adapters on BridgeEscrow | Safe TX JSON (`{chainId}-configure.json`) |
+| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceOracle` for each deployed adapter + `setMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
+| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
 
 ### Upgrade Scripts (`script/upgrade/`)
 
@@ -149,7 +152,7 @@ Leave this file open; you’ll edit it in the next step.
 
 In the chain JSON, find the **`addresses`** block. Replace the zero addresses with **real** addresses:
 
-- **`safeMultisig`** — Your Safe multisig address (e.g. from [app.safe.global](https://app.safe.global)).
+- **`securityCouncil`** — Your Safe multisig address (e.g. from [app.safe.global](https://app.safe.global)).
 - **`admin`** — Address that will be the admin of NAVCalculator and BridgeEscrow (often the same Safe, or an EOA).
 - **`manager`** — Manager role (e.g. Safe or EOA).
 
@@ -162,7 +165,7 @@ Optional for NAVCalculator (you can leave as-is):
 
 Save the file.
 
-**Check:** `addresses.safeMultisig`, `admin`, `manager` are all valid non-zero addresses.
+**Check:** `addresses.securityCouncil`, `admin`, `manager` are all valid non-zero addresses.
 
 ---
 
@@ -353,7 +356,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `SkySavingsUsdsBalanceOracle` - Sky USDS savings (sUSDS)
 - `FluidFTokenBalanceOracle`, `FluidVaultBalanceOracle` - Fluid lending + vaults
 - `GearboxMarketBalanceOracle` - Gearbox kpk-curated markets
-- `StakeWiseV3OsTokenBalanceOracle`, `StakeWiseV3VaultBalanceOracle` - StakeWise V3 osToken + Genesis Vault
+- `StakeWiseV3VaultBalanceOracle` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
 - `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceOracle` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceOracle` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
@@ -395,7 +398,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 1. ✅ Safe multisig deployed on target chains
 2. ✅ `ALCHEMY_API_KEY` in `.env` for RPC (chain config uses `"rpc": "$ALCHEMY"`); explorer API keys for verification
 3. ✅ Etherscan (or chain explorer) API keys for verification
-4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (all non-zero)
+4. ✅ **Per-chain config** in `script/config/chains/{chainId}.json`: `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (all non-zero)
 5. ✅ Foundry keystore account imported (`cast wallet import $DEPLOYER_NAME --interactive`) and `DEPLOYER_NAME` set in `.env`
 
 ### Recommended
@@ -406,7 +409,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 ## What Requires Manual Steps
 
 ### Manual Configuration Needed
-1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
+1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
 2. **Uncomment or enable adapters** in chain config and deployment scripts as needed
 3. **Execute Safe transactions** via Safe UI after generation (multisig approval)
 4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step
@@ -422,14 +425,15 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --account` to deploy via EOA).
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
-5. **Configure adapters** - Run `06_Configure.s.sol` to generate Safe TX JSON; execute in Safe UI to grant MANAGER, add balance oracles, authorize bridge adapters. Alternatively use ManageAdapters/AuthorizeBridgeAdapters as needed.
+5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance oracles, sets meta-instances, authorizes bridge adapters. Idempotent.
 6. **Verify** - Run verification script and run the printed `forge verify-contract` commands.
+7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 
 1. **Per chain (each chain where you deploy)**  
    - Have a Safe multisig and set in `script/config/chains/{chainId}.json`:  
-     `addresses.safeMultisig`, `addresses.admin`, `addresses.manager` (all real addresses, not zero).  
+     `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (all real addresses, not zero).  
    - Optional for NAVCalculator: set `chainlinkSequencerFeed` (L2 sequencer feed; can be zero on L1) and `nativeTokenSymbol` (e.g. `"ETH"`, `"xDAI"`).
 
 2. **Env**  

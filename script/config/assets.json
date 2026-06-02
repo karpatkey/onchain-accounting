@@ -30,6 +30,28 @@
         }
       }
     },
+    "osETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+          "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
+          "underlyingToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "underlyingToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "osGNO": {
+      "100": {
+        "enabled": true,
+        "constructor": {
+          "osToken": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
+          "osTokenVaultController": "0x60B2053d7f2a0bBa70fe6CDd88FB47b579B9179a",
+          "underlyingToUsdChainlinkOracle": "0x22441d81416430A54336aB28765abd31a792Ad37",
+          "underlyingToUsdChainlinkHeartbeat": "86400"
+        }
+      }
+    },
     "weETH": {
       "1": {
         "enabled": true,
@@ -295,9 +317,10 @@
       },
       "osETH": {
         "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
-        "type": "None",
+        "type": "Custom",
         "pricefeed": "",
-        "note": "Not priced directly. osETH positions reach NAV via the StakeWise V3 balance adapters (StakeWiseV3OsToken_ETH, StakeWiseV3Vault_Genesis), which call OsTokenVaultController.convertToAssets(...) and return PositionBalance values denominated in ETH (sentinel 0xEeee...EEee). NAV prices that ETH amount via the existing Chainlink ETH/USD feed registered under tokens.1.ETH \u2014 no per-osETH price feed is needed."
+        "heartbeat": 3600,
+        "note": "Priced via osToken_PriceOracle (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultOracle (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
       },
       "MORPHO": {
         "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
@@ -519,6 +542,13 @@
         "type": "Chainlink",
         "pricefeed": "0x678df3415fc31947dA4324eC63212874be5a82f8",
         "heartbeat": 86400
+      },
+      "osGNO": {
+        "address": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
+        "type": "Custom",
+        "pricefeed": "",
+        "heartbeat": 86400,
+        "note": "Priced via osToken_PriceOracle (priceFeeds.osGNO.100): convertToAssets(1e18) [osGNO/GNO] * GNO/USD. Held osGNO is reported by ERC20DefaultOracle. The pricefeed address is filled by 03_DeployPriceFeeds."
       },
       "WXDAI": {
         "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",

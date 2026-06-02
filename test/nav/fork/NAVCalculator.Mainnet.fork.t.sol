@@ -3,10 +3,10 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
@@ -93,9 +93,8 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
         assertTrue(positions.length > 0);
         for (uint256 i = 0; i < positions.length; i++) {
-            assertTrue(positions[i].underlyingAsset.asset != address(0));
-            assertTrue(bytes(positions[i].underlyingAsset.symbol).length > 0);
-            assertTrue(bytes(positions[i].protocol).length > 0);
+            assertTrue(positions[i].balanceAsset.asset != address(0));
+            assertTrue(bytes(positions[i].balanceAsset.symbol).length > 0);
         }
     }
 
@@ -142,42 +141,23 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(
-            aaveV3DataProvider,
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
-        );
-
-        // Set of stake tokens is hardcoded in the SM adapter; constructor only takes (nav, protocol).
-        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(
-            address(nav), "Aave V3 Safety Module", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001"
-        );
-
-        compoundV3Comet = new CompoundV3Comet(
-            compoundRewardContract,
-            cUsdCv3,
-            compound,
-            "Compound v3 USDC",
-            "{\"p\":\"t\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
-        );
-
-        morphoBlueOracle = new MorphoMarketBalanceOracle(
-            morphoBlue, marketIdSusdsUsdt, "Morpho - sUSDS/USDT", "{\"p\":\"t\"", address(nav)
-        );
-
-        daiDsr = new DaiDsrBalanceOracle(
-            dai, dsr, "Maker", "{\"p\":\"t\"", "0x0000000000000000000000000000000000000001", address(nav)
-        );
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        aaveOracle = aaveMeta;
+        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
+        compoundV3Comet =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
+        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(smOracle));
         nav.addBalanceOracle(address(compoundV3Comet));
         nav.addBalanceOracle(address(morphoBlueOracle));
         nav.addBalanceOracle(address(daiDsr));
+
+        bytes32[] memory aaveInstances = new bytes32[](1);
+        aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
+        nav.setMetaInstances(address(aaveMeta), aaveInstances);
     }
 
     function test_logPositions() public view {

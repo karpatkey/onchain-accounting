@@ -79,4 +79,13 @@ interface IBalances {
     /// @param asset The asset address to check
     /// @return oracles Array of oracle addresses that support the asset
     function getOraclesForAsset(address asset) external view returns (address[] memory oracles);
+
+    //
+    // Meta-oracle instance registry (ADR 0010)
+    //
+
+    /// @notice Returns the configured meta-adapter instance coordinates for an oracle (empty for non-meta oracles).
+    /// @param oracle The oracle address.
+    /// @return instances The instance coordinates currently configured for the oracle.
+    function getMetaInstances(address oracle) external view returns (bytes32[] memory instances);
 }

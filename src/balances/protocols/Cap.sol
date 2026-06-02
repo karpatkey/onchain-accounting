@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Cap Protocol cUSD Interface
 /// @notice Minimal interface for interacting with Cap protocol's cUSD token
@@ -50,14 +51,11 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
     /// @notice The underlying asset returned by this oracle (USDC)
     address public immutable USDC;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (cUsd address)
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for Cap
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CAP;
 
     //
     // Constructor
@@ -66,19 +64,8 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
     /// @param cUsd_ The address of the Cap cUSD token
     /// @param stcUsd_ The address of the Cap stcUSD token
     /// @param usdc_ The address of USDC (the underlying asset returned)
-    /// @param protocol_ Protocol identifier (e.g., "Cap")
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (cUsd address).
     /// @param navCalculator_ The address of the NAVCalculator contract
-    constructor(
-        address cUsd_,
-        address stcUsd_,
-        address usdc_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address cUsd_, address stcUsd_, address usdc_, address navCalculator_) {
         if (cUsd_ == address(0) || stcUsd_ == address(0) || usdc_ == address(0)) {
             revert InvalidArguments();
         }
@@ -90,9 +77,6 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
         CUSD = ICUsd(cUsd_);
         STCUSD = IStcUsd(stcUsd_);
         USDC = usdc_;
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -103,6 +87,18 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "Cap";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "supply";
     }
 
     //
@@ -183,13 +179,13 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
 
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: underlyingAsset,
+            balanceAsset: underlyingAsset,
             balanceOracle: address(this),
             amount: balance,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(address(CUSD)),
+            positionKind: PositionKind.Supplied
         });
     }
 

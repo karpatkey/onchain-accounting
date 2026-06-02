@@ -1,5 +1,7 @@
 # NAV v2 Deployment Runbook
 
+> **⚠️ Deployment is now EOA-only.** A single deployer EOA runs every step with `--broadcast`; no Safe executes deploy/config txs. "Path A (Safe-TX bundles)" below is superseded — use the EOA path only. `06_Configure.s.sol` no longer exists (folded into `06_Configure.s.sol`, which now broadcasts `addBalanceOracle` + `setMetaInstances` + bridge authorization directly). The final step is `07_TransferAdminToSecurityCouncil.s.sol`, which hands `DEFAULT_ADMIN_ROLE` + `MANAGER` on **both** the NAV and Bridge proxies to `addresses.securityCouncil` and renounces the deployer's roles. See `script/deploy/README.md` for the authoritative, current procedure.
+
 Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator, BridgeEscrow, price oracles, balance oracles, bridge adapters — to any supported chain. This runbook is the source of truth for every NAV v2 deployment going forward, regardless of which fund (ETH Alpha, USD Alpha, kUSDprime, kREN, or any future fund) the deployment supports.
 
 **Companion docs:**
@@ -174,7 +176,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
 2. ~~Patch the MANAGER-grant bug~~ — already fixed in `d513f27`. Skip this step on a salt-v3+ deploy. Verify the atomic path is current by checking `AtomicProxyDeployer.sol` constructor signature includes `address managerToGrant`; if so, no patch needed.
 
 3. **Update each `script/config/chains/<id>.json`:**
-   - Set `addresses.admin` and `addresses.manager` to: **Path A** the target Safe address; **Path B** `$DEPLOYER_EOA` (to be transferred to the Safe by `07_HandoffRolesToSafe.s.sol` after Phase 6).
+   - Set `addresses.admin` and `addresses.manager` to: **Path A** the target Safe address; **Path B** `$DEPLOYER_EOA` (to be transferred to the Safe by `07_TransferAdminToSecurityCouncil.s.sol` after Phase 6).
    - Clear `deployed.NAVCalculatorProxy` and `deployed.BridgeEscrowProxy` (set to `""`). The script writes new ones after broadcast.
    - Clear `balanceAdapters.ERC20Default.deployed` and `balanceAdapters.ERC20Default.constructor.navCalculator` — both reference the salt-v2 stale addresses. New values will come from the salt-v3 deploy.
    - Leave `deployed.NAVCalculatorImplementation` and `deployed.BridgeEscrowImplementation` populated — these are reused. Confirm they match the canonical addresses table above for your chain.
@@ -196,7 +198,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
    ```
    Expected per chain: 3 CREATE2 transactions (placeholder, NAV proxy, Bridge proxy) + 2 UUPS upgrade-and-init transactions. The script writes the new proxy addresses into `chains/<chainId>.json.deployed.*`.
 
-5. **Path B (EOA-then-handoff):** after Phase 6 completes (oracles registered via `06_2_AddBalanceOracles.s.sol`), run `07_HandoffRolesToSafe.s.sol` to grant DEFAULT_ADMIN_ROLE + MANAGER to the target Safe and renounce the EOA's roles. Note: `07` currently handles NAVCalculator only — for BridgeEscrow handoff, hand-roll a Safe TX batch (or extend the script).
+5. **Final handoff:** after Phase 6 completes (oracles registered + meta-instances set + bridge adapters authorized via `06_Configure.s.sol`), run `07_TransferAdminToSecurityCouncil.s.sol` to grant DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on **both** the NAV and Bridge proxies and renounce the deployer EOA's roles.
 
 6. **Verify roles** post-deploy with the cast block from §"Roles and governance":
    ```bash
@@ -278,9 +280,9 @@ Phases / scripts (additions in **bold**):
 3. `03_DeployPriceFeeds.s.sol` (currently SKIPPED).
 4. `04_DeployBalanceAdapters.s.sol`.
 5. `05_DeployBridgeAdapters.s.sol`.
-6. **`06_2_AddBalanceOracles.s.sol`** — direct broadcast of `addBalanceOracle()` per deployed adapter from the EOA. Idempotent (skips already-registered ones). Replaces `06_Configure.s.sol` for Path B.
+6. **`06_Configure.s.sol`** — direct EOA broadcast of `addBalanceOracle()` + `setMetaInstances()` per deployed adapter, plus bridge-adapter authorization. Idempotent (skips already-registered oracles / already-authorized adapters).
 7. Phase 5 (`RegisterAssets.s.sol` with the broadcast path) — EOA registers assets directly using its `MANAGER` role.
-8. **`07_HandoffRolesToSafe.s.sol`** — grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to the target Safe, revokes `MANAGER` from the EOA, renounces `DEFAULT_ADMIN_ROLE`. **Currently NAV-only** (does not touch BridgeEscrow); if Bridge is in scope you must hand-roll a Safe TX batch for Bridge admin handoff.
+8. **`07_TransferAdminToSecurityCouncil.s.sol`** — grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to the target Safe, revokes `MANAGER` from the EOA, renounces `DEFAULT_ADMIN_ROLE`. **Currently NAV-only** (does not touch BridgeEscrow); if Bridge is in scope you must hand-roll a Safe TX batch for Bridge admin handoff.
 9. Phase 8 (`VerifyEtherscan`), Phase 9 (validation).
 
 Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on NAVCalculator. Deployer EOA holds nothing on NAV. **BridgeEscrow handoff is manual** — see step 8 caveat.
@@ -289,7 +291,7 @@ Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on N
 
 If the production Safe(s) are deployed and signers are available, prefer **Path A** — it's the cleanest end state (Safe holds roles from moment 1, no EOA-admin window) and uses the standard Safe UI flow that auditors and signers are already familiar with. **Path B** is appropriate if signers aren't available or if you specifically need the EOA-broadcast simplicity for some part of the operation.
 
-`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 46 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
+`06_Configure.s.sol`'s `_balanceAdapterNames()` list must stay in sync with `04_DeployBalanceAdapters.s.sol`. If you see drift, that's a bug.
 
 ---
 
@@ -348,9 +350,9 @@ Open `script/config/chains/{chainId}.json` and confirm every field is correct fo
 | `explorer` + `explorerApiKey` | For Etherscan-family verification in Phase 8 | Must match chainId |
 | `chainlinkSequencerFeed` | Chainlink L2 sequencer uptime feed; `address(0)` on L1s | Required on L2s — otherwise `getAccountNav` can't detect sequencer downtime |
 | `nativeTokenSymbol` | `"ETH"`, `"xDAI"`, etc. | Shows up in NAV responses for the native sentinel |
-| `addresses.safeMultisig` | The per-chain OIV Safe | **Must be a Safe** — verify via `cast code <addr> --rpc-url <RPC>` (returns bytecode, not `0x`) AND `cast call <addr> "getThreshold()(uint256)"` (returns ≥1) |
-| `addresses.admin` | Holds `DEFAULT_ADMIN_ROLE` post-deploy | Must equal `safeMultisig`. **Audit 2026-04-28: currently set to EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` on all 5 chains — must be updated to the OIV Safe before the production redeploy.** |
-| `addresses.manager` | Holds `MANAGER` post-deploy | Must equal `safeMultisig`. Same EOA caveat as `admin`. |
+| `addresses.securityCouncil` | The per-chain OIV Safe | **Must be a Safe** — verify via `cast code <addr> --rpc-url <RPC>` (returns bytecode, not `0x`) AND `cast call <addr> "getThreshold()(uint256)"` (returns ≥1) |
+| `addresses.admin` | Holds `DEFAULT_ADMIN_ROLE` post-deploy | Must equal `securityCouncil`. **Audit 2026-04-28: currently set to EOA `0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F` on all 5 chains — must be updated to the OIV Safe before the production redeploy.** |
+| `addresses.manager` | Holds `MANAGER` post-deploy | Must equal `securityCouncil`. Same EOA caveat as `admin`. |
 | `deployed.*` | Canonical NAV/Bridge addresses already populated on all 5 chains | These point at the salt-v2 **test deploy**. Will be replaced by the salt-v3 redeploy; do not treat as production until then. |
 
 **Rule:** if you change any `addresses.*` value after `02_DeployProxies.s.sol` has run for a chain, you must re-grant roles explicitly via a Safe TX batch. You cannot re-run `02` idempotently for role changes.
@@ -517,7 +519,6 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `BalancerV3_*` | `pool`, `gauge`, `balancerMinter`, `protocol` | Mainnet |
 | `Aura_*` | `pool`, `gauge`, `booster`, `pid`, `protocol`, `positionDetail` | Mainnet, Arbitrum, Base. AURA token resolved dynamically inside the adapter via `Booster.minter()` (+ `L2Coordinator.auraOFT()` staticcall on L2s) — do **not** add an `auraToken` config field, it's unused since PR #12 commit `62fcdee`. |
 | `StakeWiseV3Vault_*` | `underlyingToken`, `vault`, `protocol`, `positionDetail` | Mainnet |
-| `StakeWiseV3OsToken_*` | `osToken`, `underlyingToken`, `osTokenVaultController`, `protocol`, `positionDetail` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager`, `protocol`, `positionDetail` | Mainnet |
 | `SkySavingsUsds` | `savingsUsds`, `protocol`, `positionDetail` | Mainnet |
 
@@ -558,7 +559,7 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
 
-**StakeWise V3 (Mainnet):** `StakeWiseV3OsToken_ETH` (raw osETH wallet balance, returned as ETH-sentinel via `OsTokenVaultController.convertToAssets`), `StakeWiseV3Vault_Genesis` (Genesis Vault deposit net of minted-osETH debt — `vaultAssets - mintedOs`). Wired primarily for integration-report cross-checks against accounts holding StakeWise positions; the Alpha funds themselves do not currently use StakeWise. No dedicated `osETH` price feed is needed — both adapters report positions denominated in ETH (sentinel), which is already a registered priceable asset on Mainnet.
+**StakeWise V3:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultOracle` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, config keys `priceFeeds.osETH` / `priceFeeds.osGNO`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
 **Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
@@ -735,7 +736,7 @@ If broadcasting directly (sender has MANAGER), assets are registered immediately
 
 If you're executing the queued Safe TX JSON (not broadcasting directly), this is the exact flow:
 
-1. Open the per-chain Safe in Safe UI: `https://app.safe.global/home?safe=<chain_shortname>:<safe_address>` (chain shortnames per Safe: `eth` for Mainnet, `arb1` for Arbitrum, `base` for Base, `oeth` for Optimism, `gno` for Gnosis). Use the **production Safe address from the post-redeploy `chains/<id>.json.addresses.safeMultisig`** — not the test-deploy EOA.
+1. Open the per-chain Safe in Safe UI: `https://app.safe.global/home?safe=<chain_shortname>:<safe_address>` (chain shortnames per Safe: `eth` for Mainnet, `arb1` for Arbitrum, `base` for Base, `oeth` for Optimism, `gno` for Gnosis). Use the **production Safe address from the post-redeploy `chains/<id>.json.addresses.securityCouncil`** — not the test-deploy EOA.
 2. Apps → "Transaction Builder".
 3. Click the JSON icon top-right → "Load batch" → select `safe-transactions/{chainId}-register-assets.json`.
 4. The Builder parses each call. Review every row: contract address should be the **post-redeploy NAVCalculator proxy** from `chains/<id>.json.deployed.NAVCalculatorProxy` (NOT the salt-v2 test-deploy `0x5a0b…54C6`), function should be `registerAsset(address,address,uint8,uint256)`, and the arguments should match `assets.json` for the chain. **Don't skip this step** — the JSON is generated but not cryptographically tied to the config.
@@ -1020,11 +1021,11 @@ Phase 5: Register assets on NAVCalculator (RegisterAssets.s.sol) -- per chain
          mapping. assets.json is the source data; runtime reads from this
          on-chain mapping.)
 Phase 6: Add balance oracles to NAVCalculator (Path A: 06_Configure Safe TX batch
-         | Path B: 06_2_AddBalanceOracles direct broadcast) -- per chain
+         | Path B: 06_Configure direct broadcast) -- per chain
     |   (5 and 6 can be batched into one Safe TX on Path A; both must
     |   complete before getAccountNav works at runtime. Path B uses
-    |   06_2_AddBalanceOracles.s.sol — broadcast from EOA, idempotent;
-    |   then 07_HandoffRolesToSafe.s.sol transfers admin+manager to Safe.)
+    |   06_Configure.s.sol — broadcast from EOA, idempotent;
+    |   then 07_TransferAdminToSecurityCouncil.s.sol transfers admin+manager to Safe.)
     v
 Phase 7: Set custom price feeds (if not done in Phase 5) -- per chain
     |

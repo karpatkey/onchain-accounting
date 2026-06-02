@@ -105,15 +105,17 @@ Bridge has its own complete reference: [`src/bridge/BRIDGE_ADAPTERS.md`](../src/
 
 Deployment is scripted and config-driven. Read [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md), [`script/deploy/README.md`](../script/deploy/README.md), and [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) for specifics. Skeleton:
 
-1. `01_DeployImplementations.s.sol` — implementation contracts (NAVCalculator, BridgeEscrow).
-2. `02_DeployProxies.s.sol` — UUPS proxies + atomic initialize + role grants (admin + MANAGER to the per-chain Safe; deployer EOA self-renounces admin).
-3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters from `assets.json.priceFeeds`.
-4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from `chains/<id>.json.balanceAdapters`.
-5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
-6. `06_Configure.s.sol` — emits Safe TX JSON: register assets, add balance oracles to NAV, authorize bridge adapters on BridgeEscrow.
-7. `07_HandoffRolesToSafe.s.sol` — final post-deploy role-handoff sanity script (legacy path; atomic deploy in `02_` already handles role grants).
+The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes deploy/config). The deployer EOA holds admin + MANAGER throughout; the security-council Safe becomes admin only at the end (step 07).
 
-For the operational sequencing + Safe TX flow see [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
+1. `01_DeployImplementations.s.sol` — libraries (PriceFeedLib, NavRegistryLib) + implementation contracts (NAVCalculator, BridgeEscrow), via EOA CREATE2.
+2. `02_DeployProxies.s.sol` — UUPS proxies + atomic initialize + role grants (admin + MANAGER to `chainConfig.admin`/`manager` = the **deployer EOA**; the atomic deployer renounces its own admin).
+3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters; asset registration via `script/manage/RegisterAssets.s.sol`.
+4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters (incl. meta-adapters) from `chains/<id>.json.balanceAdapters`.
+5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
+6. `06_Configure.s.sol` — **EOA broadcast**: add balance oracles to NAV, `setMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
+7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
+
+For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
 
 Per-chain configuration is in `script/config/chains/<chainId>.json`. Five chains today: `1` (Mainnet), `10` (Optimism), `100` (Gnosis), `42161` (Arbitrum), `8453` (Base).
 

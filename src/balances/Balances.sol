@@ -8,6 +8,7 @@ import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
 
@@ -55,9 +56,18 @@ abstract contract Balances is IBalances, Initializable {
     /// @dev Set during initialization by derived contract
     address public erc20DefaultOracle;
 
-    /// @dev Reserved storage gap for future Balances expansions (50 slots).
+    /// @notice Per-oracle list of meta-adapter instance coordinates to query (e.g. vault addresses widened to
+    ///         bytes32). This is the governed, mutable "which instances" registry that keeps adapters immutable.
+    ///         Only meta-adapters read it (via getMetaInstances(address(this))); it is inert for other oracles.
+    ///         Callers of setMetaInstances must supply a deduplicated list (a duplicate would double-count NAV).
+    mapping(address oracle => bytes32[] instances) private _metaInstances;
+
+    /// @notice Running total of configured meta instances across all oracles (cheap NAV buffer sizing).
+    uint256 internal _metaInstanceTotal;
+
+    /// @dev Reserved storage gap for future Balances expansions (48 slots; 2 consumed by meta-oracle registry).
     // solhint-disable-next-line var-name-mixedcase
-    uint256[50] private __balancesGap;
+    uint256[48] private __balancesGap;
 
     //
     // Constructor
@@ -159,55 +169,52 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Adds a balance oracle globally.
     /// @param oracle The address of the oracle.
     function _addBalanceOracle(address oracle) internal {
-        // Check if oracle is already registered globally
-        if (_isOracleRegistered[oracle]) {
-            revert DuplicateBalanceOracle();
-        }
-
-        OracleType balanceType = OracleType.Custom;
-        checkBalanceOracleSupport(oracle);
-
-        // Add to global oracle registry
-        _globalOracles.push(oracle);
-        _oracleTypes[oracle] = balanceType;
-        _isOracleRegistered[oracle] = true;
+        // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to
+        // keep NAVCalculator under EIP-170; the running count + event stay inline (cheaper than crossing the boundary).
+        NavRegistryLib.addBalanceOracle(_isOracleRegistered, _globalOracles, _oracleTypes, oracle);
         balanceOracleTotalCount++;
 
         // Emit event with address(0) for underlyingAsset since oracles are global
-        emit BalanceOracleAdded(address(0), oracle, balanceType);
+        emit BalanceOracleAdded(address(0), oracle, OracleType.Custom);
     }
 
     /// @notice Removes the oracle from the global registry.
     /// @param oracle The address of the oracle.
     function _removeBalanceOracle(address oracle) internal {
-        if (oracle == erc20DefaultOracle) {
-            revert InvalidArguments(); // Cannot remove ERC20DefaultOracle
-        }
+        // Storage mutation + guards delegated to NavRegistryLib (see _addBalanceOracle); count + event stay inline.
+        NavRegistryLib.removeBalanceOracle(
+            _isOracleRegistered, _globalOracles, _oracleTypes, oracle, erc20DefaultOracle
+        );
+        balanceOracleTotalCount--;
 
+        // Note: a removed oracle's configured meta-instance set (if any) is left dormant — it is no longer
+        // queried since the oracle is out of the registry. _metaInstanceTotal only sizes read buffers (an
+        // overestimate is harmless), and a re-registered oracle's set is reset by the next setMetaInstances.
+
+        // Emit event with address(0) for underlyingAsset since oracles are global
+        emit BalanceOracleRemoved(address(0), oracle);
+    }
+
+    //
+    // Meta-oracle instance registry
+    //
+
+    /// @inheritdoc IBalances
+    function getMetaInstances(address oracle) public view override returns (bytes32[] memory) {
+        return _metaInstances[oracle];
+    }
+
+    /// @notice Replaces the full instance set for a meta-oracle (ADR 0010). The caller must supply a
+    ///         deduplicated list; only meta-adapters read this set, so it is a no-op for other oracles. A zero
+    ///         entry is harmless — the adapter's per-instance read reverts and is isolated to an empty result.
+    /// @param oracle The registered oracle.
+    /// @param instances The new instance coordinates.
+    function _setMetaInstances(address oracle, bytes32[] memory instances) internal {
         if (!_isOracleRegistered[oracle]) {
             revert InvalidBalanceOracle();
         }
 
-        // Remove from global registry
-        uint256 oracleIndex = _globalOracles.length;
-        for (uint256 i = 0; i < _globalOracles.length; i++) {
-            if (_globalOracles[i] == oracle) {
-                oracleIndex = i;
-                break;
-            }
-        }
-
-        if (oracleIndex < _globalOracles.length) {
-            // Move last element to the position of the element to delete
-            _globalOracles[oracleIndex] = _globalOracles[_globalOracles.length - 1];
-            _globalOracles.pop();
-        }
-
-        delete _isOracleRegistered[oracle];
-        delete _oracleTypes[oracle];
-        balanceOracleTotalCount--;
-
-        // Emit event with address(0) for underlyingAsset since oracles are global
-        emit BalanceOracleRemoved(address(0), oracle);
+        _metaInstanceTotal = _metaInstanceTotal - _metaInstances[oracle].length + instances.length;
+        _metaInstances[oracle] = instances;
     }
 }

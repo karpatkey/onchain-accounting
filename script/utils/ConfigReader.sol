@@ -17,7 +17,7 @@ library ConfigReader {
         string explorerApiKey;
         address chainlinkSequencerFeed;
         string nativeTokenSymbol;
-        address safeMultisig;
+        address securityCouncil;
         address admin;
         address manager;
     }
@@ -44,7 +44,7 @@ library ConfigReader {
         config.explorerApiKey = _resolveEnvVar(vm, json.readString(".explorerApiKey"));
         config.chainlinkSequencerFeed = json.readAddress(".chainlinkSequencerFeed");
         config.nativeTokenSymbol = json.readString(".nativeTokenSymbol");
-        config.safeMultisig = json.readAddress(".addresses.safeMultisig");
+        config.securityCouncil = json.readAddress(".addresses.securityCouncil");
         config.admin = json.readAddress(".addresses.admin");
         config.manager = json.readAddress(".addresses.manager");
     }
@@ -267,6 +267,56 @@ library ConfigReader {
         }
 
         return "";
+    }
+
+    /// @notice Reads an address array adapter param (e.g. a meta-adapter's `metaInstances` vault list).
+    /// @dev Looks under both the bare path and the `.constructor.` path. Returns an empty array if absent.
+    function readAdapterAddressArray(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        string memory paramName
+    ) internal view returns (address[] memory) {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+
+        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
+        if (vm.keyExists(json, jsonPath)) {
+            return vm.parseJsonAddressArray(json, jsonPath);
+        }
+        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
+        if (vm.keyExists(json, jsonPath)) {
+            return vm.parseJsonAddressArray(json, jsonPath);
+        }
+        return new address[](0);
+    }
+
+    /// @notice Reads a bytes32 array adapter param (e.g. a meta-adapter's `metaInstancesRaw` marketId list).
+    /// @dev Looks under both the bare path and the `.constructor.` path. Returns an empty array if absent.
+    function readAdapterBytes32Array(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        string memory paramName
+    ) internal view returns (bytes32[] memory) {
+        string memory root = vm.projectRoot();
+        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(path);
+
+        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
+        if (vm.keyExists(json, jsonPath)) {
+            return vm.parseJsonBytes32Array(json, jsonPath);
+        }
+        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
+        if (vm.keyExists(json, jsonPath)) {
+            return vm.parseJsonBytes32Array(json, jsonPath);
+        }
+        return new bytes32[](0);
     }
 
     /// @notice Checks if an adapter is enabled for a chain. For "priceFeeds" reads from assets.json; otherwise from chain config.

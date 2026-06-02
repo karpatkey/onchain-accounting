@@ -312,7 +312,7 @@ contract RegisterAssets is BaseDeployScript {
     ///         Add new tokens to assets.json and append the symbol here for the right chain.
     function _symbolsForChain(uint256 chainId) private pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](31);
+            string[] memory s = new string[](32);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -344,6 +344,7 @@ contract RegisterAssets is BaseDeployScript {
             s[28] = "COMP";
             s[29] = "WBTC";
             s[30] = "AAVE";
+            s[31] = "osETH"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * ETH/USD
             return s;
         }
         if (chainId == 42161) {
@@ -364,7 +365,7 @@ contract RegisterAssets is BaseDeployScript {
         }
         if (chainId == 100) {
             // Include all tokens defined for chain 100 in assets.json
-            string[] memory s = new string[](7);
+            string[] memory s = new string[](8);
             s[0] = "xDAI";
             s[1] = "WXDAI";
             s[2] = "WETH";
@@ -372,6 +373,7 @@ contract RegisterAssets is BaseDeployScript {
             s[4] = "USDCe";
             s[5] = "sDAI";
             s[6] = "GHO";
+            s[7] = "osGNO"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * GNO/USD
             return s;
         }
         if (chainId == 8453) {

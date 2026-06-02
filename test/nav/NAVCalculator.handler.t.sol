@@ -327,7 +327,7 @@ contract NAVCalculatorHandlerTest is SuperTest {
             INAVCalculator.Position[] memory positions = nav.getAccountPositions(account, address(0));
 
             for (uint256 j = 0; j < positions.length; j++) {
-                address asset = positions[j].underlyingAsset.asset;
+                address asset = positions[j].balanceAsset.asset;
                 assertTrue(nav.isAssetRegistered(asset), "All position assets should be registered");
             }
         }
@@ -344,12 +344,12 @@ contract NAVCalculatorHandlerTest is SuperTest {
 
             // Group by asset and verify no duplicate oracles
             for (uint256 j = 0; j < allPositions.length; j++) {
-                address asset = allPositions[j].underlyingAsset.asset;
+                address asset = allPositions[j].balanceAsset.asset;
                 address oracle = allPositions[j].balanceOracle;
 
                 // Check for duplicate oracles reporting same asset
                 for (uint256 k = j + 1; k < allPositions.length; k++) {
-                    if (allPositions[k].underlyingAsset.asset == asset) {
+                    if (allPositions[k].balanceAsset.asset == asset) {
                         assertTrue(
                             allPositions[k].balanceOracle != oracle,
                             "No duplicate oracles should report same asset for same account"

@@ -30,7 +30,7 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 - **One aggregated position per payout asset.** Sum across all open requests for the account and emit one `PositionBalance` per underlying — same as `StaderWithdrawalQueue`. Splitting per request would inflate NAV row count without analytical gain. Single-asset queues (Stader, Lido, …) emit exactly one position; multi-asset queues that pay out in several underlyings (`KelpWithdrawalQueue`, which discovers stETH/ETHx/native-ETH at runtime) emit one position **per NAV-registered payout asset**, still aggregating all of that asset's requests into a single entry.
 - **Claimed-entry handling.** Some managers `delete` storage on claim (Stader: `owner == address(0)` filter); ERC721-based ones burn the NFT (out of `tokenOfOwnerByIndex` automatically). Each adapter should explicitly skip claimed entries.
 - **Bound the loop.** Even if enumeration is auto-exiting (revert-on-OOB or NFT enumeration), keep a hard `MAX_REQUESTS_PROBED` cap so a malicious/legit pathological account can't blow gas.
-- **Underlying token configurable.** Let the constructor take `underlyingToken_` so each chain config picks WETH or `NATIVE_ADDRESS` (ERC-7528) based on what the rest of the system reports. Mirror `StakeWiseV3OsToken` and the Stader queue.
+- **Underlying token configurable.** Let the constructor take `underlyingToken_` so each chain config picks WETH or `NATIVE_ADDRESS` (ERC-7528) based on what the rest of the system reports. Mirror `StakeWiseV3VaultsMeta` and the Stader queue.
 - **Pre-finalization vs. finalized amount.** Use `ethFinalized` once set (post-finalization, exact). Before finalization, fall back to whatever rate-converted estimate the protocol stores at request time (`ethExpected` for Stader, `amountOfStETH` × stETH/ETH for Lido, etc.). Never invent a rate inside the adapter.
 
 ---
@@ -55,9 +55,9 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Money markets and credit
 
-- **Compound V3**: adapter exists (`CompoundV3Comet.sol`) but isn't wired into the Alpha funds today; revisit if usage starts.
+- **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010) enabled on mainnet (supersedes per-comet `CompoundV3Comet.sol`).
 - **Euler V2**: cluster-based lending; per-vault EVK accounting.
-- **Fluid**: lending + DEX hybrid; collateral and debt accounting non-trivial.
+- **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010) enabled on mainnet.
 - **Ajna**: pool-based lending; inflation-bearing buckets.
 
 ### RWA / off-chain backed
@@ -83,7 +83,7 @@ These are not queues but represent value that lives outside the wallet and is no
 1. Pick a row whose protocol kpk **actually uses or imminently will**.
 2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
 3. Mirror `StaderWithdrawalQueue.sol` (queue family) or whichever existing adapter is closest in shape.
-4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol` and `06_2_AddBalanceOracles.s.sol` `_balanceAdapterNames()`.
+4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol`'s `_balanceAdapterNames()`.
 5. Update this file: cross off the row or add caveats discovered during implementation.
 
 When a row turns out to be irrelevant (e.g. RPL queue, Coinbase off-chain unwrap), strike it through with a one-line reason rather than deleting — future contributors should see it was considered.

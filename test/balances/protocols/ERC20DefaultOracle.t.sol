@@ -37,6 +37,7 @@ contract ERC20DefaultOracleTest is Test {
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Set up tokens
         usdc = new Mock_ERC20("USDC", 6);
@@ -158,12 +159,10 @@ contract ERC20DefaultOracleTest is Test {
         // Filter by USDC
         INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(usdc));
-        assertEq(positions[0].underlyingAsset.symbol, "USDC");
-        assertEq(positions[0].underlyingAsset.decimals, 6);
+        assertEq(positions[0].balanceAsset.asset, address(usdc));
+        assertEq(positions[0].balanceAsset.symbol, "USDC");
+        assertEq(positions[0].balanceAsset.decimals, 6);
         assertEq(positions[0].balanceOracle, address(oracle));
-        assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
     }
 
     function test_getOraclePositions_protocolAndPositionDetail() public {
@@ -177,8 +176,6 @@ contract ERC20DefaultOracleTest is Test {
 
         positions = oracle.getOraclePositions(user, address(0));
         assertEq(positions.length, 1);
-        assertEq(positions[0].protocol, "wallet");
-        assertEq(positions[0].positionDetail, "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
     }
 
     // ============================================

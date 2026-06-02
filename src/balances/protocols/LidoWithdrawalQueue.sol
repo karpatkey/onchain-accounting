@@ -5,7 +5,8 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Lido Withdrawal Queue Balance Oracle
 /// @author kpk
@@ -35,6 +36,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     ///      In practice an account never has more than a handful of requests.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO_WITHDRAWAL;
+
     //
     // State
     //
@@ -49,13 +52,6 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance.
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (withdrawalQueue address).
-    string private _positionId;
-
     //
     // Constructor
     //
@@ -63,18 +59,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @param withdrawalQueue_ Address of Lido's WithdrawalQueueERC721 contract.
     /// @param underlyingToken_ Address of the asset positions are denominated in — what Lido pays on
     ///        claim (native ETH; the ERC-7528 sentinel on mainnet).
-    /// @param protocol_ Protocol identifier (e.g. "Lido").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (withdrawalQueue address).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(
-        address withdrawalQueue_,
-        address underlyingToken_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address withdrawalQueue_, address underlyingToken_, address navCalculator_) {
         if (withdrawalQueue_ == address(0) || underlyingToken_ == address(0)) {
             revert InvalidArguments();
         }
@@ -84,9 +70,6 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
         WITHDRAWAL_QUEUE = ILidoWithdrawalQueue(withdrawalQueue_);
         UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
     }
 
     //
@@ -158,6 +141,14 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Lido";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "stETH withdrawal queue";
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -233,13 +224,13 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: underlying,
+            balanceAsset: underlying,
             balanceOracle: address(this),
             amount: total,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: "",
+            positionKind: PositionKind.Supplied
         });
     }
 }

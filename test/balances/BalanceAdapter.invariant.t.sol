@@ -10,6 +10,7 @@ import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title Balance Adapter Invariant Tests
 /// @notice Tests critical system invariants for balance oracle adapters
@@ -26,6 +27,8 @@ contract BalanceAdapterInvariantTest is Test {
     address public bob = makeAddr("bob");
 
     function setUp() public {
+        // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultOracle = balances.defaultOracle();
 
@@ -198,7 +201,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // Should only have USDC position
         assertEq(positions.length, 1, "Should have one position");
-        assertEq(positions[0].underlyingAsset.asset, address(usdc), "Should be USDC");
+        assertEq(positions[0].balanceAsset.asset, address(usdc), "Should be USDC");
     }
 
     /// @notice Test that zero balances are excluded across multiple adapters
@@ -307,7 +310,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // All filtered positions should be for USDC
         for (uint256 i = 0; i < filteredPositions.length; i++) {
-            assertEq(filteredPositions[i].underlyingAsset.asset, address(usdc), "Filtered positions should be for USDC");
+            assertEq(filteredPositions[i].balanceAsset.asset, address(usdc), "Filtered positions should be for USDC");
         }
 
         // Verify filtered positions are in all positions
@@ -315,7 +318,7 @@ contract BalanceAdapterInvariantTest is Test {
             bool found = false;
             for (uint256 j = 0; j < allPositions.length; j++) {
                 if (
-                    filteredPositions[i].underlyingAsset.asset == allPositions[j].underlyingAsset.asset
+                    filteredPositions[i].balanceAsset.asset == allPositions[j].balanceAsset.asset
                         && filteredPositions[i].amount == allPositions[j].amount
                         && filteredPositions[i].isDebt == allPositions[j].isDebt
                 ) {
@@ -436,7 +439,7 @@ contract BalanceAdapterInvariantTest is Test {
     // Metadata Consistency Invariant
     // ============================================
 
-    /// @notice Test that protocol and positionDetail are consistent across queries
+    /// @notice Test that protocolId and positionKind are consistent across queries
     function test_invariant_metadataConsistency() public {
         customOracle1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
 
@@ -448,15 +451,11 @@ contract BalanceAdapterInvariantTest is Test {
         assertEq(positions1.length, positions2.length, "Position count should be consistent");
 
         for (uint256 i = 0; i < positions1.length; i++) {
+            assertEq(positions1[i].protocolId, positions2[i].protocolId, "ProtocolId should be consistent");
             assertEq(
-                keccak256(bytes(positions1[i].protocol)),
-                keccak256(bytes(positions2[i].protocol)),
-                "Protocol should be consistent"
-            );
-            assertEq(
-                keccak256(bytes(positions1[i].positionDetail)),
-                keccak256(bytes(positions2[i].positionDetail)),
-                "PositionDetail should be consistent"
+                uint8(positions1[i].positionKind),
+                uint8(positions2[i].positionKind),
+                "PositionKind should be consistent"
             );
         }
     }
@@ -469,11 +468,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // ERC20DefaultOracle should have specific metadata
         assertEq(positions.length, 1, "Should have one position");
-        assertEq(positions[0].protocol, "wallet", "Protocol should be 'wallet'");
-        assertEq(
-            positions[0].positionDetail,
-            "{\"protocol\":\"wallet\",\"product\":\"Holding\"}",
-            "PositionDetail should be wallet JSON"
-        );
+        assertEq(positions[0].protocolId, keccak256(bytes("wallet")), "ProtocolId should be wallet");
+        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Wallet), "PositionKind should be Wallet");
     }
 }

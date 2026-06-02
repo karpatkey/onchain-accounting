@@ -7,7 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title ERC-4626 Wrap Balance Oracle
 /// @author kpk
@@ -46,24 +47,17 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
     /// @notice The wrapper's underlying asset (cached from WRAPPER.asset() at construction)
     address public immutable ASSET;
 
-    /// @notice Protocol identifier for this oracle (e.g. "Aave V3").
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`); append `}` at emit time.
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance — the wrapper address.
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for generic ERC4626 wrappers
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.ERC4626;
 
     //
     // Constructor
     //
 
     /// @param wrapper_ The address of the ERC-4626 wrapper (e.g. `waEthLidoGHO`).
-    /// @param protocol_ Protocol identifier passed verbatim on every emitted PositionBalance.
-    /// @param positionDetail_ JSON metadata base without closing `}` (e.g.
-    ///        `{"protocol":"Aave V3","product":"Lending","name":"Prime Instance (LidoGHO stata wrap)"`).
-    /// @param positionId_ Stable hex identifier for this adapter instance (the wrapper address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
     /// @dev    Constructor enforces that `WRAPPER.asset()` is registered with NAVCalculator at
     ///         deploy time. Deploying an adapter whose underlying lacks a price feed is a useless
@@ -72,13 +66,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
     ///         the adapter — production: Safe-TX bundles place `registerAsset(...)` before
     ///         `addBalanceOracle(...)`; harness: `_registerAllAssets()` runs before
     ///         `_deployAllBalanceAdapters()`.
-    constructor(
-        address wrapper_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address wrapper_, address navCalculator_) {
         if (wrapper_ == address(0)) revert InvalidArguments();
         require(wrapper_.code.length > 0, "Wrapper must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -91,9 +79,6 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
             INAVCalculator(navCalculator_).isAssetRegistered(ASSET), "Wrapper underlying must be a NAV-registered asset"
         );
 
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -103,6 +88,18 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "ERC4626";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "vault supply";
     }
 
     //
@@ -174,13 +171,13 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
         INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(ASSET);
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: underlyingAsset,
+            balanceAsset: underlyingAsset,
             balanceOracle: address(this),
             amount: balance,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: abi.encode(address(WRAPPER)),
+            positionKind: PositionKind.Supplied
         });
     }
 

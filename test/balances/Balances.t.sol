@@ -6,7 +6,9 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 
@@ -85,6 +87,50 @@ contract BalancesHarness is Balances {
         // Oracles are now global - underlyingAsset parameter is kept for backward compatibility but not used
         _removeBalanceOracle(oracle);
     }
+
+    function setMetaInstancesDirect(address oracle, bytes32[] memory instances) public {
+        _setMetaInstances(oracle, instances);
+    }
+
+    function metaInstanceTotalForTest() public view returns (uint256) {
+        return _metaInstanceTotal;
+    }
+}
+
+/// @notice Minimal mock advertising the meta-oracle interface (for registry tests).
+contract Mock_MetaOracle is IMetaBalanceOracleAdapter {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IMetaBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function getOraclePositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getOracleBalances(address) external pure returns (address[] memory, uint256[] memory, bool[] memory) {
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+
+    function getOracleBalanceForAsset(address, address) external pure returns (uint256, bool) {
+        return (0, false);
+    }
+
+    function underlyingAssetsSupported() external pure returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function getOraclePositionsForInstances(address, bytes32[] calldata, address)
+        external
+        pure
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function underlyingAssetsSupportedForInstances(bytes32[] calldata) external pure returns (address[] memory) {
+        return new address[](0);
+    }
 }
 
 contract BalancesTest is Test {
@@ -98,6 +144,10 @@ contract BalancesTest is Test {
     address public admin = makeAddr("admin");
 
     function setUp() public {
+        // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml). In tests there's no
+        // chain state, so etch its runtime code there so the DELEGATECALL from _addBalanceOracle/_removeBalanceOracle
+        // succeeds.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         vm.startPrank(admin);
         balances = new BalancesHarness();
         balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
@@ -396,4 +446,63 @@ contract BalancesTest is Test {
     }
 
     // Legacy metadata-based tests removed as metadata API was refactored away.
+
+    // ============================================
+    // Meta-oracle instance registry
+    // ============================================
+
+    function _registerMeta() internal returns (Mock_MetaOracle meta) {
+        meta = new Mock_MetaOracle();
+        vm.prank(admin);
+        balances.addBalanceOracleDirect(address(0), address(meta), IBalances.OracleType.Custom);
+    }
+
+    function test_meta_setInstances() public {
+        Mock_MetaOracle meta = _registerMeta();
+        bytes32[] memory instances = new bytes32[](2);
+        instances[0] = bytes32(uint256(uint160(address(0xAAA1))));
+        instances[1] = bytes32(uint256(uint160(address(0xBBB2))));
+        balances.setMetaInstancesDirect(address(meta), instances);
+
+        bytes32[] memory got = balances.getMetaInstances(address(meta));
+        assertEq(got.length, 2);
+    }
+
+    function test_meta_setInstances_replacesPrevious() public {
+        Mock_MetaOracle meta = _registerMeta();
+        bytes32[] memory first = new bytes32[](2);
+        first[0] = bytes32(uint256(1));
+        first[1] = bytes32(uint256(2));
+        balances.setMetaInstancesDirect(address(meta), first);
+
+        bytes32[] memory second = new bytes32[](1);
+        second[0] = bytes32(uint256(3));
+        balances.setMetaInstancesDirect(address(meta), second);
+
+        bytes32[] memory got = balances.getMetaInstances(address(meta));
+        assertEq(got.length, 1);
+        assertEq(got[0], bytes32(uint256(3)));
+    }
+
+    function test_meta_instanceTotal_tracksAcrossOracles() public {
+        Mock_MetaOracle meta = _registerMeta();
+        bytes32[] memory two = new bytes32[](2);
+        two[0] = bytes32(uint256(1));
+        two[1] = bytes32(uint256(2));
+        balances.setMetaInstancesDirect(address(meta), two);
+        assertEq(balances.metaInstanceTotalForTest(), 2);
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = bytes32(uint256(3));
+        balances.setMetaInstancesDirect(address(meta), one);
+        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects replacement");
+    }
+
+    function test_meta_setInstances_onUnregisteredReverts() public {
+        Mock_MetaOracle meta = new Mock_MetaOracle(); // not registered
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(1));
+        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
+        balances.setMetaInstancesDirect(address(meta), instances);
+    }
 }

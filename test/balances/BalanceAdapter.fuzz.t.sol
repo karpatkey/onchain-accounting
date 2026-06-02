@@ -21,6 +21,8 @@ contract BalanceAdapterFuzzTest is Test {
     address public alice;
 
     function setUp() public {
+        // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultOracle = balances.defaultOracle();
         customOracle = new Mock_CustomBalanceOracle();
@@ -67,8 +69,8 @@ contract BalanceAdapterFuzzTest is Test {
         vm.assume(account != address(0));
         vm.assume(asset != address(0));
 
-        // Bound amount to reasonable range (avoid overflow)
-        uint96 amount = uint96(bound(amountSeed, 0, type(uint96).max / 2));
+        // Bound amount to reasonable range (avoid overflow); minimum 1 so assertGt(amount2, 0) is valid
+        uint96 amount = uint96(bound(amountSeed, 1, type(uint96).max / 2));
 
         // Try to get balance - should not revert
         (uint256 amount1,) = erc20DefaultOracle.getOracleBalanceForAsset(account, asset);
@@ -157,7 +159,7 @@ contract BalanceAdapterFuzzTest is Test {
 
             // If filter is set, all positions should match filter
             if (assetFilter != address(0)) {
-                assertEq(positions[i].underlyingAsset.asset, assetFilter, "All positions should match filter");
+                assertEq(positions[i].balanceAsset.asset, assetFilter, "All positions should match filter");
             }
         }
     }

@@ -12,6 +12,7 @@ import {Balances} from "src/balances/Balances.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
+import {NavRegistryLib} from "./NavRegistryLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
@@ -190,6 +191,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function setMetaInstances(address oracle, bytes32[] calldata instances) external {
+        _requireManager();
+        _setMetaInstances(oracle, instances);
+    }
+
+    /// @inheritdoc INAVCalculator
     function excludeAssetFromDefaultOracle(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
@@ -306,7 +313,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 positionsLength = allPositions.length;
         for (uint256 i = 0; i < positionsLength; i++) {
             INAVCalculator.PositionBalance memory pos = allPositions[i];
-            address asset = pos.underlyingAsset.asset;
+            address asset = pos.balanceAsset.asset;
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
             uint8 canonicalDecimals = _getRegisteredAsset(asset).decimals;
             totalValue += _priceConversion(
@@ -323,6 +330,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @notice Calls adapter via interface; returns INAVCalculator.PositionBalance[] (same layout as INAVCalculator structs).
+    /// @dev Meta-oracles (ADR 0010) read their NAV-configured instance set themselves inside getOraclePositions
+    ///      (via getMetaInstances(address(this))), so the call path here is uniform across all oracle types.
     function _getOraclePositionsView(address oracle, address account, address assetFilter)
         internal
         view
@@ -348,7 +357,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         address[] memory allOracles = getAllOracles();
         uint256 totalOracles = allOracles.length;
-        uint256 maxPositions = assetFilter == address(0) ? totalOracles * getAssetCount() : totalOracles;
+
+        // Upper bound on emitted rows. Each oracle/meta-instance can emit at most two legs per registered asset
+        // (a supply/collateral + a borrow on the same reserve — the Aave/Morpho lending shape); single-leg
+        // adapters stay well within this. Budgeting 2·assetCount per oracle and per meta-instance is therefore a
+        // hard upper bound, so the buffer can never overflow regardless of how a meta-adapter fans out.
+        uint256 maxPositions = 2 * (totalOracles + _metaInstanceTotal) * getAssetCount();
+
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
         uint256 count = 0;
 
@@ -357,7 +372,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 _getOraclePositionsView(allOracles[i], account, assetFilter);
 
             for (uint256 j = 0; j < oraclePositions.length; j++) {
-                address asset = oraclePositions[j].underlyingAsset.asset;
+                address asset = oraclePositions[j].balanceAsset.asset;
                 if (!isAssetRegistered(asset)) continue;
                 if (assetFilter != address(0) && asset != assetFilter) continue;
                 temp[count++] = oraclePositions[j];
@@ -434,7 +449,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         positions = new INAVCalculator.Position[](length);
         for (uint256 i = 0; i < length; i++) {
             INAVCalculator.PositionBalance memory balance = positionBalances[i];
-            address asset = balance.underlyingAsset.asset;
+            address asset = balance.balanceAsset.asset;
             INAVCalculator.Asset memory registered = _getRegisteredAsset(asset);
             PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
             positions[i] = _enrichPositionWithPricing(
@@ -548,7 +563,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 length = positions.length;
         address[] memory allAssets = new address[](length);
         for (uint256 i = 0; i < length; i++) {
-            allAssets[i] = positions[i].underlyingAsset.asset;
+            allAssets[i] = positions[i].balanceAsset.asset;
         }
         uniqueAssets = ArrayLib.deduplicateAddresses(allAssets);
     }
@@ -739,44 +754,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// Fetches decimals and symbol: for NATIVE_ADDRESS uses 18 and _nativeTokenSymbol;
     /// otherwise requires ERC20-compatible (decimals() and symbol()) and reverts if not.
     function _registerAsset(address asset) internal {
-        if (_assetIndex[asset] != 0) {
-            revert InvalidArguments(); // Asset already registered
-        }
-        uint8 decimals;
-        string memory symbol;
-        if (asset == NATIVE_ADDRESS) {
-            decimals = 18;
-            symbol = _nativeTokenSymbol;
-        } else {
-            try IERC20Metadata(asset).decimals() returns (uint8 d) {
-                decimals = d;
-            } catch {
-                revert InvalidArguments(); // Not ERC20 compatible
-            }
-            try IERC20Metadata(asset).symbol() returns (string memory s) {
-                symbol = s;
-            } catch {
-                revert InvalidArguments(); // Not ERC20 compatible
-            }
-        }
-        _registeredAssets.push(INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals}));
-        _assetIndex[asset] = _registeredAssets.length;
+        NavRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
     }
 
     /// @notice Unregisters an asset from the NAV/Pricing registry
     function _unregisterAsset(address asset) internal {
-        uint256 idx = _assetIndex[asset];
-        if (idx == 0) {
-            revert AssetNotFound();
-        }
-        uint256 lastIdx = _registeredAssets.length;
-        if (idx != lastIdx) {
-            INAVCalculator.Asset memory lastAsset = _registeredAssets[lastIdx - 1];
-            _registeredAssets[idx - 1] = lastAsset;
-            _assetIndex[lastAsset.asset] = idx;
-        }
-        _registeredAssets.pop();
-        delete _assetIndex[asset];
+        NavRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
     }
 
     /// @notice Returns the registered Asset struct from the NAV/Pricing registry (single lookup for decimals + symbol).
@@ -872,17 +855,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         );
 
         // Build enriched position with canonical asset metadata (decimals, symbol from registry)
-        INAVCalculator.Asset memory underlyingAsset = INAVCalculator.Asset({
-            asset: balance.underlyingAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
+        INAVCalculator.Asset memory balanceAsset = INAVCalculator.Asset({
+            asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
         });
         position = INAVCalculator.Position({
-            underlyingAsset: underlyingAsset,
+            balanceAsset: balanceAsset,
             balanceOracle: balance.balanceOracle,
             amount: balance.amount,
             isDebt: balance.isDebt,
-            protocol: balance.protocol,
-            positionDetail: balance.positionDetail,
+            protocolId: balance.protocolId,
             positionId: balance.positionId,
+            positionKind: balance.positionKind,
             quoteAsset: quoteAssetStruct,
             value: value,
             price: priceFeed.price,

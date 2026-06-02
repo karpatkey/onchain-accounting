@@ -8,7 +8,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice A balance oracle for the DAI token that uses the DSRManager contract to calculate the balance.
 contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
@@ -49,14 +50,11 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     /// @notice Address of the Pot contract
     PotLike public immutable POT;
 
-    /// @notice Protocol identifier for this oracle
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`)
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (dsrManager address)
-    string private _positionId;
     /// @notice Reference to NAVCalculator for asset registry and pricing access
     INAVCalculator public immutable NAV_CALCULATOR;
+
+    /// @notice Protocol ID for DAI Savings Rate
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.DAI_DSR;
 
     //
     // Constructor
@@ -64,18 +62,8 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
 
     /// @param dai_ The address of the DAI token
     /// @param dsrManager_ The address of the DSR Manager contract
-    /// @param protocol_ Protocol identifier (e.g., "Maker").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (dsrManager address).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
-    constructor(
-        address dai_,
-        address dsrManager_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address dai_, address dsrManager_, address navCalculator_) {
         if (dai_ == address(0) || dsrManager_ == address(0)) revert InvalidArguments();
         require(dsrManager_.code.length > 0, "DSRManager must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -83,9 +71,6 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
         DAI = dai_;
         DSR_MANAGER = DsrManager(dsrManager_);
         POT = DSR_MANAGER.pot();
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -191,6 +176,18 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "MakerDAO";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "DAI savings rate";
     }
 
     //
@@ -357,13 +354,13 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
 
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                underlyingAsset: underlyingAsset,
+                balanceAsset: underlyingAsset,
                 balanceOracle: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
-                protocol: _protocol,
-                positionDetail: PositionType.withType(_positionDetail, PositionType.SUPPLY),
-                positionId: _positionId
+                protocolId: PROTOCOL_ID,
+                positionId: "",
+                positionKind: PositionKind.Supplied
             });
 
             positionCount++;

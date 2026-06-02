@@ -341,7 +341,7 @@ contract BalanceAdapterHandlerTest is Test {
                     // All filtered positions should match filter
                     for (uint256 l = 0; l < filteredPositions.length; l++) {
                         assertEq(
-                            filteredPositions[l].underlyingAsset.asset, filter, "Filtered positions should match filter"
+                            filteredPositions[l].balanceAsset.asset, filter, "Filtered positions should match filter"
                         );
                     }
 

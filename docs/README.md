@@ -53,6 +53,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0006-aave-umbrella-balance-oracle.md`](decisions/0006-aave-umbrella-balance-oracle.md) | Aave Umbrella stake-token coverage. |
 | [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. |
 | [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
+| [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
+| [`0010-meta-balance-adapters.md`](decisions/0010-meta-balance-adapters.md) | Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator. |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---
@@ -78,7 +80,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to read |
 |---|---|
-| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, Safe multisig control, the per-script roles (`01_…` → `06_…`). Read first if new. |
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config with a final admin handoff to the security-council Safe, the per-script roles (`01_…` → `07_…`). Read first if new. |
 | [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional oracles to a live chain, registering new assets, rotating roles, validating an existing deployment. |
 | [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
 | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |

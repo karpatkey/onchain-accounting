@@ -111,44 +111,31 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         queue = new MockLidoWithdrawalQueue();
-        oracle = new LidoWithdrawalQueueBalanceOracle(
-            address(queue),
-            address(weth),
-            "Lido",
-            POSITION_DETAIL_BASE,
-            "0x0000000000000000000000000000000000000001",
-            address(balances)
-        );
+        oracle = new LidoWithdrawalQueueBalanceOracle(address(queue), address(weth), address(balances));
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroQueue() public {
         vm.expectRevert(InvalidArguments.selector);
-        new LidoWithdrawalQueueBalanceOracle(
-            address(0), address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
-        );
+        new LidoWithdrawalQueueBalanceOracle(address(0), address(weth), address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new LidoWithdrawalQueueBalanceOracle(
-            address(queue), address(0), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
-        );
+        new LidoWithdrawalQueueBalanceOracle(address(queue), address(0), address(balances));
     }
 
     function test_constructor_revertsWhenQueueNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("WithdrawalQueue must be a contract"));
-        new LidoWithdrawalQueueBalanceOracle(
-            eoa, address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
-        );
+        new LidoWithdrawalQueueBalanceOracle(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("NAVCalculator must be a contract"));
-        new LidoWithdrawalQueueBalanceOracle(address(queue), address(weth), "Lido", POSITION_DETAIL_BASE, "0x01", eoa);
+        new LidoWithdrawalQueueBalanceOracle(address(queue), address(weth), eoa);
     }
 
     // ---- Interface ----
@@ -278,19 +265,16 @@ contract LidoWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
 
         positions = oracle.getOraclePositions(alice, address(weth));
         assertEq(positions.length, 1);
-        assertEq(positions[0].underlyingAsset.asset, address(weth));
+        assertEq(positions[0].balanceAsset.asset, address(weth));
         assertEq(positions[0].balanceOracle, address(oracle));
         assertEq(positions[0].amount, 5e18);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocol, "Lido");
-        assertEq(positions[0].positionDetail, POSITION_DETAIL_FULL);
     }
 
     function test_getOraclePositions_emptyWhenAssetUnregistered() public {
         address unregistered = makeAddr("unregisteredAsset");
-        LidoWithdrawalQueueBalanceOracle freshOracle = new LidoWithdrawalQueueBalanceOracle(
-            address(queue), unregistered, "Lido", POSITION_DETAIL_BASE, "0x01", address(balances)
-        );
+        LidoWithdrawalQueueBalanceOracle freshOracle =
+            new LidoWithdrawalQueueBalanceOracle(address(queue), unregistered, address(balances));
         queue.pushRequest(alice, 1, 5e18, false);
 
         INAVCalculator.PositionBalance[] memory positions = freshOracle.getOraclePositions(alice, address(0));

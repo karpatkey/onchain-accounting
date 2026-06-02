@@ -7,7 +7,7 @@
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "POL",
   "addresses": {
-    "safeMultisig": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
@@ -25,8 +25,22 @@
       },
       "deployed": ""
     },
-    "Fluid_fToken_USDC": {
+    "FluidFTokensMeta": {
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes per-instance Fluid_fToken_* adapters, disabled below.",
       "enabled": true,
+      "constructor": {
+        "protocol": "Fluid"
+      },
+      "metaInstances": [
+        "0x571d456b578fDC34E26E6D636736ED7c0CDB9d89",
+        "0x6f5e34eFf43D9ab7c977512509C53840B5EfBA85",
+        "0xD3154535E4D0e179583ad694859E4e876EB12d24",
+        "0x41b8B33A413681CB7d869D287E99C30c6DF775b9"
+      ],
+      "deployed": ""
+    },
+    "Fluid_fToken_USDC": {
+      "enabled": false,
       "constructor": {
         "fToken": "0x571d456b578fDC34E26E6D636736ED7c0CDB9d89",
         "protocol": "Fluid Lending",
@@ -36,7 +50,7 @@
       "deployed": ""
     },
     "Fluid_fToken_USDT": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0x6f5e34eFf43D9ab7c977512509C53840B5EfBA85",
         "protocol": "Fluid Lending",
@@ -46,7 +60,7 @@
       "deployed": ""
     },
     "Fluid_fToken_WETH": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0xD3154535E4D0e179583ad694859E4e876EB12d24",
         "protocol": "Fluid Lending",
@@ -56,7 +70,7 @@
       "deployed": ""
     },
     "Fluid_fToken_WPOL": {
-      "enabled": true,
+      "enabled": false,
       "constructor": {
         "fToken": "0x41b8B33A413681CB7d869D287E99C30c6DF775b9",
         "protocol": "Fluid Lending",

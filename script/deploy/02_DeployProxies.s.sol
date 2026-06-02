@@ -136,7 +136,7 @@ contract DeployProxies is BaseDeployScript {
                             vm.toString(currentNavImpl),
                             "; upgrade to ",
                             vm.toString(navImpl),
-                            " must be executed by current admin (e.g. via Safe)."
+                            " must be executed by the current admin."
                         )
                     )
                 );
@@ -157,7 +157,7 @@ contract DeployProxies is BaseDeployScript {
                             vm.toString(currentBridgeImpl),
                             "; upgrade to ",
                             vm.toString(bridgeImpl),
-                            " must be executed by current admin (e.g. via Safe)."
+                            " must be executed by the current admin."
                         )
                     )
                 );
@@ -175,11 +175,11 @@ contract DeployProxies is BaseDeployScript {
             );
         }
 
-        // MANAGER is granted inside AtomicProxyDeployer (atomic path) or must be done via Safe TX (legacy path).
+        // MANAGER is granted inside AtomicProxyDeployer (atomic path) or must be granted separately (legacy path).
         if (useLegacy && chainConfig.manager != address(0)) {
             console2.log(
                 "[WARN] Legacy path: MANAGER role NOT granted by this script.",
-                "chainConfig.admin holds DEFAULT_ADMIN_ROLE; have the admin Safe call grantRole(MANAGER, manager) on both proxies."
+                "chainConfig.admin holds DEFAULT_ADMIN_ROLE; have the admin EOA call grantRole(MANAGER, manager) on both proxies."
             );
         }
 

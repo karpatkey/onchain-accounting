@@ -2,9 +2,12 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -25,14 +28,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     /// @notice ERC-7528 convention for ETH address representation
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
-    /// @notice Protocol identifier for this oracle
-    string private constant PROTOCOL = "wallet";
-
-    /// @notice JSON metadata base (no closing `}`) for wallet positions
-    string private constant _POSITION_DETAIL = "{\"protocol\":\"wallet\",\"product\":\"Holding\"";
-
-    /// @notice Stable hex identifier for the default oracle (zero address sentinel)
-    string private constant _POSITION_ID = "0x0000000000000000000000000000000000000000";
+    /// @notice Protocol ID for wallet positions
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.WALLET;
 
     /// @param navCalculator_ NAVCalculator address (must be non-zero)
     /// @param initialAssets Optional assets to add to the inclusion list during construction (e.g. NATIVE_ADDRESS).
@@ -162,6 +159,25 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
     }
 
     //
+    // IPositionDescribable (implemented without inheriting the interface)
+    //
+
+    function protocolName() external pure returns (string memory) {
+        return "Wallet";
+    }
+
+    function describePosition(bytes calldata positionId) external view returns (string memory) {
+        if (positionId.length == 0) return "";
+        address addr = abi.decode(positionId, (address));
+        if (addr == NATIVE_ADDRESS) return "native";
+        try IERC20Metadata(addr).symbol() returns (string memory sym) {
+            return sym;
+        } catch {
+            return "";
+        }
+    }
+
+    //
     // Internal Functions
     //
 
@@ -221,13 +237,13 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter {
                 // Build position (balance-only, pricing will be added by NAVCalculator)
                 // ERC20DefaultOracle always returns credit positions: isDebt = false, amount in uint256
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    underlyingAsset: underlyingAsset,
+                    balanceAsset: underlyingAsset,
                     balanceOracle: address(this),
                     amount: balance,
                     isDebt: false,
-                    protocol: PROTOCOL,
-                    positionDetail: string.concat(_POSITION_DETAIL, "}"),
-                    positionId: _POSITION_ID
+                    protocolId: PROTOCOL_ID,
+                    positionId: abi.encode(asset),
+                    positionKind: PositionKind.Wallet
                 });
 
                 positionCount++;

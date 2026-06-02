@@ -6,33 +6,41 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
-import {AaveV2InstanceBalanceOracle} from "../../src/balances/protocols/AaveV2Instance.sol";
-import {AaveV3InstanceBalanceOracle} from "../../src/balances/protocols/AaveV3Instance.sol";
-import {CompoundV3Comet} from "../../src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "../../src/balances/protocols/MorphoMarket.sol";
+import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV2InstancesMeta.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
-import {MorphoVaultBalanceOracle} from "../../src/balances/protocols/MorphoVault.sol";
-import {GearboxMarketBalanceOracle} from "../../src/balances/protocols/GearboxMarket.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
+import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
-import {CurveBalanceOracle} from "../../src/balances/protocols/Curve.sol";
-import {ConvexBalanceOracle} from "../../src/balances/protocols/Convex.sol";
+import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
+import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMeta.sol";
+import {ConvexRewardsMetaBalanceAdapter} from "../../src/balances/protocols/ConvexRewardsMeta.sol";
 import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
 import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
-import {BalancerV3PoolBalanceOracle} from "../../src/balances/protocols/BalancerV3.sol";
-import {Aura} from "../../src/balances/protocols/Aura.sol";
-import {StakeWiseV3VaultBalanceOracle} from "../../src/balances/protocols/StakeWiseV3Vault.sol";
-import {StakeWiseV3OsTokenBalanceOracle} from "../../src/balances/protocols/StakeWiseV3OsToken.sol";
-import {FluidFTokenBalanceOracle} from "../../src/balances/protocols/FluidFToken.sol";
-import {FluidVaultBalanceOracle} from "../../src/balances/protocols/FluidVault.sol";
+import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
+import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
+import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
+import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
+import {AuraRewardsMetaBalanceAdapter} from "../../src/balances/protocols/AuraRewardsMeta.sol";
+import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
+import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
+import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
 import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {LidoWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
 import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
-import {UniswapV3PoolBalanceOracle} from "../../src/balances/protocols/uniswap/UniswapV3Pool.sol";
-import {PancakeSwapV2BalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2.sol";
-import {PancakeSwapV3PoolBalanceOracle} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol";
+import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
+import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
+import {
+    PancakeSwapV2PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMeta.sol";
+import {
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance oracle adapters based on per-chain configuration
@@ -53,6 +61,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // include cross-chain entries safely.
 
         // --- Aave V3 (one instance per Aave market) ---
+        _deployIfEnabled("AaveV3InstancesMeta"); // Meta-adapter: all Aave V3 instances; DataProvider set on NAV (ADR 0010)
         _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
         _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
         _deployIfEnabled("AaveV3_Arbitrum");
@@ -61,18 +70,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("AaveV3_Gnosis");
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
-        _deployIfEnabled("AaveV2_Mainnet");
+        _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)
 
         // --- Compound V3 (one instance per Comet) ---
-        _deployIfEnabled("CompoundV3_USDC"); // Mainnet, Optimism, Arbitrum, Base
-        _deployIfEnabled("CompoundV3_USDS"); // Mainnet, Base
-        _deployIfEnabled("CompoundV3_USDT"); // Mainnet, Optimism, Arbitrum
-        _deployIfEnabled("CompoundV3_WETH"); // Mainnet, Optimism, Arbitrum, Base
-        _deployIfEnabled("CompoundV3_WBTC"); // Mainnet
-        _deployIfEnabled("CompoundV3_wstETH"); // Mainnet
-        _deployIfEnabled("CompoundV3_USDCe"); // Arbitrum (legacy USDC.e)
-        _deployIfEnabled("CompoundV3_USDbC"); // Base
-        _deployIfEnabled("CompoundV3_AERO"); // Base
+        _deployIfEnabled("CompoundV3CometsMeta"); // Meta-adapter: all Compound V3 comets; comet set on NAV (ADR 0010)
 
         // --- Spark Lend (Mainnet only) ---
         _deployIfEnabled("SparkLend");
@@ -86,80 +87,34 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Cap Finance (Mainnet only) ---
         _deployIfEnabled("Cap");
 
-        // --- Morpho Vaults (one per vault) ---
-        _deployIfEnabled("MorphoVault_kpkETHPrime_V1"); // Mainnet — ETH Alpha
-        _deployIfEnabled("MorphoVault_kpkETHPrime_V2"); // Mainnet — ETH Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V1"); // Mainnet — USD Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCPrime_V2"); // Mainnet — USD Alpha
-        _deployIfEnabled("MorphoVault_kpkEURC_V1"); // Mainnet — EUR Alpha
-        _deployIfEnabled("MorphoVault_kpkUSDCYieldV1"); // Arbitrum — USD Alpha
-
-        // --- Morpho Markets (one per market id; USD Alpha — Mainnet) ---
-        _deployIfEnabled("MorphoMarket_wstETH_USDC");
-        _deployIfEnabled("MorphoMarket_cbBTC_USDC"); // Mainnet + Base (different marketIds)
-        _deployIfEnabled("MorphoMarket_wstUSR_USDC");
-        _deployIfEnabled("MorphoMarket_ETHPlus_USDC");
-        _deployIfEnabled("MorphoMarket_WBTC_USDC");
-        _deployIfEnabled("MorphoMarket_RLP_USDC");
-        _deployIfEnabled("MorphoMarket_syrupUSDC_USDC"); // Mainnet + Arbitrum
-        _deployIfEnabled("MorphoMarket_sUSDS_USDT"); // Mainnet
-        _deployIfEnabled("MorphoMarket_sUSDS_USDC"); // Arbitrum
-
-        // --- Morpho Markets (ETH Alpha — Mainnet + Base) ---
-        _deployIfEnabled("MorphoMarket_ETHPlus_WETH"); // Mainnet
-        _deployIfEnabled("MorphoMarket_wstETH_WETH"); // Mainnet + Base
-        _deployIfEnabled("MorphoMarket_weETH_WETH"); // Mainnet + Base
-        _deployIfEnabled("MorphoMarket_rsETH_WETH"); // Mainnet
-        _deployIfEnabled("MorphoMarket_cbETH_USDC"); // Base — USD Alpha
+        // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
+        _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
+        _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
-        _deployIfEnabled("GearboxMarket_kpkWETH");
-        _deployIfEnabled("GearboxMarket_kpkwstETH");
+        _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
 
-        // --- Balancer V3 (one per pool) ---
-        _deployIfEnabled("BalancerV3_rETH_WETH"); // Mainnet — ETH Alpha
-        _deployIfEnabled("BalancerV3_GHO_USDT_USDC"); // Mainnet — USD Alpha (Boosted GHO/USDT/USDC underlying; Aura adapter wraps it)
-        _deployIfEnabled("BalancerV3_GHO_USDC_USDT"); // Arbitrum — USD Alpha (Boosted GHO/USDC/USDT underlying)
-        _deployIfEnabled("BalancerV3_GHO_USDC"); // Base — USD Alpha (Boosted GHO/USDC underlying)
+        // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
+        _deployIfEnabled("BalancerV3PoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
+        _deployIfEnabled("BalancerV3GaugesMeta"); // Meta-adapter: all Balancer V3 gauges (staked LP + rewards); gauge set on NAV
+        _deployIfEnabled("BalancerV2PoolsMeta"); // Meta-adapter: all Balancer V2 pools (wallet LP); poolId set on NAV
+        _deployIfEnabled("BalancerV2GaugesMeta"); // Meta-adapter: all Balancer V2 gauges (staked LP + rewards); gauge set on NAV
 
-        // --- Aura (one per pool) ---
-        _deployIfEnabled("Aura_rETH_WETH"); // Mainnet — ETH Alpha
-        _deployIfEnabled("Aura_GHO_USDT_USDC"); // Mainnet — USD Alpha
-        _deployIfEnabled("Aura_GHO_USDC_USDT"); // Arbitrum — USD Alpha
-        _deployIfEnabled("Aura_GHO_USDC"); // Base — USD Alpha
+        // --- Aura meta-adapter (ADR 0010: AURA_REWARDS address; pool + AURA token resolved on-chain) ---
+        _deployIfEnabled("AuraRewardsMeta"); // Meta-adapter: all Aura pools; rewarder set on NAV
 
-        // --- Curve (one per gauge — Mainnet) ---
-        _deployIfEnabled("Curve_weETH_WETH"); // ETH Alpha
-        _deployIfEnabled("Curve_crvUSD_USDC"); // USD Alpha (Convex-underlying)
-        _deployIfEnabled("Curve_crvUSD_USDT"); // USD Alpha (Convex-underlying)
-        _deployIfEnabled("Curve_RLUSD_USDC"); // USD Alpha (Convex-underlying)
+        // --- Curve meta-adapters (ADR 0010: pools = wallet LP, gauges = staked LP + CRV + rewards) ---
+        _deployIfEnabled("CurvePoolsMeta"); // Meta-adapter: all Curve pools (wallet LP); pool set on NAV
+        _deployIfEnabled("CurveGaugesMeta"); // Meta-adapter: all Curve gauges (staked LP + CRV + rewards); gauge set on NAV
 
-        // --- Convex (one per rewarder — Mainnet) ---
-        _deployIfEnabled("Convex_weETH_WETH"); // ETH Alpha
-        _deployIfEnabled("Convex_crvUSD_USDC"); // USD Alpha
-        _deployIfEnabled("Convex_crvUSD_USDT"); // USD Alpha
-        _deployIfEnabled("Convex_RLUSD_USDC"); // USD Alpha
+        // --- Convex meta-adapter (ADR 0010: all Convex pools; rewarder set on NAV) ---
+        _deployIfEnabled("ConvexRewardsMeta"); // Meta-adapter: all Convex rewarders; instance set on NAV
 
-        // --- Fluid Lending (one adapter per fToken; mirrors of the same fToken on each chain) ---
-        _deployIfEnabled("Fluid_fToken_USDC"); // Mainnet, Arbitrum, Base, Polygon
-        _deployIfEnabled("Fluid_fToken_USDT"); // Mainnet, Arbitrum, Polygon
-        _deployIfEnabled("Fluid_fToken_WETH"); // Mainnet, Arbitrum, Base, Polygon
-        _deployIfEnabled("Fluid_fToken_wstETH"); // Mainnet, Arbitrum, Base, Polygon
-        _deployIfEnabled("Fluid_fToken_GHO"); // Mainnet, Arbitrum, Base
-        _deployIfEnabled("Fluid_fToken_sUSDe"); // Mainnet, Arbitrum, Base
-        _deployIfEnabled("Fluid_fToken_USDtb"); // Mainnet
-        _deployIfEnabled("Fluid_fToken_ARB"); // Arbitrum
-        _deployIfEnabled("Fluid_fToken_EURC"); // Base
-        _deployIfEnabled("Fluid_fToken_WPOL"); // Polygon
-        _deployIfEnabled("Fluid_fToken_AUSD"); // Polygon
+        // --- Fluid Lending (meta-adapter: all fTokens; fToken set on NAV, ADR 0010) ---
+        _deployIfEnabled("FluidFTokensMeta");
 
-        // --- Fluid Vaults (one adapter per T1 vault) ---
-        // ETH/USDC vault is intentionally NOT wired — needs to confirm whether the vault uses
-        // the native ETH sentinel (ERC-7528) or WETH on the supply leg. Add the config entry
-        // and the matching `_deployIfEnabled` row in a follow-up.
-        _deployIfEnabled("Fluid_Vault_wstETH_USDC"); // Mainnet
-        _deployIfEnabled("Fluid_Vault_weETH_wstETH"); // Mainnet
-        _deployIfEnabled("Fluid_Vault_sUSDe_USDC"); // Mainnet
+        // --- Fluid Vaults (meta-adapter: all T1 vaults; vault set on NAV, ADR 0010) ---
+        _deployIfEnabled("FluidVaultsMeta");
 
         // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
         _deployIfEnabled("StaderWithdrawalQueue");
@@ -170,21 +125,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Lido (Mainnet only) — stETH withdrawal-queue balance oracle ---
         _deployIfEnabled("LidoWithdrawalQueue");
 
-        // --- StakeWise V3 (Mainnet) — osETH wallet + Genesis Vault deposit ---
-        _deployIfEnabled("StakeWiseV3OsToken_ETH");
-        _deployIfEnabled("StakeWiseV3Vault_Genesis");
+        // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
+        _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
         _deployIfEnabled("MerklRewards");
 
-        // --- Uniswap V3 (one instance per pool — Mainnet) ---
-        _deployIfEnabled("UniswapV3_WBTC_WETH_3000");
+        // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
+        _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
 
-        // --- PancakeSwap V2 (one per pair) ---
-        _deployIfEnabled("PancakeSwapV2_ETH_COW"); // BSC — Binance-Peg ETH / COW
+        // --- PancakeSwap V2 (meta-adapter) ---
+        _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
 
-        // --- PancakeSwap V3 (one per pool) ---
-        _deployIfEnabled("PancakeSwapV3_WETH_COW"); // Base — WETH / COW 0.25%
+        // --- PancakeSwap V3 (meta-adapter) ---
+        _deployIfEnabled("PancakeSwapV3PoolsMeta"); // Base — meta-adapter: all PancakeSwap V3 pools
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
@@ -242,20 +196,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return address(0);
         }
 
-        // AaveV2 adapters (Aave V2's data provider has the same getUserReserveData / getAllReservesTokens
-        // ABI as V3, so the V2 adapter is a thin subclass — see src/balances/protocols/AaveV2Instance.sol)
-        if (_equals(adapterName, "AaveV2") || _startsWith(adapterName, "AaveV2_")) {
-            return _deployAaveV2(adapterName, navCalculator);
+        // AaveV2 meta-adapter (per-instance adapters removed — superseded by AaveV2InstancesMeta)
+        if (_equals(adapterName, "AaveV2InstancesMeta")) {
+            return _deployAaveV2InstancesMeta(adapterName, navCalculator);
         }
 
         // AaveV3 adapters
-        if (_startsWith(adapterName, "AaveV3_")) {
-            return _deployAaveV3(adapterName, navCalculator);
+        // Aave V3 instances meta-adapter (one adapter for all instances; DataProvider set lives on NAV — ADR 0010)
+        if (_equals(adapterName, "AaveV3InstancesMeta")) {
+            return _deployAaveV3InstancesMeta(adapterName, navCalculator);
         }
 
-        // CompoundV3 adapters
-        if (_startsWith(adapterName, "CompoundV3_")) {
-            return _deployCompoundV3(adapterName, navCalculator);
+        // CompoundV3 meta-adapter (per-instance adapters removed — superseded by CompoundV3CometsMeta)
+        if (_equals(adapterName, "CompoundV3CometsMeta")) {
+            return _deployCompoundV3CometsMeta(adapterName, navCalculator);
         }
 
         // SparkLend adapters (bare name for single-instance, prefix for future multi-market)
@@ -263,9 +217,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deploySparkLend(adapterName, navCalculator);
         }
 
-        // MorphoBlue adapters
-        if (_startsWith(adapterName, "MorphoMarket_")) {
-            return _deployMorphoMarket(adapterName, navCalculator);
+        // Morpho Markets meta-adapter (per-instance adapters removed — superseded by MorphoMarketsMeta)
+        if (_equals(adapterName, "MorphoMarketsMeta")) {
+            return _deployMorphoMarketsMeta(adapterName, navCalculator);
         }
 
         // DAI DSR
@@ -278,14 +232,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deploySkySavingsUsds(navCalculator);
         }
 
-        // Morpho Vault adapters
-        if (_startsWith(adapterName, "MorphoVault_")) {
-            return _deployMorphoVault(adapterName, navCalculator);
+        // Morpho Vaults meta-adapter (per-instance adapters removed — superseded by MorphoVaultsMeta)
+        if (_equals(adapterName, "MorphoVaultsMeta")) {
+            return _deployMorphoVaultsMeta(adapterName, navCalculator);
         }
 
-        // Gearbox Market adapters
-        if (_startsWith(adapterName, "GearboxMarket_")) {
-            return _deployGearboxMarket(adapterName, navCalculator);
+        // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxMarketsMeta)
+        if (_equals(adapterName, "GearboxMarketsMeta")) {
+            return _deployGearboxMarketsMeta(adapterName, navCalculator);
         }
 
         // Cap Finance adapter
@@ -293,14 +247,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployCap(navCalculator);
         }
 
-        // Curve adapters
-        if (_startsWith(adapterName, "Curve_")) {
-            return _deployCurve(adapterName, navCalculator);
+        // Curve meta-adapters (ADR 0010)
+        if (_equals(adapterName, "CurvePoolsMeta")) {
+            return _deployCurvePoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "CurveGaugesMeta")) {
+            return _deployCurveGaugesMeta(adapterName, navCalculator);
         }
 
         // Convex adapters
-        if (_startsWith(adapterName, "Convex_")) {
-            return _deployConvex(adapterName, navCalculator);
+        if (_equals(adapterName, "ConvexRewardsMeta")) {
+            return _deployConvexRewardsMeta(adapterName, navCalculator);
         }
 
         // AaveV3 Safety Module: a single multi-token adapter per chain (ADR 0002).
@@ -313,34 +270,35 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployAaveUmbrella(adapterName, navCalculator);
         }
 
-        // Balancer V3 adapters
-        if (_startsWith(adapterName, "BalancerV3_")) {
-            return _deployBalancerV3(adapterName, navCalculator);
+        // Balancer V3 meta-adapters (one adapter for all pools / all gauges; instance set lives on NAV — ADR 0010)
+        if (_equals(adapterName, "BalancerV3PoolsMeta")) {
+            return _deployBalancerV3PoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerV3GaugesMeta")) {
+            return _deployBalancerV3GaugesMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerV2PoolsMeta")) {
+            return _deployBalancerV2PoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "BalancerV2GaugesMeta")) {
+            return _deployBalancerV2GaugesMeta(adapterName, navCalculator);
         }
 
-        // Aura adapters
-        if (_startsWith(adapterName, "Aura_")) {
-            return _deployAura(adapterName, navCalculator);
+        if (_equals(adapterName, "AuraRewardsMeta")) {
+            return _deployAuraRewardsMeta(adapterName, navCalculator);
         }
 
-        // StakeWise V3 Vault adapters
-        if (_startsWith(adapterName, "StakeWiseV3Vault_")) {
-            return _deployStakeWiseV3Vault(adapterName, navCalculator);
+        // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
+        if (_equals(adapterName, "StakeWiseV3VaultsMeta")) {
+            return _deployStakeWiseV3VaultsMeta(adapterName, navCalculator);
         }
 
-        // StakeWise V3 OsToken adapters
-        if (_startsWith(adapterName, "StakeWiseV3OsToken_")) {
-            return _deployStakeWiseV3OsToken(adapterName, navCalculator);
+        // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
+        if (_equals(adapterName, "FluidFTokensMeta")) {
+            return _deployFluidFTokensMeta(adapterName, navCalculator);
         }
-
-        // Fluid Lending fToken adapters (one per fToken instance)
-        if (_startsWith(adapterName, "Fluid_fToken_")) {
-            return _deployFluidFToken(adapterName, navCalculator);
-        }
-
-        // Fluid Vault adapters (one per T1 vault instance)
-        if (_startsWith(adapterName, "Fluid_Vault_")) {
-            return _deployFluidVault(adapterName, navCalculator);
+        if (_equals(adapterName, "FluidVaultsMeta")) {
+            return _deployFluidVaultsMeta(adapterName, navCalculator);
         }
 
         // Stader withdrawal queue
@@ -363,20 +321,15 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMerklRewards(adapterName, navCalculator);
         }
 
-        // Uniswap V3 adapters (one instance per pool)
-        if (_startsWith(adapterName, "UniswapV3_")) {
-            return _deployUniswapV3(adapterName, navCalculator);
+        // Uniswap/PancakeSwap meta-adapters (per-instance adapters removed — superseded by meta-adapters)
+        if (_equals(adapterName, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(adapterName, navCalculator);
         }
-
-        // PancakeSwap V2 adapters (one instance per pair) — reuses UniswapV2BalanceOracle.
-        if (_startsWith(adapterName, "PancakeSwapV2_")) {
-            return _deployPancakeSwapV2(adapterName, navCalculator);
+        if (_equals(adapterName, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(adapterName, navCalculator);
         }
-
-        // PancakeSwap V3 adapters (one instance per pool) — separate contract from UniswapV3 due to
-        // PCS V3's `slot0().feeProtocol` being uint32 (vs Uniswap V3's uint8). See PancakeSwapV3Pool.sol NatSpec.
-        if (_startsWith(adapterName, "PancakeSwapV3_")) {
-            return _deployPancakeSwapV3(adapterName, navCalculator);
+        if (_equals(adapterName, "UniswapV2PoolsMeta") || _equals(adapterName, "PancakeSwapV2PoolsMeta")) {
+            return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
         }
 
         // Unknown adapter type
@@ -384,57 +337,39 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(0);
     }
 
-    function _deployAaveV2(string memory adapterName, address navCalculator) internal returns (address) {
-        address dataProvider = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
-        );
+    /// @notice Deploys the Aave V2 instances meta-adapter. Constructor takes (protocol, navCalculator); the
+    ///         DataProvider set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployAaveV2InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        AaveV2InstanceBalanceOracle adapter =
-            new AaveV2InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        AaveV2InstancesMetaBalanceAdapter adapter = new AaveV2InstancesMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployAaveV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address dataProvider = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
-        );
+    /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    ///         instance DataProviders to query is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployAaveV3InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        AaveV3InstanceBalanceOracle adapter =
-            new AaveV3InstanceBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployCompoundV3(string memory adapterName, address navCalculator) internal returns (address) {
+    /// @notice Deploys the Compound V3 comets meta-adapter. Constructor takes (compoundRewards, rewardToken,
+    ///         protocol, navCalculator) — chain-level constants; the comet set is configured on NAVCalculator
+    ///         via setMetaInstances in 06 (ADR 0010).
+    function _deployCompoundV3CometsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address compoundRewards = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "compoundRewards")
         );
-        address comet =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "comet"));
         address rewardToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardToken")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        CompoundV3Comet adapter = new CompoundV3Comet(
-            compoundRewards, comet, rewardToken, protocol, positionDetail, positionId, navCalculator
-        );
+        CompoundV3CometsMetaBalanceAdapter adapter =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -442,32 +377,21 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dataProvider = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        SparkLendBalanceOracle adapter =
-            new SparkLendBalanceOracle(dataProvider, protocol, positionDetail, positionId, navCalculator);
+        SparkLendBalanceOracle adapter = new SparkLendBalanceOracle(dataProvider, navCalculator);
         return address(adapter);
     }
 
-    function _deployMorphoMarket(string memory adapterName, address navCalculator) internal returns (address) {
+    /// @notice Deploys the Morpho Markets meta-adapter. Constructor takes (morpho, protocol, navCalculator); the
+    ///         set of markets to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployMorphoMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address morpho = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
         );
-        string memory marketIdStr =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "marketId");
-        bytes32 marketId = vm.parseBytes32(marketIdStr);
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
 
-        MorphoMarketBalanceOracle adapter =
-            new MorphoMarketBalanceOracle(morpho, marketId, protocol, positionDetail, navCalculator);
+        MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -477,15 +401,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address dsrManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dsrManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "positionId");
 
-        DaiDsrBalanceOracle adapter =
-            new DaiDsrBalanceOracle(dai, dsrManager, protocol, positionDetail, positionId, navCalculator);
+        DaiDsrBalanceOracle adapter = new DaiDsrBalanceOracle(dai, dsrManager, navCalculator);
         return address(adapter);
     }
 
@@ -493,46 +410,28 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address savingsUsds = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "savingsUsds")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "positionId");
 
-        SkySavingsUsdsBalanceOracle adapter =
-            new SkySavingsUsdsBalanceOracle(savingsUsds, protocol, positionDetail, positionId, navCalculator);
+        SkySavingsUsdsBalanceOracle adapter = new SkySavingsUsdsBalanceOracle(savingsUsds, navCalculator);
         return address(adapter);
     }
 
-    function _deployMorphoVault(string memory adapterName, address navCalculator) internal returns (address) {
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+    /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (protocol, navCalculator); the set of
+    ///         vaults to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployMorphoVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        MorphoVaultBalanceOracle adapter =
-            new MorphoVaultBalanceOracle(vault, protocol, positionDetail, positionId, navCalculator);
+        MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployGearboxMarket(string memory adapterName, address navCalculator) internal returns (address) {
-        address market = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "market")
-        );
+    /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (protocol, navCalculator); the market
+    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployGearboxMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        GearboxMarketBalanceOracle adapter =
-            new GearboxMarketBalanceOracle(market, protocol, positionDetail, positionId, navCalculator);
+        GearboxMarketsMetaBalanceAdapter adapter = new GearboxMarketsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
@@ -543,69 +442,44 @@ contract DeployBalanceAdapters is BaseDeployScript {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "positionId");
 
-        CapBalanceOracle adapter =
-            new CapBalanceOracle(cUsd, stcUsd, usdc, protocol, positionDetail, positionId, navCalculator);
+        CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, navCalculator);
         return address(adapter);
     }
 
-    function _deployCurve(string memory adapterName, address navCalculator) internal returns (address) {
-        address gauge =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+    function _deployCurvePoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        CurveBalanceOracle adapter = new CurveBalanceOracle(gauge, protocol, positionDetail, positionId, navCalculator);
-        return address(adapter);
+        return address(new CurvePoolsMetaBalanceAdapter(protocol, navCalculator));
     }
 
-    function _deployConvex(string memory adapterName, address navCalculator) internal returns (address) {
-        address rewarder = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewarder")
+    function _deployCurveGaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address minter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "minter")
         );
-        address lpToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "lpToken")
+        address crvToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "crvToken")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
+        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
+    }
 
-        ConvexBalanceOracle adapter =
-            new ConvexBalanceOracle(rewarder, lpToken, protocol, positionDetail, positionId, navCalculator);
-        return address(adapter);
+    function _deployConvexRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address booster = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
+        );
+        address cvxToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "cvxToken")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navCalculator));
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "AaveV3SafetyModule": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "protocol": "Aave V3 Safety Module",
-        //       "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Safety Module\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
         // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceOracle).
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-        AaveV3SafetyModuleBalanceOracle adapter =
-            new AaveV3SafetyModuleBalanceOracle(navCalculator, protocol, positionDetail, positionId);
+        AaveV3SafetyModuleBalanceOracle adapter = new AaveV3SafetyModuleBalanceOracle(navCalculator);
         return address(adapter);
     }
 
@@ -625,134 +499,109 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewardsController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-        AaveUmbrellaBalanceOracle adapter =
-            new AaveUmbrellaBalanceOracle(rewardsController, navCalculator, protocol, positionDetail, positionId);
+        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(rewardsController, navCalculator);
         return address(adapter);
     }
 
-    function _deployBalancerV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
-        address gauge =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+    /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    ///         pools to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployBalancerV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, protocol, navCalculator);
+    ///         the set of gauges to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    function _deployBalancerV3GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address balancerMinter = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        BalancerV3PoolBalanceOracle adapter = new BalancerV3PoolBalanceOracle(
-            pool, gauge, balancerMinter, protocol, positionDetail, positionId, navCalculator
-        );
+        BalancerV3GaugesMetaBalanceAdapter adapter =
+            new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployAura(string memory adapterName, address navCalculator) internal returns (address) {
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
-        address gauge =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "gauge"));
+    /// @notice Deploys the Balancer V2 pools meta-adapter. Constructor takes (vault, protocol, navCalculator); the
+    ///         poolId set is configured on NAVCalculator via setMetaInstances (metaInstancesRaw) in 06 (ADR 0010).
+    function _deployBalancerV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV2PoolsMetaBalanceAdapter adapter =
+            new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Balancer V2 gauges meta-adapter. Constructor takes (vault, balancerMinter, protocol,
+    ///         navCalculator); the gauge set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployBalancerV2GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vault =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+        address balancerMinter = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
+        );
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        BalancerV2GaugesMetaBalanceAdapter adapter =
+            new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployAuraRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address booster = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
         );
-        uint256 pid =
-            vm.parseUint(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pid"));
+        address balancerV2Vault = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerV2Vault")
+        );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        // AURA token address is resolved dynamically inside the adapter constructor via Booster.minter()
-        // (Mainnet: returns AURA; L2: returns L2Coordinator whose auraOFT() is the bridged AURA).
-        Aura adapter = new Aura(pool, gauge, booster, pid, protocol, positionDetail, positionId, navCalculator);
-        return address(adapter);
+        // AURA token is resolved inside the constructor from Booster.minter().
+        return address(new AuraRewardsMetaBalanceAdapter(booster, balancerV2Vault, protocol, navCalculator));
     }
 
-    function _deployStakeWiseV3Vault(string memory adapterName, address navCalculator) internal returns (address) {
+    /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,
+    ///         navCalculator); the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        StakeWiseV3VaultBalanceOracle adapter = new StakeWiseV3VaultBalanceOracle(
-            underlyingToken, vault, protocol, positionDetail, positionId, navCalculator
-        );
+        StakeWiseV3VaultsMetaBalanceAdapter adapter =
+            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployStakeWiseV3OsToken(string memory adapterName, address navCalculator) internal returns (address) {
-        address osToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osToken")
-        );
-        address underlyingToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
-        );
-        address osTokenVaultController = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
-        );
+    /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (protocol, navCalculator); the fToken
+    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployFluidFTokensMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        StakeWiseV3OsTokenBalanceOracle adapter = new StakeWiseV3OsTokenBalanceOracle(
-            osToken, underlyingToken, osTokenVaultController, protocol, positionDetail, positionId, navCalculator
-        );
+        FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployFluidFToken(string memory adapterName, address navCalculator) internal returns (address) {
-        address fToken = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "fToken")
-        );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        FluidFTokenBalanceOracle adapter =
-            new FluidFTokenBalanceOracle(fToken, protocol, positionDetail, positionId, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployFluidVault(string memory adapterName, address navCalculator) internal returns (address) {
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
+    /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, protocol, navCalculator);
+    ///         the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployFluidVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vaultResolver = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        FluidVaultBalanceOracle adapter =
-            new FluidVaultBalanceOracle(vault, vaultResolver, protocol, positionDetail, positionId, navCalculator);
+        FluidVaultsMetaBalanceAdapter adapter =
+            new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
         return address(adapter);
     }
 
@@ -763,16 +612,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        StaderWithdrawalQueueBalanceOracle adapter = new StaderWithdrawalQueueBalanceOracle(
-            userWithdrawalManager, underlyingToken, protocol, positionDetail, positionId, navCalculator
-        );
+        StaderWithdrawalQueueBalanceOracle adapter =
+            new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -783,16 +624,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address withdrawalManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalManager")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        KelpWithdrawalQueueBalanceOracle adapter = new KelpWithdrawalQueueBalanceOracle(
-            withdrawalManager, protocol, positionDetail, positionId, navCalculator
-        );
+        KelpWithdrawalQueueBalanceOracle adapter =
+            new KelpWithdrawalQueueBalanceOracle(withdrawalManager, navCalculator);
         return address(adapter);
     }
 
@@ -803,16 +636,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        LidoWithdrawalQueueBalanceOracle adapter = new LidoWithdrawalQueueBalanceOracle(
-            withdrawalQueue, underlyingToken, protocol, positionDetail, positionId, navCalculator
-        );
+        LidoWithdrawalQueueBalanceOracle adapter =
+            new LidoWithdrawalQueueBalanceOracle(withdrawalQueue, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -833,96 +658,54 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(
-            distributor, navCalculator, protocol, positionDetail, positionId, chainConfig.admin
-        );
+        MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(distributor, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 
-    function _deployUniswapV3(string memory adapterName, address navCalculator) internal returns (address) {
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+    /// @notice Deploys the Uniswap V3 pools meta-adapter. Constructor takes (positionManager, protocol,
+    ///         navCalculator); the pool set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        UniswapV3PoolBalanceOracle adapter =
-            new UniswapV3PoolBalanceOracle(pool, positionManager, protocol, positionDetail, positionId, navCalculator);
+        UniswapV3PoolsMetaBalanceAdapter adapter =
+            new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
         return address(adapter);
     }
 
-    function _deployPancakeSwapV2(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "PancakeSwapV2_<pair>": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "pair": "0x...",
-        //       "protocol": "PancakeSwap V2",
-        //       "positionDetail": "{\"protocol\":\"PancakeSwap V2\",\"pool\":\"ETH/COW\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
-        // PancakeSwapV2BalanceOracle is a thin (SparkLend-style) subclass of UniswapV2BalanceOracle
-        // — see src/balances/protocols/pancakeswap/PancakeSwapV2.sol.
-        address pair =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pair"));
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
-
-        PancakeSwapV2BalanceOracle adapter =
-            new PancakeSwapV2BalanceOracle(pair, protocol, positionDetail, positionId, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployPancakeSwapV3(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
-        //   "PancakeSwapV3_<pool>": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "pool": "0x...",
-        //       "positionManager": "0x46A1...",
-        //       "protocol": "PancakeSwap V3",
-        //       "positionDetail": "{\"protocol\":\"PancakeSwap V3\",\"pool\":\"WETH/COW 0.25%\"",
-        //       "positionId": "0x..."
-        //     }
-        //   }
-        // Separate contract from UniswapV3PoolBalanceOracle: PCS V3's slot0().feeProtocol is uint32
-        // (vs Uniswap V3's uint8). See src/balances/protocols/pancakeswap/PancakeSwapV3Pool.sol NatSpec.
-        address pool =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "pool"));
+    /// @notice Deploys the PancakeSwap V3 pools meta-adapter (subclass of the Uniswap V3 meta with the uint32
+    ///         feeProtocol slot0 override). Same constructor shape as the Uniswap V3 pools meta.
+    function _deployPancakeSwapV3PoolsMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        string memory positionDetail =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionDetail");
-        string memory positionId =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionId");
 
-        PancakeSwapV3PoolBalanceOracle adapter = new PancakeSwapV3PoolBalanceOracle(
-            pool, positionManager, protocol, positionDetail, positionId, navCalculator
-        );
+        PancakeSwapV3PoolsMetaBalanceAdapter adapter =
+            new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
         return address(adapter);
+    }
+
+    /// @notice Deploys the Uniswap V2 pools meta-adapter. Serves PancakeSwap V2 too (same contract via the
+    ///         PancakeSwapV2PoolsMeta thin subclass when keyed "PancakeSwapV2PoolsMeta"). Constructor takes
+    ///         (protocol, navCalculator); the pair set is configured on NAVCalculator (ADR 0010).
+    function _deployUniswapV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        if (_equals(adapterName, "PancakeSwapV2PoolsMeta")) {
+            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
+        }
+        return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
     }
 
     /// @notice Helper to read deployed adapter address

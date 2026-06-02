@@ -127,6 +127,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new address[](0);
     }
 
+    function getMetaInstances(address) external pure override returns (bytes32[] memory) {
+        return new bytes32[](0);
+    }
+
+    function setMetaInstances(address, bytes32[] calldata) external pure override {
+        revert("Not implemented in mock");
+    }
+
     // Stub implementations for other INAVCalculator methods (not used by adapters)
     function getAccountNav(address, address) external pure override returns (NAV memory) {
         revert("Not implemented in mock");

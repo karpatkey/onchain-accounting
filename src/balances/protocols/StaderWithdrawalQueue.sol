@@ -5,7 +5,8 @@ import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
-import {PositionType} from "src/utils/PositionType.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Stader Withdrawal Queue Balance Oracle
 /// @author kpk
@@ -30,6 +31,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @dev Bounds gas; in practice an account never has more than a handful of pending requests.
     uint256 internal constant MAX_REQUESTS_PROBED = 256;
 
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER_WITHDRAWAL;
+
     //
     // State
     //
@@ -44,31 +47,14 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol identifier emitted on every PositionBalance.
-    string private _protocol;
-    /// @notice JSON metadata base (no closing `}`) emitted on every PositionBalance.
-    string private _positionDetail;
-    /// @notice Stable hex identifier for this adapter instance (userWithdrawalManager address).
-    string private _positionId;
-
     //
     // Constructor
     //
 
     /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract.
     /// @param underlyingToken_ Address of the asset positions are denominated in (e.g. WETH).
-    /// @param protocol_ Protocol identifier (e.g. "Stader").
-    /// @param positionDetail_ JSON metadata base without closing `}`.
-    /// @param positionId_ Stable hex identifier for this adapter instance (userWithdrawalManager address).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(
-        address userWithdrawalManager_,
-        address underlyingToken_,
-        string memory protocol_,
-        string memory positionDetail_,
-        string memory positionId_,
-        address navCalculator_
-    ) {
+    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_) {
         if (userWithdrawalManager_ == address(0) || underlyingToken_ == address(0)) {
             revert InvalidArguments();
         }
@@ -77,9 +63,6 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
         UNDERLYING_TOKEN = underlyingToken_;
-        _protocol = protocol_;
-        _positionDetail = positionDetail_;
-        _positionId = positionId_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -151,6 +134,14 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Stader";
+    }
+
+    function describePosition(bytes calldata) external pure returns (string memory) {
+        return "ETHx withdrawal queue";
     }
 
     /// @inheritdoc IBalanceOracleAdapter
@@ -226,13 +217,13 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter {
 
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
-            underlyingAsset: underlying,
+            balanceAsset: underlying,
             balanceOracle: address(this),
             amount: total,
             isDebt: false,
-            protocol: _protocol,
-            positionDetail: PositionType.withType(_positionDetail, PositionType.STAKING),
-            positionId: _positionId
+            protocolId: PROTOCOL_ID,
+            positionId: "",
+            positionKind: PositionKind.Supplied
         });
     }
 }

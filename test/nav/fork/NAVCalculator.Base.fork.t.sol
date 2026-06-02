@@ -3,9 +3,9 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstanceBalanceOracle} from "src/balances/protocols/AaveV3Instance.sol";
-import {CompoundV3Comet} from "src/balances/protocols/CompoundV3Comet.sol";
-import {MorphoMarketBalanceOracle} from "src/balances/protocols/MorphoMarket.sol";
+import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
+import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 
@@ -77,35 +77,30 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceOracle() internal override {
-        aaveOracle = new AaveV3InstanceBalanceOracle(
-            aaveV3DataProvider,
-            "Aave v3",
-            "{\"protocol\":\"Aave V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
-        );
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        aaveOracle = aaveMeta;
 
-        compoundV3Comet = new CompoundV3Comet(
-            compoundRewardContract,
-            cUsdCv3,
-            compound,
-            "Compound v3 USDC",
-            "{\"protocol\":\"Compound V3\",\"product\":\"Lending\"",
-            "0x0000000000000000000000000000000000000001",
-            address(nav)
-        );
+        compoundV3Comet =
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
 
-        morphoBlueOracle = new MorphoMarketBalanceOracle(
-            morphoBlue,
-            marketIdCbbtcUsdc,
-            "Morpho - cbBTC/USDC",
-            "{\"protocol\":\"Morpho\",\"product\":\"Market\"",
-            address(nav)
-        );
+        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
         nav.addBalanceOracle(address(aaveOracle));
         nav.addBalanceOracle(address(compoundV3Comet));
         nav.addBalanceOracle(address(morphoBlueOracle));
+
+        // Configure meta-adapter instance sets
+        bytes32[] memory aaveInstances = new bytes32[](1);
+        aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
+        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+
+        bytes32[] memory comets = new bytes32[](1);
+        comets[0] = bytes32(uint256(uint160(cUsdCv3)));
+        nav.setMetaInstances(address(compoundV3Comet), comets);
+
+        bytes32[] memory markets = new bytes32[](1);
+        markets[0] = marketIdCbbtcUsdc;
+        nav.setMetaInstances(address(morphoBlueOracle), markets);
     }
 
     function test_logPositions() public view {

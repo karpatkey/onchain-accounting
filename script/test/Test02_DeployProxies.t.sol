@@ -53,6 +53,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             deployerCodeSize := extcodesize(deployer)
         }
         require(deployerCodeSize > 0, "Canonical CREATE2 deployer not found on fork");
+
+        // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
+        // NAVCalculator/Balances. It is not deployed on the fork, so etch its runtime code there for proxy init/upgrade.
+        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
     }
 
     /// @notice Test that different EOAs deploy proxies to the same addresses
@@ -387,7 +391,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             bridgeImplAddresses[i] = recordedBridgeImpl;
 
             console2.log(string(abi.encodePacked("\n", chainNames[i], " (Chain ID ", vm.toString(chainId), "):")));
-            console2.log("  Safe Multisig:", config.safeMultisig);
+            console2.log("  Safe Multisig:", config.securityCouncil);
             console2.log("  NAV Implementation:", recordedNavImpl);
             console2.log("  Bridge Implementation:", recordedBridgeImpl);
         }
@@ -431,7 +435,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         for (uint256 i = 1; i < chainIds.length; i++) {
             ConfigReader.ChainConfig memory config0 = ConfigReader.readChainConfig(vm, chainIds[0]);
             ConfigReader.ChainConfig memory configI = ConfigReader.readChainConfig(vm, chainIds[i]);
-            if (config0.safeMultisig != configI.safeMultisig) {
+            if (config0.securityCouncil != configI.securityCouncil) {
                 console2.log(
                     string(
                         abi.encodePacked(
@@ -450,7 +454,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that non-Safe Admin cannot re-initialize an already initialized proxy
     /// @dev The `initializer` modifier prevents re-initialization, but anyone can initialize once
     function test_NonAdminCannotReinitializeProxy() public {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
+        require(chainConfig.securityCouncil != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
         // Deploy implementations
@@ -463,21 +467,21 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Upgrade to real implementation and initialize
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.securityCouncil, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         // Upgrade and initialize; admin = msg.sender (caller of upgradeToAndCall)
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
 
         // Verify it's initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(proxy));
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Proxy should be initialized");
+        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.securityCouncil), "Proxy should be initialized");
 
         // Try to re-initialize (should fail due to initializer modifier)
         vm.prank(EOA2);
         vm.expectRevert(); // Should revert due to initializer modifier
-        nav.initialize(chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol);
+        nav.initialize(chainConfig.securityCouncil, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol);
 
         console2.log("[OK] Re-initialization correctly reverts");
     }
@@ -485,7 +489,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that Safe Admin can initialize proxy via ProxyAdmin
     /// @dev The Safe owns the ProxyAdmin, which can upgrade and initialize
     function test_SafeAdminCanInitializeProxy() public {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
+        require(chainConfig.securityCouncil != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
         // Deploy implementations
@@ -500,30 +504,33 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Prepare initialization data (admin = Safe, chainId = block.chainid in BridgeEscrow)
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.securityCouncil, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         address[] memory initialAccounts = new address[](0);
         address[] memory initialAdapters = new address[](0);
         bytes memory bridgeInitData = abi.encodeCall(
             BridgeEscrow.initialize,
-            (chainConfig.safeMultisig, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
+            (chainConfig.securityCouncil, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
         );
 
         // Upgrade and initialize; admin = msg.sender (Safe)
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
         // Verify both proxies are initialized (deployer = Safe has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(navProxy));
         BridgeEscrow bridge = BridgeEscrow(payable(address(bridgeProxy)));
 
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "NAV proxy should be initialized");
         assertTrue(
-            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Bridge proxy should be initialized"
+            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.securityCouncil), "NAV proxy should be initialized"
+        );
+        assertTrue(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.securityCouncil),
+            "Bridge proxy should be initialized"
         );
 
         console2.log("[OK] Safe Admin can successfully initialize proxies");
@@ -532,7 +539,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that non-admin cannot upgrade UUPS proxy
     /// @dev Only addresses with DEFAULT_ADMIN_ROLE can upgrade (checked by _authorizeUpgrade)
     function test_NonAdminCannotUpgradeUUPSProxy() public {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
+        require(chainConfig.securityCouncil != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
         // Deploy implementations
@@ -545,9 +552,9 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Initialize proxy first; admin = Safe
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.securityCouncil, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(proxy)).upgradeToAndCall(address(navImpl), navInitData);
 
         // Now try to upgrade as EOA1 (not admin) - should fail
@@ -562,7 +569,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that anyone can initialize an uninitialized proxy directly (current behavior)
     /// @dev The initializer modifier only prevents re-initialization, not who can initialize
     function test_AnyoneCanInitializeUninitializedProxy() public {
-        require(chainConfig.safeMultisig != address(0), "Safe multisig address not configured");
+        require(chainConfig.securityCouncil != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");
 
         // Deploy implementations
@@ -577,30 +584,33 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // Prepare initialization data (admin = Safe)
         bytes memory navInitData = abi.encodeCall(
             NAVCalculator.initialize,
-            (chainConfig.safeMultisig, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
+            (chainConfig.securityCouncil, chainConfig.chainlinkSequencerFeed, chainConfig.nativeTokenSymbol)
         );
 
         address[] memory initialAccounts = new address[](0);
         address[] memory initialAdapters = new address[](0);
         bytes memory bridgeInitData = abi.encodeCall(
             BridgeEscrow.initialize,
-            (chainConfig.safeMultisig, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
+            (chainConfig.securityCouncil, uint64(chainConfig.chainId), initialAccounts, initialAdapters)
         );
 
         // Upgrade and initialize as Safe (deployer = admin)
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(navProxy)).upgradeToAndCall(address(navImpl), navInitData);
 
-        vm.prank(chainConfig.safeMultisig);
+        vm.prank(chainConfig.securityCouncil);
         UUPSUpgradeable(address(bridgeProxy)).upgradeToAndCall(address(bridgeImpl), bridgeInitData);
 
         // Verify both proxies are initialized (deployer has DEFAULT_ADMIN_ROLE)
         NAVCalculator nav = NAVCalculator(address(navProxy));
         BridgeEscrow bridge = BridgeEscrow(payable(address(bridgeProxy)));
 
-        assertTrue(nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "NAV proxy should be initialized");
         assertTrue(
-            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.safeMultisig), "Bridge proxy should be initialized"
+            nav.hasRole(nav.DEFAULT_ADMIN_ROLE(), chainConfig.securityCouncil), "NAV proxy should be initialized"
+        );
+        assertTrue(
+            bridge.hasRole(bridge.DEFAULT_ADMIN_ROLE(), chainConfig.securityCouncil),
+            "Bridge proxy should be initialized"
         );
 
         console2.log("[OK] Anyone can initialize an uninitialized proxy (deployer becomes admin)");
@@ -706,7 +716,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         // If not in records, compute expected addresses using the real Safe address (as in production)
         if (recordedNavImpl == address(0)) {
             bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", 1);
-            navImpl = _computeCreate2Address(chainConfig.safeMultisig, saltNavImpl, type(NAVCalculator).creationCode);
+            navImpl = _computeCreate2Address(chainConfig.securityCouncil, saltNavImpl, type(NAVCalculator).creationCode);
         } else {
             navImpl = recordedNavImpl;
         }
@@ -714,7 +724,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         if (recordedBridgeImpl == address(0)) {
             bytes32 saltBridgeImpl = ConfigReader.computeSalt("BridgeEscrowImplementation", 1);
             bridgeImpl =
-                _computeCreate2Address(chainConfig.safeMultisig, saltBridgeImpl, type(BridgeEscrow).creationCode);
+                _computeCreate2Address(chainConfig.securityCouncil, saltBridgeImpl, type(BridgeEscrow).creationCode);
         } else {
             bridgeImpl = recordedBridgeImpl;
         }

@@ -68,14 +68,7 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
         op = _createAndRegisterToken("OP", 18);
         morpho = _createAndRegisterToken("MORPHO", 18);
 
-        oracle = new MerklRewardsBalanceOracle(
-            address(distributor),
-            address(balances),
-            "Merkl",
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        oracle = new MerklRewardsBalanceOracle(address(distributor), address(balances), owner);
     }
 
     // ============================================
@@ -132,59 +125,27 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroDistributor() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceOracle(
-            address(0),
-            address(balances),
-            "Merkl",
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        new MerklRewardsBalanceOracle(address(0), address(balances), owner);
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceOracle(
-            address(distributor),
-            address(0),
-            "Merkl",
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        new MerklRewardsBalanceOracle(address(distributor), address(0), owner);
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
         vm.expectRevert("Distributor must be a contract");
-        new MerklRewardsBalanceOracle(
-            makeAddr("eoa"),
-            address(balances),
-            "Merkl",
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        new MerklRewardsBalanceOracle(makeAddr("eoa"), address(balances), owner);
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new MerklRewardsBalanceOracle(
-            address(distributor),
-            makeAddr("eoa"),
-            "Merkl",
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-            "0x0000000000000000000000000000000000000001",
-            owner
-        );
+        new MerklRewardsBalanceOracle(address(distributor), makeAddr("eoa"), owner);
     }
 
     function test_constructor_setsImmutableState() public view {
         assertEq(oracle.DISTRIBUTOR(), address(distributor));
         assertEq(address(oracle.NAV_CALCULATOR()), address(balances));
-        assertEq(oracle.PROTOCOL(), "Merkl");
-        assertEq(
-            oracle.POSITION_DETAIL(), "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\""
-        );
         assertEq(oracle.owner(), owner);
     }
 
@@ -662,15 +623,10 @@ contract MerklRewardsBalanceOracleTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory arbOnly = oracle.getOraclePositions(alice, address(arb));
         assertEq(arbOnly.length, 1);
-        assertEq(arbOnly[0].underlyingAsset.asset, address(arb));
+        assertEq(arbOnly[0].balanceAsset.asset, address(arb));
         assertEq(arbOnly[0].amount, 100 ether);
         assertFalse(arbOnly[0].isDebt);
         assertEq(arbOnly[0].balanceOracle, address(oracle));
-        assertEq(arbOnly[0].protocol, "Merkl");
-        assertEq(
-            arbOnly[0].positionDetail,
-            "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\",\"type\":\"Rewards\"}"
-        );
     }
 
     function test_getOraclePositions_skipsClaimedAndStale() public {

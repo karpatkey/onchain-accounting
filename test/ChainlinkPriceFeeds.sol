@@ -299,16 +299,16 @@ library ChainlinkPriceFeeds {
         return 0x8917800a6BDd8fA8b7c94E25aE2219Db28050622;
     }
 
+    function eigenUsdEthMainnet() internal pure returns (address) {
+        return 0xf2917e602C2dCa458937fad715bb1E465305A4A1;
+    }
+
     function enjEthEthMainnet() internal pure returns (address) {
         return 0x24D9aB51950F3d62E9144fdC2f3135DAA6Ce8D1B;
     }
 
     function enjUsdEthMainnet() internal pure returns (address) {
         return 0x23905C55dC11D609D5d11Dc604905779545De9a7;
-    }
-
-    function eigenUsdEthMainnet() internal pure returns (address) {
-        return 0xf2917e602C2dCa458937fad715bb1E465305A4A1;
     }
 
     function eosUsdEthMainnet() internal pure returns (address) {

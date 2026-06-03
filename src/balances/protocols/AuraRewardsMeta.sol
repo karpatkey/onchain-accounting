@@ -144,7 +144,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Supplied
+                        positionKind: PositionKind.Staking
                     });
                 }
             } else if (BALANCER_V2_VAULT != address(0)) {
@@ -172,7 +172,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Supplied
+                        positionKind: PositionKind.Staking
                     });
                 }
             }

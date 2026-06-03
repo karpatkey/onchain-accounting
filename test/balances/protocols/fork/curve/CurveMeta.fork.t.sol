@@ -151,8 +151,8 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
             gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
 
         assertGt(pos.length, 0);
-        uint256 suppliedCount = _countKind(pos, PositionKind.Supplied);
-        assertGt(suppliedCount, 0, "staked LP decomposes into underlying coins");
+        uint256 stakedCount = _countKind(pos, PositionKind.Staking);
+        assertGt(stakedCount, 0, "staked LP decomposes into underlying coins");
     }
 
     /// @notice weETH/WETH gauge — staked LP decomposes.
@@ -238,7 +238,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     function _assertAllValidPositionKinds(INAVCalculator.PositionBalance[] memory pos) internal pure {
         for (uint256 i; i < pos.length; ++i) {
             uint8 k = uint8(pos[i].positionKind);
-            assertTrue(k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards));
+            assertTrue(k == uint8(PositionKind.Staking) || k == uint8(PositionKind.Rewards));
         }
     }
 

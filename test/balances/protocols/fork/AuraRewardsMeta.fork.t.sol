@@ -114,7 +114,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
 
     // ─── 2. Staked BPT decomposes into underlying tokens ─────────────────────
 
-    /// @notice A real staker's BPT produces Supplied legs for at least some pool tokens.
+    /// @notice A real staker's BPT produces Staking legs for at least some pool tokens.
     function test_stakedBpt_decomposesIntoUnderlyingTokens() public view {
         uint256 staked = _staked(REWARDER, STAKER);
         assertGt(staked, 0, "staker has positive staked balance");
@@ -122,12 +122,12 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
 
-        uint256 suppliedCount = _countKind(pos, PositionKind.Supplied);
+        uint256 suppliedCount = _countKind(pos, PositionKind.Staking);
         assertGt(suppliedCount, 0, "at least one Supplied leg (staked BPT decomposed)");
 
-        // All Supplied legs should be non-debt
+        // All Staking legs should be non-debt
         for (uint256 i; i < pos.length; ++i) {
-            if (pos[i].positionKind == PositionKind.Supplied) {
+            if (pos[i].positionKind == PositionKind.Staking) {
                 assertFalse(pos[i].isDebt, "Supplied positions are not debt");
                 assertGt(pos[i].amount, 0, "Supplied amount is positive");
             }
@@ -175,7 +175,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         for (uint256 i; i < metaPos.length; ++i) {
             uint8 k = uint8(metaPos[i].positionKind);
             assertTrue(
-                k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards),
+                k == uint8(PositionKind.Staking) || k == uint8(PositionKind.Rewards),
                 "only Supplied or Rewards positions expected"
             );
         }

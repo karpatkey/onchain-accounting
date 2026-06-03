@@ -82,14 +82,14 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
 
-        // Expect 2 Supplied legs (USDC, DAI) — no CRV if integrate_fraction is 0, no extra rewards
-        uint256 supplied = _countKind(pos, PositionKind.Supplied);
-        assertEq(supplied, 2, "2 Supplied legs");
+        // Expect 2 Staking legs (USDC, DAI) — no CRV if integrate_fraction is 0, no extra rewards
+        uint256 supplied = _countKind(pos, PositionKind.Staking);
+        assertEq(supplied, 2, "2 Staking legs");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[0].amount, 50e6); // 10% of 500 USDC
         assertEq(pos[1].balanceAsset.asset, address(dai));
         assertEq(pos[1].amount, 50e18); // 10% of 500 DAI
-        assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Supplied));
+        assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Staking));
         assertFalse(pos[0].isDebt);
     }
 

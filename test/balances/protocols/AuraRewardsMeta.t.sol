@@ -524,13 +524,13 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
 
-        uint256 suppliedCount = _count(pos, PositionKind.Supplied);
-        assertEq(suppliedCount, 2, "2 Supplied legs for 2-token pool");
+        uint256 suppliedCount = _count(pos, PositionKind.Staking);
+        assertEq(suppliedCount, 2, "2 Staking legs for 2-token pool");
 
         INAVCalculator.PositionBalance memory p0 = _find(pos, address(tok0));
         INAVCalculator.PositionBalance memory p1 = _find(pos, address(tok1));
-        assertEq(uint8(p0.positionKind), uint8(PositionKind.Supplied));
-        assertEq(uint8(p1.positionKind), uint8(PositionKind.Supplied));
+        assertEq(uint8(p0.positionKind), uint8(PositionKind.Staking));
+        assertEq(uint8(p1.positionKind), uint8(PositionKind.Staking));
         assertFalse(p0.isDebt);
         assertFalse(p1.isDebt);
 
@@ -691,8 +691,8 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
 
-        // No Supplied legs
-        assertEq(_count(pos, PositionKind.Supplied), 0, "no Supplied legs when stakedBpt = 0");
+        // No Staking legs
+        assertEq(_count(pos, PositionKind.Staking), 0, "no Staking legs when stakedBpt = 0");
         // Has BAL and AURA Earned legs
         assertTrue(_has(pos, address(bal)), "BAL Earned leg present");
         assertTrue(_has(pos, address(aura)), "AURA Earned leg present");
@@ -789,9 +789,9 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
         uint256 suppliedCount;
         for (uint256 i; i < pos.length; ++i) {
-            if (pos[i].positionKind == PositionKind.Supplied) suppliedCount++;
+            if (pos[i].positionKind == PositionKind.Staking) suppliedCount++;
         }
-        assertEq(suppliedCount, 2, "2 Supplied legs from V2 Vault decomposition");
+        assertEq(suppliedCount, 2, "2 Staking legs from V2 Vault decomposition");
 
         // 10% of 500e18 GHO = 50e18
         INAVCalculator.PositionBalance memory ghoPos = _find(pos, address(tok0));
@@ -816,7 +816,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
     }
 
     function test_v2pool_noVault_noSuppliedLegs_rewardsStillWork() public {
-        // Meta deployed with address(0) vault — V2 Supplied legs are skipped
+        // Meta deployed with address(0) vault — V2 Staking legs are skipped
         MockBalancerV2Pool v2Pool = new MockBalancerV2Pool(address(0), address(tok0), address(tok1), 500e18, 500e6);
         boosterMainnet.setPool(1, address(v2Pool));
         AuraRewardsMetaBalanceAdapter noVaultMeta =
@@ -828,9 +828,9 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             noVaultMeta.getOraclePositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
 
-        // No Supplied legs (vault is address(0)) but BAL Earned leg present
+        // No Staking legs (vault is address(0)) but BAL Earned leg present
         for (uint256 i; i < pos.length; ++i) {
-            assertFalse(pos[i].positionKind == PositionKind.Supplied, "no Supplied legs without vault");
+            assertFalse(pos[i].positionKind == PositionKind.Staking, "no Staking legs without vault");
         }
         assertTrue(_has(pos, address(bal)), "BAL Earned leg still emitted");
     }

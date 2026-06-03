@@ -158,7 +158,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
             assertFalse(positions[i].isDebt);
 
             if (positions[i].balanceAsset.asset == USDC) {
-                if (positions[i].positionKind == PositionKind.Supplied) sawStaked = true;
+                if (positions[i].positionKind == PositionKind.Staking) sawStaked = true;
                 if (positions[i].positionKind == PositionKind.Rewards) sawRewards = true;
             }
         }
@@ -175,7 +175,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         bool sawRewards;
         for (uint256 i; i < positions.length; ++i) {
             if (positions[i].balanceAsset.asset != GHO) continue;
-            if (positions[i].positionKind == PositionKind.Supplied) sawStaked = true;
+            if (positions[i].positionKind == PositionKind.Staking) sawStaked = true;
             if (positions[i].positionKind == PositionKind.Rewards) sawRewards = true;
         }
         assertTrue(sawStaked, "missing GHO/stkGHO.v1 Staking position");

@@ -141,7 +141,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("aave-v3-safety-module"),
     positionId:    abi.encode(0x<stkAAVE>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -157,7 +157,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("aave-v3-umbrella"),
     positionId:    abi.encode(0x<stkwaEthUSDC_v1>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -403,7 +403,7 @@ PositionBalance({
 #### `StakeWiseV3VaultsMeta` — StakeWise V3 vault
 
 ```solidity
-// Supplied = vault shares → ETH. Other leg: Borrowed (minted osETH debt).
+// Staking = vault shares → ETH. Other leg: Borrowed (minted osETH debt).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
     balanceOracle: 0x<StakeWiseV3VaultsMeta>,
@@ -411,7 +411,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("stakewise-v3"),
     positionId:    abi.encode(0x<StakeWiseVault>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -441,7 +441,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("balancer-v3-gauge"),
     positionId:    abi.encode(0x<BalancerV3Gauge>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -471,7 +471,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("balancer-v2-gauge"),
     positionId:    abi.encode(0x<BalancerV2Gauge>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -501,7 +501,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("curve-gauge"),
     positionId:    abi.encode(0x<CurveGauge>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -516,7 +516,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("convex"),
     positionId:    abi.encode(0x<ConvexBaseRewardPool>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 
@@ -531,7 +531,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("aura"),
     positionId:    abi.encode(0x<AuraBaseRewardPool4626>),
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking
 })
 ```
 

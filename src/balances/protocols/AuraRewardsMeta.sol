@@ -31,11 +31,11 @@ import {BalancerV2PoolLib, IBalancerV2Pool, IBalancerV2Vault} from "./balancer/B
 ///      Per-rewarder positions emitted:
 ///        1. **Supplied** legs — one per registered Balancer pool token (ERC4626 vault tokens are
 ///           unwrapped to their underlying via `previewRedeem`), pro-rata from staked BPT.
-///        2. **Earned** leg for BAL — `auraRewards.earned(account)` (view-safe exact value).
-///        3. **Earned** leg for AURA:
+///        2. **Rewards** leg for BAL — `auraRewards.earned(account)` (view-safe exact value).
+///        3. **Rewards** leg for AURA:
 ///           - Mainnet: `rewardClaimed(earned × rewardMultiplier)` then AURA cliff schedule.
 ///           - L2: `earned × L2Coordinator.mintRate() / 1e18`.
-///        4. **Earned** legs for extra rewards — up to 8 extra rewarders; stash tokens are
+///        4. **Rewards** legs for extra rewards — up to 8 extra rewarders; stash tokens are
 ///           transparently unwrapped (`stashToken.baseToken()` → underlying reward address).
 ///           AURA from extra pools is accumulated into the single AURA leg.
 ///
@@ -123,7 +123,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.PositionBalance[] memory tmp =
             new INAVCalculator.PositionBalance[](_maxTokens(pool, isV3) + 2 + _MAX_EXTRA);
         uint256 n;
-        bytes memory pid = abi.encode(auraRewards);
+        bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Supplied legs: staked BPT decomposed into Balancer pool tokens ─
         if (stakedBpt > 0) {
@@ -178,7 +178,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
             }
         }
 
-        // ── 2. Earned leg: BAL from main rewarder ─────────────────────────────
+        // ── 2. Rewards leg: BAL from main rewarder ─────────────────────────────
         address balToken = _safeAddr(auraRewards, abi.encodeWithSignature("rewardToken()"));
         uint256 totalAuraFromBal;
         if (balToken != address(0)) {
@@ -193,7 +193,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Earned
+                        positionKind: PositionKind.Rewards
                     });
                 }
             }
@@ -236,12 +236,12 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: pid,
-                    positionKind: PositionKind.Earned
+                    positionKind: PositionKind.Rewards
                 });
             }
         }
 
-        // ── 4. Earned leg: AURA (aggregated from main + extra pools) ─────────
+        // ── 4. Rewards leg: AURA (aggregated from main + extra pools) ─────────
         if (
             totalAuraFromBal > 0 && AURA_TOKEN != address(0) && (assetFilter == address(0) || assetFilter == AURA_TOKEN)
         ) {
@@ -254,7 +254,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: pid,
-                    positionKind: PositionKind.Earned
+                    positionKind: PositionKind.Rewards
                 });
             }
         }
@@ -402,8 +402,8 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         assembly {
             let ptr := mload(0x40)
             mstore(ptr, 2) // slot 2
-            result := staticcall(gas(), auraToken, ptr, 0x20, ptr, 0x20)
-            result := mload(ptr)
+            let ok := staticcall(gas(), auraToken, ptr, 0x20, ptr, 0x20)
+            if ok { result := mload(ptr) }
         }
     }
 

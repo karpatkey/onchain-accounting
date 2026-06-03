@@ -6,7 +6,7 @@ import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title UniswapV3PoolsMetaParityForkTest
-/// @notice Proves the Uniswap V3 pools meta-adapter reproduces the per-instance UniswapV3PoolBalanceOracle per token
+/// @notice Fork tests for the Uniswap V3 pools meta-adapter against real mainnet contracts.
 ///         (exact — both delegate the same UniswapV3PoolLib math), against the real mainnet WBTC/WETH 0.3% pool and
 ///         a real NFT holder. Both adapters share one BalancesHarnessForFork registry.
 contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {

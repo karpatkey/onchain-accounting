@@ -9,7 +9,7 @@ import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 /// @notice Shared pool-share math for the Balancer V3 meta-adapters (pools + gauges). Given a BPT amount, computes
 ///         the account's share of each underlying pool token, unwrapping ERC4626 pool tokens to their underlying.
 /// @dev Internal library (inlined into the adapters). Mirrors the math of the original combined
-///      BalancerV3PoolBalanceOracle so per-token amounts match leg-for-leg (the only difference between the
+///      the split meta-adapters so per-token amounts are consistent (the only difference between the
 ///      combined adapter and the split is that wallet- and gauge-held BPT are converted separately rather than
 ///      summed into a single conversion — a ≤1-wei rounding difference per token).
 library BalancerV3PoolLib {

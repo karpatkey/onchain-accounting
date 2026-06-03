@@ -4,7 +4,7 @@
 
 ## Context
 
-`MorphoMarketBalanceOracle` (`src/balances/protocols/MorphoMarket.sol`) reads a user's lending position in a Morpho market by:
+`MorphoMarketsMetaBalanceAdapter` (`src/balances/protocols/MorphoMarketsMeta.sol`) reads a user's lending position in a Morpho market by:
 
 1. Calling `MORPHO.position(marketId, account)` to get the user's `supplyShares` / `borrowShares` / `collateral`.
 2. Calling `MORPHO.expectedMarketBalances(marketParams)` (from `morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol`) to get the *projected* `totalSupplyAssets` / `totalSupplyShares` / `totalBorrowAssets` / `totalBorrowShares` *after accruing interest forward to `block.timestamp`*.
@@ -44,7 +44,7 @@ Morpho's own UI and the `MorphoBalancesLib` library — both maintained by Morph
 
 ## Reference
 
-- Adapter: `src/balances/protocols/MorphoMarket.sol`, especially `_calculateBalance` (the share-to-assets conversion).
+- Adapter: `src/balances/protocols/MorphoMarketsMeta.sol`, especially `_instancePositions` (the share-to-assets conversion).
 - Morpho library used: `lib/morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol`, function `expectedMarketBalances`.
 - Triage workflow when this surfaces in cron CI: `docs/howto/refresh-integration-test-blocks.md` § "Tolerance failures".
 - Empirical case study: ACCOUNT_1 on Mainnet, `MorphoMarket_wstUSR_USDC` market id `0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc`, surfaced via the first cron run of the refresh workflow (commit `3cb1d71` on main, `2026-05-01T23:11Z`).

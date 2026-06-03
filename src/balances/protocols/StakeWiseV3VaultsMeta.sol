@@ -27,7 +27,7 @@ interface IStakeWiseVault {
 ///         active vault set lives on NAVCalculator (`setMetaInstances`). The underlying token (the staking asset,
 ///         e.g. the ETH sentinel on mainnet / GNO on Gnosis) is the chain-level constant pinned in the
 ///         constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
-/// @dev Mirrors the per-vault `StakeWiseV3VaultBalanceOracle` leg-for-leg (parity fork-tested): the gross
+/// @dev Reports the gross
 ///      Supplied/Borrowed split is the same; only the signed-net `getOracleBalances`/`getOracleBalanceForAsset`
 ///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
@@ -66,7 +66,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
         uint256 vaultAssets = vault.convertToAssets(vault.getShares(account));
         uint256 mintedOs = vault.convertToAssets(vault.osTokenPositions(account));
 
-        bytes memory pid = abi.encode(address(vault));
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;

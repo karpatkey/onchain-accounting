@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title BalancerMetaParityForkTest
 /// @notice Proves the split (BalancerV3PoolsMeta = wallet LP, BalancerV3GaugesMeta = staked LP + rewards) reproduces the
-///         original combined BalancerV3PoolBalanceOracle per token, against the real mainnet Aave GHO/USDT/USDC pool
+///         BalancerV3 meta-adapters (pools + gauges) against the real mainnet Aave GHO/USDT/USDC pool
 ///         + gauge. All three adapters share one BalancesHarnessForFork registry (which implements
 ///         getRegisteredAssets), so per-token amounts are directly comparable. The combined adapter does a single
 ///         `poolBalanceOf(wallet + staked)` conversion while the split does two — a ≤ a-few-units rounding

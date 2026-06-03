@@ -7,7 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title FluidVaultsMetaParityForkTest
 /// @notice Validates the Fluid vaults meta-adapter against the real mainnet wstETH/USDC T1 vault: the on-chain
-///         `constantsView` token decode + VaultResolver read path match the per-vault FluidVaultBalanceOracle
+///         `constantsView` token decode + VaultResolver read path of the meta-adapter
 ///         (parity over getOraclePositions). Both adapters share one BalancesHarnessForFork.
 contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant VAULT = 0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE; // wstETH/USDC

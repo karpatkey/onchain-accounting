@@ -7,10 +7,11 @@ pragma solidity ^0.8;
 ///      — narrow enough that the client knows how to decode without runtime sniffing.
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
-///        WALLET                          → ""  (empty bytes)
+///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
+///        SKY_SAVINGS                     → (address savingsContract)
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
 ///        BALANCER_V3_GAUGE / V2_GAUGE / AURA           → (address gauge)
@@ -21,7 +22,8 @@ pragma solidity ^0.8;
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address npm, uint256 tokenId)
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
-///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL → "" (queue is account-global)
+///        MERKL                           → (address rewardToken)
+///        DAI_DSR / STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");

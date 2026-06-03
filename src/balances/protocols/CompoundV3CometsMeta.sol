@@ -45,7 +45,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the comet address. Emits a base `Supplied`/`Borrowed` leg, a `Collateral` leg per
-    ///      collateral, and an `Earned` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
+    ///      collateral, and a `Rewards` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -56,7 +56,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         CompoundV3CometLib.AccountData memory d =
             CompoundV3CometLib.accountData(comet, COMPOUND_REWARDS, REWARD_TOKEN, account);
 
-        bytes memory pid = abi.encode(comet);
+        bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](d.collateralAssets.length + 2);
@@ -83,7 +83,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         // Reward leg.
         if (d.rewardOwed != 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(REWARD_TOKEN, assetFilter);
-            if (ok) temp[count++] = _row(a, d.rewardOwed, false, pid, PositionKind.Earned);
+            if (ok) temp[count++] = _row(a, d.rewardOwed, false, pid, PositionKind.Rewards);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);

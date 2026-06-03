@@ -70,7 +70,7 @@ function underlyingAssetsSupported() external view returns (address[]);
 function supportsInterface(bytes4) external view returns (bool);  // ERC165
 ```
 
-Returned `PositionBalance` has `amount` always positive + `isDebt` flag. The adapter does **not** know about prices.
+Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the underlying token), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
 Adapters live under `src/balances/protocols/<protocol>/` (one folder per protocol). Each folder typically contains:
 
@@ -145,8 +145,8 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 
 These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list. Highlights:
 
-- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag.
-- Adapters are immutable. The Safety Module adapter is the documented exception.
+- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), and `positionKind` (enum from `PositionKind.sol`). See `docs/howto/position-identity-schema.md`.
+- Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
 - Factories use CREATE2 with `PROTOCOL_KEY = keccak256("<Name>")`.
 - Registration goes through `BalanceAdapterRegistry`, never directly to `NAVCalculator.addBalanceOracle`.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.

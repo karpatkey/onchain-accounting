@@ -112,7 +112,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
             meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         assertEq(pos.length, 1);
-        assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Rewards));
         assertEq(pos[0].balanceAsset.asset, address(crv));
         assertEq(pos[0].amount, 500e18);
     }
@@ -127,12 +127,12 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
 
-        uint256 earned = _countKind(pos, PositionKind.Earned);
+        uint256 earned = _countKind(pos, PositionKind.Rewards);
         assertEq(earned, 1);
 
         INAVCalculator.PositionBalance memory crvPos = _findAsset(pos, address(crv));
         assertEq(crvPos.amount, 700e18); // 1000 - 300 = 700 CRV claimable lower bound
-        assertEq(uint8(crvPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(crvPos.positionKind), uint8(PositionKind.Rewards));
         assertFalse(crvPos.isDebt);
     }
 
@@ -147,7 +147,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         // No CRV Earned leg (amount is 0)
         for (uint256 i; i < pos.length; ++i) {
             if (pos[i].balanceAsset.asset == address(crv)) {
-                assertTrue(pos[i].amount == 0 || uint8(pos[i].positionKind) != uint8(PositionKind.Earned));
+                assertTrue(pos[i].amount == 0 || uint8(pos[i].positionKind) != uint8(PositionKind.Rewards));
             }
         }
     }
@@ -180,7 +180,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory ldoPos = _findAsset(pos, address(ldoReward));
         assertEq(ldoPos.amount, 42e18);
-        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     function test_extraReward_unregistered_skipped() public {

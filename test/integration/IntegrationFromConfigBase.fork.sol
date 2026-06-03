@@ -11,6 +11,7 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 
 // Balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
@@ -1111,7 +1112,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     // -----------------------------------------------------------------------
 
     /// @notice Serializes one Position to a JSON object string.
-    function _positionToJson(INAVCalculator.Position memory pos) internal pure returns (string memory out) {
+    function _positionToJson(INAVCalculator.Position memory pos) internal view returns (string memory out) {
+        // Attempt to read human-readable protocol name from the adapter.
+        // Used by generate-comparison-report.py to map positions to DeBank protocol IDs.
+        string memory protoName = "";
+        try IPositionDescribable(pos.balanceOracle).protocolName() returns (string memory n) {
+            protoName = n;
+        } catch {}
+
         out = string.concat(
             '{"symbol":"',
             pos.balanceAsset.symbol,
@@ -1138,7 +1146,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.toString(pos.positionId),
             '","positionKind":',
             vm.toString(uint256(uint8(pos.positionKind))),
-            "}"
+            ',"protocolName":"',
+            protoName,
+            '"}'
         );
     }
 

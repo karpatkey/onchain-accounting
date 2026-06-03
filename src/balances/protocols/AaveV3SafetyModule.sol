@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -24,7 +25,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      no live reads happen during construction. Reward token is AAVE for every entry today; `_records()` keeps a
 ///      per-entry `rewardToken` field so a future stake token with a non-AAVE reward (unlikely but possible) is a
 ///      one-line change.
-contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
+contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Constants — Mainnet Safety Module addresses
     //
@@ -110,7 +111,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -238,7 +240,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter {
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Earned
+                            positionKind: PositionKind.Rewards
                         });
                     }
                 }

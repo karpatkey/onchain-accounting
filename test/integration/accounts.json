@@ -1,14 +1,14 @@
 {
-  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only \u2014 see docs/howto/refresh-integration-test-blocks.md.",
+  "$comment": "Single source of truth for the integration tests in test/integration/. The bump script (script/test/refresh-integration-snapshot.sh) regenerates everything below. Adding or removing a test account is a JSON edit only — see docs/howto/refresh-integration-test-blocks.md.",
   "tolerance": 0.01,
   "$tolerance_comment": "Max relative drift allowed between forge-computed NAV and Debank's USD total at bump time. 0.01 = 1%.",
-  "$supportedDeBankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped \u2208 list). Stored as the short id (no chain prefix) \u2014 Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
+  "$supportedDeBankProtocols_comment": "Debank protocol id allowlist per chain. The bump script filters /v1/user/all_complex_protocol_list by (chain matches debankChainId) AND (id with chain prefix stripped ∈ list). Stored as the short id (no chain prefix) — Debank uses bare ids on mainnet and `<chain>_<id>` elsewhere; the script normalises both. Add a new entry whenever a balance adapter is added for a protocol Debank covers; if Debank doesn't cover the protocol, add nothing and accept that NAV will exceed filtered-Debank by that position's value.",
   "chains": {
     "1": {
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25074767,
+      "forkBlock": 25228621,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -35,13 +35,13 @@
         "uniswap2",
         "uniswap3"
       ],
-      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS \u2014 full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP \u2014 not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 \u2014 only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE \u2014 protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank \u2014 obsolete, no new deposits \u2014 are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
+      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS — full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE — protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank — obsolete, no new deposits — are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 151467099,
+      "forkBlock": 152395760,
       "supportedDeBankProtocols": [
         "aave3",
         "compound",
@@ -52,7 +52,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46125681,
+      "forkBlock": 46487689,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -63,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 45871814,
+      "forkBlock": 46800475,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
@@ -79,7 +79,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 461826138,
+      "forkBlock": 469220126,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
@@ -108,24 +108,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "18316432670",
-          "debankUsd": "180.181442"
+          "navUsd8dp": "19487914956",
+          "debankUsd": "180.153167"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500633021",
-          "debankUsd": "5.006772"
+          "navUsd8dp": "500846418",
+          "debankUsd": "5.010897"
         },
         "8453": {
-          "navUsd8dp": "999961778",
-          "debankUsd": "10.003351"
+          "navUsd8dp": "999784942",
+          "debankUsd": "10.013366"
         },
         "42161": {
-          "navUsd8dp": "1002737228",
-          "debankUsd": "10.029842"
+          "navUsd8dp": "1003209078",
+          "debankUsd": "10.043268"
         }
       }
     },
@@ -141,8 +141,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "113794243558451",
-          "debankUsd": "1140228.406808"
+          "navUsd8dp": "97346693958331",
+          "debankUsd": "974817.490127"
         },
         "10": {
           "navUsd8dp": "0",
@@ -174,8 +174,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "27514957058",
-          "debankUsd": "275.248379"
+          "navUsd8dp": "23322213841",
+          "debankUsd": "232.445046"
         },
         "10": {
           "navUsd8dp": "0",
@@ -196,7 +196,7 @@
       }
     },
     {
-      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (\u2248 $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout \u2014 it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
+      "$comment": "Mainnet-only Umbrella exercise account: holds all four Aave Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1) and effectively nothing else (≈ $0.66 ETH dust). Sourced from the top-holders scan during the Umbrella adapter rollout — it's the cleanest available holder for an apples-to-apples NAV-vs-Debank cross-check on the Umbrella adapter, since every dollar of value flows through a single NAV adapter (the new AaveUmbrellaBalanceOracle).",
       "address": "0x13Ce0C26A44C644cCEB29B1e5B437521095F86DF",
       "label": "ACCOUNT_4_UMBRELLA",
       "enabledChains": [
@@ -204,13 +204,13 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "17705041152327",
-          "debankUsd": "177051.869647"
+          "navUsd8dp": "1493235196593",
+          "debankUsd": "14901.974511"
         }
       }
     },
     {
-      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending \u2014 the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
+      "$comment": "Mainnet supplier across Compound V3 + Fluid Lending (~$8.14M at fork block, matches Debank Mainnet to <0.02%). Originally sourced as a concentrated cUSDCv3 supplier (~$3.10M USDC into Comet, picked up by CompoundV3_USDC). The harness extension in PR #35 also wired Fluid_fToken_USDT, which surfaces this account's ~$5.05M USDT supply into Fluid Lending — the +$5M jump from the previous snapshot is that position becoming visible to NAV, not a double-count. Account also holds ~$2.2M on BSC Venus (out of scope for this test: BSC isn't integrated and there's no Venus adapter).",
       "address": "0x9C1b8c994935e3890bD2257AD2a681d6D4465a73",
       "label": "ACCOUNT_5_COMPOUND_MAINNET",
       "enabledChains": [
@@ -218,8 +218,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "814669066636374",
-          "debankUsd": "8149326.835702"
+          "navUsd8dp": "815716930101398",
+          "debankUsd": "169.848849"
         }
       }
     },
@@ -232,8 +232,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "276682794742790",
-          "debankUsd": "2767722.598490"
+          "navUsd8dp": "276800030084332",
+          "debankUsd": "96.839971"
         }
       }
     },
@@ -246,8 +246,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "205976547351896",
-          "debankUsd": "2060411.533068"
+          "navUsd8dp": "206240448341983",
+          "debankUsd": "2.577794"
         }
       }
     },
@@ -260,13 +260,13 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "77416565817906",
-          "debankUsd": "774421.396808"
+          "navUsd8dp": "74595590542092",
+          "debankUsd": "46.132440"
         }
       }
     },
     {
-      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is covered as a Custom-priced ERC20 (osToken_PriceOracle / priceFeeds.osETH) reported by ERC20DefaultOracle. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet \u2014 register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDeBankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
+      "$comment": "Mainnet diversified holder (~$23.6M Debank). Primary purpose: exercise the new UniswapV3 adapter dispatch via the WETH/COW 0.3% LP NFT (~$555K) added to chain 1 config. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is covered as a Custom-priced ERC20 (osToken_PriceOracle / priceFeeds.osETH) reported by ERC20DefaultOracle. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet — register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDeBankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
       "address": "0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669",
       "label": "ACCOUNT_9_MAINNET_DIVERSIFIED",
       "enabledChains": [
@@ -274,8 +274,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1766236714746435",
-          "debankUsd": "18230617.676630"
+          "navUsd8dp": "1708245230306504",
+          "debankUsd": "17582623.122116"
         }
       }
     },
@@ -288,13 +288,13 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "9497146772716867",
-          "debankUsd": "94989178.003285"
+          "navUsd8dp": "8626140713036139",
+          "debankUsd": "85805905.335154"
         }
       }
     },
     {
-      "$comment": "Mainnet multi-protocol holder. Compound V3 supply positions (USDC, WBTC) and Uniswap V3 LPs. Also exercises: Aave V3 Safety Module (stkAAVE staked position, denominated in AAVE \u2014 requires AAVE price feed); Aave V3 Lido instance via waEthLidoGHO stata-token wallet balance (~$233 GHO supplied into the Prime market, tracked through the waEthLidoGHO custom price feed rather than the AaveV3_Prime DataProvider query, since stata-token holders are not visible to getUserReserveData); Aave V2 BAL collateral (~$9).",
+      "$comment": "Mainnet multi-protocol holder. Compound V3 supply positions (USDC, WBTC) and Uniswap V3 LPs. Also exercises: Aave V3 Safety Module (stkAAVE staked position, denominated in AAVE — requires AAVE price feed); Aave V3 Lido instance via waEthLidoGHO stata-token wallet balance (~$233 GHO supplied into the Prime market, tracked through the waEthLidoGHO custom price feed rather than the AaveV3_Prime DataProvider query, since stata-token holders are not visible to getUserReserveData); Aave V2 BAL collateral (~$9).",
       "address": "0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89",
       "label": "ACCOUNT_11_MAINNET_COMPOUND_UNISWAP",
       "enabledChains": [
@@ -302,8 +302,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "715653042511351",
-          "debankUsd": "7167282.913993"
+          "navUsd8dp": "552365635254882",
+          "debankUsd": "5873756.600143"
         }
       }
     },
@@ -316,13 +316,13 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "86328507127",
-          "debankUsd": "878.203257"
+          "navUsd8dp": "73198494772",
+          "debankUsd": "742.443351"
         }
       }
     },
     {
-      "$comment": "Placeholder \u2014 Polygon account to be filled in. Set 'address' to a real holder with Polygon DeFi positions, run refresh-integration-snapshot.sh, then accept the new expected values. The coverage-gap detector (Section 4 of comparison-report.md) will surface which adapters and feeds need wiring once real positions are observed.",
+      "$comment": "Placeholder — Polygon account to be filled in. Set 'address' to a real holder with Polygon DeFi positions, run refresh-integration-snapshot.sh, then accept the new expected values. The coverage-gap detector (Section 4 of comparison-report.md) will surface which adapters and feeds need wiring once real positions are observed.",
       "address": "",
       "label": "ACCOUNT_PLACEHOLDER_POLYGON",
       "enabledChains": [
@@ -331,7 +331,7 @@
       "expected": {}
     },
     {
-      "$comment": "Placeholder \u2014 additional chain/account slot for future coverage. Fill in address and enabledChains when a new chain or protocol family needs integration-test coverage.",
+      "$comment": "Placeholder — additional chain/account slot for future coverage. Fill in address and enabledChains when a new chain or protocol family needs integration-test coverage.",
       "address": "",
       "label": "ACCOUNT_PLACEHOLDER_FUTURE",
       "enabledChains": [],

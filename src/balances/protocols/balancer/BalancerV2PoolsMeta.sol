@@ -51,7 +51,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
         (address[] memory tokens, uint256[] memory amounts) = BalancerV2PoolLib.shares(VAULT, poolId, bpt, walletBpt);
 
-        bytes memory positionId = abi.encode(instance);
+        bytes memory positionId = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](tokens.length);
         uint256 count;
@@ -76,6 +76,12 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
             positions[i] = temp[i];
         }
         return positions;
+    }
+
+    /// @inheritdoc MetaBalanceOracle
+    /// @dev Balancer V2 pool instance is a raw bytes32 poolId, not an address.
+    function _instancePositionId(bytes32 instance) internal pure override returns (bytes memory) {
+        return abi.encode(instance);
     }
 
     /// @inheritdoc MetaBalanceOracle

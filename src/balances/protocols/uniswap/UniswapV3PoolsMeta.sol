@@ -96,6 +96,9 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
             // Filter: only positions in this pool.
             if (t0 != token0 || t1 != token1 || f != fee) continue;
 
+            // positionId is per-NFT: each tokenId is an independently managed position (its own tick
+            // range and liquidity), same pattern as Aave V3/V2 per-reserve. _instancePositionId does
+            // not apply here; see MetaBalanceOracle.
             bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
 
             uint256 liq0;
@@ -125,8 +128,8 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
             if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
             if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied);
-            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Earned);
-            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Earned);
+            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Fees);
+            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Fees);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);

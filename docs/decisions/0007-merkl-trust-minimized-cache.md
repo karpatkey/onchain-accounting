@@ -27,7 +27,7 @@ Ship `MerklRewardsBalanceOracle` (`src/balances/protocols/MerklRewards.sol`) as 
 - `underlyingAssetsSupported()` returns an empty array. Merkl's reward-token universe is open and not enumerable at deploy time; the interface explicitly allows empty here. NAV iterates oracles with `assetFilter == address(0)` and uses `_userTokens[user]` for per-account enumeration.
 - Owner is set once in the constructor (the OIV Safe — same multisig that holds `MANAGER` on `NAVCalculator`). `Ownable.transferOwnership` is supported but expected to remain unused outside of multisig migrations.
 
-**Scope of the deviation from ADR 0005's full-immutability convention:** mutable cache state, gated by `onlyOwner`. *No* mutable parameters (Distributor address, NAVCalculator address, protocol/positionDetail strings are all immutable). *No* upgrade path. *No* admin-injected amounts — every mutation is proof-verified against the on-chain root.
+**Scope of the deviation from ADR 0005's full-immutability convention:** mutable cache state, gated by `onlyOwner`. *No* mutable parameters (Distributor address, NAVCalculator address, identity fields (`protocolId`, `positionId`) are all immutable). *No* upgrade path. *No* admin-injected amounts — every mutation is proof-verified against the on-chain root.
 
 ## Consequences
 
@@ -70,6 +70,6 @@ Ship `MerklRewardsBalanceOracle` (`src/balances/protocols/MerklRewards.sol`) as 
 - Tests: `test/balances/protocols/MerklRewards.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/protocols/fork/MerklRewards.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
-- Deploy schema: `script/config/chains/<id>.json` `balanceAdapters.MerklRewards` (`distributor`, `protocol`, `positionDetail`); owner = `addresses.admin`.
+- Deploy schema: `script/config/chains/<id>.json` `balanceAdapters.MerklRewards` (`distributor`); owner = `addresses.admin`.
 - Operator's guide for the proof-submission bot: [`docs/operations/merkl-proof-submitter.md`](../operations/merkl-proof-submitter.md)
 - Operational follow-ups (NOT in this PR): bot implementation, optional permissionless mode (see Alternative 1), price feeds for new reward tokens.

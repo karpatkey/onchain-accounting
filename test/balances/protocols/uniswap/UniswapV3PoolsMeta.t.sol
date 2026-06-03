@@ -11,9 +11,10 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockUniswapV3Pool, MockPositionManager, MockToken} from "test/balances/protocols/uniswap/UniswapV3Mocks.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title UniswapV3PoolsMetaBalanceAdapter unit tests (no fork)
-/// @notice Meta-framework behaviour + parity with the per-instance UniswapV3PoolBalanceOracle on the same mocks.
+/// @notice Meta-framework behaviour and decomposition logic for UniswapV3PoolsMeta.
 contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     using Strings for address;
 
@@ -125,7 +126,9 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
         // The 3rd/4th poolA legs are Fees (tokensOwed 42/1337).
         assertEq(p[2].amount, 42);
+        assertEq(uint8(p[2].positionKind), uint8(PositionKind.Fees));
         assertEq(p[3].amount, 1337);
+        assertEq(uint8(p[3].positionKind), uint8(PositionKind.Fees));
     }
 
     function test_assetFilter() public view {

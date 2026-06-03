@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -37,7 +38,7 @@ interface IStcUsd {
 ///      1. Reads cUSD balance directly via ERC20.balanceOf
 ///      2. Converts stcUSD shares to cUSD via ERC4626 convertToAssets
 ///      3. Calls ICUsd.getBurnAmount on the combined cUSD total to get the USDC equivalent
-contract CapBalanceOracle is IBalanceOracleAdapter {
+contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // State
     //
@@ -86,12 +87,9 @@ contract CapBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "Cap";

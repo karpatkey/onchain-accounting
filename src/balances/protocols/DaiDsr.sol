@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -12,7 +13,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice A balance oracle for the DAI token that uses the DSRManager contract to calculate the balance.
-contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
+contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Libraries
     //
@@ -175,12 +176,9 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "MakerDAO";

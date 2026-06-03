@@ -6,7 +6,7 @@ import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeW
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title StakeWiseV3VaultsMetaParityForkTest (Gnosis)
-/// @notice Proves the StakeWise V3 vaults meta-adapter reproduces the per-vault StakeWiseV3VaultBalanceOracle
+/// @notice Fork tests for the StakeWise V3 vaults meta-adapter against real Gnosis contracts.
 ///         leg-for-leg (exact) against the real Gnosis Genesis vault and real holders. Both adapters share one
 ///         BalancesHarnessForFork registry.
 contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {

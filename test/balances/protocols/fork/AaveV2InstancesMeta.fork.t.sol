@@ -6,7 +6,7 @@ import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2In
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title AaveV2InstancesMetaParityForkTest
-/// @notice Proves the Aave V2 instances meta-adapter reproduces the per-instance AaveV2InstanceBalanceOracle
+/// @notice Fork tests for the Aave V2 instances meta-adapter against real mainnet contracts.
 ///         exactly against the real mainnet Aave V2 market and real holders (pure supplier + supply/borrow). Both
 ///         adapters share one BalancesHarnessForFork.
 contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {

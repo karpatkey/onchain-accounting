@@ -10,7 +10,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         check is that the `_slot0` override decodes PancakeSwap's `uint32 feeProtocol` (Uniswap's `uint8` read
 ///         would revert on a live PCS pool): the test holder has an NFT in this pool, so the slot0 read in
 ///         UniswapV3PoolLib is exercised. The holder's position is closed (liquidity 0), so amounts are zero —
-///         the assertion is parity with the per-instance PancakeSwapV3PoolBalanceOracle (both return empty without
+///         the assertion is that the adapter returns empty without
 ///         reverting).
 contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;

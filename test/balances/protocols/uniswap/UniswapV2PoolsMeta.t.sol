@@ -12,7 +12,7 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockUniswapV2Factory, MockUniswapV2Pair, MockToken} from "test/balances/protocols/uniswap/UniswapV2Mocks.sol";
 
 /// @title UniswapV2PoolsMetaBalanceAdapter unit tests (no fork)
-/// @notice Meta-framework behaviour + parity with the per-instance UniswapV2BalanceOracle on the same mocks.
+/// @notice Meta-framework behaviour and decomposition logic for UniswapV2PoolsMeta.
 contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
     using Strings for address;
 

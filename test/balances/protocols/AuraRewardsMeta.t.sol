@@ -550,7 +550,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory balPos = _find(pos, address(bal));
         assertEq(balPos.amount, balEarned, "BAL amount equals rewarder.earned()");
-        assertEq(uint8(balPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(balPos.positionKind), uint8(PositionKind.Rewards));
         assertFalse(balPos.isDebt);
     }
 
@@ -575,7 +575,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance memory auraPos = _find(pos, address(aura));
         uint256 expectedAura = 3900e18;
         assertEq(auraPos.amount, expectedAura, "AURA from cliff schedule: 1000 * 1950 / 500 = 3900");
-        assertEq(uint8(auraPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(auraPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     // ─── 7. AURA L2 via mintRate ──────────────────────────────────────────────
@@ -594,7 +594,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance memory auraPos = _find(pos, address(auraL2Token));
         uint256 expectedAura = (balEarned * 3e17) / 1e18;
         assertEq(auraPos.amount, expectedAura, "AURA L2 = balEarned * mintRate / 1e18");
-        assertEq(uint8(auraPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(auraPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     // ─── 8. Extra reward direct token ─────────────────────────────────────────
@@ -612,7 +612,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory ldoPos = _find(pos, address(ldo));
         assertEq(ldoPos.amount, 77e18, "Extra direct reward amount");
-        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     // ─── 9. Extra reward stash-wrapped ───────────────────────────────────────
@@ -630,7 +630,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory snxPos = _find(pos, address(snx));
         assertEq(snxPos.amount, 55e18, "Stash-wrapped extra reward unwrapped to base token");
-        assertEq(uint8(snxPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(snxPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     // ─── 10. AURA accumulates from main + extra pools ─────────────────────────

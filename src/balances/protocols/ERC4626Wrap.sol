@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -19,14 +20,14 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev    Designed for thin wrappers like Aave V3 stata-tokens (`staticATokenLM` — e.g.
 ///         `waEthLidoGHO`), Maker-DAI savings wrappers, and any ERC-4626 vault whose share price
 ///         is derived purely from `convertToAssets`. Morpho ERC-4626 vaults have their own
-///         dedicated adapter (`MorphoVaultBalanceOracle`) because the chain-config catalog tracks
+///         dedicated meta-adapter (`MorphoVaultsMeta`) because the chain-config catalog tracks
 ///         Morpho vaults as a distinct family.
 /// @dev    **Asset-registration policy:** the wrapped underlying MUST be registered with
 ///         NAVCalculator at deploy time — the constructor reverts otherwise. This makes wiring
 ///         errors loud (rather than silently producing a zero-value adapter). A defensive
 ///         runtime check also drops positions if the asset gets later unregistered via
-///         `nav.unregisterAsset`, mirroring the conservative pattern in MorphoVaultBalanceOracle.
-contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
+///         `nav.unregisterAsset`, mirroring the conservative pattern in the Morpho vaults adapter.
+contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -87,12 +88,9 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
     //
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    //
-    // IPositionDescribable (implemented without inheriting the interface)
-    //
 
     function protocolName() external pure returns (string memory) {
         return "ERC4626";
@@ -142,7 +140,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter {
     /// @notice Returns one PositionBalance per registered underlying with a non-zero account balance.
     /// @dev Drops the position entirely if `ASSET` is not currently registered in NAVCalculator —
     ///      this is the "discard if no price" policy. Per-account registered-asset intersection
-    ///      mirrors the pattern in MorphoVaultBalanceOracle.
+    ///      mirrors the pattern in the Morpho vaults adapter.
     function getOraclePositions(address account, address assetFilter)
         external
         view

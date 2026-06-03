@@ -60,7 +60,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return new INAVCalculator.PositionBalance[](0);
 
-        bytes memory pid = abi.encode(pool);
+        bytes memory pid = _instancePositionId(instance);
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](coins.length);
         uint256 n;
 

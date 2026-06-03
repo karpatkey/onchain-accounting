@@ -238,7 +238,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     function _assertAllValidPositionKinds(INAVCalculator.PositionBalance[] memory pos) internal pure {
         for (uint256 i; i < pos.length; ++i) {
             uint8 k = uint8(pos[i].positionKind);
-            assertTrue(k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Earned));
+            assertTrue(k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards));
         }
     }
 

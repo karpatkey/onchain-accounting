@@ -23,12 +23,12 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      Per-rewarder positions emitted:
 ///        1. **Supplied** legs — one per registered Curve pool coin, pro-rata from staked LP.
 ///           `stakedLp = rewarder.balanceOf(account)`; decomposition via CurvePoolLib.
-///        2. **Earned** leg for CRV — `rewarder.earned(account)` (view-safe; exact, not a lower bound
+///        2. **Rewards** leg for CRV — `rewarder.earned(account)` (view-safe; exact, not a lower bound
 ///           like the Curve Minter approach — Convex accounts for all pending CRV in earned()).
-///        3. **Earned** leg for CVX — derived from CRV earned via the Convex cliff emission schedule
+///        3. **Rewards** leg for CVX — derived from CRV earned via the Convex cliff emission schedule
 ///           (standard: cvxAmount = crvEarned × remainingCliffs / TOTAL_CLIFFS, capped at max supply).
 ///           CVX_TOKEN is passed at construction so L2 deployments without CVX pass address(0).
-///        4. **Earned** legs for extra rewards — up to 8 extra rewarders; stash token wrappers are
+///        4. **Rewards** legs for extra rewards — up to 8 extra rewarders; stash token wrappers are
 ///           transparently unwrapped (stash.token() → underlying) to return the real reward address.
 ///           CVX rewarded through a stash wrapper is derived from CRV, not from stash.earned().
 ///
@@ -83,7 +83,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
             new INAVCalculator.PositionBalance[](CurvePoolLib.MAX_COINS + 2 + _MAX_EXTRA);
         uint256 n;
 
-        bytes memory pid = abi.encode(rewarder);
+        bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Supplied legs: staked LP → underlying Curve pool tokens ────────
         if (stakedLp > 0) {
@@ -117,7 +117,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
             }
         }
 
-        // ── 2. Earned leg: CRV (main reward, exact view-safe amount) ─────────
+        // ── 2. Rewards leg: CRV (main reward, exact view-safe amount) ─────────
         address crvToken = _mainRewardToken(rewarder);
         uint256 crvEarned;
         if (crvToken != address(0)) {
@@ -132,13 +132,13 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Earned
+                        positionKind: PositionKind.Rewards
                     });
                 }
             }
         }
 
-        // ── 3. Earned leg: CVX derived from CRV earned ───────────────────────
+        // ── 3. Rewards leg: CVX derived from CRV earned ───────────────────────
         if (CVX_TOKEN != address(0) && crvEarned > 0 && (assetFilter == address(0) || assetFilter == CVX_TOKEN)) {
             uint256 cvxAmount = _cvxMintAmount(crvEarned);
             if (cvxAmount > 0) {
@@ -151,13 +151,13 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Earned
+                        positionKind: PositionKind.Rewards
                     });
                 }
             }
         }
 
-        // ── 4. Earned legs: extra reward tokens ───────────────────────────────
+        // ── 4. Rewards legs: extra reward tokens ───────────────────────────────
         (bool lenOk, uint256 extraLen) = _safeUint(rewarder, abi.encodeWithSignature("extraRewardsLength()"));
         if (lenOk) {
             uint256 cap = extraLen > _MAX_EXTRA ? _MAX_EXTRA : extraLen;
@@ -197,7 +197,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: pid,
-                    positionKind: PositionKind.Earned
+                    positionKind: PositionKind.Rewards
                 });
             }
         }

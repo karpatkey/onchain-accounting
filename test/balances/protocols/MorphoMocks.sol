@@ -8,7 +8,7 @@ import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 
 /// @notice Mock Morpho with configurable per-user `Position` and per-market `Market` state.
 /// @dev Implements only `idToMarketParams`, `position`, and `market` — the surface used by
-///      `MorphoMarketBalanceOracle` and `MorphoBalancesLib.expectedMarketBalances`. Constructor wires a single
+///      Morpho market mock for meta-adapter tests. Constructor wires a single
 ///      market; `setPosition` / `setMarket` let individual tests exercise specific share/asset combinations.
 ///      Setting `marketParams.irm = address(0)` (default in the test setUp) makes
 ///      `expectedMarketBalances` skip the IRM accrual and return the stored `Market` values verbatim.

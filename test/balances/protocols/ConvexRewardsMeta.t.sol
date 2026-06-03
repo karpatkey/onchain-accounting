@@ -295,7 +295,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory crvPos = _find(pos, address(crv));
         assertEq(crvPos.amount, 500e18);
-        assertEq(uint8(crvPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(crvPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     function test_noCrvRewards_zeroEarned() public {
@@ -324,7 +324,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         // cliff = 50_000_000 / 100_000 = 500; remaining = 1000 - 500 = 500
         // cvxAmount = 1000 * 500 / 1000 = 500 CVX
         assertEq(cvxPos.amount, 500e18);
-        assertEq(uint8(cvxPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(cvxPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     function test_cvx_capped_atMaxSupply() public {
@@ -368,7 +368,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance memory ldoPos = _find(pos, address(ldo));
         assertEq(ldoPos.amount, 42e18);
-        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Earned));
+        assertEq(uint8(ldoPos.positionKind), uint8(PositionKind.Rewards));
     }
 
     function test_extraReward_stashWrapper_unwrapped() public {

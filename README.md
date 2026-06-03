@@ -57,15 +57,15 @@ test/
 
 - **`Balances`** (abstract): Holds a **global list of balance oracles** and an **asset registry** (decimals, symbols). Each asset can have multiple oracles (e.g. ERC20 default + protocol-specific). It does not implement NAV or pricing.
 - **`IBalanceOracleAdapter`**: Implemented by every balance oracle. Key methods:
-  - `getOraclePositions(account, assetFilter)` → list of positions (asset, amount, isDebt, protocol, detail)
+  - `getOraclePositions(account, assetFilter)` → list of **PositionBalance** entries with typed identity (`protocolId` bytes32 slug, `positionId` abi-encoded key, `positionKind` enum)
   - `getOracleBalance(account)` → assets and net balances (signed)
   - `underlyingAssetsSupported()` → which assets this oracle reports on
 - **Protocol adapters** in `src/balances/protocols/`:
   - **ERC20DefaultOracle**: Plain ERC20 and native token balances.
   - **21 meta-adapters** ([ADR 0010](docs/decisions/0010-meta-balance-adapters.md)): one immutable contract per protocol family; the active instance set is governed on `NAVCalculator` via `setMetaInstances` (MANAGER-gated). Families: `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AaveV3InstancesMeta`, `AaveV2InstancesMeta`, `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`, `UniswapV3PoolsMeta`, `UniswapV2PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta`, `GearboxMarketsMeta`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `StakeWiseV3VaultsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta`, `AuraRewardsMeta`.
-  - **12 per-instance singleton adapters** (no meta equivalent needed): **SparkLend** (AaveV3 logic inlined), **AaveV3SafetyModule**, **AaveUmbrella**, **Cap**, **ERC4626Wrap**, **DaiDsr**, **SkySavingsUsds**, **MerklRewards**, **StaderWithdrawalQueue**, **KelpWithdrawalQueue**, **LidoWithdrawalQueue**, **ERC20DefaultOracle**. Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
+  - **12 per-instance singleton adapters** (no meta equivalent needed): **SparkLend** (AaveV3 logic inlined), **AaveV3SafetyModule**, **AaveUmbrella**, **Cap**, **ERC4626Wrap**, **DaiDsr**, **SkySavingsUsds**, **MerklRewards**, **StaderWithdrawalQueue**, **KelpWithdrawalQueue**, **LidoWithdrawalQueue**, **ERC20DefaultOracle**. All 12 implement `IPositionDescribable` (ERC165-discoverable human-readable labels). Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
 
-Balance oracles return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`, `protocolId` bytes32, `positionId` bytes, `positionKind` enum). The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale). See `docs/howto/position-identity-schema.md` for the full struct schema.
+Balance oracles return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`, `protocolId` bytes32, `positionId` bytes, `positionKind` enum). **`PositionKind`** classifies each leg: `Wallet` · `Supplied` · `Borrowed` · `Collateral` · `Staking` · `Rewards` (accrued reward tokens) · `Fees` (uncollected LP/protocol fees). The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale). Full struct schema, per-protocol positionId decode tables, and TypeScript examples: [`docs/howto/position-identity-schema.md`](docs/howto/position-identity-schema.md).
 
 ---
 

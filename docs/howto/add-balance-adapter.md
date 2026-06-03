@@ -27,7 +27,7 @@ Before writing code, answer:
 If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 pools), prefer a **meta-adapter** over one contract per instance:
 
 - **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
-- **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`; derive identity on-chain from the instance coordinate. Adding a pool/vault later is a config TX, not a deploy. See `GearboxMarketsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
+- **Meta-adapter** (`IMetaBalanceOracleAdapter` / `MetaBalanceOracle`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `setMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceOracle` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`. Optionally override `_instancePositionId(bytes32 instance)` to customise positionId encoding — the default is `abi.encode(_toAddress(instance))` (address-keyed protocols); override with `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds); adapters where positionId varies per leg (Aave V3/V2 per-reserve, Uniswap V3 per-NFT) skip the hook and build positionId inline. Adding a pool/vault later is a config TX, not a deploy. See `GearboxMarketsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
 
 Today 21 meta-adapters cover all major multi-instance protocols (Aave V2/V3, Compound V3, Morpho Vaults/Markets, Gearbox, Balancer V2/V3 pools + gauges, Aura, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2/V3, PancakeSwap V2/V3). For a new multi-instance protocol, a meta-adapter is almost always the right choice.
 
@@ -45,7 +45,7 @@ Every `PositionBalance` now carries typed identity fields instead of free-form s
 |---|---|---|
 | `protocolId` | `bytes32` | A constant from `src/utils/ProtocolIds.sol` — `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
 | `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time. See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
-| `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Supplied`, `Borrowed`, `Collateral`, `Earned`, or `Wallet`. |
+| `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, or `Fees`. |
 
 ### 1.2 Adding a new ProtocolIds constant
 
@@ -95,6 +95,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable 
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IBalanceOracleAdapter).interfaceId
+            || interfaceId == type(IPositionDescribable).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -169,7 +170,7 @@ Conventions:
 - All addresses set in the constructor are **immutable**. No setters.
 - `protocolId` is a `bytes32` constant declared at the class level (`bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL`). It is never a constructor param.
 - `positionId` is computed at query time via `abi.encode(...)`. It is never stored. The encode schema must match the NatSpec in `ProtocolIds.sol` for this protocol family.
-- `positionKind` is a `PositionKind` enum value (`Supplied`, `Borrowed`, `Collateral`, `Earned`, `Wallet`). It is never a string.
+- `positionKind` is a `PositionKind` enum value (`Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, `Fees`). It is never a string.
 - `amount` in `PositionBalance` is **always positive**. Use `isDebt = true` to mark debt.
 - `balanceOracle` is always `address(this)`. It is the audit trail.
 - For asset metadata on the `PositionBalance.balanceAsset` field, call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list.

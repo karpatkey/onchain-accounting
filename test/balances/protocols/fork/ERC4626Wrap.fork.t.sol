@@ -31,8 +31,7 @@ contract ERC4626WrapBalanceOracleForkTest_sGHO is BalanceAdapterTestBase {
     ERC4626WrapBalanceOracle public oracle;
 
     function setUp() public override {
-        super.setUp();
-        _setupFork();
+        super.setUp(); // dispatches to this contract's _setupFork() override
         _setupOracle();
         _openPosition();
     }
@@ -178,8 +177,7 @@ contract ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder is BalanceAdapterTestB
     ERC4626WrapBalanceOracle public oracle;
 
     function setUp() public override {
-        super.setUp();
-        _setupFork();
+        super.setUp(); // dispatches to this contract's _setupFork() override
         _setupOracle();
     }
 

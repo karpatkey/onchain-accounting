@@ -156,7 +156,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](42);
+        names = new string[](44);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
@@ -182,6 +182,9 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVaultsMeta";
         // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
         names[i++] = "MorphoMarketsMeta";
+        // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceOracle)
+        names[i++] = "ERC4626Wrap_waEthLidoGHO";
+        names[i++] = "ERC4626Wrap_sGHO";
         // Gearbox meta-adapter (ADR 0010): market set configured via setMetaInstances
         names[i++] = "GearboxMarketsMeta";
         // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via setMetaInstances

@@ -156,7 +156,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](45);
+        names = new string[](37);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
@@ -193,21 +193,13 @@ contract Configure is BaseDeployScript {
         names[i++] = "BalancerV3GaugesMeta";
         names[i++] = "BalancerV2PoolsMeta";
         names[i++] = "BalancerV2GaugesMeta";
-        // Aura
-        names[i++] = "Aura_rETH_WETH";
-        names[i++] = "Aura_GHO_USDT_USDC";
-        names[i++] = "Aura_GHO_USDC_USDT";
-        names[i++] = "Aura_GHO_USDC";
-        // Curve
-        names[i++] = "Curve_weETH_WETH";
-        names[i++] = "Curve_crvUSD_USDC";
-        names[i++] = "Curve_crvUSD_USDT";
-        names[i++] = "Curve_RLUSD_USDC";
-        // Convex
-        names[i++] = "Convex_weETH_WETH";
-        names[i++] = "Convex_crvUSD_USDC";
-        names[i++] = "Convex_crvUSD_USDT";
-        names[i++] = "Convex_RLUSD_USDC";
+        // Aura / Curve / Convex meta-adapters (ADR 0010): pool / gauge / rewarder sets configured via setMetaInstances
+        names[i++] = "AuraRewardsMeta";
+        names[i++] = "CurvePoolsMeta";
+        names[i++] = "CurveGaugesMeta";
+        names[i++] = "ConvexRewardsMeta";
+        // Merkl rewards (ADR 0007: trust-minimized proof-verified per-(user,token) cache)
+        names[i++] = "MerklRewards";
         // Stader (Mainnet)
         names[i++] = "StaderWithdrawalQueue";
         // Kelp DAO (Mainnet)

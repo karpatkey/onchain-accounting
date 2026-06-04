@@ -94,8 +94,8 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
-        uint256 supplied = _countKind(pos, PositionKind.Staking);
-        assertGt(supplied, 0, "LP resolved and decomposed");
+        uint256 staking = _countKind(pos, PositionKind.Staking);
+        assertGt(staking, 0, "LP resolved and decomposed");
     }
 
     // ─── Pool decomposition ───────────────────────────────────────────────────
@@ -107,8 +107,8 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
-        uint256 supplied = _countKind(pos, PositionKind.Staking);
-        assertGt(supplied, 0, "at least one Supplied leg");
+        uint256 staking = _countKind(pos, PositionKind.Staking);
+        assertGt(staking, 0, "at least one Staking leg");
         _assertAllValidKinds(pos);
     }
 

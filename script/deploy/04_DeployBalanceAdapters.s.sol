@@ -61,14 +61,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // current chain's config has `balanceAdapters.{name}.enabled = true`, so the list can
         // include cross-chain entries safely.
 
-        // --- Aave V3 (one instance per Aave market) ---
-        _deployIfEnabled("AaveV3InstancesMeta"); // Meta-adapter: all Aave V3 instances; DataProvider set on NAV (ADR 0010)
-        _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
-        _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
-        _deployIfEnabled("AaveV3_Arbitrum");
-        _deployIfEnabled("AaveV3_Base");
-        _deployIfEnabled("AaveV3_Optimism");
-        _deployIfEnabled("AaveV3_Gnosis");
+        // --- Aave V3 (meta-adapter: all instances on every chain; ADR 0010) ---
+        // The legacy per-market adapters (AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis) are
+        // superseded by AaveV3InstancesMeta and disabled in chain config — they have no deploy path here.
+        _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via setMetaInstances
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
         _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)

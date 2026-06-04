@@ -489,11 +489,11 @@ For each new adapter you want to deploy on a given chain, add an entry to `scrip
 
 ```json
 "balanceAdapters": {
-  "AaveV3_Core": {
+  "SparkLend": {
     "enabled": true,
     "constructor": {
       "dataProvider": "0x...",
-      "protocol": "Aave V3 Core"
+      "protocol": "Spark"
     },
     "deployed": ""
   }
@@ -506,7 +506,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 | Adapter name | Key config params | Applicable chains |
 |---|---|---|
-| `AaveV3_*` | `dataProvider`, `protocol` | Mainnet, Arbitrum, Base, Optimism, Gnosis |
+| `AaveV3InstancesMeta` | `protocol` (DataProvider set via `setMetaInstances`) | Mainnet, Arbitrum, Base, Optimism, Gnosis |
 | `AaveV3SafetyModule` | *(no extra params)* | Mainnet |
 | `AaveUmbrella` | `rewardsController` | Mainnet |
 | `SparkLend` | `dataProvider` | Mainnet |
@@ -532,7 +532,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 36 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `setMetaInstances`, rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `setMetaInstances`, rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
@@ -547,7 +547,7 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the chain configs as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (`setMetaInstances`, configured under `balanceAdapters.<Meta>.metaInstances`, or `metaInstancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
-**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `setMetaInstances`); the per-market `AaveV3_Core`, `AaveV3_Prime`, `AaveV3_Arbitrum`, `AaveV3_Base`, `AaveV3_Optimism`, `AaveV3_Gnosis` (legacy, disabled — superseded by `AaveV3InstancesMeta`); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
+**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `setMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
 **Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`
 

@@ -156,19 +156,14 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](37);
+        names = new string[](31);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
-        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
+        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances.
+        // The legacy per-market AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis are superseded by
+        // this meta (disabled in chain config, no deploy path in 04) — full-meta, do not re-add.
         names[i++] = "AaveV3InstancesMeta";
-        // Aave V3 (one per market)
-        names[i++] = "AaveV3_Core";
-        names[i++] = "AaveV3_Prime";
-        names[i++] = "AaveV3_Arbitrum";
-        names[i++] = "AaveV3_Base";
-        names[i++] = "AaveV3_Optimism";
-        names[i++] = "AaveV3_Gnosis";
         // Spark, stkGHO, Umbrella, Cap (Mainnet)
         names[i++] = "SparkLend";
         names[i++] = "AaveV3SafetyModule";

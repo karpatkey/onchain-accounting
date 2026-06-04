@@ -417,7 +417,10 @@ def _leg_kind(pos: dict) -> str:
     if "positionKind" in pos:
         kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Staking", 5: "Rewards", 6: "Fees"}
         try:
-            return kind_map.get(int(pos["positionKind"]), "Supply")
+            n = int(pos["positionKind"])
+            # Surface unmapped values as Unknown(<n>) rather than silently labelling them "Supply" —
+            # an unrecognised ordinal means enum drift (a new PositionKind), exactly what this report should flag.
+            return kind_map.get(n, f"Unknown({n})")
         except (ValueError, TypeError):
             pass
     # Legacy format: positionDetail.type

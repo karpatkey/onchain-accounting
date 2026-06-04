@@ -151,10 +151,14 @@ contract Configure is BaseDeployScript {
         console2.log("--- Bridge adapters authorized:", authorized);
     }
 
-    /// @notice Shared adapter name list — kept in sync with `04_DeployBalanceAdapters.s.sol.run()`.
-    /// Each chain's config enables the subset that applies; entries not in a chain's config just
-    /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
-    /// NAVCalculator.initialize() so it's already registered; it is not added here.
+    /// @notice Shared adapter name list — every name `04_DeployBalanceAdapters.s.sol.run()` deploys must
+    /// appear here, or the adapter deploys but never registers on NAVCalculator. Each chain's config enables
+    /// the subset that applies; entries not in a chain's config just return false from isAdapterEnabled and
+    /// are skipped. ERC20Default is created by NAVCalculator.initialize() so it's already registered; it is
+    /// not added here. A few entries are intentionally **list-only** — their adapter contract + 04 dispatch
+    /// branch exist but `04.run()` has no `_deployIfEnabled` for them yet (currently `UniswapV2PoolsMeta`).
+    /// They sit here registration-ready; when you wire the first such instance, add the `_deployIfEnabled`
+    /// call to `04.run()` so deploy and registration land together.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
         names = new string[](31);
         uint256 i = 0;
@@ -205,7 +209,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
         // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances
         names[i++] = "UniswapV3PoolsMeta"; // Mainnet
-        names[i++] = "UniswapV2PoolsMeta";
+        names[i++] = "UniswapV2PoolsMeta"; // list-only: contract + 04 dispatch exist, but no _deployIfEnabled in 04.run() yet (see docstring)
         names[i++] = "PancakeSwapV3PoolsMeta"; // Base
         names[i++] = "PancakeSwapV2PoolsMeta"; // BSC
     }

@@ -483,7 +483,7 @@ Balance adapter configuration lives in each chain's config file under `balanceAd
 
 ### 2.1 Add adapter entries to chain configs
 
-> **Starting state:** chain configs already include many `balanceAdapters` entries beyond `ERC20Default` (pre-seeded during PR #12 — e.g. `AaveV3_Core`, `AaveV3_Prime`, `MorphoMarket_*`, `Aura_*`, etc.). Before editing `script/config/chains/{chainId}.json`, review what's already there and add only the adapters still missing for your deployment. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` in the chain config.
+> **Starting state:** chain configs already include many `balanceAdapters` entries beyond `ERC20Default`. Most multi-instance protocols are now covered by a single meta-adapter (e.g. `AaveV3InstancesMeta`, `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`); the older per-instance keys (`AaveV3_Core`, `MorphoMarket_*`, `Aura_*`, etc.) are still present but `enabled: false` and superseded (ADR 0010). Before editing `script/config/chains/{chainId}.json`, review what's already there and either add a new instance to a meta-adapter's `metaInstances`/`metaInstancesRaw` set or add a missing standalone adapter. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` in the chain config.
 
 For each new adapter you want to deploy on a given chain, add an entry to `script/config/chains/{chainId}.json` under `balanceAdapters`:
 
@@ -511,8 +511,8 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `AaveUmbrella` | `rewardsController` | Mainnet |
 | `SparkLend` | `dataProvider` | Mainnet |
 | `CompoundV3CometsMeta` | `compoundRewards`, `rewardToken`, `protocol` | Mainnet |
-| `MorphoVaultsMeta` | `protocol` | Mainnet |
-| `MorphoBlue_*` | `morpho`, `marketId`, `protocol` | Mainnet, Arbitrum, Base |
+| `MorphoVaultsMeta` | `protocol` | Mainnet, Arbitrum |
+| `MorphoMarketsMeta` | `morpho`, `protocol` (marketIds via `metaInstancesRaw`) | Mainnet, Arbitrum, Base |
 | `GearboxMarketsMeta` | `protocol` | Mainnet |
 | `BalancerV3PoolsMeta` | `protocol` | Mainnet |
 | `BalancerV3GaugesMeta` | `balancerMinter`, `protocol` | Mainnet |
@@ -532,7 +532,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain. There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. The current inventory (43 instances across 5 chains) was scoped to what ETH Alpha Fund and USD Alpha Fund require. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 36 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `setMetaInstances`, rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
@@ -545,29 +545,31 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 `04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if `chains/<chainId>.json.balanceAdapters.<name>.enabled == true`. This means the `run()` list is the **union** across chains; per-chain selection happens through the config file.
 
-The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 for the authoritative source):
+The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the chain configs as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (`setMetaInstances`, configured under `balanceAdapters.<Meta>.metaInstances`, or `metaInstancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
-**Aave V3 (one instance per market):** `AaveV3_Core`, `AaveV3_Prime`, `AaveV3_Arbitrum`, `AaveV3_Base`, `AaveV3_Optimism`, `AaveV3_Gnosis`
+**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `setMetaInstances`); the per-market `AaveV3_Core`, `AaveV3_Prime`, `AaveV3_Arbitrum`, `AaveV3_Base`, `AaveV3_Optimism`, `AaveV3_Gnosis` (legacy, disabled — superseded by `AaveV3InstancesMeta`); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
-**Single-instance protocols:** `SparkLend`, `AaveV3SafetyModule_stkGHO`, `Cap`
+**Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`
 
-**Morpho Vaults:** `MorphoVault_kpkETHPrime_V1`, `MorphoVault_kpkETHPrime_V2`, `MorphoVault_kpkUSDCPrime_V1`, `MorphoVault_kpkUSDCPrime_V2`, `MorphoVault_kpkUSDCYieldV1`
+**Morpho:** `MorphoVaultsMeta` (vaults via `metaInstances`), `MorphoMarketsMeta` (raw bytes32 marketIds via `metaInstancesRaw`)
 
-**Morpho Markets (USD Alpha + Mainnet/Arbitrum):** `MorphoMarket_wstETH_USDC`, `MorphoMarket_cbBTC_USDC`, `MorphoMarket_wstUSR_USDC`, `MorphoMarket_ETHPlus_USDC`, `MorphoMarket_WBTC_USDC`, `MorphoMarket_RLP_USDC`, `MorphoMarket_syrupUSDC_USDC`, `MorphoMarket_sUSDS_USDT`, `MorphoMarket_sUSDS_USDC`
+**Gearbox:** `GearboxMarketsMeta`
 
-**Morpho Markets (ETH Alpha):** `MorphoMarket_ETHPlus_WETH`, `MorphoMarket_wstETH_WETH`, `MorphoMarket_weETH_WETH`, `MorphoMarket_rsETH_WETH`, `MorphoMarket_cbETH_USDC`
+**Balancer:** `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`
 
-**Gearbox (Mainnet — ETH Alpha):** `GearboxMarket_kpkWETH`, `GearboxMarket_kpkwstETH`
+**Aura / Curve / Convex:** `AuraRewardsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `setMetaInstances`)
 
-**Balancer V3 (Mainnet — ETH Alpha):** `BalancerV3_rETH_WETH`
+**DEX LP:** `UniswapV3PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
 
-**Aura (one per pool):** `Aura_rETH_WETH` (Mainnet), `Aura_GHO_USDT_USDC` (Mainnet), `Aura_GHO_USDC_USDT` (Arbitrum), `Aura_GHO_USDC` (Base). Pool IDs: `rETH_WETH=271`, `GHO_USDC_USDT=99`, `GHO_USDC=19` (these go in the config's `pid` param).
+**StakeWise V3:** `StakeWiseV3VaultsMeta` (vault deposits net of minted-osToken debt — see the osETH/osGNO pricing note below)
 
-**Curve (Mainnet):** `Curve_weETH_WETH`, `Curve_crvUSD_USDC`, `Curve_crvUSD_USDT`, `Curve_RLUSD_USDC`
+**ERC-4626 wrappers:** `ERC4626Wrap_waEthLidoGHO`, `ERC4626Wrap_sGHO`
 
-**Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
+**Withdrawal queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`
 
-**StakeWise V3:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultOracle` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, config keys `priceFeeds.osETH` / `priceFeeds.osGNO`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
+**Rewards:** `MerklRewards` (mutable proof-verified per-(user,token) cache — ADR 0007)
+
+**StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultOracle` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, config keys `priceFeeds.osETH` / `priceFeeds.osGNO`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
 **Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
@@ -850,7 +852,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 ```
 
-> **Known limitation — hardcoded adapter list.** `VerifyEtherscan.s.sol` does **not** iterate the full `04_DeployBalanceAdapters.run()` inventory. It emits `forge verify-contract` commands only for the names in the hardcoded arrays inside `_emitVerifyBalanceAdapters` and `_balanceAdapterPathAndArgs` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`). Adapters outside that list (`AaveV3_Core`, `AaveV3_Prime`, `Aura_*`, `Curve_*`, `Convex_*`, `MorphoMarket_*`, etc.) are silently skipped. When you add a new adapter type or instance, either extend the hardcoded arrays in `VerifyEtherscan.s.sol` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
+> **Known limitation — hardcoded adapter list.** `VerifyEtherscan.s.sol` does **not** iterate the full `04_DeployBalanceAdapters.run()` inventory. It emits `forge verify-contract` commands only for the names in the hardcoded arrays inside `_emitVerifyBalanceAdapters` and `_balanceAdapterPathAndArgs` (today: `AaveV3_USDC/WETH`, `CompoundV3_USDC/WETH`, `SparkLend`, `SparkLend_USDC`, `MorphoBlue_USDC`, `DaiDsr`, `SkySavingsUsds`, `ERC20Default`). Adapters outside that list — including all 21 meta-adapters (`AaveV3InstancesMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`, etc.), the standalone adapters, and the legacy per-instance keys — are silently skipped. When you add a new adapter type or instance, either extend the hardcoded arrays in `VerifyEtherscan.s.sol` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
 
 ### 8.2 Run the printed commands
 

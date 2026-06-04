@@ -26,6 +26,7 @@
   },
 
   "AaveV3Instance": {
+    "$superseded": "Superseded by AaveV3InstancesMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Borrow | Collateral",
     "$deployedNote": "Existing deployments used the dataProvider address as positionId. Canonical target is the Pool address.",
     "protocol": "Aave V3",
@@ -80,6 +81,7 @@
   },
 
   "MorphoVault": {
+    "$superseded": "Superseded by MorphoVaultsMeta (ADR 0010); per-vault deploys disabled in chain config.",
     "$perPositionFields": "type: Supply",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Vault", "name": "<vault name>" },
@@ -103,6 +105,7 @@
   },
 
   "MorphoMarket": {
+    "$superseded": "Superseded by MorphoMarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Borrow | Collateral. getOraclePositions emits gross — Supply and Borrow on the loan token are separate rows when both supplyShares > 0 and borrowShares > 0 (up to 3 rows per call: Collateral + Supply + Borrow). The simple getters getOracleBalanceForAsset / getOracleBalances still net the loan token.",
     "$positionIdNote": "positionId is derived automatically from marketId (Strings.toHexString(uint256(marketId), 32)) — not a constructor parameter.",
     "protocol": "Morpho",
@@ -156,7 +159,40 @@
     "positionId": "<pool address>"
   },
 
+  "AuraRewardsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked BPT + BAL/AURA/extra rewards of ALL Aura pools. Constructor takes (booster, balancerV2Vault, protocol, navCalculator); AURA is resolved dynamically via Booster.minter() — do NOT pass an auraToken arg. The active rewarder set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.AuraRewardsMeta.metaInstances — each entry is the Aura BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Aura adapter.",
+    "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked BPT share, decomposed via the Balancer V2 Vault; Rewards=BAL via the cliff schedule + AURA via the mint rate + extra reward tokens)",
+    "protocol": "Aura",
+    "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<derived: BPT name()>" },
+    "positionId": "<derived: rewarder address>"
+  },
+
+  "CurvePoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) LP of ALL Curve pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CurvePoolsMeta.metaInstances — each entry is the pool/LP-token address). Identity derived on-chain: positionId = pool address hex. Supersedes the per-pool Curve adapter's Supply legs.",
+    "$perPositionFields": "type: Supply (one leg per underlying pool token; wallet LP share only)",
+    "protocol": "Curve",
+    "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<derived: pool token pair>" },
+    "positionId": "<derived: pool address>"
+  },
+
+  "CurveGaugesMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + CRV/extra rewards of ALL Curve gauges. Constructor takes (minter, crvToken, protocol, navCalculator); pass minter=address(0) on L2 / RewardsOnlyGauges (no CRV via the Minter). The active gauge set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CurveGaugesMeta.metaInstances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex. Supersedes the per-pool Curve adapter's Staking + rewards legs.",
+    "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked LP share; Rewards=CRV claimable lower-bound via the Minter + extra gauge reward tokens)",
+    "protocol": "Curve",
+    "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<derived: pool token pair>" },
+    "positionId": "<derived: gauge address>"
+  },
+
+  "ConvexRewardsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked LP + CRV/CVX/extra rewards of ALL Convex rewarders. Constructor takes (booster, cvxToken, protocol, navCalculator); the LP is resolved via booster.poolInfo(pid()). The active rewarder set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.ConvexRewardsMeta.metaInstances — each entry is the Convex BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Convex adapter.",
+    "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked LP share; Rewards=CRV via earned() + CVX via the cliff schedule + extra reward tokens, unwrapping stash tokens)",
+    "protocol": "Convex",
+    "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<derived: pool token pair>" },
+    "positionId": "<derived: rewarder address>"
+  },
+
   "Aura": {
+    "$superseded": "Superseded by AuraRewardsMeta (ADR 0010); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Staking (one position per underlying asset)",
     "protocol": "Aura",
     "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<pool token pair>" },
@@ -164,6 +200,7 @@
   },
 
   "Curve": {
+    "$superseded": "Superseded by CurvePoolsMeta (Supply legs) + CurveGaugesMeta (Staking + Rewards legs) per ADR 0010; per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Staking (Supply=wallet LP, Staking=gauge-staked LP + CRV/extra rewards; one pair per underlying pool token)",
     "protocol": "Curve",
     "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<pool token pair>" },
@@ -171,6 +208,7 @@
   },
 
   "Convex": {
+    "$superseded": "Superseded by ConvexRewardsMeta (ADR 0010); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Staking (one position per underlying asset)",
     "protocol": "Convex",
     "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<pool token pair>" },

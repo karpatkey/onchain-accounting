@@ -1,0 +1,10 @@
+@import "../../node_modules/@karpatkey/design-system/dist/tokens.css";
+@source "../../node_modules/@karpatkey/design-system/dist/index.js";
+
+/* Hide link icons at rest; show on row hover */
+.feeds-table tbody tr .link-icon { opacity: 0; transition: opacity 0.12s; }
+.feeds-table tbody tr:hover .link-icon { opacity: 1; }
+
+/* Horizontal-scroll strip without a visible scrollbar */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

@@ -1,0 +1,47 @@
+{
+  "1": {
+    "name": "mainnet",
+    "port": 8545,
+    "rpcEnv": "MAINNET_URL",
+    "nativeSymbol": "ETH",
+    "sequencerFeed": "0x0000000000000000000000000000000000000000",
+    "nativeChainlinkFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+    "nativeChainlinkHeartbeat": 3600
+  },
+  "10": {
+    "name": "optimism",
+    "port": 8546,
+    "rpcEnv": "OP_URL",
+    "nativeSymbol": "ETH",
+    "sequencerFeed": "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
+    "nativeChainlinkFeed": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+    "nativeChainlinkHeartbeat": 1200
+  },
+  "100": {
+    "name": "gnosis",
+    "port": 8547,
+    "rpcEnv": "GNOSIS_URL",
+    "nativeSymbol": "xDAI",
+    "sequencerFeed": "0x0000000000000000000000000000000000000000",
+    "nativeChainlinkFeed": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+    "nativeChainlinkHeartbeat": 86400
+  },
+  "42161": {
+    "name": "arbitrum",
+    "port": 8548,
+    "rpcEnv": "ARBITRUM_URL",
+    "nativeSymbol": "ETH",
+    "sequencerFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
+    "nativeChainlinkFeed": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+    "nativeChainlinkHeartbeat": 86400
+  },
+  "8453": {
+    "name": "base",
+    "port": 8549,
+    "rpcEnv": "BASE_URL",
+    "nativeSymbol": "ETH",
+    "sequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
+    "nativeChainlinkFeed": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+    "nativeChainlinkHeartbeat": 1200
+  }
+}

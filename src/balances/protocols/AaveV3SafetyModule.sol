@@ -221,7 +221,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Supplied
+                            positionKind: PositionKind.Staking
                         });
                     }
                 }

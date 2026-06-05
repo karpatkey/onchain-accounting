@@ -110,7 +110,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                                 isDebt: false,
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
-                                positionKind: PositionKind.Supplied
+                                positionKind: PositionKind.Staking
                             });
                         }
                     }

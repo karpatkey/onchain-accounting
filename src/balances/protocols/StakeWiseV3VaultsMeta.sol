@@ -71,7 +71,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
         if (vaultAssets > 0) {
-            temp[count++] = _row(asset, vaultAssets, false, pid, PositionKind.Supplied);
+            temp[count++] = _row(asset, vaultAssets, false, pid, PositionKind.Staking);
         }
         if (mintedOs > 0) {
             temp[count++] = _row(asset, mintedOs, true, pid, PositionKind.Borrowed);

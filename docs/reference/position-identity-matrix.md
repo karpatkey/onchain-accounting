@@ -77,7 +77,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-03, post-assignment):
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
-| `Wallet` | 2 | ERC20DefaultOracle only |
+| `Wallet` | 1 | ERC20DefaultOracle only |
 | `Supplied` | 21 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues |
 | `Borrowed` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3 |
 | `Collateral` | 5 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults |

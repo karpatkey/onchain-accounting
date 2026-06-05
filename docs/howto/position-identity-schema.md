@@ -619,7 +619,7 @@ Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName                | positionLabel       |
 |-------|--------|-------------|--------------|------------------------------|---------------------|
-| AAVE  | 500    | +100 000    | `Supplied`   | `"Aave V3 Safety Module"`    | `"lending position"` |
+| AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3 Safety Module"`    | `"lending position"` |
 | AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3 Safety Module"`    | `"lending position"` |
 | **NAV** | | **+102 000** | | | |
 
@@ -629,7 +629,7 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | positionLabel       |
 |-------|--------|-------------|--------------|-------------------|---------------------|
-| USDC  | 1 000  | +1 000      | `Supplied`   | `"Aave Umbrella"` | `"lending position"` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"lending position"` |
 | USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"lending position"` |
 | **NAV** | | **+1 005** | | | |
 
@@ -781,7 +781,7 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 
 | asset | amount | value (USD) | positionKind | protocolName      | positionLabel        |
 |-------|--------|-------------|--------------|-------------------|----------------------|
-| ETH   | 2.0    | +5 000      | `Supplied`   | `"StakeWise V3"`  | `"Chorus One vault"` |
+| ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `"Chorus One vault"` |
 | ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `"Chorus One vault"` |
 | **NAV** | | **+3 750** | | | |
 
@@ -801,8 +801,8 @@ Scenario: staked BPT in gauge for a USDC/WETH pool, with 50 BAL rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName    | positionLabel           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
-| USDC  | 800    | +800        | `Supplied`   | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
-| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
+| USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
+| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
 | BAL   | 50     | +150        | `Rewards`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
 | **NAV** | | **+1 750** | | | |
 
@@ -822,8 +822,8 @@ Scenario: staked V2 BPT with 50 BAL rewards.
 
 | asset | amount | value (USD) | positionKind | protocolName    | positionLabel           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
-| USDC  | 800    | +800        | `Supplied`   | `"Balancer V2"` | `"50USDC-50WETH gauge"` |
-| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V2"` | `"50USDC-50WETH gauge"` |
+| USDC  | 800    | +800        | `Staking`    | `"Balancer V2"` | `"50USDC-50WETH gauge"` |
+| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V2"` | `"50USDC-50WETH gauge"` |
 | BAL   | 50     | +150        | `Rewards`    | `"Balancer V2"` | `"50USDC-50WETH gauge"` |
 | **NAV** | | **+1 750** | | | |
 
@@ -843,8 +843,8 @@ Scenario: staked gauge LP (same pool as above) with 100 CRV rewards.
 
 | asset  | amount | value (USD) | positionKind | protocolName | positionLabel          |
 |--------|--------|-------------|--------------|--------------|------------------------|
-| crvUSD | 1 000  | +1 000      | `Supplied`   | `"Curve"`    | `"crvUSD/USDC gauge"`  |
-| USDC   | 1 000  | +1 000      | `Supplied`   | `"Curve"`    | `"crvUSD/USDC gauge"`  |
+| crvUSD | 1 000  | +1 000      | `Staking`    | `"Curve"`    | `"crvUSD/USDC gauge"`  |
+| USDC   | 1 000  | +1 000      | `Staking`    | `"Curve"`    | `"crvUSD/USDC gauge"`  |
 | CRV    | 100    | +50         | `Rewards`    | `"Curve"`    | `"crvUSD/USDC gauge"`  |
 | **NAV** | | **+2 050** | | | |
 
@@ -854,8 +854,8 @@ Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 
 | asset  | amount | value (USD) | positionKind | protocolName | positionLabel              |
 |--------|--------|-------------|--------------|--------------|----------------------------|
-| crvUSD | 1 000  | +1 000      | `Supplied`   | `"Convex"`   | `"crvUSD/USDC Convex"`     |
-| USDC   | 1 000  | +1 000      | `Supplied`   | `"Convex"`   | `"crvUSD/USDC Convex"`     |
+| crvUSD | 1 000  | +1 000      | `Staking`    | `"Convex"`   | `"crvUSD/USDC Convex"`     |
+| USDC   | 1 000  | +1 000      | `Staking`    | `"Convex"`   | `"crvUSD/USDC Convex"`     |
 | CRV    | 100    | +50         | `Rewards`    | `"Convex"`   | `"crvUSD/USDC Convex"`     |
 | CVX    | 50     | +150        | `Rewards`    | `"Convex"`   | `"crvUSD/USDC Convex"`     |
 | **NAV** | | **+2 200** | | | |
@@ -866,8 +866,8 @@ Scenario: Aura-staked USDC/WETH 50/50 BPT with 30 BAL + 40 AURA rewards.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel        |
 |-------|--------|-------------|--------------|--------------|----------------------|
-| USDC  | 800    | +800        | `Supplied`   | `"Aura"`     | `"USDC/WETH Aura"`   |
-| WETH  | 0.32   | +800        | `Supplied`   | `"Aura"`     | `"USDC/WETH Aura"`   |
+| USDC  | 800    | +800        | `Staking`    | `"Aura"`     | `"USDC/WETH Aura"`   |
+| WETH  | 0.32   | +800        | `Staking`    | `"Aura"`     | `"USDC/WETH Aura"`   |
 | BAL   | 30     | +90         | `Rewards`    | `"Aura"`     | `"USDC/WETH Aura"`   |
 | AURA  | 40     | +100        | `Rewards`    | `"Aura"`     | `"USDC/WETH Aura"`   |
 | **NAV** | | **+1 790** | | | |
@@ -1027,23 +1027,23 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `AaveV2InstancesMeta` | `aave-v2-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
-| `AaveV3SafetyModule` | `aave-v3-safety-module` | `Supplied`, `Rewards` |
-| `AaveUmbrella` | `aave-v3-umbrella` | `Supplied`, `Rewards` |
+| `AaveV3SafetyModule` | `aave-v3-safety-module` | `Staking`, `Rewards` |
+| `AaveUmbrella` | `aave-v3-umbrella` | `Staking`, `Rewards` |
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `GearboxMarketsMeta` | `gearbox-v3` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
 | `CompoundV3CometsMeta` | `compound-v3` | `Supplied`, `Borrowed`, `Collateral`, `Rewards` |
-| `StakeWiseV3VaultsMeta` | `stakewise-v3` | `Supplied`, `Borrowed` |
+| `StakeWiseV3VaultsMeta` | `stakewise-v3` | `Staking`, `Borrowed` |
 | `BalancerV3PoolsMeta` | `balancer-v3-pool` | `Supplied` |
-| `BalancerV3GaugesMeta` | `balancer-v3-gauge` | `Supplied`, `Rewards` |
+| `BalancerV3GaugesMeta` | `balancer-v3-gauge` | `Staking`, `Rewards` |
 | `BalancerV2PoolsMeta` | `balancer-v2-pool` | `Supplied` |
-| `BalancerV2GaugesMeta` | `balancer-v2-gauge` | `Supplied`, `Rewards` |
+| `BalancerV2GaugesMeta` | `balancer-v2-gauge` | `Staking`, `Rewards` |
 | `CurvePoolsMeta` | `curve-pool` | `Supplied` |
-| `CurveGaugesMeta` | `curve-gauge` | `Supplied`, `Rewards` |
-| `ConvexRewardsMeta` | `convex` | `Supplied`, `Rewards` |
-| `AuraRewardsMeta` | `aura` | `Supplied`, `Rewards` |
+| `CurveGaugesMeta` | `curve-gauge` | `Staking`, `Rewards` |
+| `ConvexRewardsMeta` | `convex` | `Staking`, `Rewards` |
+| `AuraRewardsMeta` | `aura` | `Staking`, `Rewards` |
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` |

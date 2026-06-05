@@ -19,6 +19,15 @@ import {console2} from "forge-std/console2.sol";
 contract DeployNAVImplementation is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
+    // The library addresses NAVCalculator is linked against (the `libraries` pins in foundry.toml).
+    // The CREATE2 addresses computed below from the current library bytecode MUST equal these, or the
+    // deployed NAVCalculator would DELEGATECALL an address with no code and revert on initialize. The
+    // LibraryPinConsistency test re-derives both from current bytecode in CI; this is the deploy-time
+    // backstop. If these ever fire, the library bytecode drifted — regenerate the pins (and update both
+    // here and in foundry.toml) for the pinned solc + bytecode_hash.
+    address internal constant LINKED_PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
+    address internal constant LINKED_NAV_REGISTRY_LIB = 0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9;
+
     struct ImplPlan {
         address priceFeedLib;
         bytes priceFeedLibBytecode;
@@ -36,6 +45,17 @@ contract DeployNAVImplementation is BaseDeployScript {
         validateAddresses();
 
         ImplPlan memory plan = _computeImplPlan();
+
+        // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked
+        // against — otherwise NAV would deploy fine but revert on initialize (DELEGATECALL to empty code).
+        require(
+            plan.priceFeedLib == LINKED_PRICE_FEED_LIB,
+            "PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+        require(
+            plan.navRegistryLib == LINKED_NAV_REGISTRY_LIB,
+            "NavRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
 
         // EOA deploy: broadcast the three CREATE2 deploys (PriceFeedLib, NavRegistryLib, NAVCalculator impl) directly
         // via the deployer private key. Same deterministic addresses on every chain. Run once, then 02_2 per chain.

@@ -42,7 +42,20 @@ fi
 
 mkdir -p "$STATE_DIR"
 
-for cid in $(jq -r 'keys[]' "$CONFIG"); do
+# Optional positional args restrict to a subset of chain ids (e.g. `deploy.sh 1` for mainnet
+# only). With no args, every chain in chains.json is processed (non-running anvils are skipped).
+if [ "$#" -gt 0 ]; then
+  CHAIN_IDS="$*"
+  for cid in $CHAIN_IDS; do
+    if [ "$(jq -r "has(\"$cid\")" "$CONFIG")" != "true" ]; then
+      echo "error: chain $cid not in $CONFIG" >&2; exit 1
+    fi
+  done
+else
+  CHAIN_IDS=$(jq -r 'keys[]' "$CONFIG")
+fi
+
+for cid in $CHAIN_IDS; do
   name=$(jq -r ".\"$cid\".name" "$CONFIG")
   port=$(jq -r ".\"$cid\".port" "$CONFIG")
   native=$(jq -r ".\"$cid\".nativeSymbol" "$CONFIG")
@@ -71,6 +84,7 @@ for cid in $(jq -r 'keys[]' "$CONFIG"); do
       DEV_SEQUENCER_FEED="$sequencer" \
       DEV_NATIVE_FEED="$native_feed" \
       DEV_NATIVE_HEARTBEAT="$native_heartbeat" \
+      FOUNDRY_PROFILE=dev \
       forge script "$DEPLOY_DIR/01_DeployNAV.s.sol:DeployNAV" \
         --rpc-url "$rpc" \
         --private-key "$DEV_PRIVATE_KEY" \

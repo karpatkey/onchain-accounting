@@ -37,6 +37,16 @@ libraries = [
 # deny = "warnings"
 ignored_warnings_from = ["lib"]
 
+# Dev-only profile for the local-anvil fork sim (script/development). Clears the library pins so
+# `forge script` AUTO-DEPLOYS + auto-links PriceFeedLib/NavRegistryLib instead of linking against the
+# fixed [profile.default] addresses. Those pins are only valid for the exact solc they were generated
+# under; a newer local solc produces different lib bytecode → different CREATE2 address → the linked
+# address has no code → init reverts. Auto-deploy sidesteps the mismatch on dev forks. Selected via
+# FOUNDRY_PROFILE=dev in script/development/deploy/deploy.sh; inherits everything else from default.
+# Prod and CI use the default profile (pinned, deterministic addresses).
+[profile.dev]
+libraries = []
+
 # Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.
 [lint]
 no_match_test = "upgrade"

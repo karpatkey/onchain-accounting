@@ -32,7 +32,18 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "error: jq not on PATH" >&2; exit 1
 fi
 
-CHAIN_IDS=$(jq -r 'keys[]' "$CONFIG")
+# Optional positional args restrict to a subset of chain ids (e.g. `start-forks.sh 1` for
+# mainnet only). With no args, all chains in chains.json are started.
+if [ "$#" -gt 0 ]; then
+  CHAIN_IDS="$*"
+  for cid in $CHAIN_IDS; do
+    if [ "$(jq -r "has(\"$cid\")" "$CONFIG")" != "true" ]; then
+      echo "error: chain $cid not in $CONFIG" >&2; exit 1
+    fi
+  done
+else
+  CHAIN_IDS=$(jq -r 'keys[]' "$CONFIG")
+fi
 
 for cid in $CHAIN_IDS; do
   port=$(jq -r ".\"$cid\".port" "$CONFIG")

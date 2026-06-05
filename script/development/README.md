@@ -59,6 +59,10 @@ bash script/development/app/sync-app-env.sh     # rewrite app/.env.local
 bash script/development/anvil/status-forks.sh   # one-line status per chain
 ```
 
+`start-forks.sh` and `deploy.sh` take optional chain-id args to restrict to a subset — e.g.
+`start-forks.sh 1` then `deploy.sh 1` bring up mainnet only. With no args they process every chain
+in `config/chains.json`. Useful when the protocol under verification only lives on one chain.
+
 When you're done for the session:
 
 ```bash

@@ -7,6 +7,10 @@ lcov.info
 !/broadcast
 /broadcast/*/31337/
 /broadcast/**/dry-run/
+# Dev-fork bootstrap (script/development/deploy/01_DeployNAV.s.sol) broadcasts under the real
+# chain-id (1, 10, ...) of the forked chain, so the 31337 rule above doesn't catch it. These are
+# local fork-sim run logs, not prod deploy records — ignore them by the dev script's unique name.
+/broadcast/01_DeployNAV.s.sol/
 
 
 # Dotenv file

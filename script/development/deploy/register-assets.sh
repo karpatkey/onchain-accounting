@@ -65,18 +65,19 @@ for sym in $LIST; do
     continue
   fi
 
-  # Check if already registered. If yes, use setPriceFeed; else registerAsset.
+  # Skip assets already registered — registerAsset sets the Chainlink feed atomically, and the native
+  # asset (NATIVE_ADDRESS) is registered + feed-wired by 01_DeployNAV, so a registered asset always
+  # already has its feed. Re-running registerAsset would revert (already registered); addPriceFeed
+  # would revert too (feed already present). Skipping keeps the step idempotent across retries.
   REG=$(cast call "$NAV" "isAssetRegistered(address)(bool)" "$ADDR" --rpc-url "$RPC" 2>/dev/null || echo "false")
   if [ "$REG" = "true" ]; then
-    action="setPriceFeed"
-    sel="setPriceFeed(address,address,uint8,uint256)"
-  else
-    action="registerAsset"
-    sel="registerAsset(address,address,uint8,uint256)"
+    printf "  skip   %-12s already registered\n" "$sym"
+    skip=$((skip+1))
+    continue
   fi
-  if out=$(cast send "$NAV" "$sel" "$ADDR" "$FEED" 0 "$HB" \
+  if out=$(cast send "$NAV" "registerAsset(address,address,uint8,uint256)" "$ADDR" "$FEED" 0 "$HB" \
         --rpc-url "$RPC" --private-key "$PK" --from "$SENDER" 2>&1); then
-    printf "  %-6s %-12s feed=%s hb=%s\n" "$action" "$sym" "$FEED" "$HB"
+    printf "  %-6s %-12s feed=%s hb=%s\n" "registerAsset" "$sym" "$FEED" "$HB"
     ok=$((ok+1))
   else
     snippet=$(echo "$out" | grep -iE "revert|error|failed" | head -1 | tr -d '\n' | cut -c1-100)

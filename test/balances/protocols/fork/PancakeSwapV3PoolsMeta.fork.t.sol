@@ -71,8 +71,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     PancakeSwapV3PoolsMetaBalanceAdapter public meta;
 
     function setUp() public override {
-        super.setUp();
-        _setupFork();
+        super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
         balances = _deployBalancesForOracle(_assets());
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
     }
@@ -94,10 +93,13 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         ins[0] = bytes32(uint256(uint160(POOL)));
     }
 
-    /// @dev Sum adapter amounts for a token, optionally restricted to one PositionKind (Supplied = principal).
-    function _sum(address token, bool onlyPrincipal) internal view returns (uint256 sum) {
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+    /// @dev Sum amounts for a token from a pre-fetched position set, optionally restricted to one PositionKind
+    ///      (Supplied = principal). Callers fetch positions once and reuse, avoiding repeat adapter queries.
+    function _sumFrom(INAVCalculator.PositionBalance[] memory p, address token, bool onlyPrincipal)
+        internal
+        pure
+        returns (uint256 sum)
+    {
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].balanceAsset.asset != token) continue;
             if (onlyPrincipal && p[i].positionKind != PositionKind.Supplied) continue;
@@ -108,10 +110,12 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     /// @notice The slot0 uint32-feeProtocol override drives real principal: an active position yields non-zero
     ///         amounts on both tokens. A uint8 `slot0` read (the inherited Uniswap path) would revert here.
     function test_slot0Override_activePositionNonZero() public view {
-        assertGt(_sum(WETH, false), 0, "WETH total should be non-zero for active positions");
-        assertGt(_sum(USDT, false), 0, "USDT total should be non-zero for active positions");
-        assertGt(_sum(WETH, true), 0, "WETH principal should be non-zero (override fed getAmountsForLiquidity)");
-        assertGt(_sum(USDT, true), 0, "USDT principal should be non-zero (override fed getAmountsForLiquidity)");
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+        assertGt(_sumFrom(p, WETH, false), 0, "WETH total should be non-zero for active positions");
+        assertGt(_sumFrom(p, USDT, false), 0, "USDT total should be non-zero for active positions");
+        assertGt(_sumFrom(p, WETH, true), 0, "WETH principal should be non-zero (override fed getAmountsForLiquidity)");
+        assertGt(_sumFrom(p, USDT, true), 0, "USDT principal should be non-zero (override fed getAmountsForLiquidity)");
     }
 
     /// @notice Identity is derived on-chain: positionId = abi.encode(NPM, tokenId).
@@ -133,9 +137,11 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     ///         holder would receive; the adapter derives the same numbers from the same on-chain state via the
     ///         overridden `_slot0`. Exact equality (both use the same round-down SqrtPriceMath).
     function test_groundTruth_principalEqualsNpmSettlement() public {
-        // Adapter's principal BEFORE mutating state.
-        uint256 adapterWeth = _sum(WETH, true);
-        uint256 adapterUsdt = _sum(USDT, true);
+        // Adapter's principal BEFORE mutating state (fetch once, reuse for both tokens).
+        INAVCalculator.PositionBalance[] memory adapterPositions =
+            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+        uint256 adapterWeth = _sumFrom(adapterPositions, WETH, true);
+        uint256 adapterUsdt = _sumFrom(adapterPositions, USDT, true);
 
         // Discover the holder's active WETH/USDT 0.05% positions dynamically (the pool's NFTs churn owners).
         uint256 settledWeth;

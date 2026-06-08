@@ -40,8 +40,14 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
   gearbox: GearboxCircleColor,
 }
 
+// Protocols without a design-system CircleColor icon fall back to a CDN image keyed the same way.
+const PROTOCOL_IMG_ICONS: Record<string, string> = {
+  pancakeswap: 'https://assets.coingecko.com/coins/images/12632/large/pancakeswap-cake-logo_(1).png',
+}
+
 const PROTOCOL_URLS: Record<string, string> = {
   aave: 'https://app.aave.com/',
+  pancakeswap: 'https://pancakeswap.finance/liquidity/positions',
   morpho: 'https://app.morpho.org/',
   balancer: 'https://balancer.fi/',
   uniswap: 'https://app.uniswap.org/',
@@ -71,6 +77,14 @@ function getProtocolUrl(protocol: string): string | null {
   return null
 }
 
+function getProtocolImgIcon(protocol: string): string | null {
+  const key = getProtocolKey(protocol)
+  for (const [k, url] of Object.entries(PROTOCOL_IMG_ICONS)) {
+    if (key.includes(k)) return url
+  }
+  return null
+}
+
 function WalletIcon() {
   return (
     <svg className="w-6 h-6 text-neutral-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -85,6 +99,9 @@ function ProtocolIcon({ protocol }: { protocol: string }) {
   if (protocol.toLowerCase() === 'wallet') return <WalletIcon />
   const Icon = getProtocolIcon(protocol)
   if (Icon) return <Icon className="w-6 h-6" />
+  const imgUrl = getProtocolImgIcon(protocol)
+  // biome-ignore lint/performance/noImgElement: dev dashboard, CDN logo, no Next image optimization needed
+  if (imgUrl) return <img src={imgUrl} alt={protocol} className="w-6 h-6 rounded-full shrink-0" />
   return (
     <div className="w-6 h-6 rounded-full bg-neutral-300 flex items-center justify-center text-[10px] font-semibold text-neutral-700 shrink-0">
       {protocol.slice(0, 2).toUpperCase()}

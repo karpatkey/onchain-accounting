@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title PancakeSwap V3 Pools Meta Balance Adapter
 /// @author kpk
@@ -23,6 +24,13 @@ contract PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapte
     /// @dev Reads `slot0()` via a local `IPancakeV3Pool` declaration so the `uint32 feeProtocol` field decodes.
     function _slot0(address pool) internal view override returns (uint160 sqrtPriceX96, int24 tick) {
         (sqrtPriceX96, tick,,,,,) = IPancakeV3Pool(pool).slot0();
+    }
+
+    /// @inheritdoc UniswapV3PoolsMetaBalanceAdapter
+    /// @dev Reports the `pancakeswap-v3` slug (vs the inherited `uniswap-v3`) so the typed reconciliation key
+    ///      distinguishes PancakeSwap V3 LP from Uniswap V3 LP. Same positionId schema (address npm, uint256 tokenId).
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.PANCAKESWAP_V3;
     }
 }
 

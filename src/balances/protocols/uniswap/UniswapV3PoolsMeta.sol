@@ -28,7 +28,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
     using Strings for uint256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V3;
+    /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
+    ///         (PancakeSwap V3) report their own slug while sharing the `(address npm, uint256 tokenId)`
+    ///         positionId schema. Defaults to `uniswap-v3`.
+    function _protocolId() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP_V3;
+    }
 
     /// @notice Bounded iteration limit for position discovery (matches the per-instance adapter).
     uint256 internal constant MAX_POSITIONS = 256;
@@ -180,7 +185,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocolId: PROTOCOL_ID,
+            protocolId: _protocolId(),
             positionId: positionId,
             positionKind: kind
         });

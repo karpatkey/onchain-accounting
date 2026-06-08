@@ -35,7 +35,7 @@ RPC="http://127.0.0.1:$PORT"
 ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 [ -f "$ADDR_FILE" ] || { echo "error: $ADDR_FILE not found — run deploy.sh $CID first" >&2; exit 1; }
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
-[ "$NAV" = "null" ] || [ -z "$NAV" ] && { echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; }
+if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
 echo "=== deploy PancakeSwap V3 meta  chain=$CID NAV=$NAV NPM=$NPM"
 echo "    pools: $POOLS"

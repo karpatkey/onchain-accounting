@@ -149,13 +149,11 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
             if (!isPool || liquidity == 0) continue;
             active++;
 
+            IPancakeNPM.DecreaseLiquidityParams memory params = IPancakeNPM.DecreaseLiquidityParams({
+                tokenId: tokenId, liquidity: liquidity, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+            });
             vm.prank(HOLDER);
-            (uint256 amount0, uint256 amount1) = IPancakeNPM(NPM)
-                .decreaseLiquidity(
-                    IPancakeNPM.DecreaseLiquidityParams({
-                        tokenId: tokenId, liquidity: liquidity, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
-                    })
-                );
+            (uint256 amount0, uint256 amount1) = IPancakeNPM(NPM).decreaseLiquidity(params);
 
             if (t0 == WETH) settledWeth += amount0;
             if (t1 == WETH) settledWeth += amount1;

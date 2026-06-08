@@ -18,8 +18,12 @@ import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.
 ///      leg-for-leg. Works with canonical Uniswap V2
 ///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
 contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
-    /// @notice Protocol identifier constant.
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V2;
+    /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
+    ///         (PancakeSwap V2, SushiSwap) report their own slug while sharing the `(address pair)` positionId
+    ///         schema. Defaults to `uniswap-v2`.
+    function _protocolId() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP_V2;
+    }
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Uniswap V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -81,7 +85,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
             balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocolId: PROTOCOL_ID,
+            protocolId: _protocolId(),
             positionId: positionId,
             positionKind: PositionKind.Supplied
         });

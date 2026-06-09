@@ -44,8 +44,8 @@ interface IPancakeNPM {
 }
 
 /// @title PancakeSwapV3PoolsMetaParityForkTest (mainnet, active positions)
-/// @notice Verifies the PancakeSwap V3 pools meta-adapter against a real mainnet holder with two ACTIVE
-///         (liquidity > 0) positions. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork except `slot0().feeProtocol`
+/// @notice Verifies the PancakeSwap V3 pools meta-adapter against a real mainnet holder with an active in-wallet
+///         (liquidity > 0) position. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork except `slot0().feeProtocol`
 ///         is `uint32` (Uniswap's `uint8`); the on-chain Solidity decoder reverts on a `uint8` read whenever the
 ///         high bits are set, which is the case on every active PCS pool (mainnet WETH/USDT 0.05% `feeProtocol`
 ///         is 222825800). The adapter's `_slot0` override is therefore the entire verification surface — all other

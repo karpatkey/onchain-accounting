@@ -78,7 +78,7 @@ Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters m
 - For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `setMetaInstances`.
 
 How adapters reach NAV today:
-- **Cross-chain identical addresses** — adapters are deployed with CREATE2 via the canonical deployer at `0x4e59b44847b379578588920cA78FbF26c0B4956C`, so identical constructor inputs produce the same address on every chain.
+- **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol`, so each adapter's address is chain- and run-specific. Read them from the per-chain configs (`script/config/chains/<chainId>.json` → `balanceAdapters.<name>.deployed`); do not assume they match across chains.
 - **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceOracle(adapter)` for each adapter, plus `setMetaInstances(adapter, …)` for meta-adapters (both idempotent).
 - **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactory` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
 

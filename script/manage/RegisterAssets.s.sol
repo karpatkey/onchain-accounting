@@ -346,7 +346,7 @@ contract RegisterAssets is BaseDeployScript {
             s[30] = "AAVE";
             s[31] = "osETH"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * ETH/USD
             s[32] = "EIGEN";
-            s[33] = "ETHx"; // Custom-priced (ETHx_PriceOracle); skipped until 03_DeployPriceFeeds fills assets.json pricefeed
+            s[33] = "ETHx"; // Custom-priced (ETHx_PriceOracle); skipped until assets.json .tokens.1.ETHx.pricefeed is set (03_DeployPriceFeeds deploys the feed into chains/1.json .priceFeeds.deployed, NOT the assets.json field hasTokenOracle reads)
             s[34] = "EURC";
             return s;
         }

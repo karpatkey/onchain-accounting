@@ -200,7 +200,7 @@
       "deployed": ""
     },
     "ERC4626Wrap_sGHO": {
-      "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. Redemption verified instant and 1:1 at fork block 25230126 (no exit fee/cooldown), so convertToAssets does not over-report.",
+      "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg.",
       "enabled": true,
       "constructor": {
         "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",

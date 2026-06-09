@@ -151,7 +151,11 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
       // positionDetail JSON is parsed by extractType (type → Supply/Fees split) + extractPoolLabel (name → row label).
       const detail: Record<string, string> = {}
       if (type) detail.type = type
-      if (posLabel) detail.name = posLabel
+      // Wallet rows (kind 0) group under one oracle sub-header; their describePosition() is just the token
+      // symbol, so using it as `name` would render a misleading header (first token's symbol over a mixed-token
+      // wallet group). The symbol is already shown per row — omit name for Wallet; keep it for protocol
+      // positions where it's a real label (e.g. "NFT #22279").
+      if (posLabel && p.positionKind !== 0) detail.name = posLabel
       return {
         underlyingAsset: p.underlyingAsset,
         balanceOracle: p.balanceOracle,

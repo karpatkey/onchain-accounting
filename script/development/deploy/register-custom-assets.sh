@@ -37,6 +37,7 @@ CUSTOM_PRICE_TYPE=3
 if ! command -v cast >/dev/null 2>&1; then
   export PATH="$HOME/.foundry/bin:$PATH"
 fi
+command -v cast >/dev/null 2>&1 || { echo "ERROR: 'cast' not found (install Foundry or add ~/.foundry/bin to PATH)"; exit 1; }
 
 # Every type=="Custom" token configured for this chain.
 LIST=$(jq -r ".tokens.\"$CID\" | to_entries[] | select(.value.type==\"Custom\") | .key" "$ASSETS_JSON")

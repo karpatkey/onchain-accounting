@@ -92,10 +92,14 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
   })
 
   // Phase 2 — display labels from the adapter's IPositionDescribable. One protocolName() per (chain, oracle)
-  // and one describePosition() per (chain, position). Indices are tracked so results map back deterministically.
+  // and one describePosition() per distinct (chain, oracle, positionId). Multi-leg positions (e.g. Supply + Fees)
+  // share a positionId, so de-duping keeps the describe call-count proportional to logical positions, not legs.
+  const describeKey = (chainId: number, oracle: string, positionId: string) =>
+    `${chainId}:${oracle.toLowerCase()}:${positionId}`
   const nameContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'protocolName'; key: string }[] = []
   const seenNameKeys = new Set<string>()
   const describeContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'describePosition'; args: readonly [`0x${string}`] }[] = []
+  const seenDescribeKeys = new Set<string>()
 
   rawByChain.forEach((positions, ci) => {
     const chainId = DEPLOYED_CHAINS[ci].chain.id
@@ -105,7 +109,11 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         seenNameKeys.add(key)
         nameContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'protocolName', key })
       }
-      describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'describePosition', args: [p.positionId] })
+      const dKey = describeKey(chainId, p.balanceOracle, p.positionId)
+      if (!seenDescribeKeys.has(dKey)) {
+        seenDescribeKeys.add(dKey)
+        describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'describePosition', args: [p.positionId] })
+      }
     }
   })
 
@@ -125,18 +133,20 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
     if (r?.status === 'success' && typeof r.result === 'string' && r.result.length > 0) nameByKey.set(c.key, r.result)
   })
   const describeOffset = nameContracts.length
-  const labelByGlobalIdx: (string | undefined)[] = describeContracts.map((_, i) => {
+  const labelByDescribeKey = new Map<string, string>()
+  describeContracts.forEach((c, i) => {
     const r = metaData?.[describeOffset + i]
-    return r?.status === 'success' && typeof r.result === 'string' && r.result.length > 0 ? r.result : undefined
+    if (r?.status === 'success' && typeof r.result === 'string' && r.result.length > 0) {
+      labelByDescribeKey.set(describeKey(c.chainId, c.address, c.args[0]), r.result)
+    }
   })
 
-  // Assemble. describeContracts was built in the same chain/position order, so a running counter maps labels back.
-  let describeCursor = 0
+  // Assemble. Labels are looked up by (chain, oracle, positionId), so the legs of a multi-leg position share one result.
   const chains = DEPLOYED_CHAINS.map(({ chain, label }, ci) => {
     const raw = rawByChain[ci]
     const positions: OnchainPosition[] = raw.map((p) => {
       const protocol = nameByKey.get(`${chain.id}:${p.balanceOracle.toLowerCase()}`) ?? `${p.protocolId.slice(0, 10)}…`
-      const posLabel = labelByGlobalIdx[describeCursor++]
+      const posLabel = labelByDescribeKey.get(describeKey(chain.id, p.balanceOracle, p.positionId))
       const type = KIND_TO_TYPE[p.positionKind] ?? null
       // positionDetail JSON is parsed by extractType (type → Supply/Fees split) + extractPoolLabel (name → row label).
       const detail: Record<string, string> = {}

@@ -146,6 +146,6 @@ These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list.
 
 - Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), and `positionKind` (enum from `PositionKind.sol`). See `docs/howto/position-identity-schema.md`.
 - Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
-- Adapters are deployed with CREATE2 via the canonical deployer and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceOracle` directly from the deployer EOA (+ `setMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
+- Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `chains/<id>.json` `balanceAdapters.<name>.deployed`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceOracle` directly from the deployer EOA (+ `setMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.
 - The user merges PRs; we monitor CI and report.

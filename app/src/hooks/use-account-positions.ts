@@ -94,15 +94,15 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
   // Phase 2 — display labels from the adapter's IPositionDescribable. One protocolName() per (chain, oracle)
   // and one describePosition() per (chain, position). Indices are tracked so results map back deterministically.
   const nameContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'protocolName'; key: string }[] = []
-  const nameKeyToIdx = new Map<string, number>()
+  const seenNameKeys = new Set<string>()
   const describeContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'describePosition'; args: readonly [`0x${string}`] }[] = []
 
   rawByChain.forEach((positions, ci) => {
     const chainId = DEPLOYED_CHAINS[ci].chain.id
     for (const p of positions) {
       const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
-      if (!nameKeyToIdx.has(key)) {
-        nameKeyToIdx.set(key, nameContracts.length)
+      if (!seenNameKeys.has(key)) {
+        seenNameKeys.add(key)
         nameContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'protocolName', key })
       }
       describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'describePosition', args: [p.positionId] })

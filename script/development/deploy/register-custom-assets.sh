@@ -20,12 +20,16 @@ STATE_DIR="$DEV_DIR/state"
 ASSETS_JSON="$REPO_ROOT/script/config/assets.json"
 CHAINS_CFG="$DEV_DIR/config/chains.json"
 
-PORT=$(jq -r ".\"$CID\".port" "$CHAINS_CFG")
+PORT=$(jq -r ".\"$CID\".port // empty" "$CHAINS_CFG")
+[ -z "$PORT" ] && { echo "ERROR: chainId $CID has no .port in $CHAINS_CFG — is it a configured dev chain?"; exit 1; }
 RPC="http://127.0.0.1:$PORT"
 
 PK="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 SENDER="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-NAV=$(jq -r '.NAVCalculatorProxy' "$STATE_DIR/$CID-addresses.json")
+ADDR_FILE="$STATE_DIR/$CID-addresses.json"
+[ -f "$ADDR_FILE" ] || { echo "ERROR: $ADDR_FILE not found — deploy the fork for chainId $CID first."; exit 1; }
+NAV=$(jq -r '.NAVCalculatorProxy // empty' "$ADDR_FILE")
+[ -z "$NAV" ] && { echo "ERROR: NAVCalculatorProxy missing in $ADDR_FILE"; exit 1; }
 
 # IPrices.PriceType.Custom == 3
 CUSTOM_PRICE_TYPE=3

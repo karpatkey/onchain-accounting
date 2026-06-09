@@ -57,6 +57,20 @@ contract DeployNAVImplementation is BaseDeployScript {
             "NavRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
         );
 
+        // End-to-end: the NAVCalculator impl bytecode about to be broadcast must actually be linked against
+        // both pinned addresses. The two checks above only confirm the libs' own bytecode maps to LINKED_*;
+        // if foundry.toml `libraries` drifts from LINKED_*, those still pass but NAVCalculator would
+        // DELEGATECALL the wrong (empty) address and revert on initialize(). Mirrors the CI guard in
+        // test/LibraryPinConsistency.t.sol.
+        require(
+            _bytecodeContains(plan.navImplBytecode, LINKED_PRICE_FEED_LIB),
+            "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
+        );
+        require(
+            _bytecodeContains(plan.navImplBytecode, LINKED_NAV_REGISTRY_LIB),
+            "NAVCalculator impl not linked against pinned NavRegistryLib (foundry.toml `libraries` drift)"
+        );
+
         // EOA deploy: broadcast the three CREATE2 deploys (PriceFeedLib, NavRegistryLib, NAVCalculator impl) directly
         // via the deployer private key. Same deterministic addresses on every chain. Run once, then 02_2 per chain.
         vm.startBroadcast();
@@ -64,6 +78,24 @@ contract DeployNAVImplementation is BaseDeployScript {
         vm.stopBroadcast();
 
         _saveAndLog(plan);
+    }
+
+    /// @dev True if the 20-byte `needle` address appears anywhere in `haystack` (the linker embeds a pinned
+    ///      library's address verbatim in the linked creation bytecode).
+    function _bytecodeContains(bytes memory haystack, address needle) internal pure returns (bool) {
+        if (haystack.length < 20) return false;
+        bytes20 n = bytes20(needle);
+        for (uint256 i = 0; i + 20 <= haystack.length; i++) {
+            bool matched = true;
+            for (uint256 j = 0; j < 20; j++) {
+                if (haystack[i + j] != n[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) return true;
+        }
+        return false;
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {

@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {Test} from "forge-std/Test.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
 import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
+import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 
 /// @title LibraryPinConsistencyTest
 /// @notice Guards the deterministic external-library addresses pinned in foundry.toml (`libraries`)
@@ -37,5 +38,39 @@ contract LibraryPinConsistencyTest is Test {
         assertEq(
             computed, PINNED_NAV_REGISTRY_LIB, "NavRegistryLib pin drift: regenerate foundry.toml + 01_2 + this test"
         );
+    }
+
+    /// @notice End-to-end guard: NAVCalculator's linked creation bytecode must embed BOTH pinned library
+    ///         addresses. forge links the `libraries` mapping (foundry.toml) into `creationCode`, so this
+    ///         catches a foundry.toml pin edit that drifts from the constants above — which the per-library
+    ///         CREATE2 checks cannot, since they compare the computed address only against this file's
+    ///         constants — and confirms NAVCalculator is actually wired to the pinned libraries.
+    function test_navCalculator_creationCodeLinkedAgainstPins() public pure {
+        bytes memory code = type(NAVCalculator).creationCode;
+        assertTrue(
+            _contains(code, PINNED_PRICE_FEED_LIB),
+            "NAVCalculator not linked against pinned PriceFeedLib (foundry.toml `libraries` drift?)"
+        );
+        assertTrue(
+            _contains(code, PINNED_NAV_REGISTRY_LIB),
+            "NAVCalculator not linked against pinned NavRegistryLib (foundry.toml `libraries` drift?)"
+        );
+    }
+
+    /// @dev True if the 20-byte `needle` address appears anywhere in `haystack`.
+    function _contains(bytes memory haystack, address needle) private pure returns (bool) {
+        if (haystack.length < 20) return false;
+        bytes20 n = bytes20(needle);
+        for (uint256 i = 0; i + 20 <= haystack.length; i++) {
+            bool matched = true;
+            for (uint256 j = 0; j < 20; j++) {
+                if (haystack[i + j] != n[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) return true;
+        }
+        return false;
     }
 }

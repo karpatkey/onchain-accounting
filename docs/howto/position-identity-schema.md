@@ -619,8 +619,8 @@ Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName                | positionLabel       |
 |-------|--------|-------------|--------------|------------------------------|---------------------|
-| AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3 Safety Module"`    | `"lending position"` |
-| AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3 Safety Module"`    | `"lending position"` |
+| AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3"`                  | `"safety module"`   |
+| AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3"`                  | `"safety module"`   |
 | **NAV** | | **+102 000** | | | |
 
 #### `AaveUmbrella` — Umbrella stake
@@ -629,8 +629,8 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | positionLabel       |
 |-------|--------|-------------|--------------|-------------------|---------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"lending position"` |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"lending position"` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"umbrella stake"`  |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"umbrella stake"`  |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD
@@ -639,7 +639,7 @@ Scenario: 2 000 USDC deposited in Cap.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
 |-------|--------|-------------|--------------|--------------|---------------------|
-| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"lending position"` |
+| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"supply"`          |
 
 #### `DaiDsr` — DAI Savings Rate
 
@@ -647,7 +647,7 @@ Scenario: 3 000 DAI earning DSR.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
 |-------|--------|-------------|--------------|--------------|---------------------|
-| DAI   | 3 000  | +3 000      | `Supplied`   | `"DAI DSR"`  | `"lending position"` |
+| DAI   | 3 000  | +3 000      | `Supplied`   | `"MakerDAO"` | `"DAI savings rate"` |
 
 #### `ERC4626Wrap` — wrapper
 

@@ -22,13 +22,13 @@ interface IStakeWiseVault {
 /// @title StakeWise V3 Vaults Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's StakeWise V3 vault positions across *any* vault on a
-///         chain — emitting two gross legs per vault: `Supplied` (vault shares → underlying) and `Borrowed` (minted
+///         chain — emitting two gross legs per vault: `Staking` (vault shares → underlying) and `Borrowed` (minted
 ///         osToken debt → underlying). The instance coordinate is the vault address, widened to bytes32; the
 ///         active vault set lives on NAVCalculator (`setMetaInstances`). The underlying token (the staking asset,
 ///         e.g. the ETH sentinel on mainnet / GNO on Gnosis) is the chain-level constant pinned in the
 ///         constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
 /// @dev Reports the gross
-///      Supplied/Borrowed split is the same; only the signed-net `getOracleBalances`/`getOracleBalanceForAsset`
+///      Staking/Borrowed split is the same; only the signed-net `getOracleBalances`/`getOracleBalanceForAsset`
 ///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
@@ -47,7 +47,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @inheritdoc MetaBalanceOracle
-    /// @dev `instance` is the vault address. Emits a `Supplied` leg (vault shares) and a `Borrowed` leg (osToken
+    /// @dev `instance` is the vault address. Emits a `Staking` leg (vault shares) and a `Borrowed` leg (osToken
     ///      debt), both denominated in the underlying token, dropping zeros. Returns empty if the underlying is
     ///      unregistered or filtered out by `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)

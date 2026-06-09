@@ -76,7 +76,8 @@ for sym in $LIST; do
     printf "  %-13s %-12s feed=%s hb=%s\n" "registerAsset" "$sym" "$FEED" "$HB"
     ok=$((ok+1))
   else
-    snippet=$(echo "$out" | grep -iE "revert|error|failed" | head -1 | tr -d '\n' | cut -c1-100)
+    # `|| true`: under `set -o pipefail` a no-match grep (exit 1) would otherwise abort the loop and mask the send failure.
+    snippet=$(echo "$out" | grep -iE "revert|error|failed" | head -1 | tr -d '\n' | cut -c1-100 || true)
     printf "  FAIL   %-12s %s\n" "$sym" "$snippet"
     fail=$((fail+1))
   fi

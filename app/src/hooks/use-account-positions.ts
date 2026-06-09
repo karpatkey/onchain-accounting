@@ -37,9 +37,9 @@ type RawPosition = {
 }
 
 // IPositionDescribable (src/balances/IPositionDescribable.sol) — the display layer. protocolName() returns the
-// human protocol name ("PancakeSwap V3"), describePosition(positionId) returns a per-position label ("NFT #22279").
-// The dashboard renders these rather than the machine-level protocolId, so e.g. PancakeSwap V3 shows as
-// "PancakeSwap V3" even though its inherited protocolId is uniswap-v3.
+// human protocol name ("PancakeSwap V3"); describePosition(positionId) returns a per-position label ("NFT #22279").
+// The dashboard renders these rather than the machine-level protocolId (a keccak slug, e.g. pancakeswap-v3): the
+// slug and the human name are independent fields, so rendering never depends on the protocolId value.
 const describableAbi = [
   { name: 'protocolName', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
   {

@@ -1,0 +1,29 @@
+{
+  "$comment": "Evidence pack for the sGHO (Aave Savings GHO) balance-adapter verification. The fork test hardcodes the values below (real holder, pinned block) and asserts the adapter reports the exact convertToAssets GHO value. The GHO value is the vm.rollFork value — exact at the block's timestamp; a live dev anvil reads marginally higher as it advances block.timestamp while mining.",
+  "protocol": "sGHO (Aave Savings GHO)",
+  "adapter": "ERC4626WrapBalanceOracle",
+  "adapterPath": "src/balances/protocols/ERC4626Wrap.sol",
+  "forkTest": "test/balances/protocols/fork/ERC4626Wrap.fork.t.sol::ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh",
+  "chainId": 1,
+  "block": 25287877,
+  "blockTimestamp": 1781104487,
+  "blockTimestampUtc": "2026-06-10T15:14:47Z",
+  "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+  "underlying": "GHO 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
+  "protocolId": "keccak256(\"erc4626\")",
+  "positionIdSchema": "abi.encode(wrapperAddress)",
+  "positionKind": "Supplied",
+  "holder": {
+    "address": "0x5eF87DeC00a19d2b47EE0073d869F7d7feFF26ef",
+    "sghoSharesRaw": "4575878017851927061694571",
+    "ghoValueRaw": "4589154643764641667853774",
+    "ghoValue": "4589154.643764641667853774",
+    "isDebt": false
+  },
+  "groundTruth": {
+    "noOverReporting": "synthetic suite redeems 100% of shares and asserts GHO received ~= oracle-reported amount (no exit fee / cooldown)",
+    "exactValue": "oracle.getOracleBalanceForAsset == sGHO.convertToAssets(holder shares) at the pinned block",
+    "identity": "protocolId == erc4626; positionId == abi.encode(wrapper); positionKind == Supplied"
+  },
+  "aaveUiReconciliation": "Aave 'Savings GHO (sGHO)' tile shows the sGHO share count (~4.58M); the withdraw preview shows redeemable GHO (~4.59M). The adapter reports the latter (convertToAssets), matching 'you'll receive 4.59M GHO'. The ~0.29% gap is accrued savings yield."
+}

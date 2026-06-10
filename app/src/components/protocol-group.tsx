@@ -114,8 +114,11 @@ function pctOfPortfolio(value: bigint, total: bigint): string {
   // Signed share of NET NAV (total is the net NAV): debt is negative, so each position's % reflects its
   // real contribution to net worth and the percentages reconcile — a group's rows sum to its net %, and
   // all positions across the portfolio sum to ~100%. (Previously this used abs(value)/net, which didn't.)
-  const pct = (Number(value) / Number(total)) * 100
-  if (Math.abs(pct) < 0.05) return pct < 0 ? '-<0.1%' : '<0.1%'
+  // Compute in bigint (NAV values can exceed 2^53, where Number() loses precision): signed basis points,
+  // then a small Number for display. Sign taken from `value` so a tiny contribution that truncates to 0bp
+  // still shows its sign.
+  const pct = Number((value * 10_000n) / total) / 100
+  if (Math.abs(pct) < 0.05) return value < 0n ? '-<0.1%' : '<0.1%'
   return `${pct.toFixed(1)}%`
 }
 
@@ -127,7 +130,8 @@ function pctOfSection(value: bigint, sectionTotal: bigint): string {
   const v = value < 0n ? -value : value
   const t = sectionTotal < 0n ? -sectionTotal : sectionTotal
   if (t === 0n || v === 0n) return ''
-  const pct = (Number(v) / Number(t)) * 100
+  // bigint basis points (values can exceed 2^53), then a small Number for display.
+  const pct = Number((v * 10_000n) / t) / 100
   if (pct < 0.05) return '<0.1%'
   return `${pct.toFixed(1)}%`
 }

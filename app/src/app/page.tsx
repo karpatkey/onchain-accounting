@@ -52,7 +52,10 @@ function buildProtocolGroups(
     }
   }
   // Sort by net magnitude so a net-negative group (rare: borrow > supply) still ranks by size.
-  return [...map.values()].sort((a, b) => (mag(b.totalValue) > mag(a.totalValue) ? 1 : -1))
+  return [...map.values()].sort((a, b) => {
+    const d = mag(b.totalValue) - mag(a.totalValue)
+    return d > 0n ? 1 : d < 0n ? -1 : 0
+  })
 }
 
 function exportCsv(positionResults: ChainPositions[], address: string) {
@@ -169,7 +172,12 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
 
   const groups = useMemo(() => {
     let g = hideDust ? allGroups.filter((gr) => mag(gr.totalValue) >= DUST_THRESHOLD) : allGroups
-    if (sortOrder === 'value-asc') g = [...g].sort((a, b) => (mag(a.totalValue) > mag(b.totalValue) ? 1 : -1))
+    if (sortOrder === 'value-asc') {
+      g = [...g].sort((a, b) => {
+        const d = mag(a.totalValue) - mag(b.totalValue)
+        return d > 0n ? 1 : d < 0n ? -1 : 0
+      })
+    }
     else if (sortOrder === 'name-asc') g = [...g].sort((a, b) => a.protocol.localeCompare(b.protocol))
     return g
   }, [allGroups, hideDust, sortOrder])

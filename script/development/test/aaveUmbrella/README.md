@@ -8,7 +8,7 @@
 
 - **Inheritance:** none — `AaveUmbrellaBalanceOracle` implements `IBalanceOracleAdapter` + `IPositionDescribable` directly (it is *not* a meta-adapter; the live set is discovered, not governed via `setMetaInstances`).
 - **Dynamic discovery:** `RewardsController.getAllAssets()` enumerates every stake token. Aave governance can add a stake token (or reconfigure its reward token) and the adapter picks it up automatically, provided the bare reserve it resolves to is registered on NAVCalculator. Unregistered reserves are silently skipped (same convention as the Aave lending adapters).
-- **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `chains/1.json` is the only chain config with `AaveUmbrella` (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
+- **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `script/config/chains/1.json` is the only chain config with `AaveUmbrella` (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
 - **Today's stake-token set** (`getAllAssets()` at the fork block):
 
   | Stake token | Address | Underlying chain | Bare reserve | Reward token |

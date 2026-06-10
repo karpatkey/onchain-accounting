@@ -52,7 +52,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
     /// @dev Recent Mainnet block at which the four currently-deployed Umbrella stake tokens are
     ///      active and each pinned holder has both a non-zero stake balance and non-zero accrued
     ///      rewards. Confirmed by direct RPC reads at planning time.
-    uint256 public constant FORK_BLOCK = 25_287_649;
+    uint256 public constant FORK_BLOCK = 25_287_877;
 
     AaveUmbrellaBalanceOracle public oracle;
 

@@ -20,7 +20,8 @@ STATE_DIR="$DEV_DIR/state"
 CHAINS_CFG="$DEV_DIR/config/chains.json"
 
 # Mainnet sGHO vault (the wrapper the adapter points at). Override per chain via env.
-SGHO_WRAPPER=${DEV_SGHO_WRAPPER-0xE1753F2e00940cC31213dd92013cF019DFE4ca1d}
+# `:-` so an explicitly-empty override still falls back (this helper has no skip-on-empty semantics).
+SGHO_WRAPPER=${DEV_SGHO_WRAPPER:-0xE1753F2e00940cC31213dd92013cF019DFE4ca1d}
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -39,12 +40,19 @@ if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy
 echo "=== deploy sGHO oracle  chain=$CID NAV=$NAV"
 echo "    wrapper: $SGHO_WRAPPER"
 
-ADAPTER=$(
+# Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
+# the script before the guard below runs and swallow the forge error).
+OUT=$(
   forge create src/balances/protocols/ERC4626Wrap.sol:ERC4626WrapBalanceOracle \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$SGHO_WRAPPER" "$NAV" 2>&1 | grep -i "Deployed to:" | awk '{print $3}'
-)
-[ -z "$ADAPTER" ] && { echo "error: forge create produced no address (is GHO registered on the NAV?)" >&2; exit 1; }
+    --constructor-args "$SGHO_WRAPPER" "$NAV" 2>&1
+) || true
+ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
+if [ -z "$ADAPTER" ]; then
+  printf '%s\n' "$OUT" | tail -30
+  echo "error: forge create produced no address (is GHO registered on the NAV?)" >&2
+  exit 1
+fi
 echo "  ERC4626Wrap_sGHO: $ADAPTER"
 
 cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \

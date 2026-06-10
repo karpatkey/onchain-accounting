@@ -236,9 +236,10 @@ contract ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder is BalanceAdapterTestB
 
 /// @title ERC4626WrapBalanceOracle fork tests — real sGHO holder at the verification block (2nd pinned point)
 /// @notice Same holder as ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder, pinned at the verification block
-///         25_287_877 (the block the dev-anvil dashboard + the sGHO evidence-pack README use). Augments — does
-///         not replace — the original pin: the holder hasn't moved (share count is identical) so this is a pure
-///         yield-accrual delta, giving a second regression point and keeping README ≡ fork test ≡ dev anvil.
+///         25_287_877 (the block captured in the sGHO evidence-pack README). Augments — does not replace — the
+///         original pin: the holder hasn't moved (share count is identical) so this is a pure yield-accrual
+///         delta, giving a second regression point. The dev-anvil dashboard forks at latest (not this block),
+///         so it is a live sanity check that drifts from this pinned value by design.
 ///         Values captured on-chain at block 25_287_877: balanceOf = 4_575_878_017_851_927_061_694_571 sGHO
 ///         shares; convertToAssets(shares) = 4_589_154_643_764_641_667_853_774 GHO (exact at the block's
 ///         timestamp — a live dev anvil reads marginally higher as it advances block.timestamp while mining).

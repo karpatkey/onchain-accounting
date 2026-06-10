@@ -21,7 +21,7 @@ Both kept as regression nets.
 
 ## 3. What this case adds
 
-- A **second real-holder pin at the verification block `25_287_877`** (`ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh`) — augments, doesn't replace. The holder hasn't moved (share count identical), so it is a pure yield-accrual delta vs the `25_230_126` pin, and keeps **README ≡ fork test ≡ dev-anvil** at one block.
+- A **second real-holder pin at the verification block `25_287_877`** (`ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh`) — augments, doesn't replace. The holder hasn't moved (share count identical), so it is a pure yield-accrual delta vs the `25_230_126` pin. This README's §7 figures and the fork test pin the **same** block; the live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: README + case JSON + query script + dev deploy helper, bringing sGHO up to the same 10-section structure as the other verified protocols.
 
 ## 4. Adapter formula recap
@@ -93,7 +93,7 @@ bash script/development/app/sync-app-env.sh 1
 # then start the Next.js dev server in app/
 ```
 
-The position renders under **Aave / Savings** as a single **Supplied** leg denominated in GHO. **Reconciling against the Aave UI:** Aave's "Savings GHO (sGHO)" tile shows the **sGHO share count** (~4.58M), while the **withdraw preview shows the redeemable GHO** (~4.59M) — the adapter reports the latter (`convertToAssets`), matching "you'll receive 4.59M GHO". The ~0.29% gap between the two is real accrued savings yield, not an error.
+`start-forks.sh` forks at the **latest** block (not pinned to `25_287_877`), and `convertToAssets` is `block.timestamp`-dependent, so the dashboard value will read marginally higher than §7's pinned numbers — this is an expected, sub-bp live-drift sanity check, not a mismatch. For strict alignment, fork anvil at the pinned block directly (`anvil --fork-url <rpc> --fork-block-number 25287877`). The position renders under **Aave / Savings** as a single **Supplied** leg denominated in GHO. **Reconciling against the Aave UI:** Aave's "Savings GHO (sGHO)" tile shows the **sGHO share count** (~4.58M), while the **withdraw preview shows the redeemable GHO** (~4.59M) — the adapter reports the latter (`convertToAssets`), matching "you'll receive 4.59M GHO". The ~0.29% gap between the two is real accrued savings yield, not an error.
 
 ## 10. Test verdict
 

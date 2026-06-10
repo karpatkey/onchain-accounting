@@ -115,10 +115,11 @@ function pctOfPortfolio(value: bigint, total: bigint): string {
   // real contribution to net worth and the percentages reconcile — a group's rows sum to its net %, and
   // all positions across the portfolio sum to ~100%. (Previously this used abs(value)/net, which didn't.)
   // Compute in bigint (NAV values can exceed 2^53, where Number() loses precision): signed basis points,
-  // then a small Number for display. Sign taken from `value` so a tiny contribution that truncates to 0bp
-  // still shows its sign.
+  // then a small Number for display. For the truncated-to-0bp case, take the sign from the ratio
+  // value/total (negative iff value and total have opposite signs) so a tiny contribution still shows the
+  // correct sign even when net NAV (total) is negative — not just the sign of `value`.
   const pct = Number((value * 10_000n) / total) / 100
-  if (Math.abs(pct) < 0.05) return value < 0n ? '-<0.1%' : '<0.1%'
+  if (Math.abs(pct) < 0.05) return (value < 0n) !== (total < 0n) ? '-<0.1%' : '<0.1%'
   return `${pct.toFixed(1)}%`
 }
 

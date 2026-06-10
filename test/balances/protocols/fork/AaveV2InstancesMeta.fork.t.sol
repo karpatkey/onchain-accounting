@@ -14,6 +14,23 @@ interface IAaveV2Tokens {
         external
         view
         returns (address aToken, address stableDebtToken, address variableDebtToken);
+
+    /// @dev Canonical per-user reserve view; `usageAsCollateralEnabled` is the same flag the adapter uses to choose
+    ///      Collateral vs Supplied, so the test can assert the exact expected kind rather than "either".
+    function getUserReserveData(address asset, address user)
+        external
+        view
+        returns (
+            uint256 currentATokenBalance,
+            uint256 currentStableDebt,
+            uint256 currentVariableDebt,
+            uint256 principalStableDebt,
+            uint256 scaledVariableDebt,
+            uint256 stableBorrowRate,
+            uint256 liquidityRate,
+            uint40 stableRateLastUpdated,
+            bool usageAsCollateralEnabled
+        );
 }
 
 interface IERC20BalanceOf {
@@ -120,9 +137,10 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
                 );
             } else {
                 assertEq(p.amount, IERC20BalanceOf(aToken).balanceOf(user), "credit == aToken.balanceOf");
-                assertTrue(
-                    p.positionKind == PositionKind.Collateral || p.positionKind == PositionKind.Supplied,
-                    "credit leg kind == Collateral|Supplied"
+                (,,,,,,,, bool usageAsCollateral) = IAaveV2Tokens(DATA_PROVIDER).getUserReserveData(reserve, user);
+                PositionKind expected = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
+                assertEq(
+                    uint8(p.positionKind), uint8(expected), "credit leg kind matches canonical usageAsCollateralEnabled"
                 );
             }
         }
@@ -151,6 +169,10 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
                 assertEq(
                     p.amount, IERC20BalanceOf(aSteth).balanceOf(STETH_SUPPLY_USDC_BORROW), "stETH == aToken.balanceOf"
                 );
+                (,,,,,,,, bool usageAsCollateral) =
+                    IAaveV2Tokens(DATA_PROVIDER).getUserReserveData(STETH, STETH_SUPPLY_USDC_BORROW);
+                PositionKind expected = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
+                assertEq(uint8(p.positionKind), uint8(expected), "stETH credit kind matches usageAsCollateralEnabled");
                 sawStethCredit = true;
             }
             if (p.balanceAsset.asset == MAINNET_USDC && p.isDebt) {

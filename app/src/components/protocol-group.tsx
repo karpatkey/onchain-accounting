@@ -115,7 +115,7 @@ function pctOfPortfolio(value: bigint, total: bigint): string {
   // real contribution to net worth and the percentages reconcile — a group's rows sum to its net %, and
   // all positions across the portfolio sum to ~100%. (Previously this used abs(value)/net, which didn't.)
   const pct = (Number(value) / Number(total)) * 100
-  if (Math.abs(pct) < 0.05) return '<0.1%'
+  if (Math.abs(pct) < 0.05) return pct < 0 ? '-<0.1%' : '<0.1%'
   return `${pct.toFixed(1)}%`
 }
 
@@ -265,7 +265,9 @@ function groupBySubLabel(
     // null label = no market/pool name (e.g. plain wallet holdings) → render flat with no sub-header,
     // rather than a meaningless "Pool 0x…" fallback.
     const label = extractMarket(pos.positionDetail) ?? extractPoolLabel(pos.positionDetail)
-    const key = label ?? ' '
+    // Map key only; '' is a safe sentinel for the null (no-label) bucket since real market/pool labels are
+    // always non-empty. The stored `label` stays null so no sub-header renders for that bucket.
+    const key = label ?? ''
     const idx = indexByKey.get(key)
     if (idx !== undefined) out[idx].positions.push(pos)
     else {

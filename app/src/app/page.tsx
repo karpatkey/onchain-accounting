@@ -27,6 +27,12 @@ function addRecentSearch(address: string) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Absolute magnitude of a (signed, net) value — used for size comparisons (sorting, dust filter) so a
+/// net-negative group (borrow > supply) is ranked/kept by how big it is, not filtered out as "dust".
+function mag(v: bigint): bigint {
+  return v < 0n ? -v : v
+}
+
 function buildProtocolGroups(
   positionResults: ChainPositions[],
   selectedChainId: number | null,
@@ -46,7 +52,7 @@ function buildProtocolGroups(
     }
   }
   // Sort by net magnitude so a net-negative group (rare: borrow > supply) still ranks by size.
-  return [...map.values()].sort((a, b) => ((b.totalValue < 0n ? -b.totalValue : b.totalValue) > (a.totalValue < 0n ? -a.totalValue : a.totalValue) ? 1 : -1))
+  return [...map.values()].sort((a, b) => (mag(b.totalValue) > mag(a.totalValue) ? 1 : -1))
 }
 
 function exportCsv(positionResults: ChainPositions[], address: string) {
@@ -162,8 +168,8 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
   )
 
   const groups = useMemo(() => {
-    let g = hideDust ? allGroups.filter((gr) => gr.totalValue >= DUST_THRESHOLD) : allGroups
-    if (sortOrder === 'value-asc') g = [...g].sort((a, b) => (a.totalValue > b.totalValue ? 1 : -1))
+    let g = hideDust ? allGroups.filter((gr) => mag(gr.totalValue) >= DUST_THRESHOLD) : allGroups
+    if (sortOrder === 'value-asc') g = [...g].sort((a, b) => (mag(a.totalValue) > mag(b.totalValue) ? 1 : -1))
     else if (sortOrder === 'name-asc') g = [...g].sort((a, b) => a.protocol.localeCompare(b.protocol))
     return g
   }, [allGroups, hideDust, sortOrder])

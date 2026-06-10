@@ -37,7 +37,7 @@ All kept as regression nets.
 ## 3. What this case adds
 
 - **Mock-based unit test** (`test/balances/protocols/AaveUmbrella.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getOraclePositions` skips it). 11 tests, no fork.
-- **Fork block aligned** to the verification block `25_287_877` (≡ dev-anvil ≡ this README).
+- **Fork block** set to the verification block `25_287_877` — the fork test and this README's §7 figures pin the **same** block. The live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: the per-leg ground truth for a comprehensive all-four-stake-token holder, plus a dashboard wiring helper.
 
 ## 4. Adapter formula recap
@@ -143,6 +143,8 @@ bash script/development/deploy/deploy-aave-umbrella.sh 1
 bash script/development/app/sync-app-env.sh 1
 # then start the Next.js dev server in app/
 ```
+
+`start-forks.sh` forks at the **latest** block (not pinned to `25_287_877`), and the staked amounts come from `convertToAssets` on the aToken-backed wrappers (which accrue every block), so the dashboard values read marginally higher than §7's pinned numbers — an expected, sub-bp live-drift sanity check, not a mismatch. For strict alignment, fork anvil at the pinned block directly (`anvil --fork-url <rpc> --fork-block-number 25287877`).
 
 The deployed adapter address is recorded in `script/development/state/1-addresses.json`. Each Umbrella position renders under **Aave Umbrella** with a **Staking** and a **Rewards** leg per stake token, denominated in the bare reserve (USDC/USDT/WETH/GHO). GHO is a Chainlink-priced reserve so stkGHO renders; all four reserves are registered by `register-assets.sh`.
 

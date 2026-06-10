@@ -1,80 +1,83 @@
 {
-  "$comment": "Evidence pack for the Aave Umbrella balance-adapter verification. Captured on-chain at the fork block below. The fork test does not hardcode these amounts (it recomputes staked+rewards independently and asserts equality); they are the captured reference and drift per block as the aToken-backed wrappers and rewards accrue.",
   "protocol": "Aave Umbrella",
-  "adapter": "AaveUmbrellaBalanceOracle",
-  "adapterPath": "src/balances/protocols/AaveUmbrella.sol",
-  "forkTest": "test/balances/protocols/fork/AaveUmbrella.fork.t.sol::AaveUmbrellaBalanceOracleForkTest",
-  "unitTest": "test/balances/protocols/AaveUmbrella.t.sol::AaveUmbrellaBalanceMathTest",
-  "chainId": 1,
-  "block": 25287877,
-  "blockTimestamp": 1781104487,
-  "blockTimestampUtc": "2026-06-10T15:14:47Z",
-  "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
-  "protocolId": "keccak256(\"aave-v3-umbrella\") = 0x54f2f12e943061ea126abcae3890ba952fab3072931cfa9112f8129c1cedf699",
-  "positionIdSchema": "abi.encode(stakeTokenAddress)",
-  "positionKinds": { "4": "Staking", "5": "Rewards" },
-  "stakeTokens": {
-    "stkwaEthUSDC.v1": { "address": "0x6bf183243FdD1e306ad2C4450BC7dcf6f0bf8Aa6", "bareReserve": "USDC", "walk": "stk -> waEthUSDC -> USDC", "rewardToken": "aEthUSDC -> USDC" },
-    "stkwaEthUSDT.v1": { "address": "0xA484Ab92fe32B143AEE7019fC1502b1dAA522D31", "bareReserve": "USDT", "walk": "stk -> waEthUSDT -> USDT", "rewardToken": "aEthUSDT -> USDT" },
-    "stkwaEthWETH.v1": { "address": "0xaAFD07D53A7365D3e9fb6F3a3B09EC19676B73Ce", "bareReserve": "WETH", "walk": "stk -> waEthWETH -> WETH", "rewardToken": "aEthWETH -> WETH" },
-    "stkGHO.v1": { "address": "0x4f827A63755855cDf3e8f3bcD20265C833f15033", "bareReserve": "GHO", "walk": "stk -> GHO (one hop)", "rewardToken": "GHO (plain)" }
+  "adapter": "src/balances/protocols/AaveUmbrella.sol",
+  "adapter_test": "test/balances/protocols/fork/AaveUmbrella.fork.t.sol",
+  "test_contract": "AaveUmbrellaBalanceOracleForkTest",
+  "unit_test": "test/balances/protocols/AaveUmbrella.t.sol::AaveUmbrellaBalanceMathTest",
+  "chain": { "id": 1, "name": "mainnet" },
+  "block": {
+    "number": 25287877,
+    "timestamp": 1781104487,
+    "timestamp_hex": "0x6a297f67",
+    "timestamp_utc": "2026-06-10 15:14:47 UTC",
+    "rationale": "Fork-test FORK_BLOCK. The fork test does not hardcode these amounts — it recomputes staked+rewards independently and asserts equality — so the amounts below are a captured reference. The aToken-backed wrappers + rewards accrue per second, so a live dev anvil reads marginally higher (it advances block.timestamp while mining); the dashboard is a sanity check that drifts from these by design."
   },
-  "holders": {
-    "STK_WA_WETH_HOLDER": {
-      "address": "0x000000000004444c5dc75cB358380D2e3dE08A90",
-      "note": "Holds all four stake tokens — 8 legs. Exercises two-hop wa-walk (USDC/USDT/WETH) + one-hop GHO + aToken-reward + plain-GHO-reward.",
-      "legs": [
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Staking", "reserve": "USDC", "amountRaw": "1881856985", "amount": "1881.856985" },
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Rewards", "reserve": "USDC", "amountRaw": "72340636", "amount": "72.340636" },
-        { "stakeToken": "stkwaEthUSDT.v1", "leg": "Staking", "reserve": "USDT", "amountRaw": "798477344", "amount": "798.477344" },
-        { "stakeToken": "stkwaEthUSDT.v1", "leg": "Rewards", "reserve": "USDT", "amountRaw": "67947101", "amount": "67.947101" },
-        { "stakeToken": "stkwaEthWETH.v1", "leg": "Staking", "reserve": "WETH", "amountRaw": "2718960276623852900", "amount": "2.718960276623852900" },
-        { "stakeToken": "stkwaEthWETH.v1", "leg": "Rewards", "reserve": "WETH", "amountRaw": "44128310175509233", "amount": "0.044128310175509233" },
-        { "stakeToken": "stkGHO.v1", "leg": "Staking", "reserve": "GHO", "amountRaw": "321722605569835228164", "amount": "321.722605569835228164" },
-        { "stakeToken": "stkGHO.v1", "leg": "Rewards", "reserve": "GHO", "amountRaw": "48878864883629751593", "amount": "48.878864883629751593" }
-      ],
-      "perAssetTotals": {
-        "USDC": "1954197621",
-        "USDT": "866424445",
-        "WETH": "2763088586799362133",
-        "GHO": "370601470453464979757"
-      }
-    },
-    "STK_GHO_HOLDER": {
-      "address": "0x6Ca0D65fe5c8700a5cc7A2C3bfE801111A1dEd1a",
-      "note": "stkGHO staking + rewards both in GHO (same-asset, distinguished by positionKind). Plus a stkwaEthUSDT rewards-only leg (unstaked, unclaimed).",
-      "legs": [
-        { "stakeToken": "stkGHO.v1", "leg": "Staking", "reserve": "GHO", "amountRaw": "35470322390610178298073", "amount": "35470.322390610178298073" },
-        { "stakeToken": "stkGHO.v1", "leg": "Rewards", "reserve": "GHO", "amountRaw": "30713656476831867091", "amount": "30.713656476831867091" },
-        { "stakeToken": "stkwaEthUSDT.v1", "leg": "Rewards", "reserve": "USDT", "amountRaw": "26123858", "amount": "26.123858" }
-      ],
-      "perAssetTotals": { "GHO": "35501036047087010165164", "USDT": "26123858" }
-    },
-    "STK_WA_USDC_HOLDER": {
-      "address": "0xd0002c648CCa8DeE2f2b8D70D542Ccde8ad6EC03",
-      "note": "Clean single-stake-token holder (stkwaEthUSDC): one Staking + one Rewards leg in USDC.",
-      "legs": [
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Staking", "reserve": "USDC", "amountRaw": "202549717", "amount": "202.549717" },
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Rewards", "reserve": "USDC", "amountRaw": "5817474", "amount": "5.817474" }
-      ],
-      "perAssetTotals": { "USDC": "208367191" }
-    },
-    "STK_WA_USDT_HOLDER": {
-      "address": "0x7FE4b2632f5AE6d930677D662AF26Bc0a06672b3",
-      "note": "Holds stkwaEthUSDC and stkwaEthUSDT — two reserves, four legs.",
-      "legs": [
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Staking", "reserve": "USDC", "amountRaw": "494671034924", "amount": "494671.034924" },
-        { "stakeToken": "stkwaEthUSDC.v1", "leg": "Rewards", "reserve": "USDC", "amountRaw": "615799468", "amount": "615.799468" },
-        { "stakeToken": "stkwaEthUSDT.v1", "leg": "Staking", "reserve": "USDT", "amountRaw": "1624627234088", "amount": "1624627.234088" },
-        { "stakeToken": "stkwaEthUSDT.v1", "leg": "Rewards", "reserve": "USDT", "amountRaw": "1990081531", "amount": "1990.081531" }
-      ],
-      "perAssetTotals": { "USDC": "495286834392", "USDT": "1626617315619" }
+  "instance": {
+    "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
+    "note": "Mainnet-only. Standalone (non-meta) adapter: pins only the RewardsController and discovers the stake-token set at runtime. positionId = abi.encode(stakeToken).",
+    "stakeTokens": {
+      "stkwaEthUSDC.v1": "0x6bf183243FdD1e306ad2C4450BC7dcf6f0bf8Aa6 (USDC, two-hop stk->waEthUSDC->USDC)",
+      "stkwaEthUSDT.v1": "0xA484Ab92fe32B143AEE7019fC1502b1dAA522D31 (USDT, two-hop)",
+      "stkwaEthWETH.v1": "0xaAFD07D53A7365D3e9fb6F3a3B09EC19676B73Ce (WETH, two-hop)",
+      "stkGHO.v1": "0x4f827A63755855cDf3e8f3bcD20265C833f15033 (GHO, one-hop)"
     }
   },
-  "groundTruth": {
-    "method": "in-EVM independent recompute",
-    "staking": "stk.balanceOf -> stk.convertToAssets -> (if stk.asset() is ERC4626) waToken.convertToAssets",
-    "rewards": "RewardsController.calculateCurrentUserRewards, each reward token mapped to bare reserve via UNDERLYING_ASSET_ADDRESS() (or itself for plain GHO)",
-    "assertion": "adapter getOracleBalanceForAsset == independent(staked + rewards), per holder per reserve; plus protocolId / positionId / positionKind"
+  "protocolId": "0x54f2f12e943061ea126abcae3890ba952fab3072931cfa9112f8129c1cedf699 (keccak256('aave-v3-umbrella'))",
+  "holders": [
+    {
+      "label": "STK_WA_WETH_HOLDER",
+      "address": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+      "notes": [
+        "Holds all four stake tokens — 8 legs (Staking + Rewards across USDC, USDT, WETH, GHO).",
+        "Exercises the two-hop wa-walk (USDC/USDT/WETH) + the one-hop GHO walk + aToken-reward and plain-GHO-reward resolution in one account."
+      ],
+      "legs_at_fork_block": [
+        { "asset": "USDC", "kind": "Staking", "isDebt": false, "amount_raw": "1881856985", "amount_humanised": "1881.856985 USDC", "ground_truth": "stkwaEthUSDC.convertToAssets walk to USDC" },
+        { "asset": "USDC", "kind": "Rewards", "isDebt": false, "amount_raw": "72340636", "amount_humanised": "72.340636 USDC", "ground_truth": "calculateCurrentUserRewards -> aEthUSDC -> USDC" },
+        { "asset": "USDT", "kind": "Staking", "isDebt": false, "amount_raw": "798477344", "amount_humanised": "798.477344 USDT", "ground_truth": "stkwaEthUSDT.convertToAssets walk to USDT" },
+        { "asset": "USDT", "kind": "Rewards", "isDebt": false, "amount_raw": "67947101", "amount_humanised": "67.947101 USDT", "ground_truth": "calculateCurrentUserRewards -> aEthUSDT -> USDT" },
+        { "asset": "WETH", "kind": "Staking", "isDebt": false, "amount_raw": "2718960276623852900", "amount_humanised": "2.718960276623852900 WETH", "ground_truth": "stkwaEthWETH.convertToAssets walk to WETH" },
+        { "asset": "WETH", "kind": "Rewards", "isDebt": false, "amount_raw": "44128310175509233", "amount_humanised": "0.044128310175509233 WETH", "ground_truth": "calculateCurrentUserRewards -> aEthWETH -> WETH" },
+        { "asset": "GHO", "kind": "Staking", "isDebt": false, "amount_raw": "321722605569835228164", "amount_humanised": "321.722605569835228164 GHO", "ground_truth": "stkGHO.convertToAssets (one hop) to GHO" },
+        { "asset": "GHO", "kind": "Rewards", "isDebt": false, "amount_raw": "48878864883629751593", "amount_humanised": "48.878864883629751593 GHO", "ground_truth": "calculateCurrentUserRewards -> GHO (plain)" }
+      ]
+    },
+    {
+      "label": "STK_GHO_HOLDER",
+      "address": "0x6Ca0D65fe5c8700a5cc7A2C3bfE801111A1dEd1a",
+      "notes": [
+        "stkGHO staking + rewards both in GHO — two GHO entries distinguished only by positionKind (same-asset disambiguation).",
+        "Also a stkwaEthUSDT rewards-only leg (unstaked, unclaimed) — exercises the no-Staking-leg branch."
+      ],
+      "legs_at_fork_block": [
+        { "asset": "GHO", "kind": "Staking", "isDebt": false, "amount_raw": "35470322390610178298073", "amount_humanised": "35470.322390610178298073 GHO", "ground_truth": "stkGHO.convertToAssets to GHO" },
+        { "asset": "GHO", "kind": "Rewards", "isDebt": false, "amount_raw": "30713656476831867091", "amount_humanised": "30.713656476831867091 GHO", "ground_truth": "calculateCurrentUserRewards -> GHO (plain)" },
+        { "asset": "USDT", "kind": "Rewards", "isDebt": false, "amount_raw": "26123858", "amount_humanised": "26.123858 USDT (rewards-only; no staking leg)", "ground_truth": "calculateCurrentUserRewards -> aEthUSDT -> USDT" }
+      ]
+    },
+    {
+      "label": "STK_WA_USDC_HOLDER",
+      "address": "0xd0002c648CCa8DeE2f2b8D70D542Ccde8ad6EC03",
+      "notes": ["Clean single-stake-token holder (stkwaEthUSDC): one Staking + one Rewards leg in USDC."],
+      "legs_at_fork_block": [
+        { "asset": "USDC", "kind": "Staking", "isDebt": false, "amount_raw": "202549717", "amount_humanised": "202.549717 USDC", "ground_truth": "stkwaEthUSDC.convertToAssets walk to USDC" },
+        { "asset": "USDC", "kind": "Rewards", "isDebt": false, "amount_raw": "5817474", "amount_humanised": "5.817474 USDC", "ground_truth": "calculateCurrentUserRewards -> aEthUSDC -> USDC" }
+      ]
+    },
+    {
+      "label": "STK_WA_USDT_HOLDER",
+      "address": "0x7FE4b2632f5AE6d930677D662AF26Bc0a06672b3",
+      "notes": ["Holds stkwaEthUSDC and stkwaEthUSDT — two reserves, four legs."],
+      "legs_at_fork_block": [
+        { "asset": "USDC", "kind": "Staking", "isDebt": false, "amount_raw": "494671034924", "amount_humanised": "494671.034924 USDC", "ground_truth": "stkwaEthUSDC.convertToAssets walk to USDC" },
+        { "asset": "USDC", "kind": "Rewards", "isDebt": false, "amount_raw": "615799468", "amount_humanised": "615.799468 USDC", "ground_truth": "calculateCurrentUserRewards -> aEthUSDC -> USDC" },
+        { "asset": "USDT", "kind": "Staking", "isDebt": false, "amount_raw": "1624627234088", "amount_humanised": "1624627.234088 USDT", "ground_truth": "stkwaEthUSDT.convertToAssets walk to USDT" },
+        { "asset": "USDT", "kind": "Rewards", "isDebt": false, "amount_raw": "1990081531", "amount_humanised": "1990.081531 USDT", "ground_truth": "calculateCurrentUserRewards -> aEthUSDT -> USDT" }
+      ]
+    }
+  ],
+  "ground_truth": {
+    "method": "in-EVM independent recompute (NOT a Python re-derivation)",
+    "detail": "For each holder the fork test recomputes the value along the same walk the adapter takes but via independent interface reads: Staking = stk.balanceOf -> stk.convertToAssets -> (if stk.asset() is an ERC4626) waToken.convertToAssets; Rewards = RewardsController.calculateCurrentUserRewards, each reward token mapped to its bare reserve via UNDERLYING_ASSET_ADDRESS() (or itself for plain GHO). Asserts adapter getOracleBalanceForAsset == independent(staked + rewards) per reserve, plus protocolId == aave-v3-umbrella, positionId == abi.encode(stakeToken), and the per-leg PositionKind."
   }
 }

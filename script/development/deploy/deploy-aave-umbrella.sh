@@ -21,7 +21,8 @@ STATE_DIR="$DEV_DIR/state"
 CHAINS_CFG="$DEV_DIR/config/chains.json"
 
 # Mainnet Umbrella RewardsController (the adapter's only pinned address). Override per chain via env.
-REWARDS_CONTROLLER=${DEV_UMBRELLA_REWARDS_CONTROLLER-0x4655Ce3D625a63d30bA704087E52B4C31E38188B}
+# `:-` so an explicitly-empty override still falls back (this helper has no skip-on-empty semantics).
+REWARDS_CONTROLLER=${DEV_UMBRELLA_REWARDS_CONTROLLER:-0x4655Ce3D625a63d30bA704087E52B4C31E38188B}
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -40,12 +41,19 @@ if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy
 echo "=== deploy Aave Umbrella oracle  chain=$CID NAV=$NAV"
 echo "    rewardsController: $REWARDS_CONTROLLER"
 
-ADAPTER=$(
+# Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
+# the script before the guard below runs and swallow the forge error).
+OUT=$(
   forge create src/balances/protocols/AaveUmbrella.sol:AaveUmbrellaBalanceOracle \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$REWARDS_CONTROLLER" "$NAV" 2>&1 | grep -i "Deployed to:" | awk '{print $3}'
-)
-[ -z "$ADAPTER" ] && { echo "error: forge create produced no address" >&2; exit 1; }
+    --constructor-args "$REWARDS_CONTROLLER" "$NAV" 2>&1
+) || true
+ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
+if [ -z "$ADAPTER" ]; then
+  printf '%s\n' "$OUT" | tail -30
+  echo "error: forge create produced no address (are the bare reserves registered on the NAV?)" >&2
+  exit 1
+fi
 echo "  AaveUmbrella: $ADAPTER"
 
 cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \

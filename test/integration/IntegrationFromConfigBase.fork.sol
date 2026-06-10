@@ -216,11 +216,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployWstEth() internal returns (address) {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "wstEth"));
+        address stEthToEth =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkOracle"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkOracle"));
+        uint256 stEthToEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_PriceOracle(wstEth, ethUsd, ethUsdHb));
+        return address(new wstETH_PriceOracle(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
     }
 
     function _deployREth() internal returns (address) {

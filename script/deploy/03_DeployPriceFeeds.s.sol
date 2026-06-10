@@ -258,12 +258,17 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "wstEth"));
+        address stEthToEthOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkOracle"));
         address ethUsdOracle =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkOracle"));
+        uint256 stEthToEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
 
-        wstETH_PriceOracle wstEthAdapter = new wstETH_PriceOracle(wstEth, ethUsdOracle, ethUsdHeartbeat);
+        wstETH_PriceOracle wstEthAdapter =
+            new wstETH_PriceOracle(wstEth, stEthToEthOracle, ethUsdOracle, stEthToEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH", address(wstEthAdapter));
         console2.log("wstETH_PriceOracle deployed at:", address(wstEthAdapter));
     }

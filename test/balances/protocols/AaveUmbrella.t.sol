@@ -129,14 +129,16 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
     MockUmbrellaStakeToken internal stkUnreg; // stk → unreg (unregistered bare reserve)
     MockAToken internal aUsdc; // reward token resolving to USDC
 
-    // Independently-computed expectations (see _stakedUnderlying walk in the adapter).
-    uint256 internal constant EXP_USDC_STAKED = 1155e18; // 1000e18 * 1.1 (stk) * 1.05 (wa)
-    uint256 internal constant EXP_USDC_REWARD = 5e18;
-    uint256 internal constant EXP_USDC_TOTAL = 1160e18;
+    // Independently-computed expectations (see _stakedUnderlying walk in the adapter). USDC-denominated
+    // values are 6-decimal (matching the usdc mock); GHO is 18-decimal. The mock conversion rates are
+    // 1e18-scaled and decimal-agnostic (shares * rate / 1e18), so the reserve's own decimals carry through.
+    uint256 internal constant EXP_USDC_STAKED = 1155e6; // 1000e6 * 1.1 (stk) * 1.05 (wa)
+    uint256 internal constant EXP_USDC_REWARD = 5e6;
+    uint256 internal constant EXP_USDC_TOTAL = 1160e6;
     uint256 internal constant EXP_GHO_STAKED = 2400e18; // 2000e18 * 1.2 (one hop)
     uint256 internal constant EXP_GHO_REWARD = 10e18;
     uint256 internal constant EXP_GHO_TOTAL = 2410e18;
-    uint256 internal constant EXP_UNREG_TOTAL = 500e18; // 500e18 * 1.0, no rewards
+    uint256 internal constant EXP_UNREG_TOTAL = 500e18; // 500e18 * 1.0, no rewards (UNREG mock is 18-dec)
 
     function setUp() public override {
         super.setUp(); // registers usdc/dai/weth on the harness
@@ -157,7 +159,7 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         oracle = new AaveUmbrellaBalanceOracle(address(controller), address(balances));
 
         // alice holds all three stake tokens, with rewards on the two registered ones.
-        stkwaUsdc.setBalance(alice, 1000e18);
+        stkwaUsdc.setBalance(alice, 1000e6); // 6-dec USDC shares
         stkGho.setBalance(alice, 2000e18);
         stkUnreg.setBalance(alice, 500e18);
         controller.setRewards(address(stkwaUsdc), alice, _arr1(address(aUsdc)), _amt1(EXP_USDC_REWARD));
@@ -228,14 +230,14 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         c.addStakeToken(address(stkwaUsdc));
         c.addStakeToken(address(stkwaUsdc2));
         AaveUmbrellaBalanceOracle o = new AaveUmbrellaBalanceOracle(address(c), address(balances));
-        stkwaUsdc.setBalance(alice, 1000e18); // → 1155e18 USDC
-        stkwaUsdc2.setBalance(alice, 100e18); // → 100e18 * 1.05 = 105e18 USDC
+        stkwaUsdc.setBalance(alice, 1000e6); // → 1155e6 USDC
+        stkwaUsdc2.setBalance(alice, 100e6); // → 100e6 * 1.05 = 105e6 USDC
         c.setRewards(address(stkwaUsdc), alice, _arr1(address(aUsdc)), _amt1(EXP_USDC_REWARD));
 
         (address[] memory assets, uint256[] memory amounts,) = o.getOracleBalances(alice);
         assertEq(assets.length, 1, "shared reserve collapses to one entry");
         assertEq(assets[0], address(usdc));
-        assertEq(amounts[0], EXP_USDC_STAKED + 105e18 + EXP_USDC_REWARD, "summed across both stake tokens");
+        assertEq(amounts[0], EXP_USDC_STAKED + 105e6 + EXP_USDC_REWARD, "summed across both stake tokens");
     }
 
     // ─── position emission / identity ───────────────────────────────────────────

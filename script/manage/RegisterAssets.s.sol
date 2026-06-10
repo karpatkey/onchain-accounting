@@ -293,7 +293,7 @@ contract RegisterAssets is BaseDeployScript {
     ///         Add new tokens to assets.json and append the symbol here for the right chain.
     function _symbolsForChain(uint256 chainId) private pure returns (string[] memory) {
         if (chainId == 1) {
-            string[] memory s = new string[](28);
+            string[] memory s = new string[](29);
             s[0] = "ETH";
             s[1] = "WETH";
             s[2] = "wstETH";
@@ -322,6 +322,7 @@ contract RegisterAssets is BaseDeployScript {
             s[25] = "crvUSD";
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
+            s[28] = "EIGEN";
             return s;
         }
         if (chainId == 42161) {

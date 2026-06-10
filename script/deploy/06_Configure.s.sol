@@ -135,7 +135,7 @@ contract Configure is BaseDeployScript {
     /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
     /// NAVCalculator.initialize() so it's already registered; it is not added here.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](46);
+        names = new string[](52);
         uint256 i = 0;
         // Aave V3 (one per market)
         names[i++] = "AaveV3_Core";
@@ -153,7 +153,11 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVault_kpkETHPrime_V2";
         names[i++] = "MorphoVault_kpkUSDCPrime_V1";
         names[i++] = "MorphoVault_kpkUSDCPrime_V2";
+        names[i++] = "MorphoVault_kpkUSDCYield";
+        names[i++] = "MorphoVault_kpkUSDTPrime";
+        names[i++] = "MorphoVault_kpkETHYield";
         names[i++] = "MorphoVault_kpkUSDCYieldV1";
+        names[i++] = "MorphoVault_kpkUSDCYieldV2";
         // Morpho Markets
         names[i++] = "MorphoMarket_wstETH_USDC";
         names[i++] = "MorphoMarket_cbBTC_USDC";
@@ -192,6 +196,10 @@ contract Configure is BaseDeployScript {
         names[i++] = "Convex_crvUSD_USDC";
         names[i++] = "Convex_crvUSD_USDT";
         names[i++] = "Convex_RLUSD_USDC";
+        // StakeWise V3 osToken (Mainnet — ETH Alpha)
+        names[i++] = "StakeWiseV3OsToken_osETH";
+        // ERC-4626 wrappers (Mainnet — USD Alpha)
+        names[i++] = "ERC4626Wrap_sGHO";
     }
 
     function _countDeployedBridgeAdapters() internal view returns (uint256 count) {

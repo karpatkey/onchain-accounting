@@ -2,6 +2,8 @@
 
 All addresses listed below were deployed on 2026-04-29 / 2026-04-30 as part of the production rollout tracked in [PR #15](https://github.com/karpatkey/onchain-accounting/pull/15). Each address is linked to its respective block-explorer page.
 
+Additional Alpha-fund balance oracles were deployed on 2026-06-02 via [PR #49](https://github.com/karpatkey/onchain-accounting/pull/49) — 5 on Mainnet (`MorphoVault_kpkUSDCYield`, `MorphoVault_kpkUSDTPrime`, `MorphoVault_kpkETHYield`, `StakeWiseV3OsToken_osETH`, `ERC4626Wrap_sGHO`) and 1 on Arbitrum (`MorphoVault_kpkUSDCYieldV2`). They are included in the per-chain tables below.
+
 Source of truth: `script/config/chains/{chainId}.json` per chain. Per-tx broadcast logs live in `broadcast/<script>/<chainId>/run-latest.json`.
 
 ---
@@ -54,7 +56,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `weETH` | [`0xAb5A2dB56e6608De7FE12a447B26d349a10fb037`](https://etherscan.io/address/0xAb5A2dB56e6608De7FE12a447B26d349a10fb037) |
 | `wstETH` | [`0xc3E04720338BC8AddC335764914b7602DD11e79f`](https://etherscan.io/address/0xc3E04720338BC8AddC335764914b7602DD11e79f) |
 
-**Balance adapters** (35 excluding ERC20Default)
+**Balance adapters** (40 excluding ERC20Default)
 
 | Adapter | Address |
 |---|---|
@@ -74,6 +76,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `Curve_crvUSD_USDC` | [`0x9eFcd3aE461a4F5769365B25673053FB08cc76B9`](https://etherscan.io/address/0x9eFcd3aE461a4F5769365B25673053FB08cc76B9) |
 | `Curve_crvUSD_USDT` | [`0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc`](https://etherscan.io/address/0xf49CE162a6aD084a2e71C1Bf3ced3eC8fDAa16cc) |
 | `Curve_weETH_WETH` | [`0xAF8A9F7b37925973615Eaa787AefA3f388D32101`](https://etherscan.io/address/0xAF8A9F7b37925973615Eaa787AefA3f388D32101) |
+| `ERC4626Wrap_sGHO` | [`0x89B0157921b4efb88dcF96F570d8c07D675Dc4f1`](https://etherscan.io/address/0x89B0157921b4efb88dcF96F570d8c07D675Dc4f1) |
 | `GearboxMarket_kpkWETH` | [`0x04E39d917E0D515384B3C027658a8b2f401ECEb0`](https://etherscan.io/address/0x04E39d917E0D515384B3C027658a8b2f401ECEb0) |
 | `GearboxMarket_kpkwstETH` | [`0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941`](https://etherscan.io/address/0x5a81F5574c165a7b231E2F6c2B89AF3dE3D4E941) |
 | `MorphoMarket_ETHPlus_USDC` | [`0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2`](https://etherscan.io/address/0x3F7182ED9ab40fbBa43a53b9468cd3DE2C0957c2) |
@@ -90,9 +93,13 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `MorphoMarket_wstUSR_USDC` | [`0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42`](https://etherscan.io/address/0xD03D46409Cb95DcE7F9eBBa0cBDfA480758D8d42) |
 | `MorphoVault_kpkETHPrime_V1` | [`0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7`](https://etherscan.io/address/0x4d9E4f4Ebd360d5a557bE59459FcDcFFF1892FA7) |
 | `MorphoVault_kpkETHPrime_V2` | [`0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512`](https://etherscan.io/address/0x6fC390Bcc0f83fb7E16c0eA54743b321143d0512) |
+| `MorphoVault_kpkETHYield` | [`0xd67153aeF275453c27D6ACd0d274622078B48f6A`](https://etherscan.io/address/0xd67153aeF275453c27D6ACd0d274622078B48f6A) |
 | `MorphoVault_kpkUSDCPrime_V1` | [`0x07978693C01f70373e89d196DfcfcA18a6C02d6C`](https://etherscan.io/address/0x07978693C01f70373e89d196DfcfcA18a6C02d6C) |
 | `MorphoVault_kpkUSDCPrime_V2` | [`0xBF19e8568cbA837d3922a987f9E001787385575f`](https://etherscan.io/address/0xBF19e8568cbA837d3922a987f9E001787385575f) |
+| `MorphoVault_kpkUSDCYield` | [`0x5978b81e9BB36830A8CC534E754688E6ED71172d`](https://etherscan.io/address/0x5978b81e9BB36830A8CC534E754688E6ED71172d) |
+| `MorphoVault_kpkUSDTPrime` | [`0xEdCF47DE576C820ecD1073159Fb7d913fb0e6477`](https://etherscan.io/address/0xEdCF47DE576C820ecD1073159Fb7d913fb0e6477) |
 | `SparkLend` | [`0x9b9e74cfd807Dfae4F9333Afbd44EFE719354c39`](https://etherscan.io/address/0x9b9e74cfd807Dfae4F9333Afbd44EFE719354c39) |
+| `StakeWiseV3OsToken_osETH` | [`0x8ECC77db1F9D2B1DFe3948B53D4D0e6c1569d50E`](https://etherscan.io/address/0x8ECC77db1F9D2B1DFe3948B53D4D0e6c1569d50E) |
 
 ---
 
@@ -117,7 +124,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `weETH_L2` | [`0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f`](https://arbiscan.io/address/0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f) |
 | `wstETH_L2` | [`0xDdBb3444421a4c4F142fE9544bf7Cd404663745e`](https://arbiscan.io/address/0xDdBb3444421a4c4F142fE9544bf7Cd404663745e) |
 
-**Balance adapters** (6 excluding ERC20Default)
+**Balance adapters** (7 excluding ERC20Default)
 
 | Adapter | Address |
 |---|---|
@@ -127,6 +134,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `MorphoMarket_sUSDS_USDC` | [`0xd6dFb63356C38d14ee4e48dCF31D2eA98b15990d`](https://arbiscan.io/address/0xd6dFb63356C38d14ee4e48dCF31D2eA98b15990d) |
 | `MorphoMarket_syrupUSDC_USDC` | [`0xE4785f2A6590C589Ea36ba59A1Eb57A1FdC0e74e`](https://arbiscan.io/address/0xE4785f2A6590C589Ea36ba59A1Eb57A1FdC0e74e) |
 | `MorphoVault_kpkUSDCYieldV1` | [`0x77f1E73A81189C8e67C997aBF908E8f7aB20447F`](https://arbiscan.io/address/0x77f1E73A81189C8e67C997aBF908E8f7aB20447F) |
+| `MorphoVault_kpkUSDCYieldV2` | [`0xf133b541b96D69B77be66ba926Cd11d14aB28DaF`](https://arbiscan.io/address/0xf133b541b96D69B77be66ba926Cd11d14aB28DaF) |
 
 ---
 

@@ -105,6 +105,33 @@
       },
       "deployed": "0xBF19e8568cbA837d3922a987f9E001787385575f"
     },
+    "MorphoVault_kpkUSDCYield": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0xD5cCe260E7a755DDf0Fb9cdF06443d593AaeaA13",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk USDC Yield"
+      },
+      "deployed": "0x5978b81e9BB36830A8CC534E754688E6ED71172d"
+    },
+    "MorphoVault_kpkUSDTPrime": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x870F0BF29A25A40E7CC087cD5C53e70C11F2C8A8",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk USDT Prime"
+      },
+      "deployed": "0xEdCF47DE576C820ecD1073159Fb7d913fb0e6477"
+    },
+    "MorphoVault_kpkETHYield": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x5dbf760b4fd0cDdDe0366b33aEb338b2A6d77725",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk ETH Yield"
+      },
+      "deployed": "0xd67153aeF275453c27D6ACd0d274622078B48f6A"
+    },
     "MorphoMarket_wstETH_USDC": {
       "enabled": true,
       "constructor": {
@@ -350,6 +377,26 @@
         "positionDetail": "RLUSD/USDC"
       },
       "deployed": "0xB1297920Da8e204Aa8E34D60AD56fdfe07000905"
+    },
+    "ERC4626Wrap_sGHO": {
+      "enabled": true,
+      "constructor": {
+        "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+        "protocol": "Aave",
+        "positionDetail": "Savings GHO"
+      },
+      "deployed": "0x89B0157921b4efb88dcF96F570d8c07D675Dc4f1"
+    },
+    "StakeWiseV3OsToken_osETH": {
+      "enabled": true,
+      "constructor": {
+        "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+        "underlyingToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
+        "protocol": "Stakewise v3",
+        "positionDetail": "osToken"
+      },
+      "deployed": "0x8ECC77db1F9D2B1DFe3948B53D4D0e6c1569d50E"
     }
   },
   "bridgeAdapters": {

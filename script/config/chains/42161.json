@@ -35,12 +35,22 @@
     },
     "MorphoVault_kpkUSDCYieldV1": {
       "enabled": true,
+      "_comment": "V1 vault deprecated on Morpho; active vault is MorphoVault_kpkUSDCYieldV2.",
       "constructor": {
         "vault": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
         "protocol": "Morpho Vault",
         "positionDetail": "kpk USDC Yield V1"
       },
       "deployed": "0x77f1E73A81189C8e67C997aBF908E8f7aB20447F"
+    },
+    "MorphoVault_kpkUSDCYieldV2": {
+      "enabled": true,
+      "constructor": {
+        "vault": "0x5837e4189819637853a357aF36650902347F5e73",
+        "protocol": "Morpho Vault",
+        "positionDetail": "kpk USDC Yield V2"
+      },
+      "deployed": "0xf133b541b96D69B77be66ba926Cd11d14aB28DaF"
     },
     "MorphoMarket_sUSDS_USDC": {
       "enabled": true,

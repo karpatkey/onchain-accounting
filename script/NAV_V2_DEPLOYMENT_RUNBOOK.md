@@ -289,7 +289,7 @@ Roles end state (after step 8): Safe holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on N
 
 If the production Safe(s) are deployed and signers are available, prefer **Path A** — it's the cleanest end state (Safe holds roles from moment 1, no EOA-admin window) and uses the standard Safe UI flow that auditors and signers are already familiar with. **Path B** is appropriate if signers aren't available or if you specifically need the EOA-broadcast simplicity for some part of the operation.
 
-`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal name lists are kept in sync (both 46 entries as of commit `[hash-of-this-commit]`). If you see drift, that's a bug.
+`06_2_AddBalanceOracles.s.sol` and `06_Configure.s.sol` register the same set of adapters; their internal `_balanceAdapterNames()` lists must stay in sync (same length, same entries). If you see drift between them, that's a bug.
 
 ---
 
@@ -536,13 +536,13 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 `04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if `chains/<chainId>.json.balanceAdapters.<name>.enabled == true`. This means the `run()` list is the **union** across chains; per-chain selection happens through the config file.
 
-The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 for the authoritative source):
+The current `run()` list (check the `_deployIfEnabled(...)` calls in `run()` within `04_DeployBalanceAdapters.s.sol` for the authoritative source):
 
 **Aave V3 (one instance per market):** `AaveV3_Core`, `AaveV3_Prime`, `AaveV3_Arbitrum`, `AaveV3_Base`, `AaveV3_Optimism`, `AaveV3_Gnosis`
 
 **Single-instance protocols:** `SparkLend`, `AaveV3SafetyModule_stkGHO`, `Cap`
 
-**Morpho Vaults:** `MorphoVault_kpkETHPrime_V1`, `MorphoVault_kpkETHPrime_V2`, `MorphoVault_kpkUSDCPrime_V1`, `MorphoVault_kpkUSDCPrime_V2`, `MorphoVault_kpkUSDCYieldV1`
+**Morpho Vaults:** `MorphoVault_kpkETHPrime_V1`, `MorphoVault_kpkETHPrime_V2`, `MorphoVault_kpkUSDCPrime_V1`, `MorphoVault_kpkUSDCPrime_V2`, `MorphoVault_kpkUSDCYield` (Mainnet), `MorphoVault_kpkUSDTPrime` (Mainnet), `MorphoVault_kpkETHYield` (Mainnet), `MorphoVault_kpkUSDCYieldV1` (Arbitrum), `MorphoVault_kpkUSDCYieldV2` (Arbitrum)
 
 **Morpho Markets (USD Alpha + Mainnet/Arbitrum):** `MorphoMarket_wstETH_USDC`, `MorphoMarket_cbBTC_USDC`, `MorphoMarket_wstUSR_USDC`, `MorphoMarket_ETHPlus_USDC`, `MorphoMarket_WBTC_USDC`, `MorphoMarket_RLP_USDC`, `MorphoMarket_syrupUSDC_USDC`, `MorphoMarket_sUSDS_USDT`, `MorphoMarket_sUSDS_USDC`
 
@@ -558,7 +558,11 @@ The current `run()` list (check `04_DeployBalanceAdapters.s.sol` lines 45–109 
 
 **Convex (Mainnet):** `Convex_weETH_WETH`, `Convex_crvUSD_USDC`, `Convex_crvUSD_USDT`, `Convex_RLUSD_USDC`
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `StakeWiseV3Vault_*`, `StakeWiseV3OsToken_*`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
+**StakeWise V3 osToken (Mainnet — ETH Alpha):** `StakeWiseV3OsToken_osETH` (osETH reported as a WETH-equivalent balance via `OsTokenVaultController.convertToAssets`; osETH itself is not a registered NAV asset)
+
+**ERC-4626 wrappers (Mainnet — USD Alpha):** `ERC4626Wrap_sGHO` (Savings GHO, underlying GHO)
+
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `StakeWiseV3Vault_*`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the config entry to `chains/<id>.json`, and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 

@@ -36,9 +36,9 @@ contract wstETH_PriceOracleForkTest is TestEnvConfigurator {
         (, int256 stEthEth,,,) = AggregatorV3Interface(STETH_TO_ETH_CHAINLINK).latestRoundData();
         (, int256 ethUsd,,,) = AggregatorV3Interface(ETH_TO_USD_CHAINLINK).latestRoundData();
 
-        // stEthPerToken (18) * stETH/ETH (18) / 1e18 = wstETH/ETH (18); * ETH/USD (8) / 1e18 = USD (8)
-        uint256 wstEthPerEth = (stEthPerToken * uint256(stEthEth)) / 1e18;
-        uint256 expected = (wstEthPerEth * uint256(ethUsd)) / 1e18;
+        // stEthPerToken (18) * stETH/ETH (18) / 1e18 = ETH per wstETH (18); * ETH/USD (8) / 1e18 = USD (8)
+        uint256 ethPerWstEth = (stEthPerToken * uint256(stEthEth)) / 1e18;
+        uint256 expected = (ethPerWstEth * uint256(ethUsd)) / 1e18;
 
         (uint256 price, bool stale) = wstEthPriceOracle.getLatestPrice();
         assertEq(price, expected, "price == stEthPerToken * stETH/ETH * ETH/USD");

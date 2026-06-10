@@ -16,8 +16,9 @@ import "src/errors.sol";
 ///      - `stEthPerToken` (stETH per 1 wstETH) comes from the wstETH contract (18 decimals)
 ///      - `stETH/ETH` (ETH per 1 stETH) comes from a Chainlink oracle (18 decimals)
 ///      - `ETH/USD` comes from a Chainlink oracle (8 decimals)
-///      Intermediate `stEthPerToken * (stETH/ETH) / 1e18` yields wstETH/ETH (18 decimals); multiplying by
-///      ETH/USD and scaling by 1e18 yields the USD price (8 decimals).
+///      Intermediate `stEthPerToken * (stETH/ETH) / 1e18` yields ETH per wstETH (i.e. the wstETH/ETH price,
+///      18 decimals — note the stETH/ETH feed returns ETH per stETH); multiplying by ETH/USD and scaling by
+///      1e18 yields the USD price (8 decimals).
 ///      Using the real stETH/ETH rate (rather than assuming stETH == ETH 1:1) keeps the price accurate and lets
 ///      ETH/USD cancel cleanly when NAV is quoted in ETH — the same pattern the L2 variant uses with a wstETH/ETH
 ///      feed.
@@ -101,12 +102,12 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        // stEthPerToken (18) * stETH/ETH (18) / 1e18 = wstETH/ETH (18 decimals)
-        uint256 wstEthPerEth = stEthPerToken.mulDiv(
+        // stEthPerToken (18) * stETH/ETH (18) / 1e18 = ETH per wstETH (the wstETH/ETH price, 18 decimals)
+        uint256 ethPerWstEth = stEthPerToken.mulDiv(
             uint256(stEthToEthRate), 10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
         );
-        // wstETH/ETH (18) * ETH/USD (8) / 1e18 = USD price (8 decimals)
-        price = wstEthPerEth.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
+        // (ETH per wstETH, 18) * ETH/USD (8) / 1e18 = USD price (8 decimals)
+        price = ethPerWstEth.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

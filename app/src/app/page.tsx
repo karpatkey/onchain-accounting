@@ -40,10 +40,13 @@ function buildProtocolGroups(
       const group = map.get(key)!
       if (pos.isDebt) group.borrow.push(pos)
       else group.supply.push(pos)
-      group.totalValue += pos.value < 0n ? -pos.value : pos.value
+      // Net contribution to NAV: debt is negative, so it subtracts (matches the Net headline). pos.value
+      // is already signed (negative for debt), so a plain sum gives the protocol's net value.
+      group.totalValue += pos.value
     }
   }
-  return [...map.values()].sort((a, b) => (b.totalValue > a.totalValue ? 1 : -1))
+  // Sort by net magnitude so a net-negative group (rare: borrow > supply) still ranks by size.
+  return [...map.values()].sort((a, b) => ((b.totalValue < 0n ? -b.totalValue : b.totalValue) > (a.totalValue < 0n ? -a.totalValue : a.totalValue) ? 1 : -1))
 }
 
 function exportCsv(positionResults: ChainPositions[], address: string) {

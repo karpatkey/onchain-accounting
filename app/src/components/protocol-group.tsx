@@ -111,13 +111,29 @@ function ProtocolIcon({ protocol }: { protocol: string }) {
 
 function pctOfPortfolio(value: bigint, total: bigint): string {
   if (total === 0n || value === 0n) return ''
-  const pct = (Number(value < 0n ? -value : value) / Number(total)) * 100
+  // Signed share of NET NAV (total is the net NAV): debt is negative, so each position's % reflects its
+  // real contribution to net worth and the percentages reconcile — a group's rows sum to its net %, and
+  // all positions across the portfolio sum to ~100%. (Previously this used abs(value)/net, which didn't.)
+  const pct = (Number(value) / Number(total)) * 100
+  if (Math.abs(pct) < 0.05) return '<0.1%'
+  return `${pct.toFixed(1)}%`
+}
+
+/// Share of a position's own section total (a supply row vs total supply, a borrow row vs total borrow),
+/// as a positive percentage — for composition *within* a protocol. Uses magnitudes so a debt row reads as a
+/// positive share of the borrow section. Each section's rows sum to 100%. (The group header uses
+/// pctOfPortfolio for the cross-protocol allocation view.)
+function pctOfSection(value: bigint, sectionTotal: bigint): string {
+  const v = value < 0n ? -value : value
+  const t = sectionTotal < 0n ? -sectionTotal : sectionTotal
+  if (t === 0n || v === 0n) return ''
+  const pct = (Number(v) / Number(t)) * 100
   if (pct < 0.05) return '<0.1%'
   return `${pct.toFixed(1)}%`
 }
 
-function PositionRow({ pos, chainId, totalPortfolioNav }: { pos: OnchainPosition; chainId: number; totalPortfolioNav: bigint }) {
-  const pct = pctOfPortfolio(pos.value, totalPortfolioNav)
+function PositionRow({ pos, chainId, sectionTotal }: { pos: OnchainPosition; chainId: number; sectionTotal: bigint }) {
+  const pct = pctOfSection(pos.value, sectionTotal)
   return (
     <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
       <td className="py-2.5 px-4 text-sm font-medium text-neutral-950">
@@ -129,14 +145,14 @@ function PositionRow({ pos, chainId, totalPortfolioNav }: { pos: OnchainPosition
       <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
         {formatAmount(pos.amount, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
       </td>
-      <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-500">
+      <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
         {formatPrice(pos.price, pos.priceDecimals)}
       </td>
       <td className={`py-2.5 px-4 text-sm text-right tabular-nums font-semibold ${pos.isDebt ? 'text-rose-700' : 'text-neutral-950'}`}>
         {formatUsd(pos.value)}
         {pos.stale && <span className="ml-1 text-orange-600 text-xs">⚠</span>}
       </td>
-      <td className="py-2.5 px-4 text-xs text-right tabular-nums text-neutral-400">
+      <td className={`py-2.5 px-4 text-xs text-right tabular-nums font-medium ${pos.isDebt ? 'text-rose-700' : 'text-neutral-800'}`}>
         {pct}
       </td>
     </tr>
@@ -168,6 +184,25 @@ function extractPoolLabel(positionDetail: string): string | null {
   } catch {
     return null
   }
+}
+
+/// Aave instances expose canonical getMarketId() strings that don't match Aave's UI branding. Alias
+/// them to the familiar names for display only — the on-chain describePosition label stays canonical.
+const MARKET_ALIASES: Record<string, string> = {
+  'Aave Ethereum Market': 'Core Market',
+  'Aave V3 Lido Ethereum': 'Prime Market',
+}
+
+/// If a pool label carries a trailing "(<market>)" — e.g. Aave's "WETH position (Aave Ethereum Market)" —
+/// return the market name aliased for display ("Core" / "Prime"); otherwise null. Lets us sub-group an
+/// oracle's positions by market so instances that share a reserve symbol (Aave Core vs Prime) render apart.
+function extractMarket(positionDetail: string): string | null {
+  const label = extractPoolLabel(positionDetail)
+  if (!label) return null
+  const m = label.match(/\(([^()]+)\)\s*$/)
+  if (!m) return null
+  const raw = m[1].trim()
+  return MARKET_ALIASES[raw] ?? raw
 }
 
 function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPosition[]> {
@@ -218,15 +253,40 @@ function groupByType(positions: OnchainPosition[]): Array<{ type: string | null;
   return groups
 }
 
-function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint; isDebt: boolean }) {
+/// Within one oracle (one adapter), split positions into sub-groups by their market/pool label so each
+/// distinct instance (Aave Core vs Prime, different Uniswap NFTs/pools, …) gets its own sub-header rather
+/// than collapsing every leg under the first one's label.
+function groupBySubLabel(
+  positions: OnchainPosition[],
+): Array<{ label: string | null; positions: OnchainPosition[] }> {
+  const out: Array<{ label: string | null; positions: OnchainPosition[] }> = []
+  const indexByKey = new Map<string, number>()
+  for (const pos of positions) {
+    // null label = no market/pool name (e.g. plain wallet holdings) → render flat with no sub-header,
+    // rather than a meaningless "Pool 0x…" fallback.
+    const label = extractMarket(pos.positionDetail) ?? extractPoolLabel(pos.positionDetail)
+    const key = label ?? ' '
+    const idx = indexByKey.get(key)
+    if (idx !== undefined) out[idx].positions.push(pos)
+    else {
+      indexByKey.set(key, out.length)
+      out.push({ label, positions: [pos] })
+    }
+  }
+  return out
+}
+
+function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint | null; isDebt: boolean }) {
   return (
     <tr>
       <td colSpan={5} className="p-0">
         <div className="pl-9 pr-4 py-1 bg-neutral-50/60 border-t border-neutral-100 flex items-center justify-between">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</span>
-          <span className={`text-[11px] tabular-nums font-medium ${isDebt ? 'text-rose-700' : 'text-neutral-600'}`}>
-            {formatUsd(total)}
-          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-700">{label}</span>
+          {total !== null && (
+            <span className={`text-[11px] tabular-nums font-medium ${isDebt ? 'text-rose-700' : 'text-neutral-700'}`}>
+              {formatUsd(total)}
+            </span>
+          )}
         </div>
       </td>
     </tr>
@@ -254,14 +314,12 @@ function PositionSection({
   total,
   isDebt,
   chainId,
-  totalPortfolioNav,
 }: {
   label: string
   positions: OnchainPosition[]
   total: bigint
   isDebt: boolean
   chainId: number
-  totalPortfolioNav: bigint
 }) {
   if (positions.length === 0) return null
 
@@ -284,43 +342,54 @@ function PositionSection({
           </div>
         </td>
       </tr>
-      {Array.from(oracleGroups.entries()).map(([oracle, group]) => {
-        const subTotal = group.reduce((s, p) => s + p.value, 0n)
-        const poolLabel = extractPoolLabel(group[0].positionDetail) ?? `Pool ${oracle.slice(0, 6)}…${oracle.slice(-4)}`
-        const typeGroups = groupByType(group)
-        // Render an inner type sub-header (Supply / Fees / Staking / Rewards / …) only when
-        // the pool's entries actually carry >1 distinct `type` discriminator. Single-type
-        // pools (most non-V3 cases) stay flat under the pool sub-header so we don't add
-        // redundant labels like "Supply" inside an already-Supply section.
-        const renderTypeSubHeaders =
-          typeGroups.length > 1 && typeGroups.some((tg) => tg.type !== null)
-        return (
-          <Fragment key={oracle}>
-            <PoolSubHeader label={poolLabel} total={subTotal} isDebt={isDebt} />
-            {renderTypeSubHeaders
-              ? typeGroups.map((tg, ti) => {
-                  const typeTotal = tg.positions.reduce((s, p) => s + p.value, 0n)
-                  const typeLabel = tg.type ?? 'Other'
-                  return (
-                    <Fragment key={`${oracle}-${ti}`}>
-                      <TypeSubHeader label={typeLabel} total={typeTotal} isDebt={isDebt} />
-                      {tg.positions.map((pos, i) => (
-                        <PositionRow
-                          key={`${oracle}-${ti}-${i}`}
-                          pos={pos}
-                          chainId={chainId}
-                          totalPortfolioNav={totalPortfolioNav}
-                        />
-                      ))}
-                    </Fragment>
-                  )
-                })
-              : group.map((pos, i) => (
-                  <PositionRow key={`${oracle}-${i}`} pos={pos} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
-                ))}
-          </Fragment>
-        )
-      })}
+      {Array.from(oracleGroups.entries()).flatMap(([oracle, group]) =>
+        // Split each oracle's legs by market/pool sub-label first, so e.g. Aave Core and Prime — which
+        // share the same balanceOracle and reserve symbol — render under separate sub-headers.
+        groupBySubLabel(group).map((sg, si) => {
+          const subTotal = sg.positions.reduce((s, p) => s + p.value, 0n)
+          const typeGroups = groupByType(sg.positions)
+          // Render an inner type sub-header (Supply / Fees / Staking / Rewards / …) only when the
+          // sub-group's entries carry >1 distinct `type` discriminator. Single-type sub-groups stay
+          // flat under the sub-header so we don't add redundant labels like "Supply" in a Supply section.
+          const renderTypeSubHeaders =
+            typeGroups.length > 1 && typeGroups.some((tg) => tg.type !== null)
+          return (
+            <Fragment key={`${oracle}-${si}`}>
+              {/* Sub-header only when there's a real market/pool label (skip plain wallet holdings). Show its
+                  total only when it aggregates >1 row; for a single leg it would just repeat the row amount. */}
+              {sg.label !== null && (
+                <PoolSubHeader label={sg.label} total={sg.positions.length > 1 ? subTotal : null} isDebt={isDebt} />
+              )}
+              {renderTypeSubHeaders
+                ? typeGroups.map((tg, ti) => {
+                    const typeTotal = tg.positions.reduce((s, p) => s + p.value, 0n)
+                    const typeLabel = tg.type ?? 'Other'
+                    return (
+                      <Fragment key={`${oracle}-${si}-${ti}`}>
+                        <TypeSubHeader label={typeLabel} total={typeTotal} isDebt={isDebt} />
+                        {tg.positions.map((pos, i) => (
+                          <PositionRow
+                            key={`${oracle}-${si}-${ti}-${i}`}
+                            pos={pos}
+                            chainId={chainId}
+                            sectionTotal={total}
+                          />
+                        ))}
+                      </Fragment>
+                    )
+                  })
+                : sg.positions.map((pos, i) => (
+                    <PositionRow
+                      key={`${oracle}-${si}-${i}`}
+                      pos={pos}
+                      chainId={chainId}
+                      sectionTotal={total}
+                    />
+                  ))}
+            </Fragment>
+          )
+        }),
+      )}
     </>
   )
 }
@@ -374,7 +443,7 @@ export function ProtocolGroup({ group, totalPortfolioNav }: ProtocolGroupProps) 
           )}
         </div>
         <div className="flex items-center gap-2">
-          {groupPct && <span className="text-xs text-neutral-400">{groupPct}</span>}
+          {groupPct && <span className="text-xs font-medium text-neutral-800">{groupPct}</span>}
           <span className="tabular-nums font-semibold text-sm text-neutral-950">{formatUsd(totalValue)}</span>
         </div>
       </div>
@@ -382,8 +451,8 @@ export function ProtocolGroup({ group, totalPortfolioNav }: ProtocolGroupProps) 
       {/* Positions table — no repeated column headers */}
       <table className="w-full">
         <tbody>
-          <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
-          <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} totalPortfolioNav={totalPortfolioNav} />
+          <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} />
+          <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} />
         </tbody>
       </table>
     </div>

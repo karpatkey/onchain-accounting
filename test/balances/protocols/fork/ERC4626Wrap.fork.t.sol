@@ -295,4 +295,14 @@ contract ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh is BalanceAdapte
         assertEq(positions[0].positionId, abi.encode(address(SGHO)));
         assertTrue(positions[0].positionKind == PositionKind.Supplied);
     }
+
+    /// @notice getOracleBalances must agree with getOracleBalanceForAsset / getOraclePositions at this pin —
+    ///         exercises the evidence-pack claim that all three views return the same GHO value.
+    function test_realHolder_balances() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(HOLDER);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(GHO));
+        assertEq(amounts[0], EXPECTED_GHO);
+        assertFalse(isDebt[0]);
+    }
 }

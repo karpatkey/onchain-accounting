@@ -27,6 +27,12 @@ function addRecentSearch(address: string) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Absolute magnitude of a (signed, net) value — used for size comparisons (sorting, dust filter) so a
+/// net-negative group (borrow > supply) is ranked/kept by how big it is, not filtered out as "dust".
+function mag(v: bigint): bigint {
+  return v < 0n ? -v : v
+}
+
 function buildProtocolGroups(
   positionResults: ChainPositions[],
   selectedChainId: number | null,
@@ -40,10 +46,16 @@ function buildProtocolGroups(
       const group = map.get(key)!
       if (pos.isDebt) group.borrow.push(pos)
       else group.supply.push(pos)
-      group.totalValue += pos.value < 0n ? -pos.value : pos.value
+      // Net contribution to NAV: debt is negative, so it subtracts (matches the Net headline). pos.value
+      // is already signed (negative for debt), so a plain sum gives the protocol's net value.
+      group.totalValue += pos.value
     }
   }
-  return [...map.values()].sort((a, b) => (b.totalValue > a.totalValue ? 1 : -1))
+  // Sort by net magnitude so a net-negative group (rare: borrow > supply) still ranks by size.
+  return [...map.values()].sort((a, b) => {
+    const d = mag(b.totalValue) - mag(a.totalValue)
+    return d > 0n ? 1 : d < 0n ? -1 : 0
+  })
 }
 
 function exportCsv(positionResults: ChainPositions[], address: string) {
@@ -159,8 +171,13 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
   )
 
   const groups = useMemo(() => {
-    let g = hideDust ? allGroups.filter((gr) => gr.totalValue >= DUST_THRESHOLD) : allGroups
-    if (sortOrder === 'value-asc') g = [...g].sort((a, b) => (a.totalValue > b.totalValue ? 1 : -1))
+    let g = hideDust ? allGroups.filter((gr) => mag(gr.totalValue) >= DUST_THRESHOLD) : allGroups
+    if (sortOrder === 'value-asc') {
+      g = [...g].sort((a, b) => {
+        const d = mag(a.totalValue) - mag(b.totalValue)
+        return d > 0n ? 1 : d < 0n ? -1 : 0
+      })
+    }
     else if (sortOrder === 'name-asc') g = [...g].sort((a, b) => a.protocol.localeCompare(b.protocol))
     return g
   }, [allGroups, hideDust, sortOrder])

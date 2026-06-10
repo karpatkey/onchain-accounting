@@ -33,7 +33,7 @@ import {syrupUSDC_L2_PriceOracle} from "../../src/prices/protocols/syrupUSDC_L2_
 // The Alpha funds use a Chainlink feed (`ethPlusToUsdChainlink`) as ETH+ price source,
 // so the Custom adapter at src/prices/protocols/ETHPlus_Price.sol is not deployed.
 
-// import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
+import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
 
 /// @title DeployPriceFeeds
 /// @notice Deploys custom price feed adapters for NAVCalculator
@@ -102,6 +102,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy syrupUSDC Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC")) {
             _deploySyrupUsdc();
+        }
+
+        // Deploy stETH Cross-Rate Price Oracle (stETH/USD = ETH/USD * stETH/ETH)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "stETH")) {
+            _deployStEth();
         }
 
         // Deploy wstETH Price Oracle
@@ -248,6 +253,28 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDC_PriceOracle syrupUsdcAdapter = new syrupUSDC_PriceOracle(syrupUsdc, usdcUsdOracle, usdcUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
         console2.log("syrupUSDC_PriceOracle deployed at:", address(syrupUsdcAdapter));
+    }
+
+    function _deployStEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "stETH");
+        if (deployed != address(0)) {
+            console2.log("stETH CrossRatePriceAdapter already deployed at:", deployed);
+            return;
+        }
+
+        // CrossRate: Y/USD = (X/USD) * (Y/X). For stETH: Y = stETH, X = ETH.
+        address stEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "underlyingAsset"));
+        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "xToUsdFeed"));
+        address stEthEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "xToUsdHeartbeat"));
+        uint256 stEthEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXHeartbeat"));
+
+        CrossRatePriceAdapter stEthAdapter =
+            new CrossRatePriceAdapter(stEth, ethUsdFeed, stEthEthFeed, ethUsdHeartbeat, stEthEthHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
+        console2.log("stETH CrossRatePriceAdapter deployed at:", address(stEthAdapter));
     }
 
     function _deployWstEth() internal {

@@ -1,6 +1,19 @@
 {
   "description": "Assets and their price feed adapters per chain. priceFeeds = deployable custom adapters; tokens = token list with Chainlink or Custom pricefeed per chain. Deployed adapter addresses are in chains/{chainId}.json under priceFeeds.{adapter}.deployed.",
   "priceFeeds": {
+    "stETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "underlyingAsset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+          "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
+          "xToUsdHeartbeat": "3600",
+          "yToXHeartbeat": "86400"
+        },
+        "$comment": "CrossRatePriceAdapter for stETH: stETH/USD = (ETH/USD) * (stETH/ETH). X = ETH (xToUsdFeed = ETH/USD 0x5f4eC3Df), Y = stETH (yToXFeed = stETH/ETH 0x86392dC1). Deploy then rewire the live stETH registration from the raw STETH/USD Chainlink feed via Safe setPriceFeed(stETH, <deployed>, Custom, MAX). tokens.1.stETH stays Chainlink until that rewire lands."
+      }
+    },
     "wstETH": {
       "1": {
         "enabled": true,

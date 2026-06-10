@@ -3,9 +3,9 @@ pragma solidity ^0.8;
 
 import {
     AaveV3InstancesMetaBalanceAdapter,
-    IAaveAddressesProviderSource
+    IAaveAddressesProviderSource,
+    IAavePoolAddressesProvider
 } from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
 
@@ -40,11 +40,16 @@ contract AaveV2InstancesMetaBalanceAdapter is AaveV3InstancesMetaBalanceAdapter 
     }
 
     /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 64) return "";
-        (, address reserve) = abi.decode(pid, (address, address));
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            return string.concat(sym, " position");
+    /// @dev V2's LendingPool exposes `getAddressesProvider()` rather than V3's `ADDRESSES_PROVIDER()`; the provider's
+    ///      `getMarketId()` (e.g. "Aave genesis market") is the same view as V3. describePosition is otherwise
+    ///      inherited (reserve symbol from positionId), so it now reports "<symbol> position (<market id>)".
+    function _marketId(address pool) internal view override returns (string memory) {
+        try IAaveV2LendingPool(pool).getAddressesProvider() returns (address ap) {
+            try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
+                return m;
+            } catch {
+                return "";
+            }
         } catch {
             return "";
         }
@@ -54,4 +59,9 @@ contract AaveV2InstancesMetaBalanceAdapter is AaveV3InstancesMetaBalanceAdapter 
 /// @notice Minimal Aave V2 LendingPoolAddressesProvider view for resolving the pool address.
 interface IAaveV2LendingPoolAddressesProvider {
     function getLendingPool() external view returns (address);
+}
+
+/// @notice Minimal Aave V2 LendingPool view for resolving its addresses provider (for the market-id label).
+interface IAaveV2LendingPool {
+    function getAddressesProvider() external view returns (address);
 }

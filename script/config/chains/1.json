@@ -26,7 +26,7 @@
       "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
     },
     "AaveV2InstancesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V2 instance. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool()). The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). positionId derived on-chain = the instance LendingPool; name = LendingPoolAddressesProvider.getMarketId(). Supersedes the per-instance AaveV2_* adapters, disabled below.",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V2 instance. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool()). The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). positionId derived on-chain = abi.encode(instance LendingPool, reserve); describePosition label = \"<reserve symbol> position (<market id>)\" (market id = LendingPool.getAddressesProvider().getMarketId(), e.g. \"Aave genesis market\"). Supersedes the per-instance AaveV2_* adapters, disabled below.",
       "enabled": true,
       "constructor": {
         "protocol": "Aave V2"
@@ -49,7 +49,7 @@
       "comment": "Aave V2 lending market (legacy). The V2 ProtocolDataProvider exposes the same getAllReservesTokens / getUserReserveData ABI as V3, covered by AaveV2InstancesMetaBalanceAdapter. Stable-debt positions are not reported \u2014 V2 stable borrowing has been governance-disabled across all reserves and any residual stable debt is rounding noise. Mainnet only: V2 was never deployed on the L2s/Gnosis this repo also targets."
     },
     "AaveV3InstancesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
+      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (setMetaInstances, from metaInstances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = abi.encode(instance Pool, reserve); describePosition label = \"<reserve symbol> position (<market id>)\" (market id = Pool.ADDRESSES_PROVIDER().getMarketId(), e.g. \"Aave Ethereum Market\" vs \"Aave V3 Lido Ethereum\" — distinguishes Core/Lido instances that share a reserve symbol).",
       "enabled": true,
       "constructor": {
         "protocol": "Aave V3"

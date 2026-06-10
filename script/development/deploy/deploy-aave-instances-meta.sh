@@ -25,8 +25,10 @@ CHAINS_CFG="$DEV_DIR/config/chains.json"
 #   Aave V3 Core: 0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3  (getMarketId "Aave Ethereum Market")
 #   Aave V3 Lido: 0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5  (getMarketId "Aave V3 Lido Ethereum" — Prime)
 #   Aave V2:      0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d  (getMarketId "Aave genesis market")
-V3_DPS=${DEV_V3_DATA_PROVIDERS:-0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3,0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5}
-V2_DPS=${DEV_V2_DATA_PROVIDERS:-0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d}
+# `${VAR-default}` (no colon): only an UNSET var falls back to the default; an explicitly-empty value stays
+# empty and hits the `-z "$dps"` skip branch in deploy_one — so e.g. DEV_V2_DATA_PROVIDERS="" skips V2.
+V3_DPS=${DEV_V3_DATA_PROVIDERS-0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3,0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5}
+V2_DPS=${DEV_V2_DATA_PROVIDERS-0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d}
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"

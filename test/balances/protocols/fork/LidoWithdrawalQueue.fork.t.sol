@@ -7,6 +7,8 @@ import {LidoWithdrawalQueueBalanceOracle} from "src/balances/protocols/LidoWithd
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title LidoWithdrawalQueueBalanceOracleForkTest
 /// @notice Fork tests against Lido's WithdrawalQueueERC721 on mainnet.
@@ -137,5 +139,84 @@ contract LidoWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     function test_immutableAddresses() public view {
         assertEq(address(oracle.WITHDRAWAL_QUEUE()), WITHDRAWAL_QUEUE);
         assertEq(oracle.UNDERLYING_TOKEN(), NATIVE_ETH);
+    }
+}
+
+/// @title LidoWithdrawalQueueBalanceOracleForkTest_Fresh
+/// @notice Fresh dual-holder pin at the verification block (augments the original suite above; does not replace it).
+/// @dev Captured 2026-06-11 at block 25_294_574 — see `script/development/test/lidoWithdrawalQueue/README.md`.
+///      Queue state at the block: lastRequestId 127194, lastFinalizedRequestId 127171, lastCheckpointIndex 1123.
+///      One holder per math branch:
+///      - PRIMARY `0x9074212F…` — two PENDING (un-finalized) requests 127178 (1000 stETH) + 127179
+///        (995.928786744414475126 stETH) → `amountOfStETH` branch + multi-request summing = 1995.928… ETH.
+///      - SECONDARY `0x2DE923BE…` — one FINALIZED-unclaimed request 127164 → `getClaimableEther` branch = 54.619… ETH
+///        (equals amountOfStETH here; no negative rebase). The divergent (haircut) case is covered with mocks in the
+///        unit test. The finalized request can be claimed by its owner at any time after this block — the pin keeps
+///        it reproducible.
+contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBase {
+    address public constant WITHDRAWAL_QUEUE = 0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1;
+    address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    uint256 public constant FORK_BLOCK = 25_294_574;
+
+    address public constant PRIMARY = 0x9074212F22F75789cA3fa21A4B46d3A1489CC0a9;
+    uint256 public constant PRIMARY_EXPECTED_ETH = 1_995_928_786_744_414_475_126;
+
+    address public constant SECONDARY = 0x2DE923BEE124514939ACa4f8f057e11Ff8d44F2b;
+    uint256 public constant SECONDARY_EXPECTED_ETH = 54_619_912_948_304_940_018;
+
+    LidoWithdrawalQueueBalanceOracle public oracle;
+
+    function setUp() public override {
+        super.setUp();
+        _setupFork();
+
+        balances = new BalancesHarnessForFork();
+        balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
+
+        oracle = new LidoWithdrawalQueueBalanceOracle(WITHDRAWAL_QUEUE, NATIVE_ETH, address(balances));
+    }
+
+    function _setupFork() internal override {
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
+    }
+
+    // ---- PRIMARY: two pending requests, amountOfStETH branch + multi-request summing ----
+
+    function test_primary_pendingMultiRequest_balance() public view {
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(PRIMARY, NATIVE_ETH);
+        assertEq(amount, PRIMARY_EXPECTED_ETH, "Sum of amountOfStETH across two pending requests");
+        assertFalse(isDebt);
+    }
+
+    function test_primary_pendingMultiRequest_position() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(PRIMARY, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].amount, PRIMARY_EXPECTED_ETH);
+        assertFalse(positions[0].isDebt);
+        assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
+        assertEq(positions[0].positionId.length, 0, "account-global positionId is empty");
+        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+    }
+
+    // ---- SECONDARY: one finalized-unclaimed request, getClaimableEther branch ----
+
+    function test_secondary_finalized_balance() public view {
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SECONDARY, NATIVE_ETH);
+        assertEq(amount, SECONDARY_EXPECTED_ETH, "getClaimableEther for the finalized request");
+        assertFalse(isDebt);
+    }
+
+    function test_secondary_finalized_position() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SECONDARY, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].amount, SECONDARY_EXPECTED_ETH);
+        assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
+        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
     }
 }

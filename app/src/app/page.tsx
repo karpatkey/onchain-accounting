@@ -8,6 +8,7 @@ import { ChainSidebar } from '@/components/chain-sidebar'
 import { ProtocolGroup, type ProtocolGroupData } from '@/components/protocol-group'
 import { useAccountNav } from '@/hooks/use-account-nav'
 import { useAccountPositions, type ChainPositions } from '@/hooks/use-account-positions'
+import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { shortenAddress } from '@/lib/format'
 
@@ -182,6 +183,25 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     return g
   }, [allGroups, hideDust, sortOrder])
 
+  // Lido withdrawal-queue oracles the account touches — drives the per-NFT-id drill-down (display only;
+  // the adapter aggregates to a single ETH leg). Keyed off the resolved protocol name, deduped per oracle.
+  const lidoOracles = useMemo<LidoOracleRef[]>(() => {
+    const seen = new Set<string>()
+    const refs: LidoOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocol !== 'Lido') continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
+  const withdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
+
   const totalPortfolioNav = navResults.reduce((s, r) => s + (r.nav?.value ?? 0n), 0n)
 
   const supplyTotal = useMemo(
@@ -291,6 +311,7 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
                 key={`${group.protocol}::${group.chainId}`}
                 group={group}
                 totalPortfolioNav={totalPortfolioNav}
+                withdrawalsByKey={withdrawalsByKey}
               />
             ))}
           </div>

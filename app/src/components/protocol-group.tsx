@@ -2,6 +2,7 @@
 
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
+import { type LidoWithdrawalsByKey, lidoWithdrawalsKey } from '@/hooks/use-lido-withdrawals'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import { formatUnits } from 'viem'
@@ -137,30 +138,81 @@ function pctOfSection(value: bigint, sectionTotal: bigint): string {
   return `${pct.toFixed(1)}%`
 }
 
-function PositionRow({ pos, chainId, sectionTotal }: { pos: OnchainPosition; chainId: number; sectionTotal: bigint }) {
+function PositionRow({
+  pos,
+  chainId,
+  sectionTotal,
+  withdrawalsByKey,
+}: {
+  pos: OnchainPosition
+  chainId: number
+  sectionTotal: bigint
+  withdrawalsByKey?: LidoWithdrawalsByKey
+}) {
   const pct = pctOfSection(pos.value, sectionTotal)
+  // Per-NFT-id drill-down for Lido withdrawal-queue legs. The adapter aggregates all open requests into
+  // this one ETH leg; these rows re-derive the components from the WithdrawalQueue for visibility only.
+  // amountOfStETH is what the adapter sums for un-finalized requests (== claimable in the normal case), so
+  // the sub-rows reconcile with the aggregate above absent a negative-rebase haircut on a finalized request.
+  const requests = withdrawalsByKey?.get(lidoWithdrawalsKey(chainId, pos.balanceOracle)) ?? []
   return (
-    <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
-      <td className="py-2.5 px-4 text-sm font-medium text-neutral-950">
-        <div className="flex items-center gap-1.5">
-          <TokenLogo symbol={pos.underlyingAsset.symbol} address={pos.underlyingAsset.asset} chainId={chainId} />
-          {pos.underlyingAsset.symbol}
-        </div>
-      </td>
-      <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
-        {formatAmount(pos.amount, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
-      </td>
-      <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
-        {formatPrice(pos.price, pos.priceDecimals)}
-      </td>
-      <td className={`py-2.5 px-4 text-sm text-right tabular-nums font-semibold ${pos.isDebt ? 'text-rose-700' : 'text-neutral-950'}`}>
-        {formatUsd(pos.value)}
-        {pos.stale && <span className="ml-1 text-orange-600 text-xs">⚠</span>}
-      </td>
-      <td className={`py-2.5 px-4 text-xs text-right tabular-nums font-medium ${pos.isDebt ? 'text-rose-700' : 'text-neutral-800'}`}>
-        {pct}
-      </td>
-    </tr>
+    <>
+      <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
+        <td className="py-2.5 px-4 text-sm font-medium text-neutral-950">
+          <div className="flex items-center gap-1.5">
+            <TokenLogo symbol={pos.underlyingAsset.symbol} address={pos.underlyingAsset.asset} chainId={chainId} />
+            {pos.underlyingAsset.symbol}
+          </div>
+        </td>
+        <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
+          {formatAmount(pos.amount, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+        </td>
+        <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
+          {formatPrice(pos.price, pos.priceDecimals)}
+        </td>
+        <td className={`py-2.5 px-4 text-sm text-right tabular-nums font-semibold ${pos.isDebt ? 'text-rose-700' : 'text-neutral-950'}`}>
+          {formatUsd(pos.value)}
+          {pos.stale && <span className="ml-1 text-orange-600 text-xs">⚠</span>}
+        </td>
+        <td className={`py-2.5 px-4 text-xs text-right tabular-nums font-medium ${pos.isDebt ? 'text-rose-700' : 'text-neutral-800'}`}>
+          {pct}
+        </td>
+      </tr>
+      {requests.map((req) => {
+        // Split the aggregate leg's USD value across requests by stETH share, so the sub-rows sum exactly
+        // back to the parent (price is the same ETH/USD for every request).
+        const subValue = pos.amount === 0n ? 0n : (pos.value * req.amountOfStETH) / pos.amount
+        return (
+          <tr key={req.id.toString()} className="border-t border-neutral-100 bg-neutral-100/70">
+            <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
+              <div className="flex items-center gap-2">
+                <span className="text-neutral-400">↳</span>
+                <span className="font-mono font-medium text-neutral-800">#{req.id.toString()}</span>
+                <span
+                  className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    req.isFinalized ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {req.isFinalized ? 'Claimable' : 'Pending'}
+                </span>
+              </div>
+            </td>
+            <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
+              {formatAmount(req.amountOfStETH, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+            </td>
+            <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
+              {formatPrice(pos.price, pos.priceDecimals)}
+            </td>
+            <td className="py-2 px-4 text-xs text-right tabular-nums font-medium text-neutral-800">
+              {formatUsd(subValue)}
+            </td>
+            <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
+              {pctOfSection(subValue, sectionTotal)}
+            </td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 
@@ -321,12 +373,14 @@ function PositionSection({
   total,
   isDebt,
   chainId,
+  withdrawalsByKey,
 }: {
   label: string
   positions: OnchainPosition[]
   total: bigint
   isDebt: boolean
   chainId: number
+  withdrawalsByKey?: LidoWithdrawalsByKey
 }) {
   if (positions.length === 0) return null
 
@@ -380,6 +434,7 @@ function PositionSection({
                             pos={pos}
                             chainId={chainId}
                             sectionTotal={total}
+                            withdrawalsByKey={withdrawalsByKey}
                           />
                         ))}
                       </Fragment>
@@ -391,6 +446,7 @@ function PositionSection({
                       pos={pos}
                       chainId={chainId}
                       sectionTotal={total}
+                      withdrawalsByKey={withdrawalsByKey}
                     />
                   ))}
             </Fragment>
@@ -412,9 +468,10 @@ export type ProtocolGroupData = {
 interface ProtocolGroupProps {
   group: ProtocolGroupData
   totalPortfolioNav: bigint
+  withdrawalsByKey?: LidoWithdrawalsByKey
 }
 
-export function ProtocolGroup({ group, totalPortfolioNav }: ProtocolGroupProps) {
+export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: ProtocolGroupProps) {
   const { protocol, chainId, supply, borrow, totalValue } = group
 
   const supplyTotal = supply.reduce((s, p) => s + p.value, 0n)
@@ -458,8 +515,8 @@ export function ProtocolGroup({ group, totalPortfolioNav }: ProtocolGroupProps) 
       {/* Positions table — no repeated column headers */}
       <table className="w-full">
         <tbody>
-          <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} />
-          <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} />
+          <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
+          <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
         </tbody>
       </table>
     </div>

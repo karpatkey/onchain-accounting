@@ -168,8 +168,8 @@ contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBas
     LidoWithdrawalQueueBalanceOracle public oracle;
 
     function setUp() public override {
+        // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
-        _setupFork();
 
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");

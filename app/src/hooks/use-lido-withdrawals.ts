@@ -214,25 +214,32 @@ export function useLidoWithdrawals(
     query: { enabled: !!account && finalizedLookups.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
-  // Stage 5 — claimable ETH per finalized request, given its hint.
-  const { data: claimableData } = useReadContracts({
-    contracts: finalizedLookups.map((f, i) => {
+  // Stage 5 — claimable ETH per finalized request. Only build calls for requests whose checkpoint hint has
+  // already resolved to a usable value: a hint of 0 means "not yet resolved / no checkpoint", and
+  // getClaimableEther with a 0 hint would fail — so we skip it and let the request fall back to amountOfStETH
+  // until the hint lands, rather than issuing a doomed call that just retries on the refetch interval.
+  const claimReady = finalizedLookups
+    .map((f, i) => {
       const hintRes = hintData?.[i]
       const hint = hintRes?.status === 'success' ? (hintRes.result as readonly bigint[])[0] ?? 0n : 0n
-      return {
-        chainId: f.chainId,
-        address: f.queue,
-        abi: queueAbi,
-        functionName: 'getClaimableEther' as const,
-        args: [[f.id], [hint]] as const,
-      }
-    }),
-    query: { enabled: !!account && finalizedLookups.length > 0 && !!hintData, refetchInterval: AUTOREFRESH_INTERVAL_MS },
+      return { f, hint }
+    })
+    .filter((x) => x.hint !== 0n)
+
+  const { data: claimableData } = useReadContracts({
+    contracts: claimReady.map(({ f, hint }) => ({
+      chainId: f.chainId,
+      address: f.queue,
+      abi: queueAbi,
+      functionName: 'getClaimableEther' as const,
+      args: [[f.id], [hint]] as const,
+    })),
+    query: { enabled: !!account && claimReady.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
   // claimable[queueKey:id] = exact ETH for that finalized request.
   const claimableById = new Map<string, bigint>()
-  finalizedLookups.forEach((f, i) => {
+  claimReady.forEach(({ f }, i) => {
     const res = claimableData?.[i]
     if (res?.status !== 'success') return
     const eth = (res.result as readonly bigint[])[0] ?? 0n

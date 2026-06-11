@@ -152,8 +152,8 @@ function PositionRow({
   const pct = pctOfSection(pos.value, sectionTotal)
   // Per-NFT-id drill-down for Lido withdrawal-queue legs. The adapter aggregates all open requests into
   // this one ETH leg; these rows re-derive the components from the WithdrawalQueue for visibility only.
-  // amountOfStETH is what the adapter sums for un-finalized requests (== claimable in the normal case), so
-  // the sub-rows reconcile with the aggregate above absent a negative-rebase haircut on a finalized request.
+  // Each request's ethOwed is valued the same way the adapter sums it (claimable ETH for finalized,
+  // amountOfStETH for pending), so the sub-rows are genuine ETH amounts and reconcile with the aggregate.
   const requests = withdrawalsByKey?.get(lidoWithdrawalsKey(chainId, pos.balanceOracle)) ?? []
   return (
     <>
@@ -179,9 +179,9 @@ function PositionRow({
         </td>
       </tr>
       {requests.map((req) => {
-        // Split the aggregate leg's USD value across requests by stETH share, so the sub-rows sum exactly
-        // back to the parent (price is the same ETH/USD for every request).
-        const subValue = pos.amount === 0n ? 0n : (pos.value * req.amountOfStETH) / pos.amount
+        // Split the aggregate leg's USD value across requests by ETH-owed share (the same per-request basis
+        // the adapter sums), so the sub-rows sum exactly back to the parent at the one ETH/USD price.
+        const subValue = pos.amount === 0n ? 0n : (pos.value * req.ethOwed) / pos.amount
         return (
           <tr key={req.id.toString()} className="border-t border-neutral-100 bg-neutral-100/70">
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
@@ -198,7 +198,7 @@ function PositionRow({
               </div>
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
-              {formatAmount(req.amountOfStETH, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+              {formatAmount(req.ethOwed, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
               {formatPrice(pos.price, pos.priceDecimals)}

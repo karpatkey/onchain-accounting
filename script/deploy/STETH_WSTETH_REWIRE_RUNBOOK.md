@@ -21,8 +21,25 @@ Feeds (mainnet): `ETH/USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`, `stETH/
 This is the **nav-v2-legacy** (live-prod) track. Mirror onto `main` for the future NAV v2 (the PR #52
 pattern) once landed here.
 
-> **Hold:** do not execute until the team agrees on the approach (Slack thread). This PR only *prepares*
-> the change — code, config, tests. Steps below are the deploy + rewire to run on agreement.
+> **Status (2026-06-11):** team green-lit (Sisyphos + Ismael). The full deploy + rewire below was
+> validated end-to-end on a mainnet anvil fork against the live NAV `0x07938ddD…` — both feeds deploy, the
+> security-council Safe (holds `MANAGER`) executes both `setPriceFeed` calls, and the new feeds price
+> correctly. Safe to execute on mainnet.
+
+## Verified live state (mainnet, 2026-06-11)
+
+Read directly from the live NAV `0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`:
+
+| Asset | Live registered feed | Type | Note |
+|---|---|---|---|
+| stETH | `0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8` (raw STETH/USD Chainlink) | Chainlink | the two-feed jitter source |
+| wstETH | `0xAc8ef2dc1Ee81f30A3249fcAb6789ed85Fd189Cd` (the **v1** oracle) | Custom | see note below |
+
+> **Pre-existing wstETH misregistration (not introduced here):** the live v2 NAV prices wstETH through the
+> **v1** oracle `0xAc8ef2dc…`. The v2 oracle (`0xc3E04720338BC8AddC335764914b7602DD11e79f`, recorded in
+> `chains/1.json` and the Notion oracle DB as the current v2 deployment) was deployed but **never wired into
+> the live NAV**. This rewire replaces the live `0xAc8ef2dc…` directly with the corrected oracle, so it also
+> resolves that drift — the never-wired `0xc3E0472…` is bypassed entirely.
 
 ## 1. Deploy prep (config)
 
@@ -30,8 +47,10 @@ pattern) once landed here.
 deploying:
 
 - `chains/1.json` → add `"stETH": { "deployed": "" }` under `priceFeeds` (no entry exists yet).
-- `chains/1.json` → clear `priceFeeds.wstETH.deployed` (currently `0xc3E04720338BC8AddC335764914b7602DD11e79f`,
-  the **old-formula** oracle) to force a fresh deploy of the corrected oracle.
+- `chains/1.json` → clear `priceFeeds.wstETH.deployed` (currently records the v2 oracle
+  `0xc3E04720338BC8AddC335764914b7602DD11e79f`) to force a fresh deploy of the corrected oracle. Note this is
+  config bookkeeping — the **live** NAV feed being replaced is the v1 oracle `0xAc8ef2dc…` (see "Verified live
+  state" above), not `0xc3E0472…`.
 
 The constructor params are already in `assets.json` (`priceFeeds.stETH.1` and `priceFeeds.wstETH.1`).
 
@@ -58,6 +77,10 @@ cast call $STETH_CROSSRATE "underlyingAssetSupported()(address)" --rpc-url "$MAI
 cast call $WSTETH_NEW       "underlyingAssetSupported()(address)" --rpc-url "$MAINNET_URL"  # == wstETH
 ```
 
+> On live mainnet `getLatestPrice()` returns `stale=false` (Chainlink updates within the heartbeat). On a
+> time-drifted anvil fork it can read `stale=true` purely because the fork froze the feed `updatedAt` while
+> `block.timestamp` advanced past the heartbeat — a fork artifact, not a feed problem.
+
 ## 4. Rewire the live NAVCalculator (security-council Safe — holds MANAGER)
 
 `setPriceFeed` overwrites an asset's registered feed in one call (this is the "remove current + wire new").
@@ -72,7 +95,7 @@ MAX_UINT = 115792089237316195423570985008687907853269984665640564039457584007913
 # stETH: raw STETH/USD Chainlink  ->  CrossRate Custom feed
 setPriceFeed(0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84, STETH_CROSSRATE, 1 /*Custom*/, MAX_UINT)
 
-# wstETH: old-formula Custom feed  ->  corrected Custom feed
+# wstETH: live v1 oracle 0xAc8ef2dc (old formula)  ->  corrected Custom feed
 setPriceFeed(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0, WSTETH_NEW,      1 /*Custom*/, MAX_UINT)
 ```
 

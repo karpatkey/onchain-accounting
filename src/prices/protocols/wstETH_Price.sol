@@ -10,11 +10,18 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "src/errors.sol";
 
 /// @title wstETH Custom Price Oracle
-/// @notice Returns the USD price of wstETH by combining wstETH's stEthPerToken rate with Chainlink's ETH/USD feed.
-/// @dev The price is computed as `price = (stETH/wstETH) * (ETH/USD)`, where:
-///      - `stETH/wstETH` comes from wstETH contract's `stEthPerToken()` function (18 decimals)
-///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
-///      Multiplied and scaled to 8 decimals: `price = stEthPerToken * ETH/USD / 1e18`
+/// @notice Returns the USD price of wstETH by combining wstETH's on-chain stEthPerToken rate with Chainlink's
+///         stETH/ETH and ETH/USD feeds.
+/// @dev The price is computed as `price = stEthPerToken * (stETH/ETH) * (ETH/USD)`, where:
+///      - `stEthPerToken` (stETH per 1 wstETH) comes from the wstETH contract (18 decimals)
+///      - `stETH/ETH` (ETH per 1 stETH) comes from a Chainlink oracle (18 decimals)
+///      - `ETH/USD` comes from a Chainlink oracle (8 decimals)
+///      Intermediate `stEthPerToken * (stETH/ETH) / 1e18` yields ETH per wstETH (i.e. the wstETH/ETH price,
+///      18 decimals — note the stETH/ETH feed returns ETH per stETH); multiplying by ETH/USD and scaling by
+///      1e18 yields the USD price (8 decimals).
+///      Using the real stETH/ETH rate (rather than assuming stETH == ETH 1:1) keeps the price accurate and lets
+///      ETH/USD cancel cleanly when NAV is quoted in ETH — the same pattern the L2 variant uses with a wstETH/ETH
+///      feed.
 /// @author kpk
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract wstETH_PriceOracle is IPriceFeedCustom {
@@ -30,8 +37,14 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
     /// @notice wstETH token address.
     address public immutable WSTETH;
 
+    /// @notice Chainlink oracle for stETH to ETH (ETH per 1 stETH).
+    AggregatorV3Interface public immutable STETH_TO_ETH_CHAINLINK_ORACLE;
+
     /// @notice Chainlink oracle for ETH to USD.
     AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
+
+    /// @notice The heartbeat interval for the stETH/ETH Chainlink oracle.
+    uint256 public immutable STETH_TO_ETH_CHAINLINK_HEARTBEAT;
 
     /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
     uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
@@ -44,11 +57,21 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
     //
 
     /// @param wstEth_ The address of the wstETH token.
+    /// @param stEthToEthChainlinkOracle_ The address of the stETH to ETH Chainlink oracle.
     /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not updated.
-    constructor(address wstEth_, address ethToUsdChainlinkOracle_, uint256 ethToUsdChainlinkHeartbeat_) {
+    /// @param stEthToEthHeartbeat_ The time in seconds after which the stETH/ETH price is considered stale.
+    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the ETH/USD price is considered stale.
+    constructor(
+        address wstEth_,
+        address stEthToEthChainlinkOracle_,
+        address ethToUsdChainlinkOracle_,
+        uint256 stEthToEthHeartbeat_,
+        uint256 ethToUsdChainlinkHeartbeat_
+    ) {
         WSTETH = OracleArgumentChecks.assertERC20Address(wstEth_);
+        STETH_TO_ETH_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(stEthToEthChainlinkOracle_);
         ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
+        STETH_TO_ETH_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(stEthToEthHeartbeat_);
         ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
         _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
     }
@@ -59,13 +82,17 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
 
     /// @inheritdoc IPriceFeedCustom
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
+        (, int256 stEthToEthRate,, uint256 stEthToEthUpdatedAt,) = STETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
         (, int256 ethToUsdPrice,, uint256 ethToUsdUpdatedAt,) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 
-        if (ethToUsdPrice <= 0) {
+        if (stEthToEthRate <= 0 || ethToUsdPrice <= 0) {
             return (0, true);
         }
 
-        if (block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT) {
+        if (
+            block.timestamp - stEthToEthUpdatedAt > STETH_TO_ETH_CHAINLINK_HEARTBEAT
+                || block.timestamp - ethToUsdUpdatedAt > ETH_TO_USD_CHAINLINK_HEARTBEAT
+        ) {
             stale = true;
         }
 
@@ -75,8 +102,12 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
             return (0, true);
         }
 
-        // stEthPerToken is 18 decimals, ETH/USD is 8 decimals → result is 8 decimals
-        price = stEthPerToken.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
+        // stEthPerToken (18) * stETH/ETH (18) / 1e18 = ETH per wstETH (the wstETH/ETH price, 18 decimals)
+        uint256 ethPerWstEth = stEthPerToken.mulDiv(
+            uint256(stEthToEthRate), 10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
+        );
+        // (ETH per wstETH, 18) * ETH/USD (8) / 1e18 = USD price (8 decimals)
+        price = ethPerWstEth.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
     }
 
     /// @inheritdoc IPriceFeedCustom

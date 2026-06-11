@@ -451,10 +451,10 @@
   },
   "priceFeeds": {
     "stETH": {
-      "deployed": ""
+      "deployed": "0x70dD216CcD75551a170E361bebD33Db64fc0CfAe"
     },
     "wstETH": {
-      "deployed": "0xc3E04720338BC8AddC335764914b7602DD11e79f"
+      "deployed": "0x35B2aAE4de9E66Cd6D86fc2eD360E9Bcb79A4561"
     },
     "rETH": {
       "deployed": "0x99690D21EB64cA7941e974691455Be41D558441B"

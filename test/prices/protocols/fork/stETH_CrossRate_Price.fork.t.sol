@@ -58,18 +58,24 @@ contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
         assertApproxEqAbs(stEthInEth, uint256(stEthEth), 1e10, "ETH-quote recovers the stETH/ETH feed (cancellation)");
     }
 
-    /// @notice Sanity: the raw STETH/USD feed (the one being replaced) is a DIFFERENT source whose implied
-    ///         stETH/ETH (rawStEthUsd / ethUsd) is not identical to the dedicated feed — the gap is exactly the
-    ///         two-feed desync that made the ETH-denominated NAV jitter.
-    function test_rawStEthUsdImpliesDifferentRatio() public view {
+    /// @notice Sanity: the raw STETH/USD feed (the one being replaced) is a SEPARATE source whose implied
+    ///         stETH/ETH (rawStEthUsd / ethUsd) need not track the dedicated stETH/ETH feed exactly. The two
+    ///         feeds update independently, so this implied ratio can drift from the dedicated feed over time —
+    ///         that desync is what made the ETH-denominated NAV jitter. Here we only assert the two are close
+    ///         at this block (they may also coincide); the test does not claim a strict inequality.
+    function test_rawStEthUsdIsIndependentSource() public view {
         (, int256 ethUsd,,,) = AggregatorV3Interface(ETH_TO_USD).latestRoundData();
         (, int256 stEthEth,,,) = AggregatorV3Interface(STETH_TO_ETH).latestRoundData();
         (, int256 rawStEthUsd,,,) = AggregatorV3Interface(STETH_USD_RAW).latestRoundData();
 
         uint256 impliedFromRaw = (uint256(rawStEthUsd) * 1e18) / uint256(ethUsd); // two-feed implied stETH/ETH
-        // Both are ~1e18; assert they are close (sanity) — they need not be equal, which is the bug we remove.
+        // Both are ~1e18; assert only that they're close (sanity). They need not be equal — independent feeds —
+        // and they may coincide at any given block; the over-time desync is the bug the cross-rate change removes.
         assertApproxEqRel(
-            impliedFromRaw, uint256(stEthEth), 0.02e18, "raw-implied ratio is near, not equal, to the feed"
+            impliedFromRaw,
+            uint256(stEthEth),
+            0.02e18,
+            "raw-implied ratio is near the dedicated feed (independent sources)"
         );
     }
 

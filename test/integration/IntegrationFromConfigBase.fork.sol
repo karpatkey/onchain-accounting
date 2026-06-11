@@ -38,6 +38,7 @@ import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
 import {eETH_PriceOracle} from "src/prices/protocols/eETH_Price.sol";
 import {ezETH_PriceOracle} from "src/prices/protocols/ezETH_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
+import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRate_Price.sol";
 
 // Price feed adapters (L2)
 import {wstETH_L2_PriceOracle} from "src/prices/protocols/wstETH_L2_Price.sol";
@@ -139,6 +140,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("rsETH", _deployRsEth);
             _tryDeployPriceFeed("eETH", _deployEEth);
             _tryDeployPriceFeed("ezETH", _deployEzEth);
+            _tryDeployPriceFeed("stETH", _deployStEth);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -225,6 +227,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
         return address(new wstETH_PriceOracle(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
+    }
+
+    function _deployStEth() internal returns (address) {
+        // stETH reuses the generic CrossRatePriceAdapter: stETH/USD = (ETH/USD) x (stETH/ETH).
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
+        address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
+        address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
+        uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
+        uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
+        return address(new CrossRatePriceAdapter(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
     }
 
     function _deployREth() internal returns (address) {

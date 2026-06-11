@@ -155,6 +155,11 @@ function PositionRow({
   // Each request's ethOwed is valued the same way the adapter sums it (claimable ETH for finalized,
   // amountOfStETH for pending), so the sub-rows are genuine ETH amounts and reconcile with the aggregate.
   const requests = withdrawalsByKey?.get(lidoWithdrawalsKey(chainId, pos.balanceOracle)) ?? []
+  // Total ETH-owed across the requests (== the adapter's aggregate, barring an unresolved claimable fetch).
+  // Used to split the parent USD value; the last row takes the remainder so the sub-rows sum *exactly* to
+  // pos.value despite bigint truncation in the proportional division.
+  const totalOwed = requests.reduce((sum, r) => sum + r.ethOwed, 0n)
+  let allocatedSub = 0n
   return (
     <>
       <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
@@ -178,10 +183,17 @@ function PositionRow({
           {pct}
         </td>
       </tr>
-      {requests.map((req) => {
+      {requests.map((req, idx) => {
         // Split the aggregate leg's USD value across requests by ETH-owed share (the same per-request basis
-        // the adapter sums), so the sub-rows sum exactly back to the parent at the one ETH/USD price.
-        const subValue = pos.amount === 0n ? 0n : (pos.value * req.ethOwed) / pos.amount
+        // the adapter sums). The last row takes the leftover so the sub-rows sum exactly to pos.value rather
+        // than slightly under it (bigint division truncates).
+        const isLast = idx === requests.length - 1
+        const subValue = isLast
+          ? pos.value - allocatedSub
+          : totalOwed === 0n
+            ? 0n
+            : (pos.value * req.ethOwed) / totalOwed
+        if (!isLast) allocatedSub += subValue
         return (
           <tr key={req.id.toString()} className="border-t border-neutral-100 bg-neutral-100/70">
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">

@@ -299,6 +299,10 @@ library ChainlinkPriceFeeds {
         return 0x8917800a6BDd8fA8b7c94E25aE2219Db28050622;
     }
 
+    function eigenUsdEthMainnet() internal pure returns (address) {
+        return 0xf2917e602C2dCa458937fad715bb1E465305A4A1;
+    }
+
     function enjEthEthMainnet() internal pure returns (address) {
         return 0x24D9aB51950F3d62E9144fdC2f3135DAA6Ce8D1B;
     }

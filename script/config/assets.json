@@ -449,6 +449,12 @@
         "pricefeed": "0x547a514d5e3769680Ce22B2361c10Ea13619e8a9",
         "heartbeat": 86400
       },
+      "EIGEN": {
+        "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
+        "type": "Chainlink",
+        "pricefeed": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
+        "heartbeat": 86400
+      },
       "COMP": {
         "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
         "type": "Chainlink",

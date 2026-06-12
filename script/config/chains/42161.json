@@ -43,7 +43,8 @@
         "protocol": "Morpho"
       },
       "metaInstances": [
-        "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d"
+        "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
+        "0x5837e4189819637853a357aF36650902347F5e73"
       ],
       "deployed": ""
     },

@@ -8,7 +8,7 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25298796,
+      "forkBlock": 25301918,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -16,11 +16,12 @@
         "aurafinance",
         "balancer3",
         "capapp",
-        "compound",
+        "compound3",
         "convex",
         "curve",
         "ethena",
         "etherfi",
+        "fluid",
         "gearbox",
         "kelpdao",
         "lido",
@@ -35,16 +36,16 @@
         "uniswap2",
         "uniswap3"
       ],
-      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS — full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE — protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank — obsolete, no new deposits — are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
+      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS — full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE — protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank — obsolete, no new deposits — are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable); spark (lending via the Aave-fork adapter is wired; the Spark Savings USDC vault is not, so a savings balance shows as drift — e.g. ACCOUNT_11); kelpdao (rsETH held in wallet or as Aave collateral is priced; Kelp withdrawal-queue / locked positions are not — KelpWithdrawalQueue adapter scaffolded but not yet wired, so a Kelp lock shows as drift — e.g. ACCOUNT_2). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 152818654,
+      "forkBlock": 152837480,
       "supportedDeBankProtocols": [
         "aave3",
-        "compound",
+        "compound3",
         "lido"
       ]
     },
@@ -52,7 +53,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46652524,
+      "forkBlock": 46659874,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -63,14 +64,15 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 47223369,
+      "forkBlock": 47242195,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
         "aurafinance",
         "balancer3",
-        "compound",
+        "compound3",
         "etherfi",
+        "fluid",
         "lido",
         "morphoblue"
       ]
@@ -79,14 +81,15 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 472594658,
+      "forkBlock": 472744995,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
         "aurafinance",
         "balancer3",
-        "compound",
+        "compound3",
         "etherfi",
+        "fluid",
         "kelpdao",
         "lido",
         "maple",
@@ -108,24 +111,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "20211863012",
-          "debankUsd": "180.153050"
+          "navUsd8dp": "20246645716",
+          "debankUsd": "180.137961"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500803412",
-          "debankUsd": "5.010579"
+          "navUsd8dp": "500805603",
+          "debankUsd": "5.010179"
         },
         "8453": {
-          "navUsd8dp": "999860662",
-          "debankUsd": "10.012364"
+          "navUsd8dp": "999860660",
+          "debankUsd": "10.009358"
         },
         "42161": {
-          "navUsd8dp": "1003758178",
-          "debankUsd": "10.046651"
+          "navUsd8dp": "1003919707",
+          "debankUsd": "10.045867"
         }
       }
     },
@@ -141,8 +144,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "53085822424350",
-          "debankUsd": "819337.333557"
+          "navUsd8dp": "52842285149477",
+          "debankUsd": "824702.392411"
         },
         "10": {
           "navUsd8dp": "0",
@@ -174,8 +177,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "19731951860",
-          "debankUsd": "197.045238"
+          "navUsd8dp": "19643846966",
+          "debankUsd": "196.493911"
         },
         "10": {
           "navUsd8dp": "0",
@@ -204,8 +207,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1263887998261",
-          "debankUsd": "12644.643982"
+          "navUsd8dp": "1258317987989",
+          "debankUsd": "12605.306074"
         }
       }
     },
@@ -218,8 +221,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "816788128226886",
-          "debankUsd": "143.939031"
+          "navUsd8dp": "816795416237526",
+          "debankUsd": "8171902.153780"
         }
       }
     },
@@ -232,8 +235,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "277136358905692",
-          "debankUsd": "82.066610"
+          "navUsd8dp": "277143083425122",
+          "debankUsd": "2771707.626832"
         }
       }
     },
@@ -246,8 +249,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "186420683864332",
-          "debankUsd": "2.154624"
+          "navUsd8dp": "186448140441469",
+          "debankUsd": "1866337.812397"
         }
       }
     },
@@ -260,8 +263,8 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "74682683063812",
-          "debankUsd": "39.103142"
+          "navUsd8dp": "74685857645955",
+          "debankUsd": "747637.499339"
         }
       }
     },
@@ -274,8 +277,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1672006246251107",
-          "debankUsd": "17151871.659165"
+          "navUsd8dp": "1671115057958946",
+          "debankUsd": "17144225.329346"
         }
       }
     },
@@ -288,8 +291,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "7838604068649522",
-          "debankUsd": "78054062.942715"
+          "navUsd8dp": "7819215598005648",
+          "debankUsd": "78297490.760322"
         }
       }
     },
@@ -302,8 +305,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "507510532796697",
-          "debankUsd": "5429714.482672"
+          "navUsd8dp": "505778521980484",
+          "debankUsd": "5421859.477655"
         }
       }
     },
@@ -316,8 +319,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "3196100960",
-          "debankUsd": "41.100482"
+          "navUsd8dp": "3183025993",
+          "debankUsd": "40.967527"
         }
       }
     },

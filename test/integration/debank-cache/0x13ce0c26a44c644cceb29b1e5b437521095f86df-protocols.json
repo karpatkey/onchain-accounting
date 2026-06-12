@@ -6,16 +6,16 @@
     "site_url": "https://app.aave.com",
     "logo_url": "https://static.debank.com/image/project/logo_url/aave3/54df7839ab09493ba7540ab832590255.png",
     "has_supported_portfolio": true,
-    "tvl": 9586360767.99087,
+    "tvl": 9637138613.7305,
     "portfolio_item_list": [
       {
         "stats": {
-          "asset_usd_value": 0.00001824078675813989,
+          "asset_usd_value": 0.000018223317128636138,
           "debt_usd_value": 0,
-          "net_usd_value": 0.00001824078675813989
+          "net_usd_value": 0.000018223317128636138
         },
         "asset_dict": {
-          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 3.128380343E-9,
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 3.128459659E-9,
           "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 0.000009,
           "0xdac17f958d2ee523a2206206994597c13d831ec7": 0.000004
         },
@@ -30,12 +30,12 @@
             "decimals": 18,
             "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png",
             "protocol_id": "weth",
-            "price": 1673.9,
+            "price": 1668.55,
             "is_verified": true,
             "is_core": true,
             "is_wallet": true,
             "time_at": 1513077455.0,
-            "amount": 3.128380343E-9
+            "amount": 3.128459659E-9
           },
           {
             "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -47,7 +47,7 @@
             "decimals": 6,
             "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
             "protocol_id": "",
-            "price": 1.0011012113324658,
+            "price": 1.00080064051241,
             "is_verified": true,
             "is_core": true,
             "is_wallet": true,
@@ -64,7 +64,7 @@
             "decimals": 6,
             "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
             "protocol_id": "tether",
-            "price": 0.99857,
+            "price": 0.99903,
             "is_verified": true,
             "is_core": true,
             "is_wallet": true,
@@ -72,7 +72,7 @@
             "amount": 0.000004
           }
         ],
-        "update_at": 1781203874.0,
+        "update_at": 1781262621.0,
         "name": "Lending",
         "detail_types": [
           "lending"
@@ -89,12 +89,12 @@
               "decimals": 18,
               "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png",
               "protocol_id": "weth",
-              "price": 1673.9,
+              "price": 1668.55,
               "is_verified": true,
               "is_core": true,
               "is_wallet": true,
               "time_at": 1513077455.0,
-              "amount": 3.128380343E-9
+              "amount": 3.128459659E-9
             },
             {
               "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -106,7 +106,7 @@
               "decimals": 6,
               "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/fffcd27b9efff5a86ab942084c05924d.png",
               "protocol_id": "",
-              "price": 1.0011012113324658,
+              "price": 1.00080064051241,
               "is_verified": true,
               "is_core": true,
               "is_wallet": true,
@@ -123,7 +123,7 @@
               "decimals": 6,
               "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xdac17f958d2ee523a2206206994597c13d831ec7/1a1d8a5b89114dc183f42b3d33eb3522.png",
               "protocol_id": "tether",
-              "price": 0.99857,
+              "price": 0.99903,
               "is_verified": true,
               "is_core": true,
               "is_wallet": true,
@@ -146,12 +146,12 @@
       },
       {
         "stats": {
-          "asset_usd_value": 12643.379931078,
+          "asset_usd_value": 12604.046156236322,
           "debt_usd_value": 0,
-          "net_usd_value": 12643.379931078
+          "net_usd_value": 12604.046156236322
         },
         "asset_dict": {
-          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 7.553246867242965
+          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 7.5538917960123
         },
         "asset_token_list": [
           {
@@ -164,15 +164,15 @@
             "decimals": 18,
             "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png",
             "protocol_id": "weth",
-            "price": 1673.9,
+            "price": 1668.55,
             "is_verified": true,
             "is_core": true,
             "is_wallet": true,
             "time_at": 1513077455.0,
-            "amount": 7.553246867242965
+            "amount": 7.5538917960123
           }
         ],
-        "update_at": 1781203874.0,
+        "update_at": 1781262621.0,
         "name": "Yield",
         "detail_types": [
           "common"
@@ -189,12 +189,12 @@
               "decimals": 18,
               "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png",
               "protocol_id": "weth",
-              "price": 1673.9,
+              "price": 1668.55,
               "is_verified": true,
               "is_core": true,
               "is_wallet": true,
               "time_at": 1513077455.0,
-              "amount": 7.525836047456303
+              "amount": 7.525956339054069
             }
           ],
           "reward_token_list": [
@@ -208,12 +208,12 @@
               "decimals": 18,
               "logo_url": "https://static.debank.com/image/eth_token/logo_url/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/61844453e63cf81301f845d7864236f6.png",
               "protocol_id": "weth",
-              "price": 1673.9,
+              "price": 1668.55,
               "is_verified": true,
               "is_core": true,
               "is_wallet": true,
               "time_at": 1513077455.0,
-              "amount": 0.02741081978666212
+              "amount": 0.027935456958231006
             }
           ],
           "description": "Umbrella Stake Wrapped Aave Ethereum WETH v1"

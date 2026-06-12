@@ -100,6 +100,7 @@
   },
   "accounts": [
     {
+      "$comment": "Minimal multi-protocol 'adapter exercise' account (~$180). Holds ~$5–40 dust positions across Morpho/Aave V3/Cap/Sky/Ethena to exercise many adapters at once. Expected tolerance drift ~12% but only ~$22 absolute: dust-scale NAV-vs-DeBank pairing noise across the many tiny positions (Morpho vault grouping differs between the two; small Sky Savings / Ethena legs DeBank reports resolve under wallet/other NAV rows). Not a NAV error — magnified by the tiny base.",
       "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
       "label": "ACCOUNT_1",
       "enabledChains": [
@@ -133,6 +134,7 @@
       }
     },
     {
+      "$comment": "ETH Alpha Fund safe (the fund behind the stETH/wstETH cross-rate pricing work). Expected tolerance drift ~36%: holds ~175 stETH locked in Kelp DAO's withdrawal/redemption manager (0x62De59c0…, ~$293K) that NAV does not yet value — the KelpWithdrawalQueue adapter is scaffolded but not wired (see chains.1.$untracked_by_design → kelpdao). Its liquid legs price correctly: ~2,013 rsETH supplied vs ~1,866 WETH borrowed on Aave V3 (~$491K net) and a wstETH/WETH Spark position (~$35K net). Resolves when the Kelp adapter ships.",
       "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
       "label": "ACCOUNT_2",
       "enabledChains": [
@@ -297,7 +299,7 @@
       }
     },
     {
-      "$comment": "Mainnet multi-protocol holder. Compound V3 supply positions (USDC, WBTC) and Uniswap V3 LPs. Also exercises: Aave V3 Safety Module (stkAAVE staked position, denominated in AAVE — requires AAVE price feed); Aave V3 Lido instance via waEthLidoGHO stata-token wallet balance (~$233 GHO supplied into the Prime market, tracked through the waEthLidoGHO custom price feed rather than the AaveV3_Prime DataProvider query, since stata-token holders are not visible to getUserReserveData); Aave V2 BAL collateral (~$9).",
+      "$comment": "Mainnet multi-protocol holder. Compound V3 supply positions (USDC, WBTC) and Uniswap V3 LPs. Also exercises: Aave V3 Safety Module (stkAAVE staked position, denominated in AAVE — requires AAVE price feed); Aave V3 Lido instance via waEthLidoGHO stata-token wallet balance (~$233 GHO supplied into the Prime market, tracked through the waEthLidoGHO custom price feed rather than the AaveV3_Prime DataProvider query, since stata-token holders are not visible to getUserReserveData); Aave V2 BAL collateral (~$9). Expected tolerance drift ~7%: a Spark Savings USDC position (~$351K) NAV does not yet track (Spark lending is covered; the savings vault is not) plus ~$170K unpriceable COW in the wallet — see chains.1.$untracked_by_design (spark, COW).",
       "address": "0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89",
       "label": "ACCOUNT_11_MAINNET_COMPOUND_UNISWAP",
       "enabledChains": [
@@ -311,7 +313,7 @@
       }
     },
     {
-      "$comment": "Mainnet Uniswap V3 LP with 2 active positions in registered pairs: USDC/WETH 500bp (#1231724) and WETH/USDT 3000bp (#1276763). Added to exercise the UniswapV3 balance adapter on a clean, minimal account with no other protocol positions.",
+      "$comment": "Mainnet Uniswap V3 LP with 2 active positions in registered pairs: USDC/WETH 500bp (#1231724) and WETH/USDT 3000bp (#1276763). Added to exercise the UniswapV3 balance adapter on a clean, minimal account with no other protocol positions. Expected tolerance drift is large in percentage but immaterial in dollars (~$9 on a ~$40 dust account): the WETH/COW pool leg is unpriceable (COW has no mainnet feed) — see chains.1.$untracked_by_design.",
       "address": "0x8d27deb2405717d649346502f52b959aab4eb3af",
       "label": "ACCOUNT_12_MAINNET_UNISWAP_V3_LP",
       "enabledChains": [

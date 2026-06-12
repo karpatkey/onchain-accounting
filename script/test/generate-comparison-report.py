@@ -938,8 +938,30 @@ def render_unified_table(
                             })
                         continue
                     if coverage_gaps_out is not None:
+                        # Are the item's underlying tokens themselves NAV-priced assets
+                        # (registered with a feed, or aggregated by an adapter)? If so, NAV
+                        # already prices them as wallet ERC-20s, so the value IS in the NAV
+                        # total whenever the account holds them in-wallet — the per-row
+                        # pairing just fails because there is no protocol adapter. It is only
+                        # a true coverage gap when those tokens sit locked inside the
+                        # protocol's own contract (e.g. a withdrawal queue or savings vault),
+                        # where the wallet sweep can't see them. Don't conflate the two.
+                        priced_syms = [
+                            t.get("symbol", "?") for t in nonzero_toks
+                            if (t.get("id") or "").lower() in priced_addrs
+                            or (t.get("id") or "").lower() in agg_addrs
+                        ]
                         if not has_adapters and not pf_pool:
-                            hint = f"No NAV adapter/feed registered for `{short_id}` on chain {chain_id}"
+                            if nonzero_toks and len(priced_syms) == len(nonzero_toks):
+                                uniq = ", ".join(dict.fromkeys(priced_syms))
+                                hint = (
+                                    f"No `{short_id}` protocol adapter, but {uniq} is/are NAV-priced: "
+                                    f"the value is already in the NAV total when held in-wallet "
+                                    f"(see this account's wallet-token rows) — a true gap only if locked "
+                                    f"in the protocol contract (withdrawal queue / savings vault)"
+                                )
+                            else:
+                                hint = f"No NAV adapter/feed registered for `{short_id}` on chain {chain_id}"
                         elif unregistered:
                             hint = f"Token(s) not in NAV registry: {', '.join(unregistered[:4])}"
                         else:

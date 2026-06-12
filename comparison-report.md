@@ -1,6 +1,6 @@
 # NAV vs DeBank — Detailed Comparison Report
 
-Generated: 2026-06-12 14:35 UTC  
+Generated: 2026-06-12 15:25 UTC  
 Tolerance: 1%
 
 DeBank anchor: read from `test/integration/debank-cache/` (no live API call).  
@@ -1318,14 +1318,14 @@ _The protocol IS in `supportedDeBankProtocols` but no NAV position matched the i
 
 | Chain | Account | Protocol | DeBank ID | Item | Value | Hint |
 |---|---|---|---|---|---:|---|
-| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $9.330M | No NAV adapter/feed registered for `sky` on chain 1 |
-| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | LIDO | `lido` | wstETH (`0x7f39c581…`) | $355,650.82 | No NAV adapter/feed registered for `lido` on chain 1 |
-| Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Spark | `spark` | Spark Savings USDC (`0x28b3a8fb…`) | $351,386.39 | No NAV adapter/feed registered for `spark` on chain 1 |
-| Mainnet (1) | ACCOUNT_2 | Kelp DAO | `kelpdao` | Locked (`0x62de59c0…`) | $292,567.26 | No NAV adapter/feed registered for `kelpdao` on chain 1 |
-| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | LIDO | `lido` | wstETH (`0x7f39c581…`) | $251.5505 | No NAV adapter/feed registered for `lido` on chain 1 |
+| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $9.330M | No `sky` protocol adapter, but USDS is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | LIDO | `lido` | wstETH (`0x7f39c581…`) | $355,650.82 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Spark | `spark` | Spark Savings USDC (`0x28b3a8fb…`) | $351,386.39 | No `spark` protocol adapter, but USDC is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_2 | Kelp DAO | `kelpdao` | Locked (`0x62de59c0…`) | $292,567.26 | No `kelpdao` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | LIDO | `lido` | wstETH (`0x7f39c581…`) | $251.5505 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 | Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Aave V3 | `aave3` | Wrapped Aave Ethereum Lido GHO (`0xc71ea051…`) | $232.6242 | Adapter registered but no matching position (zero balance or position identity mismatch) |
-| Mainnet (1) | ACCOUNT_2 | LIDO | `lido` | wstETH (`0x7f39c581…`) | $104.0764 | No NAV adapter/feed registered for `lido` on chain 1 |
+| Mainnet (1) | ACCOUNT_2 | LIDO | `lido` | wstETH (`0x7f39c581…`) | $104.0764 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 | Mainnet (1) | ACCOUNT_12_MAINNET_UNISWAP_V3_LP | Convex | `convex` | Staked (`0x49b4d1df…`) | $9.0835 | No NAV adapter/feed registered for `convex` on chain 1 |
-| Mainnet (1) | ACCOUNT_1 | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $5.0715 | No NAV adapter/feed registered for `sky` on chain 1 |
-| Mainnet (1) | ACCOUNT_1 | Ethena | `ethena` | sUSDe (`0x9d39a5de…`) | $4.5047 | No NAV adapter/feed registered for `ethena` on chain 1 |
+| Mainnet (1) | ACCOUNT_1 | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $5.0715 | No `sky` protocol adapter, but USDS is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_1 | Ethena | `ethena` | sUSDe (`0x9d39a5de…`) | $4.5047 | No `ethena` protocol adapter, but USDe is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 

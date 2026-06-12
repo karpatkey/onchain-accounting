@@ -23,7 +23,7 @@ The `rewardsController` is the protocol's trust anchor — every other piece of 
 - **Bare reserve per reward token.** The adapter calls `IAToken.UNDERLYING_ASSET_ADDRESS()` with `try/catch`; aTokens return the bare reserve, and any reward token that does not implement that getter (e.g. plain GHO) is treated as already-bare.
 For each stake position the adapter emits up to two `PositionBalance` entries:
 
-- Staking leg (`positionKind = Supplied`) — principal denominated in the bare reserve. The `positionId` (encoding the stakeToken address) disambiguates which stake token the position belongs to.
+- Staking leg (`positionKind = Staking`) — principal denominated in the bare reserve. The `positionId` (encoding the stakeToken address) disambiguates which stake token the position belongs to.
 - Rewards leg (`positionKind = Rewards`) — claimable but unclaimed rewards, also in the bare reserve. Reward aTokens are 1:1 unit-equivalent with their underlying so the amount returned by `calculateCurrentUserRewards` is treated as bare-reserve-denominated.
 
 Stake tokens whose bare reserve is not registered with `NAVCalculator` are silently skipped — the same convention `AaveV3InstancesMetaBalanceAdapter` uses for unregistered Aave reserves.
@@ -89,7 +89,7 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 2. **Hybrid: pass the stake-token list via constructor but discover the rest dynamically.** Rejected because the stake-token list is the part most likely to change. Pinning the controller and discovering everything beneath it from a single trust anchor is a strict simplification.
 3. **Report positions in waToken or aToken units instead of the bare reserve.** Rejected because `NAVCalculator` does not have price feeds registered for waEth* or aEth* (only for the bare reserves). Adding four custom price feeds would be a larger surface area and require independent ADRs.
 4. **Reuse `AaveV3SafetyModuleBalanceOracle` and add Umbrella entries.** Rejected because the two protocols have entirely different read interfaces (`stkAAVE.previewRedeem` / `getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
-5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionKind` values (`Supplied` for the staked principal, `Earned` for the claimable rewards) preserve that breakdown for downstream accounting.
+5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionKind` values (`Staking` for the staked principal, `Rewards` for the claimable rewards) preserve that breakdown for downstream accounting.
 
 ## Reference
 

@@ -139,7 +139,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
             assertGt(positions[i].amount, 0);
             assertEq(positions[i].balanceOracle, address(oracle));
             assertFalse(positions[i].isDebt);
-            if (asset == GHO && positions[i].positionKind == PositionKind.Supplied) {
+            if (asset == GHO && positions[i].positionKind == PositionKind.Staking) {
                 sawGhoStakedFromGho = true;
             }
         }

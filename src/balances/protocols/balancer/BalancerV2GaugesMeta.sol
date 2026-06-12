@@ -86,7 +86,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceOracle {
             if (assetFilter != address(0) && tokens[i] != assetFilter) continue;
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(tokens[i]);
             if (!found) continue;
-            temp[count++] = _row(assetInfo, amounts[i], positionId, PositionKind.Supplied);
+            temp[count++] = _row(assetInfo, amounts[i], positionId, PositionKind.Staking);
         }
 
         // Rewards legs: BAL (minted via the minter) + the gauge's extra reward tokens.

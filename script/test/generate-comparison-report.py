@@ -409,14 +409,18 @@ def build_item_tokens(item: dict) -> str:
 def _leg_kind(pos: dict) -> str:
     """Derive human-readable leg kind from positionKind (new) or positionDetail.type (legacy).
 
-    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Earned.
+    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral,
+    4=Staking, 5=Rewards, 6=Fees (matches the PositionKind enum in src/utils/PositionKind.sol).
     Legacy format: positionDetail.type is a string — "Supply"/"Borrow"/"Collateral"/"Staking"/etc.
     """
     # New format: positionKind uint8
     if "positionKind" in pos:
-        kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Rewards"}
+        kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Staking", 5: "Rewards", 6: "Fees"}
         try:
-            return kind_map.get(int(pos["positionKind"]), "Supply")
+            n = int(pos["positionKind"])
+            # Surface unmapped values as Unknown(<n>) rather than silently labelling them "Supply" —
+            # an unrecognised ordinal means enum drift (a new PositionKind), exactly what this report should flag.
+            return kind_map.get(n, f"Unknown({n})")
         except (ValueError, TypeError):
             pass
     # Legacy format: positionDetail.type

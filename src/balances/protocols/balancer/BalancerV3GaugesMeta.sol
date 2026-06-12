@@ -74,7 +74,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
                 if (!found) continue;
                 uint256 amount = pool.poolBalanceOf(staked, token);
                 if (amount == 0) continue;
-                temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Supplied);
+                temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Staking);
             }
         }
 

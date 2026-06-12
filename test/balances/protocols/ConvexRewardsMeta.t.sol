@@ -256,8 +256,8 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _instance(address(rewarder)), address(0));
 
-        uint256 supplied = _count(pos, PositionKind.Supplied);
-        assertEq(supplied, 2, "2 Supplied legs (USDC + WETH)");
+        uint256 staking = _count(pos, PositionKind.Staking);
+        assertEq(staking, 2, "2 Staking legs (USDC + WETH)");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[0].amount, 50e6); // 10% of 500 USDC
         assertEq(pos[1].balanceAsset.asset, address(weth));
@@ -275,19 +275,19 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         assertEq(pos[0].balanceOracle, address(meta));
     }
 
-    function test_noStake_noSuppliedLegs() public {
+    function test_noStake_noStakingLegs() public {
         // Only rewards, no staked LP
         rewarder.setEarned(alice, 100e18);
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(alice, _instance(address(rewarder)), address(0));
         for (uint256 i; i < pos.length; ++i) {
-            assertFalse(pos[i].positionKind == PositionKind.Supplied);
+            assertFalse(pos[i].positionKind == PositionKind.Staking);
         }
     }
 
     // ─── CRV rewards ──────────────────────────────────────────────────────────
 
-    function test_crvRewards_emittedAsEarned() public {
+    function test_crvRewards_emittedAsRewards() public {
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =

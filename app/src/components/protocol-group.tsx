@@ -5,7 +5,6 @@ import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { type LidoWithdrawalsByKey, lidoWithdrawalsKey } from '@/hooks/use-lido-withdrawals'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
-import { formatUnits } from 'viem'
 import {
   EthCircleColor,
   OpCircleColor,

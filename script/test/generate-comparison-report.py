@@ -946,11 +946,14 @@ def render_unified_table(
                         # a true coverage gap when those tokens sit locked inside the
                         # protocol's own contract (e.g. a withdrawal queue or savings vault),
                         # where the wallet sweep can't see them. Don't conflate the two.
-                        priced_syms = [
-                            t.get("symbol", "?") for t in nonzero_toks
-                            if (t.get("id") or "").lower() in priced_addrs
-                            or (t.get("id") or "").lower() in agg_addrs
-                        ]
+                        priced_syms = []
+                        for t in nonzero_toks:
+                            tid = (t.get("id") or "").lower()
+                            # native tokens arrive as the chain id (e.g. "eth"); map to the
+                            # ERC-7528 sentinel before checking the priced set, as elsewhere.
+                            lookup = NATIVE_SENTINEL if tid == dbank_chain.lower() else tid
+                            if lookup in priced_addrs or lookup in agg_addrs:
+                                priced_syms.append(t.get("symbol", "?"))
                         if not has_adapters and not pf_pool:
                             if nonzero_toks and len(priced_syms) == len(nonzero_toks):
                                 uniq = ", ".join(dict.fromkeys(priced_syms))

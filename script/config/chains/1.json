@@ -192,8 +192,22 @@
         "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
         "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
         "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
-        "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
+        "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
+        "0xD5cCe260E7a755DDf0Fb9cdF06443d593AaeaA13",
+        "0x870F0BF29A25A40E7CC087cD5C53e70C11F2C8A8",
+        "0x5dbf760b4fd0cDdDe0366b33aEb338b2A6d77725"
       ],
+      "deployed": ""
+    },
+    "ERC4626Wrap_sGHO": {
+      "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg.",
+      "enabled": true,
+      "constructor": {
+        "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+        "protocol": "Aave",
+        "positionDetail": "{\"protocol\":\"Aave\",\"product\":\"Savings\",\"name\":\"sGHO\"",
+        "positionId": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d"
+      },
       "deployed": ""
     },
     "ERC4626Wrap_waEthLidoGHO": {

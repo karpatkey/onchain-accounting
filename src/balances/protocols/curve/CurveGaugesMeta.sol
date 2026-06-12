@@ -15,7 +15,7 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 /// @dev Instance coordinate: `bytes32(uint256(uint160(gauge)))` — the gauge address widened to bytes32.
 ///
 ///      Per-gauge positions emitted:
-///        1. **Supplied** legs — one per registered pool coin, pro-rata from the staked LP balance.
+///        1. **Staking** legs — one per registered pool coin, pro-rata from the staked LP balance.
 ///           Uses the same LP decomposition logic as CurvePoolsMetaBalanceAdapter.
 ///        2. **Rewards** leg for CRV — lower-bound estimate via `integrate_fraction − minter.minted`.
 ///           Only emitted when CURVE_MINTER is set (see below) and the gauge exposes
@@ -77,12 +77,12 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
 
         uint256 stakedLp = CurvePoolLib.gaugeStaked(gauge, account);
 
-        // Pre-allocate generously: up to MAX_COINS Supplied + 1 CRV Earned + MAX_COINS extra Earned
+        // Pre-allocate generously: up to MAX_COINS Staking + 1 CRV Rewards + MAX_COINS extra Rewards
         uint256 maxLegs = CurvePoolLib.MAX_COINS * 2 + 1;
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](maxLegs);
         uint256 n;
 
-        // ── 1. Supplied legs: staked LP decomposed into underlying tokens ──────
+        // ── 1. Staking legs: staked LP decomposed into underlying tokens ───────
         if (stakedLp > 0) {
             address lpToken = CurvePoolLib.gaugeLpToken(gauge);
             if (lpToken != address(0)) {
@@ -110,7 +110,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                                 isDebt: false,
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
-                                positionKind: PositionKind.Supplied
+                                positionKind: PositionKind.Staking
                             });
                         }
                     }

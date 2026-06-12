@@ -6,6 +6,11 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+# Minimal token scope: jobs only checkout/build/test/fmt; artifact up/download
+# uses the Actions runtime token, not GITHUB_TOKEN. (CodeQL: limit GITHUB_TOKEN.)
+permissions:
+  contents: read
+
 env:
   FOUNDRY_PROFILE: default
   ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}

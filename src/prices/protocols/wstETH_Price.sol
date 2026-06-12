@@ -92,20 +92,29 @@ contract wstETH_PriceOracle is IPriceFeedCustom {
             uint80 answeredInRound
         )
     {
-        int256 ethToUsdPrice;
-        (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (ethToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
+        // Read both Chainlink legs in full. Per IPriceFeedCustom, latestRoundData must expose the most-stale
+        // input tuple (lowest updatedAt) so callers see worst-case freshness across both feeds.
+        (uint80 rEth, int256 ethToUsdPrice, uint256 sEth, uint256 uEth, uint80 arEth) =
+            ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
+        (uint80 rSt, int256 stEthToEthRate, uint256 sSt, uint256 uSt, uint80 arSt) =
+            STETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
+
+        if (uEth <= uSt) {
+            (roundId, startedAt, updatedAt, answeredInRound) = (rEth, sEth, uEth, arEth);
+        } else {
+            (roundId, startedAt, updatedAt, answeredInRound) = (rSt, sSt, uSt, arSt);
+        }
+
+        if (ethToUsdPrice <= 0 || stEthToEthRate <= 0) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 
-        // stETH/ETH leg: real market rate (ETH per stETH). Never assume stETH == ETH 1:1.
-        (, int256 stEthToEthRate,, uint256 stEthToEthUpdatedAt,) = STETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
-        if (stEthToEthRate <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 stEthToEthEffectiveUpdatedAt =
-            stEthToEthUpdatedAt > block.timestamp ? block.timestamp : stEthToEthUpdatedAt;
-        if (block.timestamp - stEthToEthEffectiveUpdatedAt >= STETH_TO_ETH_CHAINLINK_HEARTBEAT) {
+        uint256 effectiveEthUpdatedAt = uEth > block.timestamp ? block.timestamp : uEth;
+        uint256 effectiveStEthUpdatedAt = uSt > block.timestamp ? block.timestamp : uSt;
+        if (
+            block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
+                || block.timestamp - effectiveStEthUpdatedAt >= STETH_TO_ETH_CHAINLINK_HEARTBEAT
+        ) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 

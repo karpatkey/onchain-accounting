@@ -9,17 +9,17 @@
     "decimals": 18,
     "logo_url": "https://static.debank.com/image/coin/logo_url/eth/6443cdccced33e204d90cb723c632917.png",
     "protocol_id": "",
-    "price": 1975.23,
-    "price_24h_change": -0.005362861804338676,
+    "price": 1674.26,
+    "price_24h_change": 0.013299595019159423,
     "is_verified": true,
     "is_core": true,
     "is_wallet": true,
     "is_suspicious": false,
     "time_at": 1622131200.0,
-    "total_supply": 830679.3204912991,
-    "credit_score": 15285398.611236453,
-    "amount": 0.001305059935931372,
-    "raw_amount": 1305059935931372,
-    "raw_amount_hex_str": "0x4a2f1f1e44bec"
+    "total_supply": 841597.4270125675,
+    "credit_score": 16211334.274168994,
+    "amount": 0.001286911494453372,
+    "raw_amount": 1286911494453372,
+    "raw_amount_hex_str": "0x492706e7bf87c"
   }
 ]

@@ -8,7 +8,7 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25228621,
+      "forkBlock": 25298796,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -41,7 +41,7 @@
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 152395760,
+      "forkBlock": 152818654,
       "supportedDeBankProtocols": [
         "aave3",
         "compound",
@@ -52,7 +52,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46487689,
+      "forkBlock": 46652524,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -63,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 46800475,
+      "forkBlock": 47223369,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
@@ -79,7 +79,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 469220126,
+      "forkBlock": 472594658,
       "supportedDeBankProtocols": [
         "aave3",
         "aura",
@@ -108,24 +108,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "19487914956",
-          "debankUsd": "180.153167"
+          "navUsd8dp": "20211863012",
+          "debankUsd": "180.153050"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500846418",
-          "debankUsd": "5.010897"
+          "navUsd8dp": "500803412",
+          "debankUsd": "5.010579"
         },
         "8453": {
-          "navUsd8dp": "999784942",
-          "debankUsd": "10.013366"
+          "navUsd8dp": "999860662",
+          "debankUsd": "10.012364"
         },
         "42161": {
-          "navUsd8dp": "1003209078",
-          "debankUsd": "10.043268"
+          "navUsd8dp": "1003758178",
+          "debankUsd": "10.046651"
         }
       }
     },
@@ -141,8 +141,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "97346693958331",
-          "debankUsd": "974817.490127"
+          "navUsd8dp": "53085822424350",
+          "debankUsd": "819337.333557"
         },
         "10": {
           "navUsd8dp": "0",
@@ -174,8 +174,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "23322213841",
-          "debankUsd": "232.445046"
+          "navUsd8dp": "19731951860",
+          "debankUsd": "197.045238"
         },
         "10": {
           "navUsd8dp": "0",
@@ -204,8 +204,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1493235196593",
-          "debankUsd": "14901.974511"
+          "navUsd8dp": "1263887998261",
+          "debankUsd": "12644.643982"
         }
       }
     },
@@ -218,8 +218,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "815716930101398",
-          "debankUsd": "169.848849"
+          "navUsd8dp": "816788128226886",
+          "debankUsd": "143.939031"
         }
       }
     },
@@ -232,8 +232,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "276800030084332",
-          "debankUsd": "96.839971"
+          "navUsd8dp": "277136358905692",
+          "debankUsd": "82.066610"
         }
       }
     },
@@ -246,8 +246,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "206240448341983",
-          "debankUsd": "2.577794"
+          "navUsd8dp": "186420683864332",
+          "debankUsd": "2.154624"
         }
       }
     },
@@ -260,8 +260,8 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "74595590542092",
-          "debankUsd": "46.132440"
+          "navUsd8dp": "74682683063812",
+          "debankUsd": "39.103142"
         }
       }
     },
@@ -274,8 +274,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1708245230306504",
-          "debankUsd": "17582623.122116"
+          "navUsd8dp": "1672006246251107",
+          "debankUsd": "17151871.659165"
         }
       }
     },
@@ -288,8 +288,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "8626140713036139",
-          "debankUsd": "85805905.335154"
+          "navUsd8dp": "7838604068649522",
+          "debankUsd": "78054062.942715"
         }
       }
     },
@@ -302,8 +302,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "552365635254882",
-          "debankUsd": "5873756.600143"
+          "navUsd8dp": "507510532796697",
+          "debankUsd": "5429714.482672"
         }
       }
     },
@@ -316,8 +316,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "73198494772",
-          "debankUsd": "742.443351"
+          "navUsd8dp": "3196100960",
+          "debankUsd": "41.100482"
         }
       }
     },

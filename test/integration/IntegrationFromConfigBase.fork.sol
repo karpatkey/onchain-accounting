@@ -50,6 +50,7 @@ import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {sUSDe_PriceOracle} from "src/prices/protocols/sUSDe_Price.sol";
 import {syrupUSDC_PriceOracle} from "src/prices/protocols/syrupUSDC_Price.sol";
 import {wstETH_PriceOracle} from "src/prices/protocols/wstETH_Price.sol";
+import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRate_Price.sol";
 import {rETH_PriceOracle} from "src/prices/protocols/rETH_Price.sol";
 import {osToken_PriceOracle} from "src/prices/protocols/osToken_Price.sol";
 import {cbETH_PriceOracle} from "src/prices/protocols/cbETH_Price.sol";
@@ -199,6 +200,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
+            _tryDeployPriceFeed("stETH", _deployStEth);
             _tryDeployPriceFeed("rETH", _deployREth);
             _tryDeployPriceFeed("cbETH", _deployCbEth);
             _tryDeployPriceFeed("weETH", _deployWeEth);
@@ -300,11 +302,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployWstEth() internal returns (address) {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "wstEth"));
+        address stEthToEth =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkOracle"));
         address ethUsd =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkOracle"));
+        uint256 stEthToEthHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_PriceOracle(wstEth, ethUsd, ethUsdHb));
+        return address(new wstETH_PriceOracle(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
+    }
+
+    function _deployStEth() internal returns (address) {
+        // stETH reuses the generic CrossRatePriceAdapter: stETH/USD = (ETH/USD) x (stETH/ETH).
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
+        address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
+        address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
+        uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
+        uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
+        return address(new CrossRatePriceAdapter(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
     }
 
     function _deployREth() internal returns (address) {

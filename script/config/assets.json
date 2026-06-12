@@ -15,8 +15,22 @@
         "enabled": true,
         "constructor": {
           "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+          "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
           "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "stEthToEthChainlinkHeartbeat": "86400",
           "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "stETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "underlyingAsset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+          "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
+          "xToUsdHeartbeat": "3600",
+          "yToXHeartbeat": "86400"
         }
       }
     },

@@ -1090,8 +1090,11 @@
     }
   },
   "priceFeeds": {
+    "stETH": {
+      "deployed": ""
+    },
     "wstETH": {
-      "deployed": "0xc3E04720338BC8AddC335764914b7602DD11e79f"
+      "deployed": ""
     },
     "rETH": {
       "deployed": "0x99690D21EB64cA7941e974691455Be41D558441B"

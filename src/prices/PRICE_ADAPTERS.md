@@ -148,7 +148,7 @@ Every custom feed must implement this interface (and ERC165).
 
 Conventions:
 
-- **Always favor an existing Chainlink feed for the dollar leg** of the price (e.g., DAI/USD, stETH/USD, USDC/USD). Don't roll your own dollar oracle.
+- **Always favor an existing Chainlink feed for the dollar leg** of the price (e.g., DAI/USD, ETH/USD, USDC/USD). Don't roll your own dollar oracle.
 - **Read on-chain rates directly** (sDAI's `chi`, wstETH's `stEthPerToken`, rETH's `getExchangeRate`, etc.) rather than going through an off-chain oracle when the rate is canonical and cheap.
 - **Return `(0, true)` on any failure or staleness path.** Don't revert.
 - **All inputs are immutable, including heartbeats.** Pin every Chainlink heartbeat in the constructor as an immutable. New feed = redeploy. No setter, no MANAGER call needed after deployment.
@@ -174,7 +174,11 @@ stale = block.timestamp − u1 > H1  OR  block.timestamp − u2 > H2
 
 Encoding the check inside each adapter's `getLatestPrice()` is the only approach that works correctly for all heartbeat combinations. Each adapter has both heartbeats as immutables and does the OR check directly.
 
-Single-Chainlink-feed adapters (e.g. `wstETH_Price`, `rETH_Price`, `sDAI_Price`) benefit from the same pattern: the on-chain exchange rate (wstETH ratio, DSR chi, rETH exchange rate) has no heartbeat of its own — it updates from protocol interactions. The single Chainlink feed is the only staleness source, and checking it in `getLatestPrice()` is natural.
+Single-Chainlink-feed adapters (e.g. `rETH_Price`, `sDAI_Price`) benefit from the same pattern: the on-chain exchange rate (DSR chi, rETH exchange rate) has no heartbeat of its own — it updates from protocol interactions. The single Chainlink feed is the only staleness source, and checking it in `getLatestPrice()` is natural.
+
+`wstETH_Price` is a **two-feed** adapter: it combines `stEthPerToken` (no heartbeat) with **both** the stETH/ETH and ETH/USD Chainlink feeds, so it does the OR check above internally (same as `CrossRatePriceAdapter`, used for stETH). Its `latestRoundData()` reports the **most-stale** of the two legs (lowest `updatedAt`), which for stETH/ETH is a ~daily cadence.
+
+**Register a multi-feed Custom adapter with the slowest underlying leg's heartbeat.** Per the multi-feed model above, `Prices.sol` applies the single registered `chainlinkHeartbeat` to the adapter's `latestRoundData().updatedAt` as a *secondary* gate (after the primary `getLatestPrice().stale` gate). Since `latestRoundData()` surfaces the **slowest** leg's `updatedAt`, the registered heartbeat must be at least that leg's heartbeat — otherwise a tight scalar (e.g. 3600) falsely marks the asset stale whenever the slow leg hasn't ticked within the window (the exact failure a single threshold cannot avoid; see the false-positive/false-negative note above). For wstETH/stETH the slowest leg is stETH/ETH (86400), so they register `heartbeat = 86400`: the secondary gate then exactly mirrors the adapter's own stETH/ETH check (never false-trips), while the primary `getLatestPrice().stale` gate still independently covers the faster ETH/USD (3600) leg. Registering `type(uint256).max` is an equivalent alternative that disables the secondary gate entirely and delegates staleness fully to the adapter; the finite slowest-leg value is preferred here because it keeps a real NAV-level backstop and is consistent with the other Custom entries. (Note: on the legacy live NAV, whose `IPriceFeedCustom` has no `latestRoundData()`, the heartbeat param is ignored for Custom feeds and staleness is taken solely from `getLatestPrice()`.)
 
 #### Heartbeat in `getLatestPrice()`
 
@@ -247,7 +251,9 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | Feed | Asset | Underlying inputs |
 |---|---|---|
 | `cbETH_Price`, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD |
-| `wstETH_Price`, `wstETH_L2_Price` | wstETH | `stEthPerToken` × stETH/USD |
+| `CrossRate_Price` (stETH instance) | stETH (Mainnet) | ETH/USD × stETH/ETH — replaces the raw STETH/USD Chainlink feed so ETH/USD cancels when NAV is quoted in ETH |
+| `wstETH_Price` | wstETH (Mainnet) | `stEthPerToken` × stETH/ETH × ETH/USD — ETH/USD cancels when NAV is quoted in ETH (uses the real stETH/ETH rate, no 1:1 assumption) |
+| `wstETH_L2_Price` | wstETH (Arbitrum/Base/Gnosis) | wstETH/ETH rate × ETH/USD |
 | `rETH_Price` | rETH | `getExchangeRate` × ETH/USD |
 | `rsETH_Price`, `rsETH_L2_Price` | rsETH | rsETH-per-ETH rate × ETH/USD |
 | `eETH_Price` | eETH | eETH-per-ETH × ETH/USD |
@@ -262,7 +268,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 |---|---|---|
 | `LDO_Price` | LDO | Composite (cross-rate) |
 | `ETHPlus_Price` | ETH+ | Reserve Protocol RToken. Price = (basketsNeeded / totalSupply) × basketPrice(low). Returns stale if `IBasketHandler.status() != SOUND` (catches IFFY — lagging oracle — as well as DISABLED) or if `block.timestamp − min(IAsset.lastSave()) > RESERVE_PROTOCOL_HEARTBEAT`. `latestRoundData()` returns `updatedAt = min(IAsset.lastSave())` across prime basket components for external observability. |
-| `CrossRate_Price` | generic | Generic helper: A/B × B/C from two Chainlink feeds (used when no direct A/USD feed exists) |
+| `CrossRate_Price` | generic | Generic helper: A/B × B/C from two Chainlink feeds (used when no direct A/USD feed exists, or to keep a shared feed cancelling — e.g. the stETH instance prices stETH as ETH/USD × stETH/ETH) |
 
 `_L2_` variants exist for assets where the canonical rate lives on L1. They typically read a Chainlink-secured rate feed on the L2 (rather than calling the L1 rate-provider directly) and inherit the L2 sequencer check via `Prices`.
 

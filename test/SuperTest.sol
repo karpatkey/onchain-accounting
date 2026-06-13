@@ -78,8 +78,8 @@ abstract contract SuperTest is Test {
         // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
-        vm.etch(0xf6cb8f59B182B7BdefC6975874419028034f9379, priceFeedLibImpl.code);
-        vm.etch(0x1352A9F4e3c1E39ae23b373a4f2A73878878aB7A, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
+        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.warp(block.timestamp + 2 hours); // To pass the L2 sequencer default grace period set at deployment
         usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);

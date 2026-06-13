@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {LibraryPins} from "../utils/LibraryPins.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
 import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
@@ -18,15 +19,6 @@ import {console2} from "forge-std/console2.sol";
 ///      references them via DELEGATECALL.
 contract DeployNAVImplementation is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
-
-    // The library addresses NAVCalculator is linked against (the `libraries` pins in foundry.toml).
-    // The CREATE2 addresses computed below from the current library bytecode MUST equal these, or the
-    // deployed NAVCalculator would DELEGATECALL an address with no code and revert on initialize. The
-    // LibraryPinConsistency test re-derives both from current bytecode in CI; this is the deploy-time
-    // backstop. If these ever fire, the library bytecode drifted — regenerate the pins (and update both
-    // here and in foundry.toml) for the pinned solc + bytecode_hash.
-    address internal constant LINKED_PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
-    address internal constant LINKED_NAV_REGISTRY_LIB = 0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9;
 
     struct ImplPlan {
         address priceFeedLib;
@@ -48,26 +40,29 @@ contract DeployNAVImplementation is BaseDeployScript {
 
         // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked
         // against — otherwise NAV would deploy fine but revert on initialize (DELEGATECALL to empty code).
+        // LibraryPins is the single Solidity source of truth for these pins (shared with the CI guard in
+        // test/LibraryPinConsistency.t.sol); if these fire the library bytecode drifted — regenerate the pins
+        // (LibraryPins + foundry.toml) for the pinned solc + bytecode_hash.
         require(
-            plan.priceFeedLib == LINKED_PRICE_FEED_LIB,
+            plan.priceFeedLib == LibraryPins.PRICE_FEED_LIB,
             "PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
         );
         require(
-            plan.navRegistryLib == LINKED_NAV_REGISTRY_LIB,
+            plan.navRegistryLib == LibraryPins.NAV_REGISTRY_LIB,
             "NavRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
         );
 
         // End-to-end: the NAVCalculator impl bytecode about to be broadcast must actually be linked against
-        // both pinned addresses. The two checks above only confirm the libs' own bytecode maps to LINKED_*;
-        // if foundry.toml `libraries` drifts from LINKED_*, those still pass but NAVCalculator would
+        // both pinned addresses. The two checks above only confirm the libs' own bytecode maps to LibraryPins;
+        // if foundry.toml `libraries` drifts from LibraryPins, those still pass but NAVCalculator would
         // DELEGATECALL the wrong (empty) address and revert on initialize(). Mirrors the CI guard in
         // test/LibraryPinConsistency.t.sol.
         require(
-            _bytecodeContains(plan.navImplBytecode, LINKED_PRICE_FEED_LIB),
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.PRICE_FEED_LIB),
             "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
         );
         require(
-            _bytecodeContains(plan.navImplBytecode, LINKED_NAV_REGISTRY_LIB),
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.NAV_REGISTRY_LIB),
             "NAVCalculator impl not linked against pinned NavRegistryLib (foundry.toml `libraries` drift)"
         );
 
@@ -78,24 +73,6 @@ contract DeployNAVImplementation is BaseDeployScript {
         vm.stopBroadcast();
 
         _saveAndLog(plan);
-    }
-
-    /// @dev True if the 20-byte `needle` address appears anywhere in `haystack` (the linker embeds a pinned
-    ///      library's address verbatim in the linked creation bytecode).
-    function _bytecodeContains(bytes memory haystack, address needle) internal pure returns (bool) {
-        if (haystack.length < 20) return false;
-        bytes20 n = bytes20(needle);
-        for (uint256 i = 0; i + 20 <= haystack.length; i++) {
-            bool matched = true;
-            for (uint256 j = 0; j < 20; j++) {
-                if (haystack[i + j] != n[j]) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) return true;
-        }
-        return false;
     }
 
     function _computeImplPlan() internal pure returns (ImplPlan memory plan) {

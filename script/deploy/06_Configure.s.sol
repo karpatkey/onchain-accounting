@@ -151,27 +151,27 @@ contract Configure is BaseDeployScript {
         console2.log("--- Bridge adapters authorized:", authorized);
     }
 
-    /// @notice Shared adapter name list — kept in sync with `04_DeployBalanceAdapters.s.sol.run()`.
-    /// Each chain's config enables the subset that applies; entries not in a chain's config just
-    /// return false from isAdapterEnabled and are skipped. ERC20Default is created by
-    /// NAVCalculator.initialize() so it's already registered; it is not added here.
+    /// @notice Shared adapter name list — every name `04_DeployBalanceAdapters.s.sol.run()` deploys must
+    /// appear here, or the adapter deploys but never registers on NAVCalculator. Each chain's config enables
+    /// the subset that applies; entries not in a chain's config just return false from isAdapterEnabled and
+    /// are skipped. ERC20Default is created by NAVCalculator.initialize() so it's already registered; it is
+    /// not added here. A few entries are intentionally **list-only** — their adapter contract + 04 dispatch
+    /// branch exist but `04.run()` has no `_deployIfEnabled` for them yet (currently `UniswapV2PoolsMeta`).
+    /// They sit here registration-ready; when you wire the first such instance, add the `_deployIfEnabled`
+    /// call to `04.run()` so deploy and registration land together.
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](42);
+        names = new string[](31);
         uint256 i = 0;
         // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
         names[i++] = "AaveV2InstancesMeta";
-        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
+        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances.
+        // The legacy per-market AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis are superseded by
+        // this meta (disabled in chain config, no deploy path in 04) — full-meta, do not re-add.
         names[i++] = "AaveV3InstancesMeta";
-        // Aave V3 (one per market)
-        names[i++] = "AaveV3_Core";
-        names[i++] = "AaveV3_Prime";
-        names[i++] = "AaveV3_Arbitrum";
-        names[i++] = "AaveV3_Base";
-        names[i++] = "AaveV3_Optimism";
-        names[i++] = "AaveV3_Gnosis";
-        // Spark, stkGHO, Cap (Mainnet)
+        // Spark, stkGHO, Umbrella, Cap (Mainnet)
         names[i++] = "SparkLend";
         names[i++] = "AaveV3SafetyModule";
+        names[i++] = "AaveUmbrella";
         names[i++] = "Cap";
         // Compound V3 meta-adapter (ADR 0010): comet set configured via setMetaInstances
         names[i++] = "CompoundV3CometsMeta";
@@ -182,6 +182,9 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVaultsMeta";
         // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
         names[i++] = "MorphoMarketsMeta";
+        // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceOracle)
+        names[i++] = "ERC4626Wrap_waEthLidoGHO";
+        names[i++] = "ERC4626Wrap_sGHO";
         // Gearbox meta-adapter (ADR 0010): market set configured via setMetaInstances
         names[i++] = "GearboxMarketsMeta";
         // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via setMetaInstances
@@ -189,21 +192,13 @@ contract Configure is BaseDeployScript {
         names[i++] = "BalancerV3GaugesMeta";
         names[i++] = "BalancerV2PoolsMeta";
         names[i++] = "BalancerV2GaugesMeta";
-        // Aura
-        names[i++] = "Aura_rETH_WETH";
-        names[i++] = "Aura_GHO_USDT_USDC";
-        names[i++] = "Aura_GHO_USDC_USDT";
-        names[i++] = "Aura_GHO_USDC";
-        // Curve
-        names[i++] = "Curve_weETH_WETH";
-        names[i++] = "Curve_crvUSD_USDC";
-        names[i++] = "Curve_crvUSD_USDT";
-        names[i++] = "Curve_RLUSD_USDC";
-        // Convex
-        names[i++] = "Convex_weETH_WETH";
-        names[i++] = "Convex_crvUSD_USDC";
-        names[i++] = "Convex_crvUSD_USDT";
-        names[i++] = "Convex_RLUSD_USDC";
+        // Aura / Curve / Convex meta-adapters (ADR 0010): pool / gauge / rewarder sets configured via setMetaInstances
+        names[i++] = "AuraRewardsMeta";
+        names[i++] = "CurvePoolsMeta";
+        names[i++] = "CurveGaugesMeta";
+        names[i++] = "ConvexRewardsMeta";
+        // Merkl rewards (ADR 0007: trust-minimized proof-verified per-(user,token) cache)
+        names[i++] = "MerklRewards";
         // Stader (Mainnet)
         names[i++] = "StaderWithdrawalQueue";
         // Kelp DAO (Mainnet)
@@ -214,7 +209,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
         // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances
         names[i++] = "UniswapV3PoolsMeta"; // Mainnet
-        names[i++] = "UniswapV2PoolsMeta";
+        names[i++] = "UniswapV2PoolsMeta"; // list-only: contract + 04 dispatch exist, but no _deployIfEnabled in 04.run() yet (see docstring)
         names[i++] = "PancakeSwapV3PoolsMeta"; // Base
         names[i++] = "PancakeSwapV2PoolsMeta"; // BSC
     }

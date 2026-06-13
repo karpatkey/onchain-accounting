@@ -19,7 +19,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///
 /// Extra rewards (at FORK_BLOCK):
 ///   extra[0] rewardToken = stash(0xbb16...) → baseToken = AURA (accumulated into AURA leg)
-///   extra[1] rewardToken = stash(0x2CAB...) → baseToken = GHO  (emitted as extra Earned leg)
+///   extra[1] rewardToken = stash(0x2CAB...) → baseToken = GHO  (emitted as extra Rewards leg)
 contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
     // ── Mainnet constants ─────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
 
     // ─── 2. Staked BPT decomposes into underlying tokens ─────────────────────
 
-    /// @notice A real staker's BPT produces Supplied legs for at least some pool tokens.
+    /// @notice A real staker's BPT produces Staking legs for at least some pool tokens.
     function test_stakedBpt_decomposesIntoUnderlyingTokens() public view {
         uint256 staked = _staked(REWARDER, STAKER);
         assertGt(staked, 0, "staker has positive staked balance");
@@ -122,14 +122,14 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
 
-        uint256 suppliedCount = _countKind(pos, PositionKind.Supplied);
-        assertGt(suppliedCount, 0, "at least one Supplied leg (staked BPT decomposed)");
+        uint256 stakingCount = _countKind(pos, PositionKind.Staking);
+        assertGt(stakingCount, 0, "at least one Staking leg (staked BPT decomposed)");
 
-        // All Supplied legs should be non-debt
+        // All Staking legs should be non-debt
         for (uint256 i; i < pos.length; ++i) {
-            if (pos[i].positionKind == PositionKind.Supplied) {
-                assertFalse(pos[i].isDebt, "Supplied positions are not debt");
-                assertGt(pos[i].amount, 0, "Supplied amount is positive");
+            if (pos[i].positionKind == PositionKind.Staking) {
+                assertFalse(pos[i].isDebt, "Staking positions are not debt");
+                assertGt(pos[i].amount, 0, "Staking amount is positive");
             }
         }
     }
@@ -160,8 +160,8 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice Total per-asset amounts from the meta adapter should match the old per-instance adapter.
     /// @dev The old `Aura` adapter combines pool-token amounts and reward amounts into a single
-    ///      `Supplied` position kind per asset, whereas the meta splits them into `Supplied` (pool tokens)
-    ///      and `Earned` (rewards). The total amount per asset should be equal.
+    ///      `Supplied` position kind per asset, whereas the meta splits them into `Staking` (pool tokens)
+    ///      and `Rewards` (rewards). The total amount per asset should be equal.
     function test_parity_withPerInstanceAdapter() public view {
         uint256 staked = _staked(REWARDER, STAKER);
         if (staked == 0) return;
@@ -171,12 +171,12 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
 
         assertGt(metaPos.length, 0, "meta adapter returns positions");
 
-        // Verify position kind is always Supplied or Earned (not Wallet/Borrowed/Collateral)
+        // Verify position kind is always Staking or Rewards (not Wallet/Borrowed/Collateral)
         for (uint256 i; i < metaPos.length; ++i) {
             uint8 k = uint8(metaPos[i].positionKind);
             assertTrue(
-                k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards),
-                "only Supplied or Rewards positions expected"
+                k == uint8(PositionKind.Staking) || k == uint8(PositionKind.Rewards),
+                "only Staking or Rewards positions expected"
             );
         }
 

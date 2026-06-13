@@ -14,6 +14,7 @@ import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
+import {ERC4626WrapBalanceOracle} from "../../src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
 import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
@@ -60,14 +61,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // current chain's config has `balanceAdapters.{name}.enabled = true`, so the list can
         // include cross-chain entries safely.
 
-        // --- Aave V3 (one instance per Aave market) ---
-        _deployIfEnabled("AaveV3InstancesMeta"); // Meta-adapter: all Aave V3 instances; DataProvider set on NAV (ADR 0010)
-        _deployIfEnabled("AaveV3_Core"); // Mainnet Aave V3 core market
-        _deployIfEnabled("AaveV3_Prime"); // Mainnet Aave V3 Prime market
-        _deployIfEnabled("AaveV3_Arbitrum");
-        _deployIfEnabled("AaveV3_Base");
-        _deployIfEnabled("AaveV3_Optimism");
-        _deployIfEnabled("AaveV3_Gnosis");
+        // --- Aave V3 (meta-adapter: all instances on every chain; ADR 0010) ---
+        // The legacy per-market adapters (AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis) are
+        // superseded by AaveV3InstancesMeta and disabled in chain config — they have no deploy path here.
+        _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via setMetaInstances
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
         _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)
@@ -90,6 +87,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
+
+        // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceOracle) ---
+        _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO
+        _deployIfEnabled("ERC4626Wrap_sGHO"); // Mainnet — Aave sGHO savings vault (GHO underlying)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
@@ -235,6 +236,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Morpho Vaults meta-adapter (per-instance adapters removed — superseded by MorphoVaultsMeta)
         if (_equals(adapterName, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
+        }
+
+        // ERC-4626 wrap adapters (generic contract; one instance per wrapper, prefix-dispatched)
+        if (_startsWith(adapterName, "ERC4626Wrap_")) {
+            return _deployERC4626Wrap(adapterName, navCalculator);
         }
 
         // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxMarketsMeta)
@@ -602,6 +608,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         FluidVaultsMetaBalanceAdapter adapter =
             new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployERC4626Wrap(string memory adapterName, address navCalculator) internal returns (address) {
+        address wrapper = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "wrapper")
+        );
+        ERC4626WrapBalanceOracle adapter = new ERC4626WrapBalanceOracle(wrapper, navCalculator);
         return address(adapter);
     }
 

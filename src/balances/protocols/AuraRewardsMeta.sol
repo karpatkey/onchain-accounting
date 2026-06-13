@@ -29,7 +29,7 @@ import {BalancerV2PoolLib, IBalancerV2Pool, IBalancerV2Vault} from "./balancer/B
 ///        bridged AURA. AURA derivation uses `L2Coordinator.mintRate()` instead of the cliff schedule.
 ///
 ///      Per-rewarder positions emitted:
-///        1. **Supplied** legs — one per registered Balancer pool token (ERC4626 vault tokens are
+///        1. **Staking** legs — one per registered Balancer pool token (ERC4626 vault tokens are
 ///           unwrapped to their underlying via `previewRedeem`), pro-rata from staked BPT.
 ///        2. **Rewards** leg for BAL — `auraRewards.earned(account)` (view-safe exact value).
 ///        3. **Rewards** leg for AURA:
@@ -62,7 +62,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
     /// @notice Balancer V2 Vault address for V2 pool decomposition.
     ///         Universal across all EVM chains: 0xBA12222222228d8Ba445958a75a0704d566BF2C8
-    ///         Pass address(0) to disable V2 pool support (V2 instances will emit no Supplied legs).
+    ///         Pass address(0) to disable V2 pool support (V2 instances will emit no Staking legs).
     address public immutable BALANCER_V2_VAULT;
 
     /// @param booster_           Aura Booster contract.
@@ -125,7 +125,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         uint256 n;
         bytes memory pid = _instancePositionId(instance);
 
-        // ── 1. Supplied legs: staked BPT decomposed into Balancer pool tokens ─
+        // ── 1. Staking legs: staked BPT decomposed into Balancer pool tokens ──
         if (stakedBpt > 0) {
             address[] memory tokens = _poolTokens(address(pool), isV3);
             if (isV3) {
@@ -144,7 +144,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Supplied
+                        positionKind: PositionKind.Staking
                     });
                 }
             } else if (BALANCER_V2_VAULT != address(0)) {
@@ -172,7 +172,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Supplied
+                        positionKind: PositionKind.Staking
                     });
                 }
             }

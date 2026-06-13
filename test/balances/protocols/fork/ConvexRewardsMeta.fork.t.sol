@@ -86,7 +86,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice Verifies that the Booster correctly resolves the LP token for each rewarder.
     function test_booster_resolvesLpToken() public view {
-        // Meta-adapter resolves LP from pid(); if it can produce Supplied legs, LP was resolved.
+        // Meta-adapter resolves LP from pid(); if it can produce Staking legs, LP was resolved.
         // Use CRVUSD_USDC_STAKER who has staked LP.
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
         if (staked == 0) return;
@@ -94,8 +94,8 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
-        uint256 supplied = _countKind(pos, PositionKind.Supplied);
-        assertGt(supplied, 0, "LP resolved and decomposed");
+        uint256 staking = _countKind(pos, PositionKind.Staking);
+        assertGt(staking, 0, "LP resolved and decomposed");
     }
 
     // ─── Pool decomposition ───────────────────────────────────────────────────
@@ -107,8 +107,8 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
-        uint256 supplied = _countKind(pos, PositionKind.Supplied);
-        assertGt(supplied, 0, "at least one Supplied leg");
+        uint256 staking = _countKind(pos, PositionKind.Staking);
+        assertGt(staking, 0, "at least one Staking leg");
         _assertAllValidKinds(pos);
     }
 
@@ -200,7 +200,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
     function _assertAllValidKinds(INAVCalculator.PositionBalance[] memory pos) internal pure {
         for (uint256 i; i < pos.length; ++i) {
             uint8 k = uint8(pos[i].positionKind);
-            assertTrue(k == uint8(PositionKind.Supplied) || k == uint8(PositionKind.Rewards));
+            assertTrue(k == uint8(PositionKind.Staking) || k == uint8(PositionKind.Rewards));
         }
     }
 }

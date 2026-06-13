@@ -72,16 +72,15 @@ function supportsInterface(bytes4) external view returns (bool);  // ERC165
 
 Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the underlying token), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
-Adapters live under `src/balances/protocols/<protocol>/` (one folder per protocol). Each folder typically contains:
+Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters may sit directly under `protocols/`). A folder typically contains:
 
-- `<Protocol>.sol` — the adapter contract.
-- `<Protocol>AdapterFactory.sol` — a CREATE2 factory inheriting `BalanceAdapterFactoryBase`, with `PROTOCOL_KEY = keccak256("<Protocol>")`.
+- `<Protocol>.sol` — the adapter contract (immutable; the constructor pins everything).
+- For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `setMetaInstances`.
 
-The framework guarantees:
-- **Cross-chain identical addresses** for the same `(initCode, salt)` via the canonical CREATE2 deployer at `0x4e59b44847b379578588920cA78FbF26c0B4956C`.
-- **Single registration path:** factory `deploy()` calls `BalanceAdapterRegistry.register(adapter)`, which owns MANAGER on `NAVCalculator` and forwards to `addBalanceOracle`.
-- **Idempotent re-registration** for adapters already in NAV.
-- **Clean unregister:** `BalanceAdapterRegistry.unregister(adapter)` removes from NAV *and* notifies the originating factory via `onAdapterUnregistered` so factory tracking stays consistent.
+How adapters reach NAV today:
+- **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol`, so each adapter's address is chain- and run-specific. Read them from the per-chain configs (`script/config/chains/<chainId>.json` → `balanceAdapters.<name>.deployed`); do not assume they match across chains.
+- **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceOracle(adapter)` for each adapter, plus `setMetaInstances(adapter, …)` for meta-adapters (both idempotent).
+- **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactory` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
 
 Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) for the contract-level details and [`./howto/add-balance-adapter.md`](./howto/add-balance-adapter.md) for the end-to-end walkthrough.
 
@@ -89,7 +88,7 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 
 Two flavors:
 - **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
-- **Custom** — a contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI_Price` reads `sDAI.previewRedeem(1e18)` × DAI/USD; `wstETH_Price` reads stETH-per-token rate × stETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
+- **Custom** — a contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI_Price` reads `sDAI.previewRedeem(1e18)` × DAI/USD; `wstETH_Price` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
 
 L2 deployments check `chainlinkSequencerFeed`; if down or in grace period, prices are flagged stale.
 
@@ -147,7 +146,6 @@ These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list.
 
 - Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), and `positionKind` (enum from `PositionKind.sol`). See `docs/howto/position-identity-schema.md`.
 - Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
-- Factories use CREATE2 with `PROTOCOL_KEY = keccak256("<Name>")`.
-- Registration goes through `BalanceAdapterRegistry`, never directly to `NAVCalculator.addBalanceOracle`.
+- Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `chains/<id>.json` `balanceAdapters.<name>.deployed`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceOracle` directly from the deployer EOA (+ `setMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.
 - The user merges PRs; we monitor CI and report.

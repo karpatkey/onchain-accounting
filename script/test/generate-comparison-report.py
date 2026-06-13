@@ -409,14 +409,18 @@ def build_item_tokens(item: dict) -> str:
 def _leg_kind(pos: dict) -> str:
     """Derive human-readable leg kind from positionKind (new) or positionDetail.type (legacy).
 
-    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Earned.
+    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral,
+    4=Staking, 5=Rewards, 6=Fees (matches the PositionKind enum in src/utils/PositionKind.sol).
     Legacy format: positionDetail.type is a string — "Supply"/"Borrow"/"Collateral"/"Staking"/etc.
     """
     # New format: positionKind uint8
     if "positionKind" in pos:
-        kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Rewards"}
+        kind_map = {0: "Wallet", 1: "Supply", 2: "Borrow", 3: "Collateral", 4: "Staking", 5: "Rewards", 6: "Fees"}
         try:
-            return kind_map.get(int(pos["positionKind"]), "Supply")
+            n = int(pos["positionKind"])
+            # Surface unmapped values as Unknown(<n>) rather than silently labelling them "Supply" —
+            # an unrecognised ordinal means enum drift (a new PositionKind), exactly what this report should flag.
+            return kind_map.get(n, f"Unknown({n})")
         except (ValueError, TypeError):
             pass
     # Legacy format: positionDetail.type
@@ -938,8 +942,33 @@ def render_unified_table(
                             })
                         continue
                     if coverage_gaps_out is not None:
+                        # Are the item's underlying tokens themselves NAV-priced assets
+                        # (registered with a feed, or aggregated by an adapter)? If so, NAV
+                        # already prices them as wallet ERC-20s, so the value IS in the NAV
+                        # total whenever the account holds them in-wallet — the per-row
+                        # pairing just fails because there is no protocol adapter. It is only
+                        # a true coverage gap when those tokens sit locked inside the
+                        # protocol's own contract (e.g. a withdrawal queue or savings vault),
+                        # where the wallet sweep can't see them. Don't conflate the two.
+                        priced_syms = []
+                        for t in nonzero_toks:
+                            tid = (t.get("id") or "").lower()
+                            # native tokens arrive as the chain id (e.g. "eth"); map to the
+                            # ERC-7528 sentinel before checking the priced set, as elsewhere.
+                            lookup = NATIVE_SENTINEL if tid == dbank_chain.lower() else tid
+                            if lookup in priced_addrs or lookup in agg_addrs:
+                                priced_syms.append(t.get("symbol", "?"))
                         if not has_adapters and not pf_pool:
-                            hint = f"No NAV adapter/feed registered for `{short_id}` on chain {chain_id}"
+                            if nonzero_toks and len(priced_syms) == len(nonzero_toks):
+                                uniq = ", ".join(dict.fromkeys(priced_syms))
+                                hint = (
+                                    f"No `{short_id}` protocol adapter, but {uniq} is/are NAV-priced: "
+                                    f"the value is already in the NAV total when held in-wallet "
+                                    f"(see this account's wallet-token rows) — a true gap only if locked "
+                                    f"in the protocol contract (withdrawal queue / savings vault)"
+                                )
+                            else:
+                                hint = f"No NAV adapter/feed registered for `{short_id}` on chain {chain_id}"
                         elif unregistered:
                             hint = f"Token(s) not in NAV registry: {', '.join(unregistered[:4])}"
                         else:

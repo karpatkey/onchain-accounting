@@ -15,8 +15,22 @@
         "enabled": true,
         "constructor": {
           "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+          "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
           "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "stEthToEthChainlinkHeartbeat": "86400",
           "ethToUsdChainlinkHeartbeat": "3600"
+        }
+      }
+    },
+    "stETH": {
+      "1": {
+        "enabled": true,
+        "constructor": {
+          "underlyingAsset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+          "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+          "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
+          "xToUsdHeartbeat": "3600",
+          "yToXHeartbeat": "86400"
         }
       }
     },
@@ -269,8 +283,9 @@
       "wstETH": {
         "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
         "type": "Custom",
-        "pricefeed": "0xAc8ef2dc1Ee81f30A3249fcAb6789ed85Fd189Cd",
-        "heartbeat": 3600
+        "pricefeed": "0x35B2aAE4de9E66Cd6D86fc2eD360E9Bcb79A4561",
+        "heartbeat": 86400,
+        "$comment": "Custom composite oracle (stEthPerToken x stETH/ETH x ETH/USD). Registration heartbeat = 86400, the slowest underlying leg (stETH/ETH); this makes NAV's secondary latestRoundData updatedAt gate mirror the oracle's own slow-leg check (never false-trips), while the oracle's getLatestPrice() primary gate independently covers the faster ETH/USD (3600) leg. The prior 3600 falsely marked wstETH stale because latestRoundData reports the slowest (stETH/ETH, ~daily) leg's updatedAt. NB the heartbeat param is ignored for Custom feeds on the legacy live NAV (no latestRoundData there); it is honored on this codebase."
       },
       "eETH": {
         "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
@@ -367,9 +382,10 @@
       },
       "stETH": {
         "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
-        "type": "Chainlink",
-        "pricefeed": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",
-        "heartbeat": 3600
+        "type": "Custom",
+        "pricefeed": "0x70dD216CcD75551a170E361bebD33Db64fc0CfAe",
+        "heartbeat": 86400,
+        "$comment": "Repriced via CrossRatePriceAdapter (ETH/USD x stETH/ETH) so ETH/USD cancels in the ETH-denominated NAV (was raw STETH/USD Chainlink 0xCfE54B5c, which caused two-feed jitter). Custom composite oracle: registration heartbeat = 86400, the slowest underlying leg (stETH/ETH), so NAV's secondary updatedAt gate mirrors the oracle's slow-leg check; the oracle's getLatestPrice() primary gate independently covers the faster ETH/USD (3600) leg. NB the heartbeat param is ignored for Custom feeds on the legacy live NAV; honored on this codebase."
       },
       "CRV": {
         "address": "0xD533a949740bb3306d119CC777fa900bA034cd52",
@@ -447,6 +463,12 @@
         "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
         "type": "Chainlink",
         "pricefeed": "0x547a514d5e3769680Ce22B2361c10Ea13619e8a9",
+        "heartbeat": 86400
+      },
+      "EIGEN": {
+        "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
+        "type": "Chainlink",
+        "pricefeed": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
         "heartbeat": 86400
       },
       "COMP": {

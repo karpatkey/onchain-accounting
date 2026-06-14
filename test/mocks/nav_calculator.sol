@@ -160,7 +160,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function removeBalanceAdapter(address) external pure override {
+    function removeBalanceAdapters(address[] calldata) external pure override {
         revert("Not implemented in mock");
     }
 

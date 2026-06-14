@@ -318,7 +318,7 @@ contract NAVCalculatorErrorTest is SuperTest {
 
         // Remove reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.removeBalanceAdapter(address(revertingAdapter));
+        nav.removeBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         // Query again - should work normally

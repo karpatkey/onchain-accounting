@@ -300,7 +300,7 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(nav.isAdapterRegistered(address(mockBalanceAdapter)), "Adapter should be registered");
 
         // Remove the adapter
-        nav.removeBalanceAdapter(address(mockBalanceAdapter));
+        nav.removeBalanceAdapters(aa(address(mockBalanceAdapter)));
         assertFalse(nav.isAdapterRegistered(address(mockBalanceAdapter)), "Adapter should be removed");
         vm.stopPrank();
     }
@@ -319,7 +319,7 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.removeBalanceAdapter(address(mockBalanceAdapter));
+        nav.removeBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
     }
 
@@ -880,7 +880,7 @@ contract NAVCalculatorTest is SuperTest {
         address invalidAdapter = makeAddr("invalid");
 
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
-        nav.removeBalanceAdapter(invalidAdapter);
+        nav.removeBalanceAdapters(aa(invalidAdapter));
         vm.stopPrank();
     }
 
@@ -889,7 +889,7 @@ contract NAVCalculatorTest is SuperTest {
         address adapter = nav.erc20DefaultAdapter();
         // Cannot remove ERC20DefaultAdapter, it's protected
         vm.expectRevert(InvalidArguments.selector);
-        nav.removeBalanceAdapter(adapter);
+        nav.removeBalanceAdapters(aa(adapter));
         vm.stopPrank();
     }
 

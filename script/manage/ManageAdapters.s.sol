@@ -71,8 +71,12 @@ contract ManageAdapters is BaseDeployScript {
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         require(navProxy != address(0), "NAVCalculator not deployed");
 
+        address[] memory adapters = new address[](1);
+        adapters[0] = adapter;
+
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
-        transactions[0] = SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.removeBalanceAdapter, (adapter)));
+        transactions[0] =
+            SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.removeBalanceAdapters, (adapters)));
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-remove-balance-adapter.json"));
 

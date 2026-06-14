@@ -158,7 +158,7 @@ contract NAVCalculatorHandler is Test {
             return;
         }
 
-        nav.removeBalanceAdapter(adapter);
+        nav.removeBalanceAdapters(aa(adapter));
         registeredAdapters[adapter] = false;
         ghostAdapterCount = nav.getAdapterCount();
     }

@@ -209,9 +209,11 @@ interface INAVCalculator is IBalances {
     /// @param priceFeed Feed address to remove.
     function removePriceFeed(address asset, address priceFeed) external;
 
-    /// @notice Removes a balance adapter from the global registry.
-    /// @param adapter Adapter address to remove (cannot be the default ERC20 adapter).
-    function removeBalanceAdapter(address adapter) external;
+    /// @notice Removes one or more balance adapters from the global registry in a single call.
+    /// @dev Reverts with InvalidArguments if the list is empty. The batch is all-or-nothing — if any adapter is
+    ///      not registered (or is the default ERC20 adapter) the whole call reverts.
+    /// @param adapters Adapter addresses to remove (none may be the default ERC20 adapter).
+    function removeBalanceAdapters(address[] calldata adapters) external;
 
     /// @notice Replaces the full set of instance coordinates queried for a registered meta-adapter.
     /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable. The

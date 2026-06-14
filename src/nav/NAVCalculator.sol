@@ -160,13 +160,19 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function addBalanceAdapter(address adapter) external {
+    function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
-        if (adapter == address(0)) {
+        uint256 length = adapters.length;
+        if (length == 0) {
             revert InvalidArguments();
         }
 
-        _addBalanceAdapter(adapter);
+        for (uint256 i = 0; i < length; i++) {
+            if (adapters[i] == address(0)) {
+                revert InvalidArguments();
+            }
+            _addBalanceAdapter(adapters[i]);
+        }
     }
 
     /// @inheritdoc INAVCalculator

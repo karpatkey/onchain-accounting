@@ -8,6 +8,7 @@ import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/Compoun
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     /// @notice Safe with Aave V3, Compound V3, Morpho positions on Base (same as base harness default)
@@ -85,9 +86,9 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
         morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
-        nav.addBalanceAdapter(address(aaveAdapter));
-        nav.addBalanceAdapter(address(compoundV3Comet));
-        nav.addBalanceAdapter(address(morphoBlueAdapter));
+        nav.addBalanceAdapters(aa(address(aaveAdapter)));
+        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
+        nav.addBalanceAdapters(aa(address(morphoBlueAdapter)));
 
         // Configure meta-adapter instance sets
         bytes32[] memory aaveInstances = new bytes32[](1);

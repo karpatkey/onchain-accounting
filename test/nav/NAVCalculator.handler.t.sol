@@ -133,7 +133,7 @@ contract NAVCalculatorHandler is Test {
         }
 
         // Add adapter
-        nav.addBalanceAdapter(address(adapter));
+        nav.addBalanceAdapters(aa(address(adapter)));
         registeredAdapters[address(adapter)] = true;
         ghostAdapterCount = nav.getAdapterCount();
     }
@@ -260,6 +260,7 @@ contract NAVCalculatorHandler is Test {
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title NAVCalculator Handler-Based Invariant Tests
 /// @notice Stateful invariant tests using handler contract

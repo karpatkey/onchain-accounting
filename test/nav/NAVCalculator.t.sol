@@ -8,6 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
@@ -199,7 +200,7 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         // Adapters are now global - add the adapter once
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
 
         // getAllAdapters returns all global adapters
@@ -243,7 +244,7 @@ contract NAVCalculatorTest is SuperTest {
         address erc20Adapter = nav.erc20DefaultAdapter();
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.addBalanceAdapter(erc20Adapter);
+        nav.addBalanceAdapters(aa(erc20Adapter));
         vm.stopPrank();
     }
 
@@ -280,7 +281,7 @@ contract NAVCalculatorTest is SuperTest {
         // ERC20DefaultAdapter is already registered, so try adding a custom adapter
         address customAdapter = address(mockBalanceAdapter);
         vm.prank(navCalculatorManager);
-        nav.addBalanceAdapter(customAdapter);
+        nav.addBalanceAdapters(aa(customAdapter));
 
         // Verify it was added
         assertTrue(nav.isAdapterRegistered(customAdapter), "Custom adapter should be registered");
@@ -295,7 +296,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         // Add a custom adapter to test removal
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         assertTrue(nav.isAdapterRegistered(address(mockBalanceAdapter)), "Adapter should be registered");
 
         // Remove the adapter
@@ -313,7 +314,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         // Add a custom adapter to test removal
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -429,7 +430,7 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         // USDC is already registered in setup. Add the custom adapter globally
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
 
         // Verify balance adapters exist (ERC20DefaultAdapter from setup + custom adapter)
         assertGe(nav.getAdapterCount(), 2, "Should have at least ERC20DefaultAdapter and custom adapter");
@@ -870,7 +871,7 @@ contract NAVCalculatorTest is SuperTest {
         // ERC20DefaultAdapter is already registered, try to add it again - should revert with DuplicateBalanceAdapter
         address erc20Adapter = nav.erc20DefaultAdapter();
         vm.expectRevert(IBalances.DuplicateBalanceAdapter.selector);
-        nav.addBalanceAdapter(erc20Adapter);
+        nav.addBalanceAdapters(aa(erc20Adapter));
         vm.stopPrank();
     }
 
@@ -1005,7 +1006,7 @@ contract NAVCalculatorTest is SuperTest {
         setupMockBalanceAdapter(address(usdc), int256(123 * 10 ** usdc.decimals()));
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
@@ -1051,7 +1052,7 @@ contract NAVCalculatorTest is SuperTest {
         setupMockBalanceAdapter(address(dai), int256(456 * 10 ** dai.decimals()));
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
@@ -1106,7 +1107,7 @@ contract NAVCalculatorTest is SuperTest {
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
         stakingBalanceAdapter.setPositionMetadata("Staking", "Staked USDC");
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(stakingBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
         vm.stopPrank();
 
         // mint 1 USDC to both the safe and the custom adapter
@@ -1140,7 +1141,7 @@ contract NAVCalculatorTest is SuperTest {
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
         stakingBalanceAdapter.setPositionMetadata("Debt", "Borrowed USDC");
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(stakingBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
 
         //Set the custom adapter to -1 USDC  and  mint 1 USDC to the safe
         stakingBalanceAdapter.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
@@ -1395,7 +1396,7 @@ contract NAVCalculatorTest is SuperTest {
         debtAssets[0] = address(usdc);
         debtAdapter.setUnderlyingAssetsSupported(debtAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(debtAdapter));
+        nav.addBalanceAdapters(aa(address(debtAdapter)));
         debtAdapter.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
         vm.stopPrank();
 
@@ -1417,7 +1418,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[0] = address(usdc);
         customAdapter.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(customAdapter));
+        nav.addBalanceAdapters(aa(address(customAdapter)));
         customAdapter.setBalance(address(usdc), safe, 0, false); // Zero balance
         vm.stopPrank();
 
@@ -1448,7 +1449,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Test custom adapter metadata
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions2 = nav.getAccountPositions(safe, address(0));
@@ -1479,7 +1480,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[0] = address(usdc);
         zeroAdapter.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(zeroAdapter));
+        nav.addBalanceAdapters(aa(address(zeroAdapter)));
         zeroAdapter.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 
@@ -1696,7 +1697,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_hasPositions_resilientToRevertingAdapter() public {
         RevertingBalanceAdapter reverter = new RevertingBalanceAdapter();
         vm.prank(navCalculatorManager);
-        nav.addBalanceAdapter(address(reverter));
+        nav.addBalanceAdapters(aa(address(reverter)));
 
         // Empty account: the reverting adapter is skipped, hasPositions returns false (no revert).
         assertFalse(nav.hasPositions(safe));
@@ -1903,7 +1904,7 @@ contract NAVCalculatorTest is SuperTest {
         adapterAssets[0] = address(usdc);
         customAdapter.setUnderlyingAssetsSupported(adapterAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(customAdapter));
+        nav.addBalanceAdapters(aa(address(customAdapter)));
         customAdapter.setBalance(address(usdc), safe, 5 * 10 ** (usdc.decimals() - 1), false);
         vm.stopPrank();
 
@@ -1922,7 +1923,7 @@ contract NAVCalculatorTest is SuperTest {
         adapterAssets[0] = address(usdc);
         zeroAdapter.setUnderlyingAssetsSupported(adapterAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(zeroAdapter));
+        nav.addBalanceAdapters(aa(address(zeroAdapter)));
         zeroAdapter.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 

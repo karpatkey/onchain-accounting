@@ -71,6 +71,7 @@ import {syrupUSDC_L2_PriceOracle} from "src/prices/protocols/syrupUSDC_L2_Price.
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title IntegrationFromConfigBase
 /// @notice Per-chain integration test harness that mirrors the deploy pipeline:
@@ -881,7 +882,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _registerAllBalanceAdapters() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
-            try nav.addBalanceAdapter(a) {
+            try nav.addBalanceAdapters(aa(a)) {
             // ok
             }
             catch (bytes memory err) {

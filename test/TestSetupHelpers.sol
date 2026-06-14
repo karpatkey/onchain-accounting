@@ -8,6 +8,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @notice Balances harness for fork tests
 /// @dev Extends Balances and implements a minimal asset registry so it can stand in for NAVCalculator.
@@ -153,7 +154,7 @@ abstract contract TestSetupHelpers is Test {
 
         // Add the adapter globally
         vm.prank(manager);
-        nav.addBalanceAdapter(adapter);
+        nav.addBalanceAdapters(aa(adapter));
     }
 
     /// @notice Ensures native address has a balance adapter set up

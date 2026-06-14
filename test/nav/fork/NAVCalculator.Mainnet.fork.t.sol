@@ -12,6 +12,7 @@ import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     /// @notice Safe with Aave V3, Compound V3, Morpho, DSR positions on Ethereum Mainnet (same as base harness default)
@@ -149,11 +150,11 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
         daiDsr = new DaiDsrBalanceAdapter(dai, dsr, address(nav));
 
-        nav.addBalanceAdapter(address(aaveAdapter));
-        nav.addBalanceAdapter(address(smAdapter));
-        nav.addBalanceAdapter(address(compoundV3Comet));
-        nav.addBalanceAdapter(address(morphoBlueAdapter));
-        nav.addBalanceAdapter(address(daiDsr));
+        nav.addBalanceAdapters(aa(address(aaveAdapter)));
+        nav.addBalanceAdapters(aa(address(smAdapter)));
+        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
+        nav.addBalanceAdapters(aa(address(morphoBlueAdapter)));
+        nav.addBalanceAdapters(aa(address(daiDsr)));
 
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));

@@ -7,6 +7,7 @@ import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3In
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     /// @notice Test account for Arbitrum fork (has positions / holdings to exercise NAV)
@@ -77,13 +78,13 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveAdapter = aaveMeta;
-        nav.addBalanceAdapter(address(aaveAdapter));
+        nav.addBalanceAdapters(aa(address(aaveAdapter)));
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
         nav.setMetaInstances(address(aaveMeta), aaveInstances);
 
         compoundV3UsdcComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceAdapter(address(compoundV3UsdcComet));
+        nav.addBalanceAdapters(aa(address(compoundV3UsdcComet)));
     }
 }

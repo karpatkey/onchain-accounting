@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title Mock Reverting Balance Adapter
 /// @notice Adapter that reverts on query for testing error handling
@@ -126,7 +127,7 @@ contract NAVCalculatorErrorTest is SuperTest {
     function test_RevertWhen_adapterReverts_handledGracefully() public {
         // Add reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         // Setup other adapters with valid data
@@ -157,9 +158,9 @@ contract NAVCalculatorErrorTest is SuperTest {
         Mock_RevertingBalanceAdapter adapter3 = new Mock_RevertingBalanceAdapter();
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
-        nav.addBalanceAdapter(address(adapter2));
-        nav.addBalanceAdapter(address(adapter3));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
+        nav.addBalanceAdapters(aa(address(adapter2)));
+        nav.addBalanceAdapters(aa(address(adapter3)));
         vm.stopPrank();
 
         // Setup valid data
@@ -173,7 +174,7 @@ contract NAVCalculatorErrorTest is SuperTest {
     /// @notice Test that adapter can recover from revert
     function test_RevertWhen_adapterRecoversFromRevert() public {
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
@@ -249,7 +250,7 @@ contract NAVCalculatorErrorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
-        nav.addBalanceAdapter(invalidAdapter);
+        nav.addBalanceAdapters(aa(invalidAdapter));
         vm.stopPrank();
     }
 
@@ -257,7 +258,7 @@ contract NAVCalculatorErrorTest is SuperTest {
     function test_RevertWhen_zeroAddressAdapter() public {
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
-        nav.addBalanceAdapter(address(0));
+        nav.addBalanceAdapters(aa(address(0)));
         vm.stopPrank();
     }
 
@@ -269,7 +270,7 @@ contract NAVCalculatorErrorTest is SuperTest {
     function test_RevertWhen_concurrentFailures() public {
         // Add reverting balance adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
 
         // Create token with reverting price oracle
         Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle();
@@ -307,7 +308,7 @@ contract NAVCalculatorErrorTest is SuperTest {
     function test_RevertWhen_adapterRemovalRecovery() public {
         // Add reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
@@ -338,9 +339,9 @@ contract NAVCalculatorErrorTest is SuperTest {
         Mock_RevertingBalanceAdapter adapter3 = new Mock_RevertingBalanceAdapter();
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceAdapter(address(revertingAdapter));
-        nav.addBalanceAdapter(address(adapter2));
-        nav.addBalanceAdapter(address(adapter3));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
+        nav.addBalanceAdapters(aa(address(adapter2)));
+        nav.addBalanceAdapters(aa(address(adapter3)));
         vm.stopPrank();
 
         // Don't mint any tokens (so ERC20DefaultAdapter has no positions)

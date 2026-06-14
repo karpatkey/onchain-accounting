@@ -12,6 +12,7 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title AaveV3InstancesMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving Aave V3 instances, routed through a real NAVCalculator that holds the
@@ -78,7 +79,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         perInstance = new SparkLendBalanceAdapter(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceAdapter(address(adapter));
+        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(uint160(CORE_DATA_PROVIDER)));
         nav.setMetaInstances(address(adapter), instances);

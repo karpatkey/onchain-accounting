@@ -13,7 +13,7 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Post-deployment configuration for NAVCalculator and BridgeEscrow, broadcast directly by the deployer EOA.
 /// @dev EOA flow (no Safe): the caller must hold DEFAULT_ADMIN_ROLE + MANAGER on the proxies (granted by the atomic
 ///      deployer in 02 when chainConfig.admin == chainConfig.manager == the deployer EOA). For each enabled+deployed
-///      balance adapter it calls `addBalanceAdapter` (idempotent) and, for meta-adapters (ADR 0010), `setMetaInstances`
+///      balance adapter it calls `addBalanceAdapters` (idempotent) and, for meta-adapters (ADR 0010), `setMetaInstances`
 ///      with the configured instance set; for each enabled+deployed bridge adapter it authorizes it on BridgeEscrow.
 ///      Idempotent: skips adapters already registered and adapters already authorized, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
@@ -81,13 +81,15 @@ contract Configure is BaseDeployScript {
             if (deployed == address(0)) continue;
 
             if (!IBalances(navProxy).isAdapterRegistered(deployed)) {
+                address[] memory one = new address[](1);
+                one[0] = deployed;
                 (bool ok, bytes memory data) =
-                    navProxy.call(abi.encodeWithSignature("addBalanceAdapter(address)", deployed));
+                    navProxy.call(abi.encodeWithSignature("addBalanceAdapters(address[])", one));
                 if (!ok) {
                     revert(
                         string(
                             abi.encodePacked(
-                                "addBalanceAdapter failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                                "addBalanceAdapters failed for ", adapterNames[i], ": ", _decodeRevert(data)
                             )
                         )
                     );

@@ -193,10 +193,11 @@ interface INAVCalculator is IBalances {
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Registers a balance adapter in the global registry.
-    /// @dev Reverts with DuplicateBalanceAdapter if already registered.
-    /// @param adapter Adapter address (must implement IBalanceAdapter).
-    function addBalanceAdapter(address adapter) external;
+    /// @notice Registers one or more balance adapters in the global registry in a single call.
+    /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, and with
+    ///      DuplicateBalanceAdapter if any adapter is already registered (the batch is all-or-nothing).
+    /// @param adapters Adapter addresses (each must implement IBalanceAdapter).
+    function addBalanceAdapters(address[] calldata adapters) external;
 
     /// @notice Removes the price feed at the given index. Reverts if it is the last feed (CannotRemoveLastFeed).
     /// @param asset Registered asset address.

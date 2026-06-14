@@ -9,6 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title NAVCalculator Invariant Tests
 /// @notice Tests critical system invariants for NAVCalculator
@@ -46,7 +47,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
             adapters[i] = adapter;
 
             vm.startPrank(navCalculatorManager);
-            nav.addBalanceAdapter(address(adapter));
+            nav.addBalanceAdapters(aa(address(adapter)));
             vm.stopPrank();
         }
 

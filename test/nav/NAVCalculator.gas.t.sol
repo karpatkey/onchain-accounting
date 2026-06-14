@@ -5,6 +5,7 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title NAVCalculator Gas Benchmark Tests
 /// @notice Tests gas usage for various scenarios to establish performance baselines
@@ -53,7 +54,7 @@ contract NAVCalculatorGasTest is SuperTest {
             assets[0] = asset;
             adapter.setUnderlyingAssetsSupported(assets);
             adapter.setBalance(asset, safe, (i + 1) * 100 * 10 ** usdc.decimals(), false);
-            nav.addBalanceAdapter(address(adapter));
+            nav.addBalanceAdapters(aa(address(adapter)));
             adapters[i] = adapter;
         }
         vm.stopPrank();

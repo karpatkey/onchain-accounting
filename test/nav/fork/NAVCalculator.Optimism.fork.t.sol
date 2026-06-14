@@ -8,6 +8,7 @@ import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/Compoun
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @notice Minimal interface for Optimism CometRewards.getRewardOwed (state-modifying: accrues account).
 interface ICometRewardsGetOwed {
@@ -96,17 +97,17 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveAdapter = aaveMeta;
-        nav.addBalanceAdapter(address(aaveAdapter));
+        nav.addBalanceAdapters(aa(address(aaveAdapter)));
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
         nav.setMetaInstances(address(aaveMeta), aaveInstances);
 
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceAdapter(address(compoundV3Comet));
+        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
 
         compoundV3UsdtComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3 USDT", address(nav));
-        nav.addBalanceAdapter(address(compoundV3UsdtComet));
+        nav.addBalanceAdapters(aa(address(compoundV3UsdtComet)));
     }
 }

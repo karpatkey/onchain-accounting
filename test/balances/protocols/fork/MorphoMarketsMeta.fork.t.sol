@@ -11,6 +11,7 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title MorphoMarketsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho Blue markets, routed through a real NAVCalculator that holds
@@ -79,7 +80,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         adapter = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceAdapter(address(adapter));
+        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
         nav.setMetaInstances(address(adapter), instances);

@@ -16,6 +16,7 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @notice Plain OZ ERC4626 used as a second "Morpho-shaped" vault over real USDC on the fork.
 contract TestUsdcVault is ERC4626 {
@@ -89,7 +90,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Deploy the meta-adapter and register it on NAV with both vaults as instances.
         adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
         vm.startPrank(manager);
-        nav.addBalanceAdapter(address(adapter));
+        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));
         instances[1] = bytes32(uint256(uint160(address(vault2))));

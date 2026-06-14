@@ -13,7 +13,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice One immutable adapter that reports an account's supply position in *any* Fluid fToken (ERC4626
 ///         lending vault) — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the
 ///         fToken's underlying. The instance coordinate is the fToken address, widened to bytes32; the active
-///         fToken set lives on NAVCalculator (`setMetaInstances`). Identity is encoded as
+///         fToken set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). Identity is encoded as
 ///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {

@@ -48,6 +48,12 @@ interface IBalances {
     /// @notice Error when the same balance adapter is already set.
     error DuplicateBalanceAdapter();
 
+    /// @notice Error when adding a meta-instance coordinate that is already present (would double-count NAV).
+    error DuplicateMetaInstance();
+
+    /// @notice Error when removing a meta-instance coordinate that is not present in the adapter's set.
+    error MetaInstanceNotFound();
+
     /// @notice Validates that the adapter implements IBalanceAdapter (reverts with InvalidBalanceAdapter if not).
     /// @param adapter The address of the adapter to check.
     function checkBalanceAdapterSupport(address adapter) external view;

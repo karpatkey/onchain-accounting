@@ -131,7 +131,11 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new bytes32[](0);
     }
 
-    function setMetaInstances(address, bytes32[] calldata) external pure override {
+    function addMetaInstances(address, bytes32[] calldata) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMetaInstances(address, bytes32[] calldata) external pure override {
         revert("Not implemented in mock");
     }
 

@@ -82,7 +82,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(uint160(CORE_DATA_PROVIDER)));
-        nav.setMetaInstances(address(adapter), instances);
+        nav.addMetaInstances(address(adapter), instances);
         vm.stopPrank();
     }
 

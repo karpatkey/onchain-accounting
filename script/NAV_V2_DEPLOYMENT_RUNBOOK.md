@@ -1,6 +1,6 @@
 # NAV v2 Deployment Runbook
 
-> **⚠️ Deployment is now EOA-only.** A single deployer EOA runs every step with `--broadcast`; no Safe executes deploy/config txs. "Path A (Safe-TX bundles)" below is superseded — use the EOA path only. `06_Configure.s.sol` no longer exists (folded into `06_Configure.s.sol`, which now broadcasts `addBalanceAdapter` + `setMetaInstances` + bridge authorization directly). The final step is `07_TransferAdminToSecurityCouncil.s.sol`, which hands `DEFAULT_ADMIN_ROLE` + `MANAGER` on **both** the NAV and Bridge proxies to `addresses.securityCouncil` and renounces the deployer's roles. See `script/deploy/README.md` for the authoritative, current procedure.
+> **⚠️ Deployment is now EOA-only.** A single deployer EOA runs every step with `--broadcast`; no Safe executes deploy/config txs. "Path A (Safe-TX bundles)" below is superseded — use the EOA path only. `06_Configure.s.sol` no longer exists (folded into `06_Configure.s.sol`, which now broadcasts `addBalanceAdapter` + `addMetaInstances`/`removeMetaInstances` + bridge authorization directly). The final step is `07_TransferAdminToSecurityCouncil.s.sol`, which hands `DEFAULT_ADMIN_ROLE` + `MANAGER` on **both** the NAV and Bridge proxies to `addresses.securityCouncil` and renounces the deployer's roles. See `script/deploy/README.md` for the authoritative, current procedure.
 
 Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator, BridgeEscrow, price oracles, balance adapters, bridge adapters — to any supported chain. This runbook is the source of truth for every NAV v2 deployment going forward, regardless of which fund (ETH Alpha, USD Alpha, kUSDprime, kREN, or any future fund) the deployment supports.
 
@@ -280,7 +280,7 @@ Phases / scripts (additions in **bold**):
 3. `03_DeployPriceFeeds.s.sol` (currently SKIPPED).
 4. `04_DeployBalanceAdapters.s.sol`.
 5. `05_DeployBridgeAdapters.s.sol`.
-6. **`06_Configure.s.sol`** — direct EOA broadcast of `addBalanceAdapter()` + `setMetaInstances()` per deployed adapter, plus bridge-adapter authorization. Idempotent (skips already-registered adapters / already-authorized adapters).
+6. **`06_Configure.s.sol`** — direct EOA broadcast of `addBalanceAdapters()` + `addMetaInstances()`/`removeMetaInstances()` per deployed adapter, plus bridge-adapter authorization. Idempotent (skips already-registered adapters / already-authorized adapters; meta-instance sets are reconciled by diffing against the on-chain set).
 7. Phase 5 (`RegisterAssets.s.sol` with the broadcast path) — EOA registers assets directly using its `MANAGER` role.
 8. **`07_TransferAdminToSecurityCouncil.s.sol`** — grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to the target Safe, revokes `MANAGER` from the EOA, renounces `DEFAULT_ADMIN_ROLE`. **Currently NAV-only** (does not touch BridgeEscrow); if Bridge is in scope you must hand-roll a Safe TX batch for Bridge admin handoff.
 9. Phase 8 (`VerifyEtherscan`), Phase 9 (validation).
@@ -506,7 +506,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 | Adapter name | Key config params | Applicable chains |
 |---|---|---|
-| `AaveV3InstancesMeta` | `protocol` (DataProvider set via `setMetaInstances`) | Mainnet, Arbitrum, Base, Optimism, Gnosis |
+| `AaveV3InstancesMeta` | `protocol` (DataProvider set via `addMetaInstances`/`removeMetaInstances`) | Mainnet, Arbitrum, Base, Optimism, Gnosis |
 | `AaveV3SafetyModule` | *(no extra params)* | Mainnet |
 | `AaveUmbrella` | `rewardsController` | Mainnet |
 | `SparkLend` | `dataProvider` | Mainnet |
@@ -532,7 +532,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `setMetaInstances`, rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in each chain config. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances`, rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
@@ -545,9 +545,9 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 `04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if `chains/<chainId>.json.balanceAdapters.<name>.enabled == true`. This means the `run()` list is the **union** across chains; per-chain selection happens through the config file.
 
-The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the chain configs as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (`setMetaInstances`, configured under `balanceAdapters.<Meta>.metaInstances`, or `metaInstancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
+The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the chain configs as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (`addMetaInstances`/`removeMetaInstances`, configured under `balanceAdapters.<Meta>.metaInstances`, or `metaInstancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
-**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `setMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
+**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `addMetaInstances`/`removeMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
 **Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`
 
@@ -557,7 +557,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Balancer:** `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`
 
-**Aura / Curve / Convex:** `AuraRewardsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `setMetaInstances`)
+**Aura / Curve / Convex:** `AuraRewardsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
 
 **DEX LP:** `UniswapV3PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
 
@@ -763,7 +763,7 @@ Run the same script for each chain (42161, 8453, 10, 100).
 
 ## Phase 6: Add Balance Adapters to NAVCalculator
 
-After balance adapters are deployed, they must be registered on NAVCalculator via `addBalanceAdapter()`. This requires the MANAGER role.
+After balance adapters are deployed, they must be registered on NAVCalculator via `addBalanceAdapters()`. This requires the MANAGER role.
 
 ### Option A: Use `06_Configure.s.sol` (Safe TX batch)
 
@@ -797,7 +797,7 @@ forge script script/manage/ManageAdapters.s.sol \
 
 ### Option C: Direct broadcast (if sender has MANAGER)
 
-Call `addBalanceAdapter()` directly on the NAVCalculator proxy using `cast`. **Read the proxy address from chain config** rather than hardcoding — the salt-v2 address `0x5a0b…54C6` in this runbook's Canonical addresses table is the test deploy and will not match post-Phase-R production:
+Call `addBalanceAdapters()` directly on the NAVCalculator proxy using `cast`. **Read the proxy address from chain config** rather than hardcoding — the salt-v2 address `0x5a0b…54C6` in this runbook's Canonical addresses table is the test deploy and will not match post-Phase-R production:
 
 ```bash
 NAV_PROXY=$(jq -r '.deployed.NAVCalculatorProxy' script/config/chains/1.json)
@@ -1047,7 +1047,7 @@ Phase 9: Post-deployment validation -- per chain
 
 ## Rollback
 
-- **Price feeds and balance adapters are NOT upgradeable** — they're standalone contracts. To "rollback", deploy a corrected version and update the NAVCalculator to point to the new one via `addPriceFeed()` + `removePriceFeed()` / `removeBalanceAdapter()` + `addBalanceAdapter()`. Both are MANAGER-only.
+- **Price feeds and balance adapters are NOT upgradeable** — they're standalone contracts. To "rollback", deploy a corrected version and update the NAVCalculator to point to the new one via `addPriceFeed()` + `removePriceFeed()` / `removeBalanceAdapter()` + `addBalanceAdapters()`. Both are MANAGER-only.
 - **NAVCalculator and BridgeEscrow ARE upgradeable** (UUPS). Use `script/upgrade/UpgradeNAVCalculator.s.sol` or `UpgradeBridgeEscrow.s.sol`. Requires DEFAULT_ADMIN_ROLE on the target proxy — i.e. the OIV Safe for each chain after the production redeploy (currently still the EOA on salt-v2 proxies; see §"Roles and governance").
 - **Partial deploys are re-runnable.** `03_DeployPriceFeeds.s.sol` and `04_DeployBalanceAdapters.s.sol` both read `.deployed` and skip any entry already populated. If a broadcast runs out of gas halfway, top up the EOA and re-run — the script will continue from where it stopped.
 

@@ -13,7 +13,7 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Post-deployment configuration for NAVCalculator and BridgeEscrow, broadcast directly by the deployer EOA.
 /// @dev EOA flow (no Safe): the caller must hold DEFAULT_ADMIN_ROLE + MANAGER on the proxies (granted by the atomic
 ///      deployer in 02 when chainConfig.admin == chainConfig.manager == the deployer EOA). For each enabled+deployed
-///      balance adapter it calls `addBalanceAdapters` (idempotent) and, for meta-adapters (ADR 0010), `setMetaInstances`
+///      balance adapter it calls `addBalanceAdapters` (idempotent) and, for meta-adapters (ADR 0010), `addMetaInstances`/`removeMetaInstances`
 ///      with the configured instance set; for each enabled+deployed bridge adapter it authorizes it on BridgeEscrow.
 ///      Idempotent: skips adapters already registered and adapters already authorized, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
@@ -100,24 +100,65 @@ contract Configure is BaseDeployScript {
                 console2.log("[SKIP] Already registered:", adapterNames[i], deployed);
             }
 
-            // Meta-adapters (ADR 0010): (re)configure the instance set. setMetaInstances is a full replace, so it is
-            // idempotent and safe to call on every run.
-            bytes32[] memory instances = _readMetaInstances(adapterNames[i]);
-            if (instances.length > 0) {
+            // Meta-adapters (ADR 0010): reconcile the on-chain set to the configured set. addMetaInstances /
+            // removeMetaInstances are incremental and all-or-nothing, so we diff against the current set (rather
+            // than blindly add) to stay idempotent across re-runs: remove coordinates no longer in config, then
+            // add the ones not yet present.
+            bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+            bytes32[] memory current = IBalances(navProxy).getMetaInstances(deployed);
+            bytes32[] memory toRemove = _metaDiff(current, desired);
+            bytes32[] memory toAdd = _metaDiff(desired, current);
+
+            if (toRemove.length > 0) {
                 (bool ok, bytes memory data) =
-                    navProxy.call(abi.encodeWithSignature("setMetaInstances(address,bytes32[])", deployed, instances));
+                    navProxy.call(abi.encodeWithSignature("removeMetaInstances(address,bytes32[])", deployed, toRemove));
                 if (!ok) {
                     revert(
                         string(
-                            abi.encodePacked("setMetaInstances failed for ", adapterNames[i], ": ", _decodeRevert(data))
+                            abi.encodePacked(
+                                "removeMetaInstances failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                            )
                         )
                     );
                 }
-                console2.log("[OK] Set meta instances for:", adapterNames[i], instances.length);
+            }
+            if (toAdd.length > 0) {
+                (bool ok, bytes memory data) =
+                    navProxy.call(abi.encodeWithSignature("addMetaInstances(address,bytes32[])", deployed, toAdd));
+                if (!ok) {
+                    revert(
+                        string(
+                            abi.encodePacked("addMetaInstances failed for ", adapterNames[i], ": ", _decodeRevert(data))
+                        )
+                    );
+                }
+            }
+            if (toAdd.length > 0 || toRemove.length > 0) {
+                console2.log("[OK] Reconciled meta instances for:", adapterNames[i], desired.length);
                 configured++;
             }
         }
         console2.log("--- Balance adapters: added", added, "; meta sets configured", configured);
+    }
+
+    /// @notice Returns the coordinates in `a` that are not present in `b` (set difference a \ b).
+    function _metaDiff(bytes32[] memory a, bytes32[] memory b) private pure returns (bytes32[] memory diff) {
+        bytes32[] memory tmp = new bytes32[](a.length);
+        uint256 count;
+        for (uint256 i = 0; i < a.length; i++) {
+            bool found;
+            for (uint256 j = 0; j < b.length; j++) {
+                if (a[i] == b[j]) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) tmp[count++] = a[i];
+        }
+        diff = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            diff[i] = tmp[i];
+        }
     }
 
     /// @notice Authorizes each enabled+deployed bridge adapter on BridgeEscrow (idempotent via isAuthorizedAdapter).
@@ -166,9 +207,9 @@ contract Configure is BaseDeployScript {
     function _balanceAdapterNames() internal pure returns (string[] memory names) {
         names = new string[](31);
         uint256 i = 0;
-        // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances
+        // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via addMetaInstances/removeMetaInstances
         names[i++] = "AaveV2InstancesMeta";
-        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via setMetaInstances.
+        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via addMetaInstances/removeMetaInstances.
         // The legacy per-market AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis are superseded by
         // this meta (disabled in chain config, no deploy path in 04) — full-meta, do not re-add.
         names[i++] = "AaveV3InstancesMeta";
@@ -177,26 +218,26 @@ contract Configure is BaseDeployScript {
         names[i++] = "AaveV3SafetyModule";
         names[i++] = "AaveUmbrella";
         names[i++] = "Cap";
-        // Compound V3 meta-adapter (ADR 0010): comet set configured via setMetaInstances
+        // Compound V3 meta-adapter (ADR 0010): comet set configured via addMetaInstances/removeMetaInstances
         names[i++] = "CompoundV3CometsMeta";
-        // Fluid meta-adapters (ADR 0010): fToken / T1-vault sets configured via setMetaInstances
+        // Fluid meta-adapters (ADR 0010): fToken / T1-vault sets configured via addMetaInstances/removeMetaInstances
         names[i++] = "FluidFTokensMeta";
         names[i++] = "FluidVaultsMeta";
-        // Morpho Vaults meta-adapter (ADR 0010): instance set configured via setMetaInstances
+        // Morpho Vaults meta-adapter (ADR 0010): instance set configured via addMetaInstances/removeMetaInstances
         names[i++] = "MorphoVaultsMeta";
-        // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
+        // Morpho Markets meta-adapter (ADR 0010): marketId set configured via addMetaInstances/removeMetaInstances (metaInstancesRaw)
         names[i++] = "MorphoMarketsMeta";
         // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter)
         names[i++] = "ERC4626Wrap_waEthLidoGHO";
         names[i++] = "ERC4626Wrap_sGHO";
-        // Gearbox meta-adapter (ADR 0010): market set configured via setMetaInstances
+        // Gearbox meta-adapter (ADR 0010): market set configured via addMetaInstances/removeMetaInstances
         names[i++] = "GearboxMarketsMeta";
-        // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via setMetaInstances
+        // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via addMetaInstances/removeMetaInstances
         names[i++] = "BalancerV3PoolsMeta";
         names[i++] = "BalancerV3GaugesMeta";
         names[i++] = "BalancerV2PoolsMeta";
         names[i++] = "BalancerV2GaugesMeta";
-        // Aura / Curve / Convex meta-adapters (ADR 0010): pool / gauge / rewarder sets configured via setMetaInstances
+        // Aura / Curve / Convex meta-adapters (ADR 0010): pool / gauge / rewarder sets configured via addMetaInstances/removeMetaInstances
         names[i++] = "AuraRewardsMeta";
         names[i++] = "CurvePoolsMeta";
         names[i++] = "CurveGaugesMeta";
@@ -210,8 +251,8 @@ contract Configure is BaseDeployScript {
         // Lido (Mainnet)
         names[i++] = "LidoWithdrawalQueue";
         // StakeWise V3 (Mainnet) — osETH itself is a Custom-priced ERC20 (osToken_PriceOracle), not a balance adapter
-        names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via setMetaInstances
-        // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via setMetaInstances
+        names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via addMetaInstances/removeMetaInstances
+        // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via addMetaInstances/removeMetaInstances
         names[i++] = "UniswapV3PoolsMeta"; // Mainnet
         names[i++] = "UniswapV2PoolsMeta"; // list-only: contract + 04 dispatch exist, but no _deployIfEnabled in 04.run() yet (see docstring)
         names[i++] = "PancakeSwapV3PoolsMeta"; // Base

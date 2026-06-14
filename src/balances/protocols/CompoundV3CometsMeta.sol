@@ -14,7 +14,7 @@ import {CompoundV3CometLib} from "src/balances/protocols/CompoundV3CometLib.sol"
 /// @notice One immutable adapter that reports an account's position in *any* Compound V3 (Comet) market — the
 ///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Earned`
 ///         rewards (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set
-///         lives on NAVCalculator (`setMetaInstances`). The CometRewards contract and reward token (COMP) are the
+///         lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The CometRewards contract and reward token (COMP) are the
 ///         chain-level constants pinned in the constructor. Identity is encoded as `abi.encode(address(comet))`.
 ///         See ADR 0010.
 /// @dev Read math (base accrual, reward accrual, collateral enumeration) is delegated to `CompoundV3CometLib`,

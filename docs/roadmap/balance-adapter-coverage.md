@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. One meta-adapter now covers every instance of 16 protocol families (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura). The active instance set for each is governed on NAVCalculator via `setMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. One meta-adapter now covers every instance of 16 protocol families (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 

@@ -83,7 +83,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        nav.setMetaInstances(address(adapter), instances);
+        nav.addMetaInstances(address(adapter), instances);
         vm.stopPrank();
     }
 

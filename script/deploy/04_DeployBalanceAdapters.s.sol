@@ -64,7 +64,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Aave V3 (meta-adapter: all instances on every chain; ADR 0010) ---
         // The legacy per-market adapters (AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis) are
         // superseded by AaveV3InstancesMeta and disabled in chain config — they have no deploy path here.
-        _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via setMetaInstances
+        _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via addMetaInstances/removeMetaInstances
 
         // --- Aave V2 (Mainnet only — V2 is governance-deprecated everywhere else this repo deploys) ---
         _deployIfEnabled("AaveV2InstancesMeta"); // Meta-adapter: all Aave V2 instances; DataProvider set on NAV (ADR 0010)
@@ -344,7 +344,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Aave V2 instances meta-adapter. Constructor takes (protocol, navCalculator); the
-    ///         DataProvider set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         DataProvider set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployAaveV2InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -353,7 +353,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (protocol, navCalculator); the set of
-    ///         instance DataProviders to query is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         instance DataProviders to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployAaveV3InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -363,7 +363,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Compound V3 comets meta-adapter. Constructor takes (compoundRewards, rewardToken,
     ///         protocol, navCalculator) — chain-level constants; the comet set is configured on NAVCalculator
-    ///         via setMetaInstances in 06 (ADR 0010).
+    ///         via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployCompoundV3CometsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address compoundRewards = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "compoundRewards")
@@ -389,7 +389,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Morpho Markets meta-adapter. Constructor takes (morpho, protocol, navCalculator); the
-    ///         set of markets to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    ///         set of markets to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address morpho = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
@@ -422,7 +422,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (protocol, navCalculator); the set of
-    ///         vaults to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    ///         vaults to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -432,7 +432,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (protocol, navCalculator); the market
-    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployGearboxMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -510,7 +510,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (protocol, navCalculator); the set of
-    ///         pools to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    ///         pools to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployBalancerV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -520,7 +520,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, protocol, navCalculator);
-    ///         the set of gauges to query is configured on NAVCalculator via setMetaInstances in 06_Configure (ADR 0010).
+    ///         the set of gauges to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployBalancerV3GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address balancerMinter = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
@@ -534,7 +534,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Balancer V2 pools meta-adapter. Constructor takes (vault, protocol, navCalculator); the
-    ///         poolId set is configured on NAVCalculator via setMetaInstances (metaInstancesRaw) in 06 (ADR 0010).
+    ///         poolId set is configured on NAVCalculator via addMetaInstances/removeMetaInstances (metaInstancesRaw) in 06 (ADR 0010).
     function _deployBalancerV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vault =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
@@ -547,7 +547,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Balancer V2 gauges meta-adapter. Constructor takes (vault, balancerMinter, protocol,
-    ///         navCalculator); the gauge set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         navCalculator); the gauge set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployBalancerV2GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vault =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
@@ -576,7 +576,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,
-    ///         navCalculator); the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         navCalculator); the vault set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
@@ -590,7 +590,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (protocol, navCalculator); the fToken
-    ///         set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployFluidFTokensMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
@@ -599,7 +599,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, protocol, navCalculator);
-    ///         the vault set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         the vault set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployFluidVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vaultResolver = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
@@ -680,7 +680,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Uniswap V3 pools meta-adapter. Constructor takes (positionManager, protocol,
-    ///         navCalculator); the pool set is configured on NAVCalculator via setMetaInstances in 06 (ADR 0010).
+    ///         navCalculator); the pool set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")

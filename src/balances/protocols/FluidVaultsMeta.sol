@@ -13,7 +13,7 @@ import {FluidVaultLib} from "src/balances/protocols/FluidVaultLib.sol";
 /// @notice One immutable adapter that reports an account's collateral + debt across *any* Fluid T1 vault — a
 ///         `Collateral` leg (supply) and a `Borrowed` leg (debt) per vault, aggregated over the account's NFT
 ///         positions. The instance coordinate is the vault address, widened to bytes32; the active vault set
-///         lives on NAVCalculator (`setMetaInstances`). The Fluid VaultResolver is the chain-level constant
+///         lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The Fluid VaultResolver is the chain-level constant
 ///         pinned in the constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
 /// @dev Read logic (tokens via `constantsView`, NFT aggregation) is delegated to `FluidVaultLib`, mirroring the
 ///      T1 vaults only — Smart vaults

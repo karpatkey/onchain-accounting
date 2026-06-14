@@ -204,9 +204,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function setMetaInstances(address adapter, bytes32[] calldata instances) external {
+    function addMetaInstances(address adapter, bytes32[] calldata instances) external {
         _requireManager();
-        _setMetaInstances(adapter, instances);
+        _addMetaInstances(adapter, instances);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function removeMetaInstances(address adapter, bytes32[] calldata instances) external {
+        _requireManager();
+        _removeMetaInstances(adapter, instances);
     }
 
     /// @inheritdoc INAVCalculator

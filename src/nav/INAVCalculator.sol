@@ -215,15 +215,22 @@ interface INAVCalculator is IBalances {
     /// @param adapters Adapter addresses to remove (none may be the default ERC20 adapter).
     function removeBalanceAdapters(address[] calldata adapters) external;
 
-    /// @notice Replaces the full set of instance coordinates queried for a registered meta-adapter.
-    /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable. The
-    ///      caller should supply a **deduplicated** list (a duplicate would double-count NAV); the setter does not
-    ///      enforce this — dedup is the MANAGER's responsibility. An **empty** list is accepted and clears the
-    ///      adapter's set. Individual coordinates are not validated here; a malformed/unknown coordinate is isolated
-    ///      per-instance by the adapter's fan-out (it cannot zero out the batch).
+    /// @notice Adds instance coordinates to a registered meta-adapter's queried set.
+    /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable.
+    ///      All-or-nothing: reverts DuplicateMetaInstance if any coordinate is already present or repeated within
+    ///      the batch (a duplicate would double-count NAV), and InvalidArguments on an empty list. Coordinate
+    ///      values are otherwise not validated; a malformed/unknown coordinate is isolated per-instance by the
+    ///      adapter's fan-out (it cannot zero out the batch).
     /// @param adapter Registered meta-adapter address.
-    /// @param instances Instance coordinates (e.g. vault addresses widened to bytes32). May be empty (clears the set).
-    function setMetaInstances(address adapter, bytes32[] calldata instances) external;
+    /// @param instances Instance coordinates to add (e.g. vault addresses widened to bytes32).
+    function addMetaInstances(address adapter, bytes32[] calldata instances) external;
+
+    /// @notice Removes instance coordinates from a registered meta-adapter's queried set.
+    /// @dev All-or-nothing: reverts MetaInstanceNotFound if any coordinate is not present (a coordinate repeated
+    ///      within the batch also reverts), and InvalidArguments on an empty list. Order is not preserved.
+    /// @param adapter Registered meta-adapter address.
+    /// @param instances Instance coordinates to remove.
+    function removeMetaInstances(address adapter, bytes32[] calldata instances) external;
 
     /// @notice Excludes an asset from the default adapter so wallet balances are not reported for it.
     /// @param asset Registered asset address.

@@ -297,7 +297,7 @@ You should see the `deployed` field filled in!
 |-------|------|-------------|
 | `securityCouncil` | address | Security-council Safe — the end-state admin (receives DEFAULT_ADMIN_ROLE in step 07). Does **not** execute deploy/config txs. |
 | `admin` | address | DEFAULT_ADMIN_ROLE holder. In the EOA deploy flow set to the **deployer EOA** (upgrade, authorize adapters) until step 07 hands it to the council. |
-| `manager` | address | MANAGER role (register assets, add oracles, setMetaInstances). In the EOA flow, the **deployer EOA**. |
+| `manager` | address | MANAGER role (register assets, add oracles, addMetaInstances/removeMetaInstances). In the EOA flow, the **deployer EOA**. |
 
 ### Adapter Configuration
 | Field | Type | Description |
@@ -305,12 +305,12 @@ You should see the `deployed` field filled in!
 | `enabled` | boolean | `true` to deploy, `false` to skip |
 | `constructor` | object | Constructor parameters (chain-specific addresses) |
 | `deployed` | string | Deployed address (auto-filled by scripts) |
-| `metaInstances` | string[] | **Meta-adapters only.** Array of instance addresses (checksummed `address`) to register on NAVCalculator via `setMetaInstances`. Read by `06_Configure.s.sol`. |
+| `metaInstances` | string[] | **Meta-adapters only.** Array of instance addresses (checksummed `address`) to register on NAVCalculator via `addMetaInstances`/`removeMetaInstances`. Read by `06_Configure.s.sol`. |
 | `metaInstancesRaw` | string[] | **Meta-adapters only.** Array of raw `bytes32` values for adapters whose instance key is not an address (e.g. Morpho market IDs). Mutually exclusive with `metaInstances`. |
 
 #### Meta-adapter instance configuration
 
-Meta-adapters cover every instance of a protocol with a single deployed contract; the active instance set is pushed to NAVCalculator by `06_Configure.s.sol` via `setMetaInstances`. Use `metaInstances` for address-typed instance keys and `metaInstancesRaw` for `bytes32`-typed keys.
+Meta-adapters cover every instance of a protocol with a single deployed contract; the active instance set is pushed to NAVCalculator by `06_Configure.s.sol` via `addMetaInstances`/`removeMetaInstances`. Use `metaInstances` for address-typed instance keys and `metaInstancesRaw` for `bytes32`-typed keys.
 
 Example — address-keyed meta-adapter (`CompoundV3CometsMeta`):
 
@@ -334,7 +334,7 @@ Example — bytes32-keyed meta-adapter (`MorphoMarketsMeta`):
 }
 ```
 
-`06_Configure.s.sol` reads both fields and calls `NAVCalculator.setMetaInstances(adapter, instances)` for each meta-adapter that has a non-empty list.
+`06_Configure.s.sol` reads both fields and calls `NAVCalculator.addMetaInstances(adapter, instances)` for each meta-adapter that has a non-empty list.
 
 ## Adding a New Chain
 

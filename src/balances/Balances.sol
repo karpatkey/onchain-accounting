@@ -59,7 +59,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Per-adapter list of meta-adapter instance coordinates to query (e.g. vault addresses widened to
     ///         bytes32). This is the governed, mutable "which instances" registry that keeps adapters immutable.
     ///         Only meta-adapters read it (via getMetaInstances(address(this))); it is inert for other adapters.
-    ///         Callers of setMetaInstances must supply a deduplicated list (a duplicate would double-count NAV).
+    ///         Mutated via addMetaInstances / removeMetaInstances, which reject duplicates (a duplicate would
+    ///         double-count NAV) and missing coordinates respectively.
     mapping(address adapter => bytes32[] instances) private _metaInstances;
 
     /// @notice Running total of configured meta instances across all adapters (cheap NAV buffer sizing).
@@ -189,7 +190,8 @@ abstract contract Balances is IBalances, Initializable {
 
         // Note: a removed adapter's configured meta-instance set (if any) is left dormant — it is no longer
         // queried since the adapter is out of the registry. _metaInstanceTotal only sizes read buffers (an
-        // overestimate is harmless), and a re-registered adapter's set is reset by the next setMetaInstances.
+        // overestimate is harmless); the stale set persists, so re-registering an adapter then removing the
+        // leftover coordinates (removeMetaInstances) is the way to reset it.
 
         // Emit event with address(0) for underlyingAsset since adapters are global
         emit BalanceAdapterRemoved(address(0), adapter);
@@ -204,17 +206,70 @@ abstract contract Balances is IBalances, Initializable {
         return _metaInstances[adapter];
     }
 
-    /// @notice Replaces the full instance set for a meta-adapter (ADR 0010). The caller must supply a
-    ///         deduplicated list; only meta-adapters read this set, so it is a no-op for other adapters. A zero
-    ///         entry is harmless — the adapter's per-instance read reverts and is isolated to an empty result.
+    /// @notice Appends instance coordinates to a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
+    ///         DuplicateMetaInstance if any coordinate is already present or repeated within the batch, since a
+    ///         duplicate would double-count NAV. Empty input reverts. A zero coordinate is allowed (harmless — the
+    ///         adapter's per-instance read reverts and is isolated to an empty result). Only meta-adapters read
+    ///         this set, so it is inert for other adapters.
     /// @param adapter The registered adapter.
-    /// @param instances The new instance coordinates.
-    function _setMetaInstances(address adapter, bytes32[] memory instances) internal {
+    /// @param instances The instance coordinates to add.
+    function _addMetaInstances(address adapter, bytes32[] memory instances) internal {
         if (!_isAdapterRegistered[adapter]) {
             revert InvalidBalanceAdapter();
         }
+        uint256 toAdd = instances.length;
+        if (toAdd == 0) {
+            revert InvalidArguments();
+        }
 
-        _metaInstanceTotal = _metaInstanceTotal - _metaInstances[adapter].length + instances.length;
-        _metaInstances[adapter] = instances;
+        bytes32[] storage set = _metaInstances[adapter];
+        for (uint256 i = 0; i < toAdd; i++) {
+            bytes32 instance = instances[i];
+            // Reject duplicates against the live set, which already includes coordinates pushed earlier in this
+            // batch — so a coordinate repeated within `instances` is caught too.
+            uint256 len = set.length;
+            for (uint256 j = 0; j < len; j++) {
+                if (set[j] == instance) {
+                    revert DuplicateMetaInstance();
+                }
+            }
+            set.push(instance);
+        }
+        _metaInstanceTotal += toAdd;
+    }
+
+    /// @notice Removes instance coordinates from a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
+    ///         MetaInstanceNotFound if any coordinate is not present (a coordinate repeated within the batch also
+    ///         reverts, since the first removal makes the second lookup miss). Empty input reverts. Order is not
+    ///         preserved (swap-and-pop).
+    /// @param adapter The registered adapter.
+    /// @param instances The instance coordinates to remove.
+    function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
+        if (!_isAdapterRegistered[adapter]) {
+            revert InvalidBalanceAdapter();
+        }
+        uint256 toRemove = instances.length;
+        if (toRemove == 0) {
+            revert InvalidArguments();
+        }
+
+        bytes32[] storage set = _metaInstances[adapter];
+        for (uint256 i = 0; i < toRemove; i++) {
+            bytes32 instance = instances[i];
+            uint256 len = set.length;
+            bool found = false;
+            for (uint256 j = 0; j < len; j++) {
+                if (set[j] == instance) {
+                    set[j] = set[len - 1];
+                    set.pop();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                revert MetaInstanceNotFound();
+            }
+        }
+        _metaInstanceTotal -= toRemove;
     }
 }

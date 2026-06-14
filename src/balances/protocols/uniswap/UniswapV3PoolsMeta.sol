@@ -18,7 +18,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice One immutable adapter that reports an account's Uniswap V3 LP across *any* pool — both the in-range
 ///         liquidity (`Supplied`) and the unclaimed fees (`Earned`) of the account's NFT positions. The instance
 ///         coordinate is the pool address, widened to bytes32; the active pool set lives on NAVCalculator
-///         (`setMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
+///         (`addMetaInstances`/`removeMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
 ///         constructor. Each NFT position gets its own positionId = abi.encode(npm, tokenId).
 ///         See ADR 0010.
 /// @dev `slot0` is read via the `_slot0` virtual hook so forks with a divergent `slot0()` ABI (PancakeSwap V3)

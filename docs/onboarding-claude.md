@@ -75,11 +75,11 @@ Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `b
 Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters may sit directly under `protocols/`). A folder typically contains:
 
 - `<Protocol>.sol` — the adapter contract (immutable; the constructor pins everything).
-- For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `setMetaInstances`.
+- For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances`.
 
 How adapters reach NAV today:
 - **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol`, so each adapter's address is chain- and run-specific. Read them from the per-chain configs (`script/config/chains/<chainId>.json` → `balanceAdapters.<name>.deployed`); do not assume they match across chains.
-- **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceAdapter(adapter)` for each adapter, plus `setMetaInstances(adapter, …)` for meta-adapters (both idempotent).
+- **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceAdapters(adapters)` for each adapter, plus `addMetaInstances(adapter, …)/removeMetaInstances` for meta-adapters (both idempotent).
 - **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactory` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
 
 Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) for the contract-level details and [`./howto/add-balance-adapter.md`](./howto/add-balance-adapter.md) for the end-to-end walkthrough.
@@ -111,7 +111,7 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters; asset registration via `script/manage/RegisterAssets.s.sol`.
 4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters (incl. meta-adapters) from `chains/<id>.json.balanceAdapters`.
 5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
-6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `setMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
+6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `addMetaInstances`/`removeMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
 7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
 
 For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
@@ -146,6 +146,6 @@ These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list.
 
 - Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), and `positionKind` (enum from `PositionKind.sol`). See `docs/howto/position-identity-schema.md`.
 - Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
-- Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `chains/<id>.json` `balanceAdapters.<name>.deployed`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceAdapter` directly from the deployer EOA (+ `setMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
+- Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `chains/<id>.json` `balanceAdapters.<name>.deployed`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceAdapter` directly from the deployer EOA (+ `addMetaInstances`/`removeMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.
 - The user merges PRs; we monitor CI and report.

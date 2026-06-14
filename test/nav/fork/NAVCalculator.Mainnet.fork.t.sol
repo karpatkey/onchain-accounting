@@ -158,7 +158,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaInstances(address(aaveMeta), aaveInstances);
     }
 
     function test_logPositions() public view {

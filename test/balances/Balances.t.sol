@@ -88,8 +88,12 @@ contract BalancesHarness is Balances {
         _removeBalanceAdapter(adapter);
     }
 
-    function setMetaInstancesDirect(address adapter, bytes32[] memory instances) public {
-        _setMetaInstances(adapter, instances);
+    function addMetaInstancesDirect(address adapter, bytes32[] memory instances) public {
+        _addMetaInstances(adapter, instances);
+    }
+
+    function removeMetaInstancesDirect(address adapter, bytes32[] memory instances) public {
+        _removeMetaInstances(adapter, instances);
     }
 
     function metaInstanceTotalForTest() public view returns (uint256) {
@@ -457,52 +461,106 @@ contract BalancesTest is Test {
         balances.addBalanceAdapterDirect(address(0), address(meta), IBalances.AdapterType.Custom);
     }
 
-    function test_meta_setInstances() public {
+    function test_meta_addInstances() public {
         Mock_MetaAdapter meta = _registerMeta();
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(0xAAA1))));
         instances[1] = bytes32(uint256(uint160(address(0xBBB2))));
-        balances.setMetaInstancesDirect(address(meta), instances);
+        balances.addMetaInstancesDirect(address(meta), instances);
 
         bytes32[] memory got = balances.getMetaInstances(address(meta));
         assertEq(got.length, 2);
     }
 
-    function test_meta_setInstances_replacesPrevious() public {
+    function test_meta_addInstances_appendsToExisting() public {
         Mock_MetaAdapter meta = _registerMeta();
         bytes32[] memory first = new bytes32[](2);
         first[0] = bytes32(uint256(1));
         first[1] = bytes32(uint256(2));
-        balances.setMetaInstancesDirect(address(meta), first);
+        balances.addMetaInstancesDirect(address(meta), first);
 
         bytes32[] memory second = new bytes32[](1);
         second[0] = bytes32(uint256(3));
-        balances.setMetaInstancesDirect(address(meta), second);
+        balances.addMetaInstancesDirect(address(meta), second);
 
         bytes32[] memory got = balances.getMetaInstances(address(meta));
-        assertEq(got.length, 1);
-        assertEq(got[0], bytes32(uint256(3)));
+        assertEq(got.length, 3, "add appends rather than replaces");
     }
 
-    function test_meta_instanceTotal_tracksAcrossAdapters() public {
+    function test_meta_removeInstances() public {
+        Mock_MetaAdapter meta = _registerMeta();
+        bytes32[] memory three = new bytes32[](3);
+        three[0] = bytes32(uint256(1));
+        three[1] = bytes32(uint256(2));
+        three[2] = bytes32(uint256(3));
+        balances.addMetaInstancesDirect(address(meta), three);
+
+        bytes32[] memory drop = new bytes32[](1);
+        drop[0] = bytes32(uint256(2));
+        balances.removeMetaInstancesDirect(address(meta), drop);
+
+        bytes32[] memory got = balances.getMetaInstances(address(meta));
+        assertEq(got.length, 2, "one removed");
+        for (uint256 i = 0; i < got.length; i++) {
+            assertTrue(got[i] != bytes32(uint256(2)), "removed coordinate is gone");
+        }
+    }
+
+    function test_meta_addInstances_revertsOnDuplicateInStore() public {
+        Mock_MetaAdapter meta = _registerMeta();
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = bytes32(uint256(1));
+        balances.addMetaInstancesDirect(address(meta), one);
+
+        vm.expectRevert(IBalances.DuplicateMetaInstance.selector);
+        balances.addMetaInstancesDirect(address(meta), one);
+    }
+
+    function test_meta_addInstances_revertsOnDuplicateInBatch() public {
+        Mock_MetaAdapter meta = _registerMeta();
+        bytes32[] memory dup = new bytes32[](2);
+        dup[0] = bytes32(uint256(7));
+        dup[1] = bytes32(uint256(7));
+        vm.expectRevert(IBalances.DuplicateMetaInstance.selector);
+        balances.addMetaInstancesDirect(address(meta), dup);
+    }
+
+    function test_meta_removeInstances_revertsOnMissing() public {
+        Mock_MetaAdapter meta = _registerMeta();
+        bytes32[] memory missing = new bytes32[](1);
+        missing[0] = bytes32(uint256(99));
+        vm.expectRevert(IBalances.MetaInstanceNotFound.selector);
+        balances.removeMetaInstancesDirect(address(meta), missing);
+    }
+
+    function test_meta_add_and_remove_revertOnEmpty() public {
+        Mock_MetaAdapter meta = _registerMeta();
+        bytes32[] memory empty = new bytes32[](0);
+        vm.expectRevert(InvalidArguments.selector);
+        balances.addMetaInstancesDirect(address(meta), empty);
+        vm.expectRevert(InvalidArguments.selector);
+        balances.removeMetaInstancesDirect(address(meta), empty);
+    }
+
+    function test_meta_instanceTotal_tracksAddAndRemove() public {
         Mock_MetaAdapter meta = _registerMeta();
         bytes32[] memory two = new bytes32[](2);
         two[0] = bytes32(uint256(1));
         two[1] = bytes32(uint256(2));
-        balances.setMetaInstancesDirect(address(meta), two);
+        balances.addMetaInstancesDirect(address(meta), two);
         assertEq(balances.metaInstanceTotalForTest(), 2);
 
         bytes32[] memory one = new bytes32[](1);
-        one[0] = bytes32(uint256(3));
-        balances.setMetaInstancesDirect(address(meta), one);
-        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects replacement");
+        one[0] = bytes32(uint256(1));
+        balances.removeMetaInstancesDirect(address(meta), one);
+        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects removal");
     }
 
-    function test_meta_setInstances_onUnregisteredReverts() public {
+    function test_meta_addInstances_onUnregisteredReverts() public {
         Mock_MetaAdapter meta = new Mock_MetaAdapter(); // not registered
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(1));
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
-        balances.setMetaInstancesDirect(address(meta), instances);
+        balances.addMetaInstancesDirect(address(meta), instances);
     }
 }

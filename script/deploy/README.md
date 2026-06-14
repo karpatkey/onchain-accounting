@@ -55,7 +55,7 @@ Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge ad
 
 ## 06_Configure.s.sol  (EOA broadcast)
 
-Run by the deployer EOA (holds admin + MANAGER). For every enabled + deployed balance adapter it calls `addBalanceAdapter` (idempotent — skips already-registered) and, for meta-adapters (ADR 0010), `setMetaInstances` with the configured instance set (`metaInstances` addresses and/or `metaInstancesRaw` bytes32). For every enabled + deployed bridge adapter it authorizes it on `BridgeEscrow` (idempotent via `isAuthorizedAdapter`). Re-runnable.
+Run by the deployer EOA (holds admin + MANAGER). For every enabled + deployed balance adapter it calls `addBalanceAdapter` (idempotent — skips already-registered) and, for meta-adapters (ADR 0010), `addMetaInstances`/`removeMetaInstances` with the configured instance set (`metaInstances` addresses and/or `metaInstancesRaw` bytes32). For every enabled + deployed bridge adapter it authorizes it on `BridgeEscrow` (idempotent via `isAuthorizedAdapter`). Re-runnable.
 
 ```bash
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME

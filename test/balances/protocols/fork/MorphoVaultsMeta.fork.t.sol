@@ -94,7 +94,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));
         instances[1] = bytes32(uint256(uint160(address(vault2))));
-        nav.setMetaInstances(address(adapter), instances);
+        nav.addMetaInstances(address(adapter), instances);
         vm.stopPrank();
     }
 

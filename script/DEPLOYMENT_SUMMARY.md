@@ -31,7 +31,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapter adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Superchain; per-chain) | Adapter addresses in config |
-| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapter` for each deployed adapter + `setMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
+| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapter` for each deployed adapter + `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
 | `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
 
 ### Upgrade Scripts (`script/upgrade/`)

@@ -24,7 +24,7 @@ interface IStakeWiseVault {
 /// @notice One immutable adapter that reports an account's StakeWise V3 vault positions across *any* vault on a
 ///         chain — emitting two gross legs per vault: `Staking` (vault shares → underlying) and `Borrowed` (minted
 ///         osToken debt → underlying). The instance coordinate is the vault address, widened to bytes32; the
-///         active vault set lives on NAVCalculator (`setMetaInstances`). The underlying token (the staking asset,
+///         active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The underlying token (the staking asset,
 ///         e.g. the ETH sentinel on mainnet / GNO on Gnosis) is the chain-level constant pinned in the
 ///         constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
 /// @dev Reports the gross

@@ -13,7 +13,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice One immutable adapter that reports an account's supply position in *any* Gearbox V3 ERC4626 farming
 ///         pool — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the pool's underlying.
 ///         The instance coordinate is the market (pool) address, widened to bytes32; the active market set lives
-///         on NAVCalculator (`setMetaInstances`). Identity is encoded as `abi.encode(address(market))`.
+///         on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). Identity is encoded as `abi.encode(address(market))`.
 ///         See ADR 0010.
 /// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include Merkl rewards (same as
 ///      the per-market adapter).

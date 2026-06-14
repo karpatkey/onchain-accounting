@@ -93,15 +93,15 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         // Configure meta-adapter instance sets
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaInstances(address(aaveMeta), aaveInstances);
 
         bytes32[] memory comets = new bytes32[](1);
         comets[0] = bytes32(uint256(uint160(cUsdCv3)));
-        nav.setMetaInstances(address(compoundV3Comet), comets);
+        nav.addMetaInstances(address(compoundV3Comet), comets);
 
         bytes32[] memory markets = new bytes32[](1);
         markets[0] = marketIdCbbtcUsdc;
-        nav.setMetaInstances(address(morphoBlueAdapter), markets);
+        nav.addMetaInstances(address(morphoBlueAdapter), markets);
     }
 
     function test_logPositions() public view {

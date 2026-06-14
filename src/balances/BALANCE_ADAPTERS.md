@@ -135,7 +135,7 @@ For building adapters, the only required output is **PositionBalance**; Position
 
 **Internal API (used by NAVCalculator):**
 
-- `_addBalanceAdapter(adapter)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates.
+- `_addBalanceAdapters(adapters)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates.
 - `_removeBalanceAdapter(adapter)` — Removes from global list (if present).
 - `_registerAsset(asset, decimals)` — Adds to asset registry (decimals; symbol is set separately).
 - `_setErc20DefaultAdapter(defaultAdapter)` — Sets and registers the default wallet adapter.
@@ -186,7 +186,7 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
 - **Immutability preserved.** Meta-adapters have **no `Ownable`, no write functions** — they stay immutable like every other adapter. The mutable, governed instance set lives on NAVCalculator (UUPS-upgradeable, `MANAGER`-gated). No new mutable-adapter ADR is needed.
 - **Identity is typed, not stored.** `protocolId` is a compile-time `bytes32` constant from `ProtocolIds.sol`. `positionId` is computed at query time via `abi.encode(...)` of the position's key (e.g. vault address, market id). Nothing instance-specific is stored in config or constructor args.
 - **NAVCalculator read path is unchanged.** NAV calls `getAdapterPositions(account, assetFilter)` on every adapter uniformly; the meta-adapter pulls its own configured set inside that call, so there is no meta-specific branch in NAV (this also keeps `NAVCalculator` under the EIP-170 size limit).
-- **Configuring the instance set:** `MANAGER` calls `setMetaInstances(adapter, bytes32[])` on NAVCalculator (full-list replace; the caller supplies a deduplicated, non-zero list). In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` and the integration harness emit the `setMetaInstances` Safe TX automatically from either.
+- **Configuring the instance set:** `MANAGER` calls `addMetaInstances(adapter, bytes32[])` / `removeMetaInstances(adapter, bytes32[])` on NAVCalculator. Both are incremental and all-or-nothing: `addMetaInstances` reverts on a coordinate already present or repeated within the batch (a duplicate would double-count NAV), `removeMetaInstances` reverts on a coordinate not present, and an empty list reverts. In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` reconciles the on-chain set to the configured set (diffs current vs desired, then emits the add/remove TX) automatically from either.
 
 ### 6.2 Human-readable labels — `IPositionDescribable`
 
@@ -209,7 +209,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ### 7.1 Meta-adapters (21)
 
-Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `setMetaInstances`.
+Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
 | Adapter | Description | Constructor | Chain config key |
 |---------|-------------|-------------|------------------|
@@ -409,8 +409,8 @@ See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.
 ### 9.3 Adding custom adapters
 
 1. Deploy your adapter, passing constructor args (protocol addresses, `navCalculator`).
-2. As an account with **MANAGER** on NAVCalculator, call **`NAVCalculator.addBalanceAdapter(adapter)`**. This runs `checkBalanceAdapterSupport(adapter)` (ERC165 for `IBalanceAdapter`) and adds the adapter to the global adapter list.
-3. For meta-adapters: call **`NAVCalculator.setMetaInstances(adapter, instances)`** to configure the instance set (vault addresses, pool addresses, or raw marketIds widened to bytes32).
+2. As an account with **MANAGER** on NAVCalculator, call **`NAVCalculator.addBalanceAdapters(adapters)`**. This runs `checkBalanceAdapterSupport(adapter)` (ERC165 for `IBalanceAdapter`) and adds the adapter to the global adapter list.
+3. For meta-adapters: call **`NAVCalculator.addMetaInstances(adapter, instances)`** to configure the instance set (vault addresses, pool addresses, or raw marketIds widened to bytes32).
 4. Ensure every asset your adapter reports is already registered via `registerAsset` (with a price feed); otherwise those positions will be filtered out when computing NAV.
 
 ### 9.4 Computing NAV

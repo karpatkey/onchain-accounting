@@ -12,7 +12,7 @@ import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.
 /// @author kpk
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
 ///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
-///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`setMetaInstances`).
+///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`).
 ///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
 /// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
 ///      leg-for-leg. Works with canonical Uniswap V2

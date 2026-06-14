@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -18,7 +18,7 @@ import {FluidVaultLib} from "src/balances/protocols/FluidVaultLib.sol";
 /// @dev Read logic (tokens via `constantsView`, NFT aggregation) is delegated to `FluidVaultLib`, mirroring the
 ///      T1 vaults only — Smart vaults
 ///      (T2/T3/T4) have a different `constantsView` layout and must not be configured.
-contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
+contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_VAULTS;
 
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
@@ -28,13 +28,13 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address vaultResolver_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(vaultResolver_.code.length > 0, "VaultResolver must be a contract");
         VAULT_RESOLVER = vaultResolver_;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the T1 vault address. Emits a `Collateral` leg (supply token) and a `Borrowed` leg
     ///      (debt token), dropping zeros and unregistered assets, respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
@@ -70,7 +70,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance));
         if (collToken == debtToken) {
@@ -83,7 +83,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address vault = abi.decode(pid, (address));
@@ -110,7 +110,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
             protocolId: PROTOCOL_ID,

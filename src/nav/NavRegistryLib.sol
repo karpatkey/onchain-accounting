@@ -5,18 +5,18 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title NavRegistryLib
-/// @notice External library for NAVCalculator's registry storage mutations (the asset registry + the balance-oracle
+/// @notice External library for NAVCalculator's registry storage mutations (the asset registry + the balance-adapter
 ///         registry), extracted to keep NAVCalculator under EIP-170 (mirrors the PriceFeedLib pattern).
 /// @dev Functions are `external` so the library compiles as a separate artifact and is invoked via DELEGATECALL,
 ///      operating on the caller's own storage through the passed `storage` references. Pre-linked at a deterministic
 ///      CREATE2 address (see `foundry.toml`) and deployed by `01_2_DeployNAVImplementation.s.sol` before NAVCalculator.
-///      Only the heavier, no-return mutations live here (register/unregister asset; add/remove oracle); the trivial
+///      Only the heavier, no-return mutations live here (register/unregister asset; add/remove adapter); the trivial
 ///      getters and the running counts / event emission stay inline in the caller (cheaper than crossing the boundary).
 library NavRegistryLib {
     using ERC165Checker for address;
@@ -90,67 +90,67 @@ library NavRegistryLib {
     }
 
     // -------------------------------------------------------------------------
-    // Balance-oracle registry
+    // Balance-adapter registry
     // -------------------------------------------------------------------------
 
-    /// @notice Adds a balance oracle to the global registry (Custom type), after validating it supports the
-    ///         IBalanceOracleAdapter interface. Mirrors the storage work of the former Balances._addBalanceOracle;
-    ///         the running count and the BalanceOracleAdded event stay in the caller wrapper.
-    /// @param isOracleRegistered Quick-lookup registration map (storage ref)
-    /// @param globalOracles The global oracle list (storage ref)
-    /// @param oracleTypes The oracle-type map (storage ref)
-    /// @param oracle The oracle to add
-    function addBalanceOracle(
-        mapping(address => bool) storage isOracleRegistered,
-        address[] storage globalOracles,
-        mapping(address => IBalances.OracleType) storage oracleTypes,
-        address oracle
+    /// @notice Adds a balance adapter to the global registry (Custom type), after validating it supports the
+    ///         IBalanceAdapter interface. Mirrors the storage work of the former Balances._addBalanceAdapter;
+    ///         the running count and the BalanceAdapterAdded event stay in the caller wrapper.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param globalAdapters The global adapter list (storage ref)
+    /// @param adapterTypes The adapter-type map (storage ref)
+    /// @param adapter The adapter to add
+    function addBalanceAdapter(
+        mapping(address => bool) storage isAdapterRegistered,
+        address[] storage globalAdapters,
+        mapping(address => IBalances.AdapterType) storage adapterTypes,
+        address adapter
     ) external {
-        if (isOracleRegistered[oracle]) {
-            revert IBalances.DuplicateBalanceOracle();
+        if (isAdapterRegistered[adapter]) {
+            revert IBalances.DuplicateBalanceAdapter();
         }
-        if (oracle == address(0)) revert InvalidArguments();
-        if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
-            revert IBalances.InvalidBalanceOracle();
+        if (adapter == address(0)) revert InvalidArguments();
+        if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) {
+            revert IBalances.InvalidBalanceAdapter();
         }
 
-        globalOracles.push(oracle);
-        oracleTypes[oracle] = IBalances.OracleType.Custom;
-        isOracleRegistered[oracle] = true;
+        globalAdapters.push(adapter);
+        adapterTypes[adapter] = IBalances.AdapterType.Custom;
+        isAdapterRegistered[adapter] = true;
     }
 
-    /// @notice Removes an oracle from the global registry (swap-remove). Reverts on the ERC20Default singleton or an
-    ///         unregistered oracle. Mirrors the storage work of the former Balances._removeBalanceOracle; the running
-    ///         count and the BalanceOracleRemoved event stay in the caller wrapper.
-    /// @param isOracleRegistered Quick-lookup registration map (storage ref)
-    /// @param globalOracles The global oracle list (storage ref)
-    /// @param oracleTypes The oracle-type map (storage ref)
-    /// @param oracle The oracle to remove
-    /// @param erc20DefaultOracle The default-oracle singleton that may not be removed
-    function removeBalanceOracle(
-        mapping(address => bool) storage isOracleRegistered,
-        address[] storage globalOracles,
-        mapping(address => IBalances.OracleType) storage oracleTypes,
-        address oracle,
-        address erc20DefaultOracle
+    /// @notice Removes an adapter from the global registry (swap-remove). Reverts on the ERC20Default singleton or an
+    ///         unregistered adapter. Mirrors the storage work of the former Balances._removeBalanceAdapter; the running
+    ///         count and the BalanceAdapterRemoved event stay in the caller wrapper.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param globalAdapters The global adapter list (storage ref)
+    /// @param adapterTypes The adapter-type map (storage ref)
+    /// @param adapter The adapter to remove
+    /// @param erc20DefaultAdapter The default-adapter singleton that may not be removed
+    function removeBalanceAdapter(
+        mapping(address => bool) storage isAdapterRegistered,
+        address[] storage globalAdapters,
+        mapping(address => IBalances.AdapterType) storage adapterTypes,
+        address adapter,
+        address erc20DefaultAdapter
     ) external {
-        if (oracle == erc20DefaultOracle) {
-            revert InvalidArguments(); // Cannot remove ERC20DefaultOracle
+        if (adapter == erc20DefaultAdapter) {
+            revert InvalidArguments(); // Cannot remove ERC20DefaultAdapter
         }
-        if (!isOracleRegistered[oracle]) {
-            revert IBalances.InvalidBalanceOracle();
+        if (!isAdapterRegistered[adapter]) {
+            revert IBalances.InvalidBalanceAdapter();
         }
 
-        uint256 len = globalOracles.length;
+        uint256 len = globalAdapters.length;
         for (uint256 i = 0; i < len; i++) {
-            if (globalOracles[i] == oracle) {
-                globalOracles[i] = globalOracles[len - 1];
-                globalOracles.pop();
+            if (globalAdapters[i] == adapter) {
+                globalAdapters[i] = globalAdapters[len - 1];
+                globalAdapters.pop();
                 break;
             }
         }
 
-        delete isOracleRegistered[oracle];
-        delete oracleTypes[oracle];
+        delete isAdapterRegistered[adapter];
+        delete adapterTypes[adapter];
     }
 }

@@ -14,7 +14,7 @@ Reviewing that decision before implementation landed: the framework convention i
 
 ## Decision
 
-Make `AaveV3SafetyModuleBalanceOracle` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses, their staked / reward tokens, and their per-position labels are pinned as compile-time `address public constant` declarations and assembled in a `pure` `_records()` function. The constructor takes only `(navCalculator, protocol)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
+Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses, their staked / reward tokens, and their per-position labels are pinned as compile-time `address public constant` declarations and assembled in a `pure` `_records()` function. The constructor takes only `(navCalculator, protocol)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
 
 Concretely:
 
@@ -64,5 +64,5 @@ When refreshing fork blocks (via the bump workflow described in `docs/howto/refr
 - Adapter: `src/balances/protocols/AaveV3SafetyModule.sol`
 - Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol` (fork)
 - Deploy schema: `script/config/chains/1.json` `balanceAdapters.AaveV3SafetyModule` (only `protocol` field)
-- Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceOracle(legacy)` + `nav.addBalanceOracle(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
+- Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceAdapter(legacy)` + `nav.addBalanceAdapter(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
 - Superseded: ADR [0002](0002-aave-safety-module-multi-token.md) (the admin-managed-list design)

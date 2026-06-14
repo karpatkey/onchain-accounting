@@ -22,7 +22,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|---|
 | NAVCalculator implementation (salt v2) | `0xc572dd1F36E50E9b9551838df8916Ac81200af62` | UUPS impl, immutable post-deploy. |
 | NAVCalculator proxy (salt v3) | `0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19` | UUPS proxy, points at the impl above. The address every consumer should use. |
-| ERC20Default balance oracle | `0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39` | Auto-deployed inside `NAVCalculator.initialize()`. Reports wallet balances for every registered ERC20 + the native sentinel. |
+| ERC20Default balance adapter | `0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39` | Auto-deployed inside `NAVCalculator.initialize()`. Reports wallet balances for every registered ERC20 + the native sentinel. |
 | `UUPSPlaceholder` impl (salt v3) | `0xE8CfE5bCD2dC7e8cBF5eF2B5cf8bD8EE259A4953` | Used during atomic deploy as the temporary impl before `upgradeToAndCall(navImpl, initialize(...))`. Holds no state, no role. |
 
 ---
@@ -45,7 +45,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|
 | NAVCalculator implementation | [`0xc572dd1F36E50E9b9551838df8916Ac81200af62`](https://etherscan.io/address/0xc572dd1F36E50E9b9551838df8916Ac81200af62) |
 | NAVCalculator proxy | [`0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`](https://etherscan.io/address/0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19) |
-| ERC20Default balance oracle | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://etherscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
+| ERC20Default balance adapter | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://etherscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://etherscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
 **Custom price-feed adapters** (9)
@@ -112,7 +112,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|
 | NAVCalculator implementation | [`0xc572dd1F36E50E9b9551838df8916Ac81200af62`](https://arbiscan.io/address/0xc572dd1F36E50E9b9551838df8916Ac81200af62) |
 | NAVCalculator proxy | [`0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`](https://arbiscan.io/address/0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19) |
-| ERC20Default balance oracle | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://arbiscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
+| ERC20Default balance adapter | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://arbiscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://arbiscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
 **Custom price-feed adapters** (5)
@@ -146,7 +146,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|
 | NAVCalculator implementation | [`0xc572dd1F36E50E9b9551838df8916Ac81200af62`](https://basescan.org/address/0xc572dd1F36E50E9b9551838df8916Ac81200af62) |
 | NAVCalculator proxy | [`0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`](https://basescan.org/address/0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19) |
-| ERC20Default balance oracle | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://basescan.org/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
+| ERC20Default balance adapter | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://basescan.org/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://basescan.org/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
 **Custom price-feed adapters** (3)
@@ -179,7 +179,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|
 | NAVCalculator implementation | [`0xc572dd1F36E50E9b9551838df8916Ac81200af62`](https://optimistic.etherscan.io/address/0xc572dd1F36E50E9b9551838df8916Ac81200af62) |
 | NAVCalculator proxy | [`0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`](https://optimistic.etherscan.io/address/0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19) |
-| ERC20Default balance oracle | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://optimistic.etherscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
+| ERC20Default balance adapter | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://optimistic.etherscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://optimistic.etherscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
 **Custom price-feed adapters**
@@ -202,7 +202,7 @@ None — this chain uses Chainlink price feeds exclusively for Alpha-fund assets
 |---|---|
 | NAVCalculator implementation | [`0xc572dd1F36E50E9b9551838df8916Ac81200af62`](https://gnosisscan.io/address/0xc572dd1F36E50E9b9551838df8916Ac81200af62) |
 | NAVCalculator proxy | [`0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19`](https://gnosisscan.io/address/0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19) |
-| ERC20Default balance oracle | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://gnosisscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
+| ERC20Default balance adapter | [`0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39`](https://gnosisscan.io/address/0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39) |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://gnosisscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
 **Custom price-feed adapters** (2)

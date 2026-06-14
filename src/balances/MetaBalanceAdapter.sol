@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "./IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "./IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-/// @title MetaBalanceOracle
+/// @title MetaBalanceAdapter
 /// @author kpk
-/// @notice Abstract base for meta balance oracle adapters — one immutable adapter serving every instance of a
+/// @notice Abstract base for meta balance adapter adapters — one immutable adapter serving every instance of a
 ///         protocol. Concrete adapters implement two hooks (`_instancePositions`, `_instanceAssets`); this base
-///         provides the ERC165 wiring, the empty no-arg `IBalanceOracleAdapter` methods, the per-instance fan-out
+///         provides the ERC165 wiring, the empty no-arg `IBalanceAdapter` methods, the per-instance fan-out
 ///         with revert isolation, and shared NAVCalculator registry helpers.
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
-///      own — it stays immutable. `getOraclePositionsForInstances` is also exposed for explicit/off-chain queries.
-abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescribable {
+///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
+abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable {
     //
     // State
     //
@@ -45,8 +45,8 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
-        return interfaceId == type(IMetaBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IMetaBalanceAdapter).interfaceId
+            || interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -64,16 +64,16 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
     function describePosition(bytes calldata positionId) external view virtual override returns (string memory);
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
-    // NAVCalculator calls getOraclePositions(account, assetFilter) on every oracle uniformly. A meta-adapter
+    // NAVCalculator calls getAdapterPositions(account, assetFilter) on every adapter uniformly. A meta-adapter
     // services it by reading its NAV-configured instance set and fanning out — no special routing in NAV.
-    // getOracleBalances / getOracleBalanceForAsset are not used by the NAV path and return empty.
+    // getAdapterBalances / getAdapterBalanceForAsset are not used by the NAV path and return empty.
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @dev Reads the NAV-configured instance set for this adapter and fans out over it (ADR 0010).
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         virtual
@@ -83,8 +83,8 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
         return _positionsForInstances(account, NAV_CALCULATOR.getMetaInstances(address(this)), assetFilter);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address)
         external
         view
         virtual
@@ -94,22 +94,22 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
         return (new address[](0), new uint256[](0), new bool[](0));
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address, address) external view virtual override returns (uint256, bool) {
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address, address) external view virtual override returns (uint256, bool) {
         return (0, false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view virtual override returns (address[] memory) {
         return _assetsForInstances(NAV_CALCULATOR.getMetaInstances(address(this)));
     }
 
     //
-    // IMetaBalanceOracleAdapter
+    // IMetaBalanceAdapter
     //
 
-    /// @inheritdoc IMetaBalanceOracleAdapter
-    function getOraclePositionsForInstances(address account, bytes32[] calldata instances, address assetFilter)
+    /// @inheritdoc IMetaBalanceAdapter
+    function getAdapterPositionsForInstances(address account, bytes32[] calldata instances, address assetFilter)
         external
         view
         override
@@ -118,7 +118,7 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
         return _positionsForInstances(account, instances, assetFilter);
     }
 
-    /// @inheritdoc IMetaBalanceOracleAdapter
+    /// @inheritdoc IMetaBalanceAdapter
     function underlyingAssetsSupportedForInstances(bytes32[] calldata instances)
         external
         view
@@ -187,7 +187,7 @@ abstract contract MetaBalanceOracle is IMetaBalanceOracleAdapter, IPositionDescr
     //
 
     /// @notice External wrapper around the concrete per-instance position logic.
-    /// @dev Called via `this.` inside `getOraclePositionsForInstances` so a single bad instance is isolated.
+    /// @dev Called via `this.` inside `getAdapterPositionsForInstances` so a single bad instance is isolated.
     function instancePositions(address account, bytes32 instance, address assetFilter)
         external
         view

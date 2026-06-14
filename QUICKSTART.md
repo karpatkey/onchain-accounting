@@ -114,7 +114,7 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --account $DEPLOYER_NAME --broadcast
 ```
 
-## Step 7: Configure (register oracles, meta-instances, bridge adapters)
+## Step 7: Configure (register adapters, meta-instances, bridge adapters)
 
 Run by the deployer EOA (holds admin + MANAGER). Idempotent / re-runnable:
 

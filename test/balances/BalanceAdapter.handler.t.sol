@@ -2,21 +2,21 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
-import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Balance Adapter Handler for Stateful Invariant Testing
 /// @notice Handler contract that manages stateful operations for invariant testing
 contract BalanceAdapterHandler is Test {
     BalancesHarness public balances;
-    ERC20DefaultOracle public erc20DefaultOracle;
-    Mock_CustomBalanceOracle[] public customOracles;
+    ERC20DefaultAdapter public erc20DefaultAdapter;
+    Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
     // Actors for testing
@@ -37,7 +37,7 @@ contract BalanceAdapterHandler is Test {
 
     constructor() {
         balances = new BalancesHarness();
-        erc20DefaultOracle = balances.defaultOracle();
+        erc20DefaultAdapter = balances.defaultAdapter();
 
         // Initialize actors
         for (uint256 i = 0; i < 10; i++) {
@@ -45,20 +45,20 @@ contract BalanceAdapterHandler is Test {
         }
 
         // Store initial state
-        ghostAdapterCount = balances.getOracleCount();
+        ghostAdapterCount = balances.getAdapterCount();
     }
 
-    /// @notice Add a custom oracle
-    function addAdapter(uint256 oracleSeed) external {
-        // Create new oracle
-        Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-        oracle.setBalances(balances);
-        customOracles.push(oracle);
+    /// @notice Add a custom adapter
+    function addAdapter(uint256 adapterSeed) external {
+        // Create new adapter
+        Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+        adapter.setBalances(balances);
+        customAdapters.push(adapter);
 
-        // Create token for this oracle
-        uint8 decimals = uint8(bound(oracleSeed, 6, 18));
+        // Create token for this adapter
+        uint8 decimals = uint8(bound(adapterSeed, 6, 18));
         Mock_ERC20 token =
-            new Mock_ERC20(string(abi.encodePacked("TOKEN", vm.toString(customOracles.length))), decimals);
+            new Mock_ERC20(string(abi.encodePacked("TOKEN", vm.toString(customAdapters.length))), decimals);
         tokens.push(token);
 
         // Register asset
@@ -67,31 +67,31 @@ contract BalanceAdapterHandler is Test {
         // Set supported assets
         address[] memory assets = new address[](1);
         assets[0] = address(token);
-        oracle.setUnderlyingAssetsSupported(assets);
-        oracle.setPositionMetadata(
-            string(abi.encodePacked("Protocol ", vm.toString(customOracles.length))),
-            string(abi.encodePacked("Position ", vm.toString(customOracles.length)))
+        adapter.setUnderlyingAssetsSupported(assets);
+        adapter.setPositionMetadata(
+            string(abi.encodePacked("Protocol ", vm.toString(customAdapters.length))),
+            string(abi.encodePacked("Position ", vm.toString(customAdapters.length)))
         );
 
-        // Add oracle
-        balances.addBalanceOracleDirect(address(0), address(oracle), IBalances.OracleType.Custom);
-        ghostAdapterCount = balances.getOracleCount();
+        // Add adapter
+        balances.addBalanceAdapterDirect(address(0), address(adapter), IBalances.AdapterType.Custom);
+        ghostAdapterCount = balances.getAdapterCount();
     }
 
-    /// @notice Remove a custom oracle
-    function removeAdapter(uint256 oracleSeed) external {
-        if (customOracles.length == 0) return;
+    /// @notice Remove a custom adapter
+    function removeAdapter(uint256 adapterSeed) external {
+        if (customAdapters.length == 0) return;
 
-        uint256 oracleIndex = bound(oracleSeed, 0, customOracles.length - 1);
-        address oracle = address(customOracles[oracleIndex]);
+        uint256 adapterIndex = bound(adapterSeed, 0, customAdapters.length - 1);
+        address adapter = address(customAdapters[adapterIndex]);
 
-        // Cannot remove ERC20DefaultOracle
-        if (oracle == address(erc20DefaultOracle)) {
+        // Cannot remove ERC20DefaultAdapter
+        if (adapter == address(erc20DefaultAdapter)) {
             return;
         }
 
-        balances.unsetBalanceOracle(address(0), oracle);
-        ghostAdapterCount = balances.getOracleCount();
+        balances.unsetBalanceAdapter(address(0), adapter);
+        ghostAdapterCount = balances.getAdapterCount();
     }
 
     /// @notice Mint tokens to an actor
@@ -108,28 +108,28 @@ contract BalanceAdapterHandler is Test {
         token.mint(currentActor, amount);
     }
 
-    /// @notice Set balance in custom oracle
+    /// @notice Set balance in custom adapter
     function setCustomBalance(
         uint256 actorSeed,
-        uint256 oracleSeed,
+        uint256 adapterSeed,
         uint256 tokenSeed,
         uint256 amountSeed,
         bool isDebtSeed
     ) external useActor(actorSeed) {
-        if (customOracles.length == 0) return;
+        if (customAdapters.length == 0) return;
         if (tokens.length == 0) return;
 
-        uint256 oracleIndex = bound(oracleSeed, 0, customOracles.length - 1);
+        uint256 adapterIndex = bound(adapterSeed, 0, customAdapters.length - 1);
         uint256 tokenIndex = bound(tokenSeed, 0, tokens.length - 1);
 
-        Mock_CustomBalanceOracle oracle = customOracles[oracleIndex];
+        Mock_CustomBalanceAdapter adapter = customAdapters[adapterIndex];
         Mock_ERC20 token = tokens[tokenIndex];
 
         // Bound amount to reasonable range
         uint256 amount = bound(amountSeed, 1, type(uint96).max);
         bool isDebt = isDebtSeed;
 
-        oracle.setBalance(address(token), currentActor, amount, isDebt);
+        adapter.setBalance(address(token), currentActor, amount, isDebt);
     }
 
     /// @notice Query balance for an actor
@@ -140,11 +140,11 @@ contract BalanceAdapterHandler is Test {
     {
         address account = actors[bound(actorSeed, 0, actors.length - 1)];
 
-        address[] memory allOracles = balances.getAllOracles();
-        if (allOracles.length == 0) return 0;
+        address[] memory allAdapters = balances.getAllAdapters();
+        if (allAdapters.length == 0) return 0;
 
-        uint256 adapterIndex = bound(adapterSeed, 0, allOracles.length - 1);
-        IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[adapterIndex]);
+        uint256 adapterIndex = bound(adapterSeed, 0, allAdapters.length - 1);
+        IBalanceAdapter adapter = IBalanceAdapter(allAdapters[adapterIndex]);
 
         // Get supported assets
         address[] memory supportedAssets = adapter.underlyingAssetsSupported();
@@ -153,7 +153,7 @@ contract BalanceAdapterHandler is Test {
         uint256 assetIndex = bound(assetSeed, 0, supportedAssets.length - 1);
         address asset = supportedAssets[assetIndex];
 
-        (uint256 amount, bool isDebt) = adapter.getOracleBalanceForAsset(account, asset);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(account, asset);
         balance = isDebt ? -SafeCast.toInt256(amount) : SafeCast.toInt256(amount);
     }
 
@@ -161,11 +161,11 @@ contract BalanceAdapterHandler is Test {
     function getPositions(uint256 actorSeed, uint256 adapterSeed, uint256 filterSeed) external view returns (uint256) {
         address account = actors[bound(actorSeed, 0, actors.length - 1)];
 
-        address[] memory allOracles = balances.getAllOracles();
-        if (allOracles.length == 0) return 0;
+        address[] memory allAdapters = balances.getAllAdapters();
+        if (allAdapters.length == 0) return 0;
 
-        uint256 adapterIndex = bound(adapterSeed, 0, allOracles.length - 1);
-        IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[adapterIndex]);
+        uint256 adapterIndex = bound(adapterSeed, 0, allAdapters.length - 1);
+        IBalanceAdapter adapter = IBalanceAdapter(allAdapters[adapterIndex]);
 
         // Get supported assets for filter
         address[] memory supportedAssets = adapter.underlyingAssetsSupported();
@@ -175,7 +175,7 @@ contract BalanceAdapterHandler is Test {
             filter = supportedAssets[filterIndex];
         }
 
-        INAVCalculator.PositionBalance[] memory positions = adapter.getOraclePositions(account, filter);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(account, filter);
         return positions.length;
     }
 
@@ -209,8 +209,8 @@ contract BalanceAdapterHandlerTest is Test {
     /// @notice Invariant: Balance consistency across queries
     function invariant_balanceConsistency() external view {
         // Test with a few actors and adapters
-        address[] memory allOracles = handler.balances().getAllOracles();
-        if (allOracles.length == 0) return;
+        address[] memory allAdapters = handler.balances().getAllAdapters();
+        if (allAdapters.length == 0) return;
 
         uint256 actorCount = handler.getActorCount();
         if (actorCount == 0) return;
@@ -220,15 +220,15 @@ contract BalanceAdapterHandlerTest is Test {
             address account = handler.getActor(i);
             if (account == address(0)) continue;
 
-            for (uint256 j = 0; j < allOracles.length && j < 3; j++) {
-                IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[j]);
+            for (uint256 j = 0; j < allAdapters.length && j < 3; j++) {
+                IBalanceAdapter adapter = IBalanceAdapter(allAdapters[j]);
 
-                // Get balance via getOracleBalance - use try-catch to handle potential reverts
-                try adapter.getOracleBalances(account) returns (
+                // Get balance via getAdapterBalance - use try-catch to handle potential reverts
+                try adapter.getAdapterBalances(account) returns (
                     address[] memory, /* assets */ uint256[] memory amounts, bool[] memory isDebt
                 ) {
                     // Get positions
-                    INAVCalculator.PositionBalance[] memory positions = adapter.getOraclePositions(account, address(0));
+                    INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(account, address(0));
 
                     // Sum positions
                     int256 positionsSum = 0;
@@ -262,8 +262,8 @@ contract BalanceAdapterHandlerTest is Test {
 
     /// @notice Invariant: No zero positions in results
     function invariant_noZeroPositions() external view {
-        address[] memory allOracles = handler.balances().getAllOracles();
-        if (allOracles.length == 0) return;
+        address[] memory allAdapters = handler.balances().getAllAdapters();
+        if (allAdapters.length == 0) return;
 
         uint256 actorCount = handler.getActorCount();
         if (actorCount == 0) return;
@@ -273,9 +273,9 @@ contract BalanceAdapterHandlerTest is Test {
             address account = handler.getActor(i);
             if (account == address(0)) continue;
 
-            for (uint256 j = 0; j < allOracles.length && j < 3; j++) {
-                IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[j]);
-                try adapter.getOraclePositions(account, address(0)) returns (
+            for (uint256 j = 0; j < allAdapters.length && j < 3; j++) {
+                IBalanceAdapter adapter = IBalanceAdapter(allAdapters[j]);
+                try adapter.getAdapterPositions(account, address(0)) returns (
                     INAVCalculator.PositionBalance[] memory positions
                 ) {
                     for (uint256 k = 0; k < positions.length; k++) {
@@ -291,8 +291,8 @@ contract BalanceAdapterHandlerTest is Test {
 
     /// @notice Invariant: Asset filtering works correctly
     function invariant_assetFiltering() external view {
-        address[] memory allOracles = handler.balances().getAllOracles();
-        if (allOracles.length == 0) return;
+        address[] memory allAdapters = handler.balances().getAllAdapters();
+        if (allAdapters.length == 0) return;
 
         uint256 actorCount = handler.getActorCount();
         if (actorCount == 0) return;
@@ -302,8 +302,8 @@ contract BalanceAdapterHandlerTest is Test {
             address account = handler.getActor(i);
             if (account == address(0)) continue;
 
-            for (uint256 j = 0; j < allOracles.length && j < 3; j++) {
-                IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[j]);
+            for (uint256 j = 0; j < allAdapters.length && j < 3; j++) {
+                IBalanceAdapter adapter = IBalanceAdapter(allAdapters[j]);
 
                 // Get supported assets - all registered adapters must support this function
                 address[] memory supportedAssets;
@@ -317,7 +317,7 @@ contract BalanceAdapterHandlerTest is Test {
 
                 // Get all positions
                 INAVCalculator.PositionBalance[] memory allPositions;
-                try adapter.getOraclePositions(account, address(0)) returns (
+                try adapter.getAdapterPositions(account, address(0)) returns (
                     INAVCalculator.PositionBalance[] memory positions
                 ) {
                     allPositions = positions;
@@ -325,49 +325,55 @@ contract BalanceAdapterHandlerTest is Test {
                     continue;
                 }
 
-                // Filter by each supported asset
+                // Filter by each supported asset. The per-filter check lives in a helper so its locals do not
+                // share this function's stack frame — the fully-inlined four-loop body otherwise exceeds the
+                // via-IR stack limit.
                 uint256 maxAssets = supportedAssets.length < 3 ? supportedAssets.length : 3;
                 for (uint256 k = 0; k < maxAssets; k++) {
-                    address filter = supportedAssets[k];
-                    INAVCalculator.PositionBalance[] memory filteredPositions;
-                    try adapter.getOraclePositions(account, filter) returns (
-                        INAVCalculator.PositionBalance[] memory positions
-                    ) {
-                        filteredPositions = positions;
-                    } catch {
-                        continue;
-                    }
-
-                    // All filtered positions should match filter
-                    for (uint256 l = 0; l < filteredPositions.length; l++) {
-                        assertEq(
-                            filteredPositions[l].balanceAsset.asset, filter, "Filtered positions should match filter"
-                        );
-                    }
-
-                    // Filtered should be subset of all
-                    assertLe(filteredPositions.length, allPositions.length, "Filtered should be subset");
+                    _assertFilterIsSubset(adapter, account, supportedAssets[k], allPositions.length);
                 }
             }
         }
     }
 
+    /// @notice Asserts that filtering an adapter's positions by a single asset yields only matching positions and
+    ///         a subset of the unfiltered set. Extracted from `invariant_assetFiltering` for via-IR stack relief.
+    function _assertFilterIsSubset(IBalanceAdapter adapter, address account, address filter, uint256 unfilteredCount)
+        private
+        view
+    {
+        INAVCalculator.PositionBalance[] memory filteredPositions;
+        try adapter.getAdapterPositions(account, filter) returns (INAVCalculator.PositionBalance[] memory positions) {
+            filteredPositions = positions;
+        } catch {
+            return;
+        }
+
+        // All filtered positions should match filter
+        for (uint256 l = 0; l < filteredPositions.length; l++) {
+            assertEq(filteredPositions[l].balanceAsset.asset, filter, "Filtered positions should match filter");
+        }
+
+        // Filtered should be subset of all
+        assertLe(filteredPositions.length, unfilteredCount, "Filtered should be subset");
+    }
+
     /// @notice Invariant: Interface compliance
     function invariant_interfaceCompliance() external view {
-        address[] memory allOracles = handler.balances().getAllOracles();
-        if (allOracles.length == 0) return;
+        address[] memory allAdapters = handler.balances().getAllAdapters();
+        if (allAdapters.length == 0) return;
 
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[i]);
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
 
             // Verify supportsInterface - all registered adapters must support the interface
             bool supported;
-            try adapter.supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool result) {
+            try adapter.supportsInterface(type(IBalanceAdapter).interfaceId) returns (bool result) {
                 supported = result;
             } catch {
-                revert("Registered adapter must support IBalanceOracleAdapter interface");
+                revert("Registered adapter must support IBalanceAdapter interface");
             }
-            assertTrue(supported, "Adapter should support IBalanceOracleAdapter");
+            assertTrue(supported, "Adapter should support IBalanceAdapter");
 
             // Verify required functions don't revert - all registered adapters must be properly initialized
             try adapter.underlyingAssetsSupported() returns (
@@ -383,11 +389,11 @@ contract BalanceAdapterHandlerTest is Test {
 
     /// @notice Invariant: Supported assets consistency
     function invariant_supportedAssetsConsistency() external view {
-        address[] memory allOracles = handler.balances().getAllOracles();
-        if (allOracles.length == 0) return;
+        address[] memory allAdapters = handler.balances().getAllAdapters();
+        if (allAdapters.length == 0) return;
 
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[i]);
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
 
             // Query multiple times - should be consistent
             // All registered adapters must support underlyingAssetsSupported()
@@ -419,7 +425,7 @@ contract BalanceAdapterHandlerTest is Test {
 
                 // Should be able to query balance (may be zero, that's fine)
                 // All supported assets must be queryable
-                try adapter.getOracleBalanceForAsset(testAccount, asset) returns (
+                try adapter.getAdapterBalanceForAsset(testAccount, asset) returns (
                     uint256, bool
                 ) {
                 // Success
@@ -431,26 +437,26 @@ contract BalanceAdapterHandlerTest is Test {
         }
     }
 
-    /// @notice Invariant: ERC20DefaultOracle always registered
-    function invariant_erc20DefaultOracleAlwaysRegistered() external view {
-        address[] memory allOracles = handler.balances().getAllOracles();
+    /// @notice Invariant: ERC20DefaultAdapter always registered
+    function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
+        address[] memory allAdapters = handler.balances().getAllAdapters();
 
         bool found = false;
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            if (allOracles[i] == address(handler.erc20DefaultOracle())) {
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            if (allAdapters[i] == address(handler.erc20DefaultAdapter())) {
                 found = true;
                 break;
             }
         }
 
-        assertTrue(found, "ERC20DefaultOracle should always be registered");
+        assertTrue(found, "ERC20DefaultAdapter should always be registered");
     }
 
     /// @notice Invariant: Adapter count consistency
     function invariant_adapterCountConsistency() external view {
-        uint256 adapterCount = handler.balances().getOracleCount();
-        address[] memory allOracles = handler.balances().getAllOracles();
+        uint256 adapterCount = handler.balances().getAdapterCount();
+        address[] memory allAdapters = handler.balances().getAllAdapters();
 
-        assertEq(adapterCount, allOracles.length, "Adapter count should match registry length");
+        assertEq(adapterCount, allAdapters.length, "Adapter count should match registry length");
     }
 }

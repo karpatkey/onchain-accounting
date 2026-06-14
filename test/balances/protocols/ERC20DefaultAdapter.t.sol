@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -16,17 +16,17 @@ import "src/constants.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract ERC20DefaultOracleTest is Test {
+contract ERC20DefaultAdapterTest is Test {
     NAVCalculator public navCalculator;
-    ERC20DefaultOracle public oracle;
+    ERC20DefaultAdapter public adapter;
 
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
     Mock_ERC20 public weth;
-    Mock_CustomPriceFeed public usdcOracle;
-    Mock_CustomPriceFeed public daiOracle;
-    Mock_CustomPriceFeed public wethOracle;
-    Mock_CustomPriceFeed public ethOracle;
+    Mock_CustomPriceFeed public usdcAdapter;
+    Mock_CustomPriceFeed public daiAdapter;
+    Mock_CustomPriceFeed public wethAdapter;
+    Mock_CustomPriceFeed public ethAdapter;
 
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
     address public admin = makeAddr("admin");
@@ -37,7 +37,7 @@ contract ERC20DefaultOracleTest is Test {
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Set up tokens
         usdc = new Mock_ERC20("USDC", 6);
@@ -45,10 +45,10 @@ contract ERC20DefaultOracleTest is Test {
         weth = new Mock_ERC20("WETH", 18);
 
         // Set up price feeds
-        usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 1e8, 8);
-        daiOracle = new Mock_CustomPriceFeed("DAI", address(dai), 1e8, 8);
-        wethOracle = new Mock_CustomPriceFeed("WETH", address(weth), 2000e8, 8);
-        ethOracle = new Mock_CustomPriceFeed("ETH", NATIVE_ADDRESS, 2000e8, 8);
+        usdcAdapter = new Mock_CustomPriceFeed("USDC", address(usdc), 1e8, 8);
+        daiAdapter = new Mock_CustomPriceFeed("DAI", address(dai), 1e8, 8);
+        wethAdapter = new Mock_CustomPriceFeed("WETH", address(weth), 2000e8, 8);
+        ethAdapter = new Mock_CustomPriceFeed("ETH", NATIVE_ADDRESS, 2000e8, 8);
 
         // Set up NAVCalculator
         vm.startPrank(admin);
@@ -62,28 +62,28 @@ contract ERC20DefaultOracleTest is Test {
 
         // Register assets in NAVCalculator (native is pre-registered in initialize)
         vm.startPrank(manager);
-        navCalculator.addPriceFeed(NATIVE_ADDRESS, address(ethOracle), IPrices.PriceType.Custom, type(uint256).max);
-        navCalculator.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        navCalculator.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Custom, type(uint256).max);
-        navCalculator.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.addPriceFeed(NATIVE_ADDRESS, address(ethAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(address(dai), address(daiAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.registerAsset(address(weth), address(wethAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
-        // Create ERC20DefaultOracle (it's already created by NAVCalculator, but we can get it)
-        oracle = ERC20DefaultOracle(navCalculator.erc20DefaultOracle());
+        // Create ERC20DefaultAdapter (it's already created by NAVCalculator, but we can get it)
+        adapter = ERC20DefaultAdapter(navCalculator.erc20DefaultAdapter());
     }
 
     function test_constructor() public view {
-        assertEq(address(oracle.NAV_CALCULATOR()), address(navCalculator));
+        assertEq(address(adapter.NAV_CALCULATOR()), address(navCalculator));
     }
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(oracle.supportsInterface(0x12345678));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(adapter.supportsInterface(0x12345678));
     }
 
     function test_underlyingAssetsSupported_returnsAllRegisteredAssets() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 4);
 
         // Assets can be in any order, so we check by searching
@@ -104,7 +104,7 @@ contract ERC20DefaultOracleTest is Test {
     }
 
     function test_underlyingAssetsSupported_nativeOnlyWhenNoOtherAssets() public {
-        // A freshly initialized NAVCalculator has native pre-registered in the default oracle
+        // A freshly initialized NAVCalculator has native pre-registered in the default adapter
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
         address navProxy = UnsafeUpgrades.deployUUPSProxy(
@@ -113,68 +113,68 @@ contract ERC20DefaultOracleTest is Test {
         NAVCalculator emptyNav = NAVCalculator(navProxy);
         vm.stopPrank();
 
-        ERC20DefaultOracle emptyOracle = ERC20DefaultOracle(emptyNav.erc20DefaultOracle());
-        address[] memory assets = emptyOracle.underlyingAssetsSupported();
-        assertEq(assets.length, 1, "Only native is in the default oracle before other assets are registered");
+        ERC20DefaultAdapter emptyAdapter = ERC20DefaultAdapter(emptyNav.erc20DefaultAdapter());
+        address[] memory assets = emptyAdapter.underlyingAssetsSupported();
+        assertEq(assets.length, 1, "Only native is in the default adapter before other assets are registered");
         assertEq(assets[0], NATIVE_ADDRESS);
     }
 
-    function test_getOracleBalanceForAsset_returnsZeroForUnregisteredAsset() public {
+    function test_getAdapterBalanceForAsset_returnsZeroForUnregisteredAsset() public {
         address user = makeAddr("user");
         address unregisteredAsset = makeAddr("unregistered");
 
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, unregisteredAsset);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(user, unregisteredAsset);
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_returnsZeroForZeroAddress() public {
+    function test_getAdapterBalanceForAsset_returnsZeroForZeroAddress() public {
         address user = makeAddr("user");
 
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(0));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(user, address(0));
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalance_returnsEmptyWhenNoAssets() public {
+    function test_getAdapterBalance_returnsEmptyWhenNoAssets() public {
         address user = makeAddr("user");
 
-        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(user);
+        (address[] memory assets, uint256[] memory amounts,) = adapter.getAdapterBalances(user);
         // Should return all registered assets, but with zero balances
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
     }
 
-    function test_getOraclePositions_returnsEmptyWhenNoAssets() public {
+    function test_getAdapterPositions_returnsEmptyWhenNoAssets() public {
         address user = makeAddr("user");
 
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(user, address(0));
         assertEq(positions.length, 0);
     }
 
-    function test_getOraclePositions_withAssetFilter() public {
+    function test_getAdapterPositions_withAssetFilter() public {
         address user = makeAddr("user");
 
         // Mint some tokens to the user so we have a balance
         usdc.mint(user, 1000e6);
 
         // Filter by USDC
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(user, address(usdc));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(usdc));
         assertEq(positions[0].balanceAsset.symbol, "USDC");
         assertEq(positions[0].balanceAsset.decimals, 6);
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(adapter));
     }
 
-    function test_getOraclePositions_protocolAndPositionDetail() public {
+    function test_getAdapterPositions_protocolAndPositionDetail() public {
         address user = makeAddr("user");
 
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(user, address(0));
         assertEq(positions.length, 0); // No balance, so no positions
 
         // Mint some USDC to the user
         usdc.mint(user, 1000e6);
 
-        positions = oracle.getOraclePositions(user, address(0));
+        positions = adapter.getAdapterPositions(user, address(0));
         assertEq(positions.length, 1);
     }
 
@@ -186,51 +186,51 @@ contract ERC20DefaultOracleTest is Test {
         address random = makeAddr("random");
         vm.prank(random);
         vm.expectRevert(OnlyNAVCalculator.selector);
-        oracle.addSupportedAsset(address(usdc));
+        adapter.addSupportedAsset(address(usdc));
     }
 
     function test_removeSupportedAsset_onlyNAVCalculatorCanCall() public {
         address random = makeAddr("random");
         vm.prank(random);
         vm.expectRevert(OnlyNAVCalculator.selector);
-        oracle.removeSupportedAsset(address(usdc));
+        adapter.removeSupportedAsset(address(usdc));
     }
 
     function test_removeSupportedAsset_assetDisappearsFromInclusionList() public {
         address user = makeAddr("user");
         usdc.mint(user, 1000e6);
 
-        assertTrue(oracle.isSupportedByDefault(address(usdc)));
-        assertEq(oracle.underlyingAssetsSupported().length, 4);
+        assertTrue(adapter.isSupportedByDefault(address(usdc)));
+        assertEq(adapter.underlyingAssetsSupported().length, 4);
 
         vm.prank(manager);
-        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+        navCalculator.excludeAssetFromDefaultAdapter(address(usdc));
 
-        assertFalse(oracle.isSupportedByDefault(address(usdc)));
-        address[] memory supported = oracle.underlyingAssetsSupported();
+        assertFalse(adapter.isSupportedByDefault(address(usdc)));
+        address[] memory supported = adapter.underlyingAssetsSupported();
         assertEq(supported.length, 3);
         for (uint256 i = 0; i < supported.length; i++) {
             assertTrue(supported[i] != address(usdc));
         }
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(user, address(usdc));
         assertEq(amount, 0);
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(user, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(user, address(usdc));
         assertEq(positions.length, 0);
-        positions = oracle.getOraclePositions(user, address(0));
+        positions = adapter.getAdapterPositions(user, address(0));
         assertEq(positions.length, 0);
     }
 
-    function test_includeAssetInDefaultOracle_assetReappears() public {
+    function test_includeAssetInDefaultAdapter_assetReappears() public {
         vm.prank(manager);
-        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+        navCalculator.excludeAssetFromDefaultAdapter(address(usdc));
 
-        assertFalse(oracle.isSupportedByDefault(address(usdc)));
+        assertFalse(adapter.isSupportedByDefault(address(usdc)));
 
         vm.prank(manager);
-        navCalculator.includeAssetInDefaultOracle(address(usdc));
+        navCalculator.includeAssetInDefaultAdapter(address(usdc));
 
-        assertTrue(oracle.isSupportedByDefault(address(usdc)));
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        assertTrue(adapter.isSupportedByDefault(address(usdc)));
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 4);
         bool found = false;
         for (uint256 i = 0; i < assets.length; i++) {
@@ -240,22 +240,22 @@ contract ERC20DefaultOracleTest is Test {
 
         address user = makeAddr("user");
         usdc.mint(user, 500e6);
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(user, address(usdc));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(user, address(usdc));
         assertEq(amount, 500e6);
     }
 
     function test_removeSupportedAsset_idempotent() public {
         vm.startPrank(manager);
-        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
-        navCalculator.excludeAssetFromDefaultOracle(address(usdc));
+        navCalculator.excludeAssetFromDefaultAdapter(address(usdc));
+        navCalculator.excludeAssetFromDefaultAdapter(address(usdc));
         vm.stopPrank();
-        assertFalse(oracle.isSupportedByDefault(address(usdc)));
+        assertFalse(adapter.isSupportedByDefault(address(usdc)));
     }
 
     function test_isSupportedByDefault() public view {
-        assertTrue(oracle.isSupportedByDefault(address(usdc)));
-        assertTrue(oracle.isSupportedByDefault(address(dai)));
-        assertTrue(oracle.isSupportedByDefault(NATIVE_ADDRESS));
-        assertFalse(oracle.isSupportedByDefault(address(0x1234)));
+        assertTrue(adapter.isSupportedByDefault(address(usdc)));
+        assertTrue(adapter.isSupportedByDefault(address(dai)));
+        assertTrue(adapter.isSupportedByDefault(NATIVE_ADDRESS));
+        assertFalse(adapter.isSupportedByDefault(address(0x1234)));
     }
 }

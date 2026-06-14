@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -53,7 +53,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    MorphoVaultsMetaBalanceAdapter oracle;
+    MorphoVaultsMetaBalanceAdapter adapter;
 
     MockToken usdc;
     MockToken weth;
@@ -72,7 +72,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         vaultA = new MockMetaVault("Steakhouse USDC", address(usdc), 1e18);
         vaultB = new MockMetaVault("kpk ETH Prime", address(weth), 2e18);
 
-        oracle = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
+        adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -84,24 +84,24 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
     // ----- ERC165 -----
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 
     // ----- no-arg base methods return empty -----
 
     function test_noArgMethods_returnEmpty() public {
         vaultA.setBalance(alice, 1000);
-        assertEq(oracle.getOraclePositions(alice, address(0)).length, 0);
-        (address[] memory a, uint256[] memory amt, bool[] memory d) = oracle.getOracleBalances(alice);
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
+        (address[] memory a, uint256[] memory amt, bool[] memory d) = adapter.getAdapterBalances(alice);
         assertEq(a.length, 0);
         assertEq(amt.length, 0);
         assertEq(d.length, 0);
-        (uint256 bal, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+        (uint256 bal, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(bal, 0);
         assertFalse(isDebt);
-        assertEq(oracle.underlyingAssetsSupported().length, 0);
+        assertEq(adapter.underlyingAssetsSupported().length, 0);
     }
 
     // ----- instance fan-out -----
@@ -111,7 +111,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         vaultB.setBalance(alice, 5e17); // 0.5 shares * 2 = 1.0 WETH
 
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
 
         assertEq(pos.length, 2, "two positions");
 
@@ -119,7 +119,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[0].amount, 1_000_000);
         assertFalse(pos[0].isDebt);
-        assertEq(pos[0].balanceOracle, address(oracle));
+        assertEq(pos[0].balanceAdapter, address(adapter));
         assertEq(pos[0].positionId, abi.encode(address(vaultA)));
 
         // vaultB position (rate applied)
@@ -133,7 +133,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         vaultB.setBalance(alice, 1e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(usdc));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(usdc));
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
@@ -142,7 +142,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         vaultA.setBalance(alice, 1_000_000);
         // vaultB balance left at 0
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
@@ -157,7 +157,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         ins[0] = bytes32(uint256(uint160(address(vaultA))));
         ins[1] = bytes32(uint256(uint160(address(vaultC))));
 
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 1, "unregistered vault skipped, registered one survives");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
@@ -168,19 +168,19 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         ins[0] = bytes32(uint256(uint160(address(0xdead)))); // EOA / no code -> reverts internally, isolated
         ins[1] = bytes32(uint256(uint160(address(vaultA))));
 
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 1, "bad instance isolated, good one returned");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
 
     function test_emptyInstances_returnsEmpty() public view {
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, new bytes32[](0), address(0));
+            adapter.getAdapterPositionsForInstances(alice, new bytes32[](0), address(0));
         assertEq(pos.length, 0);
     }
 
     function test_underlyingAssetsForInstances() public view {
-        address[] memory assets = oracle.underlyingAssetsSupportedForInstances(_instances());
+        address[] memory assets = adapter.underlyingAssetsSupportedForInstances(_instances());
         assertEq(assets.length, 2);
         assertEq(assets[0], address(usdc));
         assertEq(assets[1], address(weth));

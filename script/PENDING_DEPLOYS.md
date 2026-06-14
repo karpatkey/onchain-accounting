@@ -7,7 +7,7 @@ Operational checklist for the deploy + Safe TX work that follows PR #35's merge.
 **Companion docs:** [`NAV_V2_DEPLOYMENT_RUNBOOK.md`](NAV_V2_DEPLOYMENT_RUNBOOK.md) (operational playbook), [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md) (current production state), [`config/CONFIG_GUIDE.md`](config/CONFIG_GUIDE.md) (chain config schema).
 
 > **Addendum 2026-05-30 (not yet in the dated tables below — re-run §6 to regenerate):**
-> - **`KelpWithdrawalQueue`** (Mainnet, PR #44 merged) and **`LidoWithdrawalQueue`** (Mainnet, PR #45) are wired with `deployed: ""` — pending `04_DeployBalanceAdapters` + `addBalanceOracle` registration (both are already in the `_balanceAdapterNames()` lists in `06_Configure.s.sol` / `06_Configure.s.sol`). They bump the Mainnet pending balance-adapter count accordingly.
+> - **`KelpWithdrawalQueue`** (Mainnet, PR #44 merged) and **`LidoWithdrawalQueue`** (Mainnet, PR #45) are wired with `deployed: ""` — pending `04_DeployBalanceAdapters` + `addBalanceAdapter` registration (both are already in the `_balanceAdapterNames()` lists in `06_Configure.s.sol` / `06_Configure.s.sol`). They bump the Mainnet pending balance-adapter count accordingly.
 > - **Pending NAVCalculator implementation upgrade:** PR #44 changed `NAVCalculator.hasPositions` (fail-open via the positions path). Shipping it requires deploying a new NAVCalculator implementation and a UUPS upgrade (`UpgradeNAVCalculator.s.sol` + Safe TX) — a new pending item beyond the adapter deploys.
 
 ---
@@ -88,7 +88,7 @@ Sorted by family.
 |---|---|
 | `StaderWithdrawalQueue` | Stader UserWithdrawalManager pending unstake requests |
 | `UniswapV3_WBTC_WETH_3000` | Mainnet Uni V3 WBTC/WETH 0.3% pool. No current test-account exposure. |
-| `ERC4626Wrap_waEthLidoGHO` | Aave V3 Prime stata-token wrap (`0xC71Ea051…`). Generic `ERC4626WrapBalanceOracle`. Underlying = GHO (must be registered first). Covers ACCOUNT_11's ~$233 wallet position previously invisible to `AaveV3_Prime.getUserReserveData`. |
+| `ERC4626Wrap_waEthLidoGHO` | Aave V3 Prime stata-token wrap (`0xC71Ea051…`). Generic `ERC4626WrapBalanceAdapter`. Underlying = GHO (must be registered first). Covers ACCOUNT_11's ~$233 wallet position previously invisible to `AaveV3_Prime.getUserReserveData`. |
 
 ### 1.3 Pending balance adapters — L2 chains
 
@@ -232,7 +232,7 @@ json.dump(c, open('script/config/chains/1.json','w'), indent=2)
 # Repeat for chains/8453.json and chains/42161.json.
 ```
 
-Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. The Safe TX bundle from `06_Configure.s.sol` will need to call `addBalanceOracle(<new>)` AND `removeBalanceOracle(<old>)` for each affected adapter — old + new addresses both kept in chain config until cutover.
+Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. The Safe TX bundle from `06_Configure.s.sol` will need to call `addBalanceAdapter(<new>)` AND `removeBalanceAdapter(<old>)` for each affected adapter — old + new addresses both kept in chain config until cutover.
 
 ## 4.6 WBTC + AAVE asset registration on mainnet
 
@@ -285,7 +285,7 @@ This PR is config-only, doesn't change behaviour.
 After Phase B merges to main:
 
 ```bash
-# Per chain, generate the calldata for register/setPriceFeed/addBalanceOracle calls.
+# Per chain, generate the calldata for register/setPriceFeed/addBalanceAdapter calls.
 forge script script/manage/RegisterAssets.s.sol --rpc-url $MAINNET_URL --sig 'run()'
 forge script script/manage/RegisterAssets.s.sol --rpc-url $OP_URL --sig 'run()'
 forge script script/manage/RegisterAssets.s.sol --rpc-url $BASE_URL --sig 'run()'
@@ -296,11 +296,11 @@ Mainnet bundle includes:
 - `registerAsset(EURC, 0x1aBaEA1f…, Chainlink, 86400)` — register EURC token
 - `registerAsset(WBTC, …, Chainlink, …)` — new in PR #35 (§4.6)
 - `registerAsset(AAVE, …, Chainlink, …)` — new in PR #35 (§4.6)
-- `setPriceFeed(ETHx, <ethxOracle>, Custom, 0)` — point ETHx at the freshly-deployed feed
-- `addBalanceOracle(<adapter>)` × 25 — register every new balance adapter (24 from earlier scope + 1 ERC4626Wrap_waEthLidoGHO landed in PR #35)
-- (if §4.5 migration bundled here) `addBalanceOracle(<new>) + removeBalanceOracle(<old>)` per redeployed MorphoMarket entry
+- `setPriceFeed(ETHx, <ethxAdapter>, Custom, 0)` — point ETHx at the freshly-deployed feed
+- `addBalanceAdapter(<adapter>)` × 25 — register every new balance adapter (24 from earlier scope + 1 ERC4626Wrap_waEthLidoGHO landed in PR #35)
+- (if §4.5 migration bundled here) `addBalanceAdapter(<new>) + removeBalanceAdapter(<old>)` per redeployed MorphoMarket entry
 
-Other chains: `addBalanceOracle(...)` × 3 (op), 9 (base), 9 (arb).
+Other chains: `addBalanceAdapter(...)` × 3 (op), 9 (base), 9 (arb).
 
 Owners on the per-chain Safe (`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every chain) sign and execute.
 
@@ -316,7 +316,7 @@ cast call $NAV_PROXY "isAssetRegistered(address)(bool)" 0x1aBaEA1f7C830bD89Acc67
 cast call $NAV_PROXY "latestPrice(address)(int256,uint8,bool)" \
     0xA35b1B31Ce002FBF2058D22F30f95D405200A15b --rpc-url $MAINNET_URL  # ETHx
 
-cast call $NAV_PROXY "getAllOracles()(address[])" --rpc-url $MAINNET_URL | wc -w
+cast call $NAV_PROXY "getAllAdapters()(address[])" --rpc-url $MAINNET_URL | wc -w
 # Should equal: prior count + 24 + 1 (ERC20Default exists already)
 
 # Re-run integration snapshot — production state should now match the harness
@@ -333,7 +333,7 @@ These were identified during the audit but aren't blocked on PR #35:
 1. **kpk vault catalog expansion**: 8 mainnet vaults + 1 Arbitrum vault still need their config blocks added (§2). Plus rename `MorphoVault_kpkEURC_V1` → `_kpkEURCYield_V2`. Deploy via Phase A pattern.
 2. **Markets-per-vault enumeration** (§3): enumerate `withdrawQueue` for each kpk vault, deduplicate market IDs, cross-reference vs existing `MorphoMarket_*` configs, add the gaps.
 3. **`AaveV3SafetyModule` naming alignment**: chain config has `AaveV3SafetyModule` (no suffix), DEPLOYED_ADDRESSES.md mentions `AaveV3SafetyModule_stkGHO`. Reconcile before broadcasting (avoid double-deploy or accidental rename).
-4. **MorphoMarket redeploys (§4.5)**: redeploy MorphoMarket on 3 chains under the updated protocol name. Bundle the `addBalanceOracle(new) + removeBalanceOracle(old)` per chain.
+4. **MorphoMarket redeploys (§4.5)**: redeploy MorphoMarket on 3 chains under the updated protocol name. Bundle the `addBalanceAdapter(new) + removeBalanceAdapter(old)` per chain.
 
 ---
 

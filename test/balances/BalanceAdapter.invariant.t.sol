@@ -2,23 +2,23 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title Balance Adapter Invariant Tests
-/// @notice Tests critical system invariants for balance oracle adapters
+/// @notice Tests critical system invariants for balance adapter adapters
 contract BalanceAdapterInvariantTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultOracle public erc20DefaultOracle;
-    Mock_CustomBalanceOracle public customOracle1;
-    Mock_CustomBalanceOracle public customOracle2;
+    ERC20DefaultAdapter public erc20DefaultAdapter;
+    Mock_CustomBalanceAdapter public customAdapter1;
+    Mock_CustomBalanceAdapter public customAdapter2;
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
     Mock_ERC20 public weth;
@@ -28,9 +28,9 @@ contract BalanceAdapterInvariantTest is Test {
 
     function setUp() public {
         // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultOracle = balances.defaultOracle();
+        erc20DefaultAdapter = balances.defaultAdapter();
 
         // Create tokens
         usdc = new Mock_ERC20("USDC", 6);
@@ -43,25 +43,25 @@ contract BalanceAdapterInvariantTest is Test {
         balances.addSupportedAssetForTest(address(weth));
         balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
 
-        // Setup custom oracles
-        customOracle1 = new Mock_CustomBalanceOracle();
-        customOracle1.setBalances(balances);
+        // Setup custom adapters
+        customAdapter1 = new Mock_CustomBalanceAdapter();
+        customAdapter1.setBalances(balances);
         address[] memory assets1 = new address[](2);
         assets1[0] = address(usdc);
         assets1[1] = address(dai);
-        customOracle1.setUnderlyingAssetsSupported(assets1);
-        customOracle1.setPositionMetadata("Protocol 1", "Position 1");
+        customAdapter1.setUnderlyingAssetsSupported(assets1);
+        customAdapter1.setPositionMetadata("Protocol 1", "Position 1");
 
-        customOracle2 = new Mock_CustomBalanceOracle();
-        customOracle2.setBalances(balances);
+        customAdapter2 = new Mock_CustomBalanceAdapter();
+        customAdapter2.setBalances(balances);
         address[] memory assets2 = new address[](1);
         assets2[0] = address(weth);
-        customOracle2.setUnderlyingAssetsSupported(assets2);
-        customOracle2.setPositionMetadata("Protocol 2", "Position 2");
+        customAdapter2.setUnderlyingAssetsSupported(assets2);
+        customAdapter2.setPositionMetadata("Protocol 2", "Position 2");
 
-        // Add custom oracles
-        balances.addBalanceOracleDirect(address(0), address(customOracle1), IBalances.OracleType.Custom);
-        balances.addBalanceOracleDirect(address(0), address(customOracle2), IBalances.OracleType.Custom);
+        // Add custom adapters
+        balances.addBalanceAdapterDirect(address(0), address(customAdapter1), IBalances.AdapterType.Custom);
+        balances.addBalanceAdapterDirect(address(0), address(customAdapter2), IBalances.AdapterType.Custom);
     }
 
     /// @notice Helper to sum balances from positions
@@ -81,18 +81,18 @@ contract BalanceAdapterInvariantTest is Test {
     // Interface Compliance Invariant
     // ============================================
 
-    /// @notice Test that all adapters implement IBalanceOracleAdapter correctly
+    /// @notice Test that all adapters implement IBalanceAdapter correctly
     /// @dev This invariant ensures all adapters conform to the interface contract
     function test_invariant_interfaceCompliance() public view {
-        address[] memory allOracles = balances.getAllOracles();
+        address[] memory allAdapters = balances.getAllAdapters();
 
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[i]);
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
 
             // Verify supportsInterface
             assertTrue(
-                adapter.supportsInterface(type(IBalanceOracleAdapter).interfaceId),
-                "Adapter should support IBalanceOracleAdapter"
+                adapter.supportsInterface(type(IBalanceAdapter).interfaceId),
+                "Adapter should support IBalanceAdapter"
             );
             assertTrue(adapter.supportsInterface(type(IERC165).interfaceId), "Adapter should support IERC165");
 
@@ -106,34 +106,34 @@ contract BalanceAdapterInvariantTest is Test {
                 revert("underlyingAssetsSupported should not revert");
             }
 
-            // Test getOracleBalanceForAsset
-            try adapter.getOracleBalanceForAsset(alice, address(usdc)) returns (
+            // Test getAdapterBalanceForAsset
+            try adapter.getAdapterBalanceForAsset(alice, address(usdc)) returns (
                 uint256, bool
             ) {
             // Success
             }
             catch {
-                revert("getOracleBalanceForAsset should not revert");
+                revert("getAdapterBalanceForAsset should not revert");
             }
 
-            // Test getOracleBalances
-            try adapter.getOracleBalances(alice) returns (
+            // Test getAdapterBalances
+            try adapter.getAdapterBalances(alice) returns (
                 address[] memory, uint256[] memory, bool[] memory
             ) {
             // Success
             }
             catch {
-                revert("getOracleBalances should not revert");
+                revert("getAdapterBalances should not revert");
             }
 
-            // Test getOraclePositions
-            try adapter.getOraclePositions(alice, address(0)) returns (
+            // Test getAdapterPositions
+            try adapter.getAdapterPositions(alice, address(0)) returns (
                 INAVCalculator.PositionBalance[] memory
             ) {
             // Success
             }
             catch {
-                revert("getOraclePositions should not revert");
+                revert("getAdapterPositions should not revert");
             }
         }
     }
@@ -144,39 +144,39 @@ contract BalanceAdapterInvariantTest is Test {
     function test_invariant_interfaceCompliance_requiredFunctions() public view {
         // This test is now redundant - all checks are in test_invariant_interfaceCompliance
         // Keeping for backwards compatibility
-        address[] memory allOracles = balances.getAllOracles();
+        address[] memory allAdapters = balances.getAllAdapters();
 
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            IBalanceOracleAdapter adapter = IBalanceOracleAdapter(allOracles[i]);
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
 
-            // Test getOracleBalanceForAsset
-            try adapter.getOracleBalanceForAsset(alice, address(usdc)) returns (
+            // Test getAdapterBalanceForAsset
+            try adapter.getAdapterBalanceForAsset(alice, address(usdc)) returns (
                 uint256, bool
             ) {
             // Success
             }
             catch {
-                revert("getOracleBalanceForAsset should not revert");
+                revert("getAdapterBalanceForAsset should not revert");
             }
 
-            // Test getOracleBalances
-            try adapter.getOracleBalances(alice) returns (
+            // Test getAdapterBalances
+            try adapter.getAdapterBalances(alice) returns (
                 address[] memory, uint256[] memory, bool[] memory
             ) {
             // Success
             }
             catch {
-                revert("getOracleBalances should not revert");
+                revert("getAdapterBalances should not revert");
             }
 
-            // Test getOraclePositions
-            try adapter.getOraclePositions(alice, address(0)) returns (
+            // Test getAdapterPositions
+            try adapter.getAdapterPositions(alice, address(0)) returns (
                 INAVCalculator.PositionBalance[] memory
             ) {
             // Success
             }
             catch {
-                revert("getOraclePositions should not revert");
+                revert("getAdapterPositions should not revert");
             }
         }
     }
@@ -185,14 +185,14 @@ contract BalanceAdapterInvariantTest is Test {
     // Zero Balance Exclusion Invariant
     // ============================================
 
-    /// @notice Test that getOraclePositions excludes zero balances
+    /// @notice Test that getAdapterPositions excludes zero balances
     function test_invariant_zeroBalanceExclusion() public {
         // Setup: Some tokens with balances, some without
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         // Don't mint DAI or WETH (zero balances)
 
         // Query positions
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
         // Verify no zero balances
         for (uint256 i = 0; i < positions.length; i++) {
@@ -208,21 +208,21 @@ contract BalanceAdapterInvariantTest is Test {
     function test_invariant_zeroBalanceExclusion_multipleAdapters() public {
         // Setup balances
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
-        customOracle1.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
+        customAdapter1.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
         // Don't set DAI balance (zero)
 
-        // Query from ERC20DefaultOracle
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        // Query from ERC20DefaultAdapter
+        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
-        // Query from customOracle1
-        INAVCalculator.PositionBalance[] memory positions2 = customOracle1.getOraclePositions(alice, address(0));
+        // Query from customAdapter1
+        INAVCalculator.PositionBalance[] memory positions2 = customAdapter1.getAdapterPositions(alice, address(0));
 
         // Verify no zero balances
         for (uint256 i = 0; i < positions1.length; i++) {
-            assertTrue(positions1[i].amount != 0, "ERC20DefaultOracle: No zero amounts");
+            assertTrue(positions1[i].amount != 0, "ERC20DefaultAdapter: No zero amounts");
         }
         for (uint256 i = 0; i < positions2.length; i++) {
-            assertTrue(positions2[i].amount != 0, "CustomOracle1: No zero amounts");
+            assertTrue(positions2[i].amount != 0, "CustomAdapter1: No zero amounts");
         }
     }
 
@@ -230,21 +230,21 @@ contract BalanceAdapterInvariantTest is Test {
     // Balance Consistency Invariant
     // ============================================
 
-    /// @notice Test that getOracleBalance matches sum of getOraclePositions
+    /// @notice Test that getAdapterBalance matches sum of getAdapterPositions
     function test_invariant_balanceConsistency() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         dai.mint(alice, 2000 * 10 ** dai.decimals());
 
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            erc20DefaultOracle.getOracleBalances(alice);
+            erc20DefaultAdapter.getAdapterBalances(alice);
         assertEq(assets.length, amounts.length, "assets and amounts length match");
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
         // Sum positions
         int256 positionsSum = sumPositionBalances(positions);
 
-        // Sum getOracleBalances (amount + isDebt)
+        // Sum getAdapterBalances (amount + isDebt)
         int256 balanceSum = 0;
         for (uint256 i = 0; i < amounts.length; i++) {
             if (isDebt[i]) {
@@ -262,14 +262,14 @@ contract BalanceAdapterInvariantTest is Test {
     function test_invariant_balanceConsistency_debtPositions() public {
         // Setup positive and debt positions
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
-        customOracle1.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), true);
+        customAdapter1.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), true);
 
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            customOracle1.getOracleBalances(alice);
+            customAdapter1.getAdapterBalances(alice);
         assertEq(assets.length, amounts.length, "assets and amounts length match");
 
         // Get positions
-        INAVCalculator.PositionBalance[] memory positions = customOracle1.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = customAdapter1.getAdapterPositions(alice, address(0));
 
         // Sum positions
         int256 positionsSum = sumPositionBalances(positions);
@@ -299,11 +299,11 @@ contract BalanceAdapterInvariantTest is Test {
         dai.mint(alice, 2000 * 10 ** dai.decimals());
 
         // Get all positions
-        INAVCalculator.PositionBalance[] memory allPositions = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory allPositions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
         // Get filtered positions (USDC only)
         INAVCalculator.PositionBalance[] memory filteredPositions =
-            erc20DefaultOracle.getOraclePositions(alice, address(usdc));
+            erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
 
         // Filtered should be subset of all
         assertLe(filteredPositions.length, allPositions.length, "Filtered should be subset");
@@ -338,7 +338,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // Filter by non-existent asset
         INAVCalculator.PositionBalance[] memory filteredPositions =
-            erc20DefaultOracle.getOraclePositions(alice, nonExistentAsset);
+            erc20DefaultAdapter.getAdapterPositions(alice, nonExistentAsset);
 
         // Should return empty array
         assertEq(filteredPositions.length, 0, "Non-existent asset should return empty");
@@ -350,7 +350,7 @@ contract BalanceAdapterInvariantTest is Test {
 
     /// @notice Test that underlyingAssetsSupported matches queryable assets
     function test_invariant_supportedAssetsConsistency() public view {
-        address[] memory supportedAssets = erc20DefaultOracle.underlyingAssetsSupported();
+        address[] memory supportedAssets = erc20DefaultAdapter.underlyingAssetsSupported();
 
         // All supported assets should be registered in balances
         for (uint256 i = 0; i < supportedAssets.length; i++) {
@@ -358,15 +358,15 @@ contract BalanceAdapterInvariantTest is Test {
         }
 
         for (uint256 i = 0; i < supportedAssets.length; i++) {
-            (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, supportedAssets[i]);
+            (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, supportedAssets[i]);
             // amount is always valid uint256 (non-negative magnitude)
             assertTrue(amount <= type(uint256).max, "amount in range");
         }
     }
 
-    /// @notice Test that custom oracle supported assets are consistent
-    function test_invariant_supportedAssetsConsistency_customOracle() public view {
-        address[] memory supportedAssets = customOracle1.underlyingAssetsSupported();
+    /// @notice Test that custom adapter supported assets are consistent
+    function test_invariant_supportedAssetsConsistency_customAdapter() public view {
+        address[] memory supportedAssets = customAdapter1.underlyingAssetsSupported();
 
         // Should match what we set
         assertEq(supportedAssets.length, 2, "Should have 2 supported assets");
@@ -389,15 +389,15 @@ contract BalanceAdapterInvariantTest is Test {
     /// @notice Test that debt positions are correctly reported
     function test_invariant_debtPositionHandling() public {
         // Set debt position
-        customOracle1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), true);
+        customAdapter1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), true);
 
         // Get balance
-        (uint256 amount, bool isDebt) = customOracle1.getOracleBalanceForAsset(alice, address(usdc));
+        (uint256 amount, bool isDebt) = customAdapter1.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 1000 * 10 ** usdc.decimals(), "Amount should match");
         assertTrue(isDebt, "Debt balance should be reported as debt");
 
         // Get positions
-        INAVCalculator.PositionBalance[] memory positions = customOracle1.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = customAdapter1.getAdapterPositions(alice, address(0));
 
         // Should have one position with debt
         assertEq(positions.length, 1, "Should have one position");
@@ -408,12 +408,12 @@ contract BalanceAdapterInvariantTest is Test {
     /// @notice Test that debt positions are included in aggregation
     function test_invariant_debtPositionHandling_aggregation() public {
         // Setup mixed credit and debt positions
-        customOracle1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
-        customOracle1.setBalance(address(dai), alice, 500 * 10 ** dai.decimals(), true);
+        customAdapter1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
+        customAdapter1.setBalance(address(dai), alice, 500 * 10 ** dai.decimals(), true);
 
         // Get all balances
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            customOracle1.getOracleBalances(alice);
+            customAdapter1.getAdapterBalances(alice);
 
         // Should have both assets
         assertEq(assets.length, 2, "Should have 2 assets");
@@ -441,11 +441,11 @@ contract BalanceAdapterInvariantTest is Test {
 
     /// @notice Test that protocolId and positionKind are consistent across queries
     function test_invariant_metadataConsistency() public {
-        customOracle1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
+        customAdapter1.setBalance(address(usdc), alice, 1000 * 10 ** usdc.decimals(), false);
 
         // Query multiple times
-        INAVCalculator.PositionBalance[] memory positions1 = customOracle1.getOraclePositions(alice, address(0));
-        INAVCalculator.PositionBalance[] memory positions2 = customOracle1.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions1 = customAdapter1.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions2 = customAdapter1.getAdapterPositions(alice, address(0));
 
         // Metadata should be consistent
         assertEq(positions1.length, positions2.length, "Position count should be consistent");
@@ -460,13 +460,13 @@ contract BalanceAdapterInvariantTest is Test {
         }
     }
 
-    /// @notice Test that metadata is correct for ERC20DefaultOracle
+    /// @notice Test that metadata is correct for ERC20DefaultAdapter
     function test_invariant_metadataConsistency_erc20Default() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
-        // ERC20DefaultOracle should have specific metadata
+        // ERC20DefaultAdapter should have specific metadata
         assertEq(positions.length, 1, "Should have one position");
         assertEq(positions[0].protocolId, keccak256(bytes("wallet")), "ProtocolId should be wallet");
         assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Wallet), "PositionKind should be Wallet");

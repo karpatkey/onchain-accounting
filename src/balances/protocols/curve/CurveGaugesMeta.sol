@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -40,7 +40,7 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      positionId = abi.encode(address gauge)
 ///
 ///      Wallet-held (unstaked) LP positions are handled separately by CurvePoolsMetaBalanceAdapter.
-contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
+contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_GAUGE;
 
     /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
@@ -57,15 +57,15 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_  Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address minter_, address crvToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         CURVE_MINTER = minter_;
         CRV_TOKEN = crvToken_;
     }
 
-    // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
+    // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -105,7 +105,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
 
                             tmp[n++] = INAVCalculator.PositionBalance({
                                 balanceAsset: assetInfo,
-                                balanceOracle: address(this),
+                                balanceAdapter: address(this),
                                 amount: amount,
                                 isDebt: false,
                                 protocolId: PROTOCOL_ID,
@@ -127,7 +127,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
                 if (found) {
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: crvInfo,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: crvLb,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -153,7 +153,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
 
             tmp[n++] = INAVCalculator.PositionBalance({
                 balanceAsset: assetInfo,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
@@ -168,7 +168,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         address gauge = _toAddress(instance);
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
@@ -201,7 +201,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceOracle {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address gauge = abi.decode(pid, (address));

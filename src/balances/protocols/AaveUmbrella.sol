@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -11,7 +11,7 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Aave Umbrella Balance Oracle (multi-token, dynamic discovery)
+/// @title Aave Umbrella Balance Adapter (multi-token, dynamic discovery)
 /// @author kpk
 /// @notice Reports balances across every Aave Umbrella stake token registered with a single
 ///         `RewardsController` (the protocol's trust anchor, pinned at construction). For each
@@ -50,7 +50,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///
 ///      Cooldown / unstake-window state does not affect `balanceOf`, so this adapter reports total
 ///      staked principal regardless of which window the user is in.
-contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
     ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
     ///      while preventing a misbehaving fallback (cf. WETH9 dispatching unknown selectors to
@@ -92,7 +92,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -105,10 +105,10 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the deduplicated set of bare reserves this adapter currently reports against.
     /// @dev Walks every stake token registered with the RewardsController, resolves each one's
     ///      bare reserve, and dedupes. Reward-side underlyings are not surfaced here because they
@@ -130,10 +130,10 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
         return out;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the **summed** balance for `asset` (staked + rewards) across every Umbrella
     ///         stake token whose bare reserve equals `asset`.
-    function getOracleBalanceForAsset(address account, address asset)
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -152,9 +152,9 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
         return (total, false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns deduplicated per-asset summed balances. Skips zero amounts.
-    function getOracleBalances(address account)
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -196,12 +196,12 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns one PositionBalance per `(stakeToken, leg)` pair where `leg ∈ {Staking, Rewards}`.
     /// @dev Each emitted position is self-describing through `positionDetail`. Zero-amount legs are
     ///      skipped. Stake tokens whose bare reserve is not registered on NAVCalculator are
-    ///      silently skipped (same convention as `AaveV3InstanceBalanceOracle`).
-    function getOraclePositions(address account, address assetFilter)
+    ///      silently skipped (same convention as `AaveV3InstanceBalanceAdapter`).
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -230,7 +230,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
             if (stakedAmount != 0) {
                 tmp[count++] = INAVCalculator.PositionBalance({
                     balanceAsset: assetMeta,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: stakedAmount,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
@@ -244,7 +244,7 @@ contract AaveUmbrellaBalanceOracle is IBalanceOracleAdapter, IPositionDescribabl
             if (rewardAmount != 0) {
                 tmp[count++] = INAVCalculator.PositionBalance({
                     balanceAsset: assetMeta,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: rewardAmount,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,

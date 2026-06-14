@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -12,18 +12,18 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @title ERC20DefaultOracle
-/// @notice Default oracle that automatically handles all ERC20 and Native balances
-/// @dev This oracle reads the asset registry from NAVCalculator and returns balance-only positions for all registered assets
+/// @title ERC20DefaultAdapter
+/// @notice Default adapter that automatically handles all ERC20 and Native balances
+/// @dev This adapter reads the asset registry from NAVCalculator and returns balance-only positions for all registered assets
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Inclusion list: only assets in this set are reported by this oracle
+    /// @notice Inclusion list: only assets in this set are reported by this adapter
     EnumerableSet.AddressSet private _supportedAssets;
 
     /// @notice ERC-7528 convention for ETH address representation
@@ -47,7 +47,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
     // Inclusion list (callable only by NAVCalculator)
     //
 
-    /// @notice Add an asset to the default oracle's inclusion list so it reports wallet balances for it
+    /// @notice Add an asset to the default adapter's inclusion list so it reports wallet balances for it
     /// @param asset The asset address (must be registered in NAVCalculator)
     function addSupportedAsset(address asset) external {
         if (msg.sender != address(NAV_CALCULATOR)) revert OnlyNAVCalculator();
@@ -55,28 +55,28 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         _supportedAssets.add(asset);
     }
 
-    /// @notice Remove an asset from the default oracle's inclusion list (e.g. to avoid double accounting with a custom oracle)
+    /// @notice Remove an asset from the default adapter's inclusion list (e.g. to avoid double accounting with a custom adapter)
     /// @param asset The asset address to remove
     function removeSupportedAsset(address asset) external {
         if (msg.sender != address(NAV_CALCULATOR)) revert OnlyNAVCalculator();
         _supportedAssets.remove(asset);
     }
 
-    /// @notice Returns whether the default oracle reports balances for this asset
+    /// @notice Returns whether the default adapter reports balances for this asset
     function isSupportedByDefault(address asset) external view returns (bool) {
         return _supportedAssets.contains(asset);
     }
 
     //
-    // IBalanceOracleAdapter Implementation
+    // IBalanceAdapter Implementation
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account's ERC20 and native token balances
     /// @dev Returns PositionBalance structs containing wallet balances.
     /// @dev Only returns positions for assets in the inclusion list (_supportedAssets).
     /// @dev Pricing information is added by NAVCalculator when these positions are enriched.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -96,8 +96,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         positions = _buildPositions(account, assetsToProcess);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
@@ -130,8 +130,8 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         public
         view
         returns (uint256 amount, bool isDebt)
@@ -145,7 +145,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         return (_getBalanceForAsset(account, asset), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view returns (address[] memory underlyingAssets) {
         return _getSupportedAssetsArray();
     }
@@ -156,7 +156,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -202,10 +202,10 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         revert("Asset not found in NAVCalculator");
     }
 
-    /// @notice Internal helper that builds all positions for this oracle
+    /// @notice Internal helper that builds all positions for this adapter
     /// @param account The account to query
     /// @param assets Array of assets to build positions for
-    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this adapter
     /// @dev Creates one position per asset with non-zero balance
     /// @dev All positions are balance-only; pricing is added by NAVCalculator during enrichment
     function _buildPositions(address account, address[] memory assets)
@@ -224,7 +224,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
         for (uint256 i = 0; i < assets.length; i++) {
             address asset = assets[i];
 
-            // Get balance for this asset (always non-negative for this oracle)
+            // Get balance for this asset (always non-negative for this adapter)
             uint256 balance = _getBalanceForAsset(account, asset);
 
             // Only include non-zero balances
@@ -233,10 +233,10 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
                 INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
 
                 // Build position (balance-only, pricing will be added by NAVCalculator)
-                // ERC20DefaultOracle always returns credit positions: isDebt = false, amount in uint256
+                // ERC20DefaultAdapter always returns credit positions: isDebt = false, amount in uint256
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     balanceAsset: underlyingAsset,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: balance,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
@@ -258,7 +258,7 @@ contract ERC20DefaultOracle is IBalanceOracleAdapter, IPositionDescribable {
     /// @notice Internal helper to get balance for a specific asset (avoids recursion)
     /// @param account The account to query
     /// @param asset The asset address
-    /// @return balance The balance for this asset as uint256 (always non-negative for ERC20DefaultOracle)
+    /// @return balance The balance for this asset as uint256 (always non-negative for ERC20DefaultAdapter)
     function _getBalanceForAsset(address account, address asset) internal view returns (uint256 balance) {
         // Handle native address (ETH)
         if (asset == NATIVE_ADDRESS) {

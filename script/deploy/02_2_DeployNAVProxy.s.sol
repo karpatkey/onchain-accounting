@@ -153,12 +153,12 @@ contract DeployNAVProxy is BaseDeployScript {
         require(navProxy.code.length > 0, "NAV proxy deployment failed - no code at address");
         console2.log("[OK] NAV proxy verified with code");
 
-        // Index ERC20Default oracle (created in NAVCalculator.initialize()) and write to config.
-        address defaultOracle = NAVCalculator(navProxy).erc20DefaultOracle();
-        console2.log("  ERC20Default oracle (from NAV init):", defaultOracle);
-        if (defaultOracle != address(0)) {
+        // Index ERC20Default adapter (created in NAVCalculator.initialize()) and write to config.
+        address defaultAdapter = NAVCalculator(navProxy).erc20DefaultAdapter();
+        console2.log("  ERC20Default adapter (from NAV init):", defaultAdapter);
+        if (defaultAdapter != address(0)) {
             if (shouldBroadcast) {
-                ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", "ERC20Default", defaultOracle);
+                ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", "ERC20Default", defaultAdapter);
                 console2.log("  balanceAdapters.ERC20Default.deployed written to config");
             } else {
                 console2.log("  (Set PERSIST_DEPLOYMENTS=1 to write balanceAdapters.ERC20Default.deployed to config)");

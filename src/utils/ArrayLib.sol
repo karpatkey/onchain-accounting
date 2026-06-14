@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title Array Library
 /// @notice Shared array operations for address arrays: slice/copy, deduplication, and intersection.
-///         Used by NAVCalculator and balance oracles.
+///         Used by NAVCalculator and balance adapters.
 library ArrayLib {
     /// @notice Copies the first `count` elements of `src` into a new array of length `count`.
     /// @param src Source array (length must be >= count).

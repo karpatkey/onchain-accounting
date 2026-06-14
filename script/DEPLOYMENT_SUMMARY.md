@@ -29,9 +29,9 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `01_DeployImplementations.s.sol` (`01_2` = NAV only) | Deploy `PriceFeedLib` + `NavRegistryLib` libraries then NAVCalculator (and BridgeEscrow) **implementations** via EOA `--broadcast` (CREATE2, canonical deployer 0x4e59...). Same impl addresses on all chains; run once. | Saved impl/library addresses |
 | `02_DeployProxies.s.sol` (`02_2` = NAV only) | Deploy placeholder + NAV + Bridge **proxies** and **initialize** them via EOA (canonical CREATE2). Default: one atomic tx via `AtomicProxyDeployer`, granting DEFAULT_ADMIN + MANAGER to `admin`/`manager` (= deployer EOA). `USE_LEGACY_DEPLOY=1` for legacy multi-tx. Run **per chain**. | Proxy addresses (same on all chains); saved to config |
 | `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
-| `04_DeployBalanceAdapters.s.sol` | Deploy balance oracle adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
+| `04_DeployBalanceAdapters.s.sol` | Deploy balance adapter adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Superchain; per-chain) | Adapter addresses in config |
-| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceOracle` for each deployed adapter + `setMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
+| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapter` for each deployed adapter + `setMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
 | `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
 
 ### Upgrade Scripts (`script/upgrade/`)
@@ -338,31 +338,31 @@ forge script script/verify/VerifyEtherscan.s.sol \
 - `CrossRatePriceAdapter` - Cross-rate calculations
 
 ### Balance Adapters (Protocol Integrations)
-- `ERC20DefaultOracle` - Wallet ERC20 + native, auto-registered at NAV initialization
+- `ERC20DefaultAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization
 - `AaveV3InstancesMetaBalanceAdapter` - Aave V3 lending positions
-- `AaveV3SafetyModuleBalanceOracle` - Aave V3 Safety Module (stkGHO etc.)
+- `AaveV3SafetyModuleBalanceAdapter` - Aave V3 Safety Module (stkGHO etc.)
 - `AaveV2InstancesMetaBalanceAdapter` - Aave V2 aTokens (legacy)
-- `AaveUmbrellaBalanceOracle` - Aave Umbrella stake tokens
+- `AaveUmbrellaBalanceAdapter` - Aave Umbrella stake tokens
 - `CompoundV3Comet` - Compound V3 (Comet) base + collateral + rewards
 - `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions
 - `MorphoVaultsMetaBalanceAdapter` - MetaMorpho vault positions
-- `SparkLendBalanceOracle` - Spark Lend positions
+- `SparkLendBalanceAdapter` - Spark Lend positions
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
 - `Aura` - Aura vault/LP positions
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
 - `ConvexRewardsMetaBalanceAdapter` - Convex staking
-- `CapBalanceOracle` - Cap (cUSD + stcUSD aggregated → USDC)
-- `DaiDsrBalanceOracle` - DAI Savings Rate
-- `SkySavingsUsdsBalanceOracle` - Sky USDS savings (sUSDS)
+- `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
+- `DaiDsrBalanceAdapter` - DAI Savings Rate
+- `SkySavingsUsdsBalanceAdapter` - Sky USDS savings (sUSDS)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
-- `StaderWithdrawalQueueBalanceOracle` - Stader pending unstake requests
-- `KelpWithdrawalQueueBalanceOracle` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
-- `LidoWithdrawalQueueBalanceOracle` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
+- `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
+- `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
+- `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools
 - `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
-- `MerklRewardsBalanceOracle` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+- `MerklRewardsBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
 
 ### Bridge Adapters
 - CCIP (Chainlink)
@@ -386,7 +386,7 @@ deployments/
 ```
 safe-transactions/
 ├── {chainId}-deploy-implementations.json   # From 01 (2 txs; optional if using EOA for impl)
-├── {chainId}-configure.json                # From 06 (grant MANAGER, add oracles, authorize adapters)
+├── {chainId}-configure.json                # From 06 (grant MANAGER, add adapters, authorize adapters)
 ├── 1-upgrade-navcalc.json                  # From upgrade scripts
 └── ... (one per Safe transaction)
 ```
@@ -425,7 +425,7 @@ Note: Proxy deploy + init is done via EOA in 02_DeployProxies.s.sol (no Safe TX 
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once (generate Safe TX and execute in Safe, or use `--broadcast --account` to deploy via EOA).
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
-5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance oracles, sets meta-instances, authorizes bridge adapters. Idempotent.
+5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters. Idempotent.
 6. **Verify** - Run verification script and run the printed `forge verify-contract` commands.
 7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
 

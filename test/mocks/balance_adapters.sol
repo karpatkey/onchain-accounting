@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
-contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
+contract Mock_CustomBalanceAdapter is IBalanceAdapter {
     mapping(address => mapping(address => uint256)) public amounts;
     mapping(address => mapping(address => bool)) public isDebt;
     address[] public underlyingAassetsSupported;
@@ -47,11 +47,11 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amountOut, bool isDebtOut)
@@ -59,8 +59,8 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         (amountOut, isDebtOut) = this.balanceOf(asset, account);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amountsOut, bool[] memory isDebtOut)
@@ -120,10 +120,10 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
-    /// @notice Internal helper that builds all positions for this oracle
+    /// @notice Internal helper that builds all positions for this adapter
     /// @param account The account to query
     /// @param assetFilter Optional asset filter (address(0) for all assets)
-    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this adapter
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     function _buildPositions(address account, address assetFilter)
@@ -199,7 +199,7 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
                 // Build position (balance-only, pricing will be added by NAVCalculator)
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     balanceAsset: balanceAsset,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: amount,
                     isDebt: debt,
                     protocolId: bytes32(0),
@@ -218,11 +218,11 @@ contract Mock_CustomBalanceOracle is IBalanceOracleAdapter {
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override

@@ -15,8 +15,8 @@ import {console2} from "forge-std/console2.sol";
 contract ManageAdapters is BaseDeployScript {
     // Action types
     enum Action {
-        ADD_BALANCE_ORACLE,
-        REMOVE_BALANCE_ORACLE,
+        ADD_BALANCE_ADAPTER,
+        REMOVE_BALANCE_ADAPTER,
         SET_PRICE_FEED,
         AUTHORIZE_BRIDGE_ADAPTER,
         AUTHORIZE_BRIDGE_ADAPTER_WITH_CALLBACK,
@@ -34,54 +34,54 @@ contract ManageAdapters is BaseDeployScript {
         console2.log("===============================\n");
 
         // Example: Uncomment and modify to perform specific actions
-        // _addBalanceOracle(0x1234...);
+        // _addBalanceAdapter(0x1234...);
         // _addPriceFeed(0x1234..., 0x5678..., IPrices.PriceType.Chainlink, 86400);
         // _authorizeBridgeAdapter(0x1234...);
         // _registerAsset("USDC  ", 0x1234...);
     }
 
-    /// @notice Adds a balance oracle to NAVCalculator
+    /// @notice Adds a balance adapter to NAVCalculator
     /// @param adapter The balance adapter address
-    function _addBalanceOracle(address adapter) internal {
+    function _addBalanceAdapter(address adapter) internal {
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         require(navProxy != address(0), "NAVCalculator not deployed");
 
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
-        transactions[0] = SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.addBalanceOracle, (adapter)));
+        transactions[0] = SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.addBalanceAdapter, (adapter)));
 
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-add-balance-oracle.json"));
+        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-add-balance-adapter.json"));
 
         writeSafeTx(
             filename,
-            "Add Balance Oracle to NAVCalculator",
-            string(abi.encodePacked("Adds balance oracle: ", vm.toString(adapter))),
+            "Add Balance Adapter to NAVCalculator",
+            string(abi.encodePacked("Adds balance adapter: ", vm.toString(adapter))),
             transactions
         );
 
         console2.log("Safe transaction generated:", filename);
-        console2.log("Balance oracle to add:", adapter);
+        console2.log("Balance adapter to add:", adapter);
     }
 
-    /// @notice Removes a balance oracle from NAVCalculator
+    /// @notice Removes a balance adapter from NAVCalculator
     /// @param adapter The balance adapter address to remove
-    function _removeBalanceOracle(address adapter) internal {
+    function _removeBalanceAdapter(address adapter) internal {
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
         require(navProxy != address(0), "NAVCalculator not deployed");
 
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
-        transactions[0] = SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.removeBalanceOracle, (adapter)));
+        transactions[0] = SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.removeBalanceAdapter, (adapter)));
 
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-remove-balance-oracle.json"));
+        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-remove-balance-adapter.json"));
 
         writeSafeTx(
             filename,
-            "Remove Balance Oracle from NAVCalculator",
-            string(abi.encodePacked("Removes balance oracle: ", vm.toString(adapter))),
+            "Remove Balance Adapter from NAVCalculator",
+            string(abi.encodePacked("Removes balance adapter: ", vm.toString(adapter))),
             transactions
         );
 
         console2.log("Safe transaction generated:", filename);
-        console2.log("Balance oracle to remove:", adapter);
+        console2.log("Balance adapter to remove:", adapter);
     }
 
     /// @notice Adds a price feed for an asset in NAVCalculator

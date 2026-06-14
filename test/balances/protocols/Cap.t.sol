@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
+import {CapBalanceAdapter} from "src/balances/protocols/Cap.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -48,13 +48,13 @@ contract MockUsdc {
     uint8 public decimals = 6;
 }
 
-/// @title CapBalanceOracle unit tests (no fork)
-contract CapBalanceOracleTest is Test {
+/// @title CapBalanceAdapter unit tests (no fork)
+contract CapBalanceAdapterTest is Test {
     MockBalances mockBalances;
     MockCUsd mockCUsd;
     MockStcUsd mockStcUsd;
     MockUsdc mockUsdc;
-    CapBalanceOracle oracle;
+    CapBalanceAdapter adapter;
 
     address alice = makeAddr("alice");
 
@@ -63,7 +63,7 @@ contract CapBalanceOracleTest is Test {
         mockUsdc = new MockUsdc();
         mockCUsd = new MockCUsd(address(mockUsdc));
         mockStcUsd = new MockStcUsd();
-        oracle = new CapBalanceOracle(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        adapter = new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(mockBalances));
     }
 
     // ============================================
@@ -72,34 +72,34 @@ contract CapBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroCUsd() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceOracle(address(0), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(0), address(mockStcUsd), address(mockUsdc), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_zeroStcUsd() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceOracle(address(mockCUsd), address(0), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(mockCUsd), address(0), address(mockUsdc), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_zeroUsdc() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceOracle(address(mockCUsd), address(mockStcUsd), address(0), address(mockBalances));
+        new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(0), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractCUsd() public {
         vm.expectRevert("cUSD must be a contract");
-        new CapBalanceOracle(address(0xdead), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(0xdead), address(mockStcUsd), address(mockUsdc), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new CapBalanceOracle(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(0xdead));
+        new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(0xdead));
     }
 
     function test_constructor_stores_immutables() public view {
-        assertEq(address(oracle.CUSD()), address(mockCUsd));
-        assertEq(address(oracle.STCUSD()), address(mockStcUsd));
-        assertEq(oracle.USDC(), address(mockUsdc));
-        assertEq(address(oracle.NAV_CALCULATOR()), address(mockBalances));
+        assertEq(address(adapter.CUSD()), address(mockCUsd));
+        assertEq(address(adapter.STCUSD()), address(mockStcUsd));
+        assertEq(adapter.USDC(), address(mockUsdc));
+        assertEq(address(adapter.NAV_CALCULATOR()), address(mockBalances));
     }
 
     // ============================================
@@ -107,9 +107,9 @@ contract CapBalanceOracleTest is Test {
     // ============================================
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(oracle.supportsInterface(bytes4(0xdeadbeef)));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(adapter.supportsInterface(bytes4(0xdeadbeef)));
     }
 
     // ============================================
@@ -117,69 +117,69 @@ contract CapBalanceOracleTest is Test {
     // ============================================
 
     function test_underlyingAssetsSupported() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], address(mockUsdc));
     }
 
     // ============================================
-    // getOracleBalanceForAsset Tests
+    // getAdapterBalanceForAsset Tests
     // ============================================
 
-    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(0xdead));
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0xdead));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_zeroAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(0));
+    function test_getAdapterBalanceForAsset_zeroAsset() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_unknownAccount() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(mockUsdc));
+    function test_getAdapterBalanceForAsset_unknownAccount() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_cUsdOnly() public {
+    function test_getAdapterBalanceForAsset_cUsdOnly() public {
         // 100 cUSD (1:1 mock), no stcUSD
         mockCUsd.setBalance(alice, 100e18);
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(mockUsdc));
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
         assertEq(amount, 100e18);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_stcUsdOnly() public {
+    function test_getAdapterBalanceForAsset_stcUsdOnly() public {
         // 200 stcUSD (1:1 mock → 200 cUSD → 200 USDC)
         mockStcUsd.setBalance(alice, 200e18);
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(mockUsdc));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
         assertEq(amount, 200e18);
     }
 
-    function test_getOracleBalanceForAsset_bothPositions() public {
+    function test_getAdapterBalanceForAsset_bothPositions() public {
         mockCUsd.setBalance(alice, 100e18);
         mockStcUsd.setBalance(alice, 50e18);
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(mockUsdc));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
         assertEq(amount, 150e18); // combined: 100 cUSD + 50 stcUSD → 150 USDC (1:1 mock)
     }
 
     // ============================================
-    // getOracleBalances Tests
+    // getAdapterBalances Tests
     // ============================================
 
-    function test_getOracleBalances_unknownAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+    function test_getAdapterBalances_unknownAccount() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);
     }
 
-    function test_getOracleBalances_withPosition() public {
+    function test_getAdapterBalances_withPosition() public {
         mockCUsd.setBalance(alice, 300e18);
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 1);
         assertEq(assets[0], address(mockUsdc));
         assertEq(amounts[0], 300e18);
@@ -187,12 +187,12 @@ contract CapBalanceOracleTest is Test {
     }
 
     // ============================================
-    // getOraclePositions Tests
+    // getAdapterPositions Tests
     // ============================================
 
-    function test_getOraclePositions_unknownAccount_returnsEmpty() public view {
+    function test_getAdapterPositions_unknownAccount_returnsEmpty() public view {
         // MockBalances.getRegisteredAssets() returns [] — intersection is empty
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0);
     }
 }

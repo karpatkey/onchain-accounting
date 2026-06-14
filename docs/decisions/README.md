@@ -22,7 +22,7 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0003 | [Integration-test snapshot workflow + Debank cross-check](0003-integration-test-snapshot-workflow.md) | accepted |
 | 0004 | [Morpho: project pending interest into NAV (vs use stored values)](0004-morpho-projected-vs-stored-balances.md) | accepted |
 | 0005 | [Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md) | accepted |
-| 0006 | [Aave Umbrella Balance Oracle: dynamic discovery via RewardsController](0006-aave-umbrella-balance-oracle.md) | accepted |
+| 0006 | [Aave Umbrella Balance Adapter: dynamic discovery via RewardsController](0006-aave-umbrella-balance-adapter.md) | accepted |
 | 0007 | [Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache](0007-merkl-trust-minimized-cache.md) | accepted |
 | 0008 | [Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code](0008-uniswap-v3-math-libs-gpl-license.md) | accepted |
 | 0009 | [Multi-feed price redundancy](0009-multi-feed-price-redundancy.md) | accepted |

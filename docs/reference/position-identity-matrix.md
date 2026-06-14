@@ -1,10 +1,10 @@
-# Position-identity matrix — every leg every balance oracle can emit
+# Position-identity matrix — every leg every balance adapter can emit
 
 Verified against `src/balances/` emission code on 2026-06-03 (includes the `PositionKind.Staking` assignment pass). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
 ## How a position is identified
 
-Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceOracle` (provenance) and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
+Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` (provenance) and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
 
 **Kind assignment rule:** `positionKind` reflects the **outermost action family** — what the account does to enter/exit the position. A position exited via unstake is `Staking` regardless of what is wrapped inside (the inner exposure stays recoverable from `protocolId`/`positionId`); LP principal sitting unstaked in the wallet is `Supplied`.
 
@@ -12,7 +12,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 
 | Adapter | `protocolId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
-| ERC20DefaultOracle | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
+| ERC20DefaultAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
 | AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool, address reserve)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
 | | | | variable debt | `Borrowed` | true | reserve |
@@ -77,7 +77,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-03, post-assignment):
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
-| `Wallet` | 1 | ERC20DefaultOracle only |
+| `Wallet` | 1 | ERC20DefaultAdapter only |
 | `Supplied` | 21 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues |
 | `Borrowed` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3 |
 | `Collateral` | 5 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults |

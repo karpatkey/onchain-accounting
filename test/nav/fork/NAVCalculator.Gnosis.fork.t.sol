@@ -126,7 +126,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         // reth, safeToken, aura, cow: no matching feed in list — not registered
     }
 
-    function setupBalanceOracle() internal override {
-        // wxdai - ERC20DefaultOracle already registered globally
+    function setupBalanceAdapter() internal override {
+        // wxdai - ERC20DefaultAdapter already registered globally
     }
 }

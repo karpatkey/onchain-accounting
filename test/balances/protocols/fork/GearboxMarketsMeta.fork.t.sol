@@ -26,7 +26,7 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        balances = _deployBalancesForOracle(WETH);
+        balances = _deployBalancesForAdapter(WETH);
         meta = new GearboxMarketsMetaBalanceAdapter("Gearbox", address(balances));
     }
 
@@ -36,7 +36,7 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function test_metaBalance() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(HOLDER, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
         uint256 metaAmt;
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].balanceAsset.asset == WETH) metaAmt += p[i].amount;
@@ -45,7 +45,7 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function test_identityDerivedOnChain() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(HOLDER, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].positionId, abi.encode(MARKET));
         assertEq(p[0].balanceAsset.asset, IERC4626Min(MARKET).asset());

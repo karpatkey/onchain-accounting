@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -16,14 +16,14 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         fToken set lives on NAVCalculator (`setMetaInstances`). Identity is encoded as
 ///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
-contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
+contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_FTOKENS;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceAdapter(protocolName_, navCalculator_) {}
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the fToken (ERC4626) address. Emits one `Supplied` leg in the fToken's underlying.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
@@ -45,7 +45,7 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: assetInfo,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,
@@ -55,13 +55,13 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         assets = new address[](1);
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address fToken = abi.decode(pid, (address));

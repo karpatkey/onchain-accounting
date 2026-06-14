@@ -40,14 +40,14 @@ abstract contract BalanceAdapterTestBase is TestEnvConfigurator, TestSetupHelper
     /// @notice Deploys and configures Balances contract for fork tests
     /// @param assets Array of asset addresses to register
     /// @return balancesInstance The deployed Balances contract with assets registered
-    function _deployBalancesForOracle(address[] memory assets) internal returns (BalancesHarnessForFork) {
+    function _deployBalancesForAdapter(address[] memory assets) internal returns (BalancesHarnessForFork) {
         return deployBalancesInFork(assets);
     }
 
     /// @notice Deploys and configures Balances contract for a single asset
     /// @param asset The asset address to register
     /// @return balancesInstance The deployed Balances contract with the asset registered
-    function _deployBalancesForOracle(address asset) internal returns (BalancesHarnessForFork) {
+    function _deployBalancesForAdapter(address asset) internal returns (BalancesHarnessForFork) {
         return deployBalancesInFork(asset);
     }
 

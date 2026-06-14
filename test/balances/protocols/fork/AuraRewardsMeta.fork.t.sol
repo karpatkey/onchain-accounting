@@ -59,7 +59,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         assets[2] = GHO;
         assets[3] = USDT;
         assets[4] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
         meta = new AuraRewardsMetaBalanceAdapter(
             BOOSTER, 0xBA12222222228d8Ba445958a75a0704d566BF2C8, "Aura", address(balances)
@@ -120,7 +120,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         assertGt(staked, 0, "staker has positive staked balance");
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
+            meta.getAdapterPositionsForInstances(STAKER, _single(REWARDER), address(0));
 
         uint256 stakingCount = _countKind(pos, PositionKind.Staking);
         assertGt(stakingCount, 0, "at least one Staking leg (staked BPT decomposed)");
@@ -142,7 +142,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         if (balExpected == 0) return; // skip if no rewards accrued at this block
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
+            meta.getAdapterPositionsForInstances(STAKER, _single(REWARDER), address(0));
 
         uint256 balReported = _sumAsset(pos, BAL);
         assertEq(balReported, balExpected, "BAL Earned matches rewarder.earned()");
@@ -167,7 +167,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory metaPos =
-            meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
+            meta.getAdapterPositionsForInstances(STAKER, _single(REWARDER), address(0));
 
         assertGt(metaPos.length, 0, "meta adapter returns positions");
 
@@ -184,7 +184,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         for (uint256 i; i < metaPos.length; ++i) {
             assertEq(metaPos[i].protocolId, ProtocolIds.AURA);
             assertEq(metaPos[i].positionId, abi.encode(REWARDER));
-            assertEq(metaPos[i].balanceOracle, address(meta));
+            assertEq(metaPos[i].balanceAdapter, address(meta));
         }
     }
 
@@ -196,7 +196,7 @@ contract AuraRewardsMetaForkTest is BalanceAdapterTestBase {
         if (balExpected == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(STAKER, _single(REWARDER), address(0));
+            meta.getAdapterPositionsForInstances(STAKER, _single(REWARDER), address(0));
 
         uint256 auraReported = _sumAsset(pos, AURA);
         assertGt(auraReported, 0, "AURA > 0 when BAL is earned (cliff schedule)");

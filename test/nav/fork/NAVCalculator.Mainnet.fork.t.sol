@@ -4,10 +4,10 @@ pragma solidity ^0.8.0;
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceAdapter} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -140,20 +140,20 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         nav.registerAsset(wbtc, ChainlinkPriceFeeds.btcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
-        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
+        aaveAdapter = aaveMeta;
+        AaveV3SafetyModuleBalanceAdapter smAdapter = new AaveV3SafetyModuleBalanceAdapter(address(nav));
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
-        daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        daiDsr = new DaiDsrBalanceAdapter(dai, dsr, address(nav));
 
-        nav.addBalanceOracle(address(aaveOracle));
-        nav.addBalanceOracle(address(smOracle));
-        nav.addBalanceOracle(address(compoundV3Comet));
-        nav.addBalanceOracle(address(morphoBlueOracle));
-        nav.addBalanceOracle(address(daiDsr));
+        nav.addBalanceAdapter(address(aaveAdapter));
+        nav.addBalanceAdapter(address(smAdapter));
+        nav.addBalanceAdapter(address(compoundV3Comet));
+        nav.addBalanceAdapter(address(morphoBlueAdapter));
+        nav.addBalanceAdapter(address(daiDsr));
 
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));

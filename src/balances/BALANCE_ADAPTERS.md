@@ -1,16 +1,16 @@
 # Balance Adapters: Architecture and Integration
 
-This document describes the balance oracle and adapter architecture: how NAV is computed from multiple balance sources, the data structures involved, existing adapters, and how to implement and register a new balance adapter.
+This document describes the balance adapter and adapter architecture: how NAV is computed from multiple balance sources, the data structures involved, existing adapters, and how to implement and register a new balance adapter.
 
 ---
 
 ## 1. Overview
 
-The balance system powers **Net Asset Value (NAV)** calculation by aggregating positions from multiple **balance oracles**:
+The balance system powers **Net Asset Value (NAV)** calculation by aggregating positions from multiple **balance adapters**:
 
-- **Balances (via NAVCalculator):** Holds a **global registry** of balance oracles and an **asset registry** (decimals, symbols). Assets are registered with a price feed so positions can be valued. Only registered assets contribute to NAV.
-- **Balance adapters (oracles):** Contracts implementing `IBalanceOracleAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultOracle**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
-- **NAVCalculator:** Extends Prices and Balances. It iterates over all registered oracles, calls `getOraclePositions(account, assetFilter)` on each, filters positions by registered assets (and optional asset range), enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
+- **Balances (via NAVCalculator):** Holds a **global registry** of balance adapters and an **asset registry** (decimals, symbols). Assets are registered with a price feed so positions can be valued. Only registered assets contribute to NAV.
+- **Balance adapters (adapters):** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
+- **NAVCalculator:** Extends Prices and Balances. It iterates over all registered adapters, calls `getAdapterPositions(account, assetFilter)` on each, filters positions by registered assets (and optional asset range), enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
 
 So: **adapters only report balances; NAVCalculator adds prices and sums values.**
 
@@ -18,7 +18,7 @@ So: **adapters only report balances; NAVCalculator adds prices and sums values.*
 
 ## 2. NAV flow: from account and quote asset to NAV
 
-The diagram below shows how a call to `getAccountNav(account, quoteAsset)` (or the range-based variant) flows through oracles, filtering, and pricing to produce a single NAV value.
+The diagram below shows how a call to `getAccountNav(account, quoteAsset)` (or the range-based variant) flows through adapters, filtering, and pricing to produce a single NAV value.
 
 ```mermaid
 flowchart LR
@@ -28,15 +28,15 @@ flowchart LR
     end
 
     subgraph NAV["NAVCalculator"]
-        G[getAllOracles]
-        L[Loop oracles]
-        P[getOraclePositions(account, 0)]
+        G[getAllAdapters]
+        L[Loop adapters]
+        P[getAdapterPositions(account, 0)]
         F[Filter: registered assets + range]
         E[Enrich: price × amount, isDebt sign]
         S[Sum → totalValue]
     end
 
-    subgraph ORACLES["Balance oracles"]
+    subgraph ADAPTERS["Balance adapters"]
         O1[ERC20Default]
         O2[CompoundV3CometsMeta]
         O3[Custom ...]
@@ -59,8 +59,8 @@ flowchart LR
 
 **Steps in code:**
 
-1. **getAllOracles()** — Returns the global list of oracles (ERC20Default plus any custom oracles added via `addBalanceOracle`).
-2. **For each oracle** — `adapter.getOraclePositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind). Unsupported oracles are skipped (try/catch).
+1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapter`).
+2. **For each adapter** — `adapter.getAdapterPositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind). Unsupported adapters are skipped (try/catch).
 3. **Filter** — Skip positions whose `balanceAsset.asset` is not in the asset registry; for range-based APIs, keep only assets in the requested range.
 4. **Enrich** — For each position: look up price (from Prices), compute USD value = amount × price (sign by `isDebt`: subtract for debt), then convert to quote asset if `quoteAsset != address(0)`.
 5. **Aggregate** — Sum all position values → `totalValue`; build `NAV` (value, quoteAsset, timestamp, stale assets, sequencer down).
@@ -71,23 +71,23 @@ So balance adapters are **position sources**; they do not need to know about pri
 
 ## 3. Data structures
 
-### 3.1 PositionBalance (balance-only, from oracles)
+### 3.1 PositionBalance (balance-only, from adapters)
 
 Defined in `INAVCalculator`. This is what every balance adapter returns.
 
 | Field           | Type          | Description |
 |-----------------|---------------|-------------|
 | `balanceAsset`  | `Asset`       | Asset (address, symbol, decimals). The token `amount` is denominated in. |
-| `balanceOracle` | `address`     | The adapter that reported this position. Provenance/audit trail — NOT part of identity. |
+| `balanceAdapter` | `address`     | The adapter that reported this position. Provenance/audit trail — NOT part of identity. |
 | `amount`        | `uint256`     | **Always positive.** Nominal amount in asset decimals. |
 | `isDebt`        | `bool`        | `true` = debt (subtract from NAV), `false` = credit (add to NAV). Canonical NAV-sign signal. |
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
 | `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool, address reserve)`. Empty bytes for account-global positions (DAI DSR, Lido withdrawal queue, etc.). Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
 | `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees`. See `src/utils/PositionKind.sol`. |
 
-The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceOracle` is excluded — redeploying an adapter doesn't change the position.
+The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
-**Credits-only oracles** (e.g. ERC20DefaultOracle, DaiDsr, AaveV3SafetyModule, SkySavingsUsds) always report `isDebt: false`.
+**Credits-only adapters** (e.g. ERC20DefaultAdapter, DaiDsr, AaveV3SafetyModule, SkySavingsUsds) always report `isDebt: false`.
 
 Pricing is **not** in this struct; NAVCalculator adds it when building full `Position` and NAV.
 
@@ -97,7 +97,7 @@ Defined in `src/utils/PositionKind.sol`.
 
 | Value         | Meaning |
 |---------------|---------|
-| `Wallet`      | Plain ERC20 / native-token balance held directly (ERC20DefaultOracle). |
+| `Wallet`      | Plain ERC20 / native-token balance held directly (ERC20DefaultAdapter). |
 | `Supplied`    | Credit deployed into a protocol: lending supply, vault shares, unstaked LP principal. |
 | `Borrowed`    | Debt owed to a protocol (`isDebt = true`). |
 | `Collateral`  | Credit locked as collateral (e.g. Aave reserve with `usageAsCollateralEnabled = true`). Distinct from `Supplied` because it cannot be freely withdrawn. |
@@ -125,68 +125,68 @@ For building adapters, the only required output is **PositionBalance**; Position
 
 ---
 
-## 4. Balances contract (oracle and asset registry)
+## 4. Balances contract (adapter and asset registry)
 
 `Balances` is an abstract contract used by NAVCalculator. It maintains:
 
-- **Global oracle registry:** `_globalOracles[]`, `_oracleTypes[oracle]`, `_isOracleRegistered[oracle]`. All oracles are in one flat list (no per-asset mapping for registration).
-- **Asset registry:** `_assetDecimals`, `_assetSymbols` (and enumeration). Set via `_registerAsset`; NAVCalculator exposes `registerAsset(asset, oracle, priceType, chainlinkHeartbeat)` (MANAGER) which registers the asset and sets the price feed.
-- **ERC20DefaultOracle:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultOracle(address)`. It is pushed into `_globalOracles` and marked `OracleType.Default`.
+- **Global adapter registry:** `_globalAdapters[]`, `_adapterTypes[adapter]`, `_isAdapterRegistered[adapter]`. All adapters are in one flat list (no per-asset mapping for registration).
+- **Asset registry:** `_assetDecimals`, `_assetSymbols` (and enumeration). Set via `_registerAsset`; NAVCalculator exposes `registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)` (MANAGER) which registers the asset and sets the price feed.
+- **ERC20DefaultAdapter:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultAdapter(address)`. It is pushed into `_globalAdapters` and marked `AdapterType.Default`.
 
 **Internal API (used by NAVCalculator):**
 
-- `_addBalanceOracle(oracle)` — Checks `IBalanceOracleAdapter` via ERC165, pushes to `_globalOracles`, sets type `Custom`, prevents duplicates.
-- `_removeBalanceOracle(oracle)` — Removes from global list (if present).
+- `_addBalanceAdapter(adapter)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates.
+- `_removeBalanceAdapter(adapter)` — Removes from global list (if present).
 - `_registerAsset(asset, decimals)` — Adds to asset registry (decimals; symbol is set separately).
-- `_setErc20DefaultOracle(defaultOracle)` — Sets and registers the default wallet oracle.
+- `_setErc20DefaultAdapter(defaultAdapter)` — Sets and registers the default wallet adapter.
 
-**Public / IBalances:** `getAllOracles()`, `getOracleCount()`, `isOracleRegistered()`, `getOracleType()`, `getOraclesForAsset(asset)` (oracles whose `underlyingAssetsSupported()` contains the asset), plus asset registry views: `isAssetRegistered`, `getAssets`, `getAssetCount`, `getAssetDecimals`, `getAssetSymbol`.
+**Public / IBalances:** `getAllAdapters()`, `getAdapterCount()`, `isAdapterRegistered()`, `getAdapterType()`, `getAdaptersForAsset(asset)` (adapters whose `underlyingAssetsSupported()` contains the asset), plus asset registry views: `isAssetRegistered`, `getAssets`, `getAssetCount`, `getAssetDecimals`, `getAssetSymbol`.
 
 ---
 
-## 5. IBalanceOracleAdapter
+## 5. IBalanceAdapter
 
-Every balance oracle must implement this interface and ERC165.
+Every balance adapter must implement this interface and ERC165.
 
 | Method | Purpose |
 |--------|---------|
-| `getOraclePositions(account, assetFilter)` | Returns `PositionBalance[]` for the account. `assetFilter == address(0)` means all supported assets; otherwise only that asset (or empty). |
-| `getOracleBalances(account)` | Returns `(assets[], amounts[], isDebt[])` — per-asset balance magnitudes and debt flags. Optional for NAV path but part of the interface. |
-| `getOracleBalanceForAsset(account, asset)` | Net balance for one asset (gas-optimized). |
-| `underlyingAssetsSupported()` | Returns `address[]` of underlying assets this oracle can report. Used by `getOraclesForAsset(asset)`. |
-| `supportsInterface(interfaceId)` | Must return true for `IBalanceOracleAdapter.interfaceId` (and `IERC165.interfaceId`). |
+| `getAdapterPositions(account, assetFilter)` | Returns `PositionBalance[]` for the account. `assetFilter == address(0)` means all supported assets; otherwise only that asset (or empty). |
+| `getAdapterBalances(account)` | Returns `(assets[], amounts[], isDebt[])` — per-asset balance magnitudes and debt flags. Optional for NAV path but part of the interface. |
+| `getAdapterBalanceForAsset(account, asset)` | Net balance for one asset (gas-optimized). |
+| `underlyingAssetsSupported()` | Returns `address[]` of underlying assets this adapter can report. Used by `getAdaptersForAsset(asset)`. |
+| `supportsInterface(interfaceId)` | Must return true for `IBalanceAdapter.interfaceId` (and `IERC165.interfaceId`). |
 
 **Semantics for NAV:**
 
 - `amount` in `PositionBalance` is always **positive**; use `isDebt` to indicate whether it reduces NAV (debt) or adds to it (credit).
 - Only positions whose `balanceAsset.asset` is **registered** in the asset registry are included in NAV; adapters may still return unregistered assets (they will be filtered out).
-- `balanceOracle` should be `address(this)` so NAVCalculator can attribute the position to the correct adapter.
+- `balanceAdapter` should be `address(this)` so NAVCalculator can attribute the position to the correct adapter.
 
 ---
 
-## 6. How NAVCalculator uses oracles
+## 6. How NAVCalculator uses adapters
 
 - **getAccountNav(account, quoteAsset):** Resolves the full asset range, then calls `_readPositionsRangeWithQuote(account, 0, length-1, quoteAsset)`.
 - **_readPositionsRangeWithQuote:**
   - Builds the requested asset range from `getAssets()`.
-  - Calls `getAllOracles()`, then for each oracle: `getOraclePositions(account, address(0))` (with try/catch).
+  - Calls `getAllAdapters()`, then for each adapter: `getAdapterPositions(account, address(0))` (with try/catch).
   - Filters: keep only positions with `isAssetRegistered(asset)` and asset in the range.
   - Fetches prices for all assets that appear in the filtered positions; marks stale.
   - For each position: value = amount × price, sign by `isDebt`; sum to total USD then convert to quote asset if needed.
   - Returns `(totalValue, stalePriceAssets, sequencerDown)` and NAV is built from that.
 
-Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: same oracle list, same `getOraclePositions`, with additional filtering (range or single asset).
+Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: same adapter list, same `getAdapterPositions`, with additional filtering (range or single asset).
 
-### 6.1 Meta-adapters (multi-instance) — `IMetaBalanceOracleAdapter`
+### 6.1 Meta-adapters (multi-instance) — `IMetaBalanceAdapter`
 
 Most adapters pin a single instance (one vault, one pool, one market) in their constructor. A **meta-adapter** instead serves *every* instance of a protocol from one immutable contract, and the set of instances to actually query is held on **NAVCalculator** — not in the adapter. See [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md).
 
-- **Interface:** `IMetaBalanceOracleAdapter` extends `IBalanceOracleAdapter` and adds `getOraclePositionsForInstances(account, bytes32[] instances, assetFilter)` and `underlyingAssetsSupportedForInstances(bytes32[])`. The instance coordinate is `bytes32` (an address widened to bytes32 for vault/pool/instance-address protocols; raw bytes32 for e.g. Morpho market ids).
-- **Base:** `MetaBalanceOracle` (abstract) supplies ERC165, the per-instance fan-out (with per-instance revert isolation), and the registered-asset helper. Its `getOraclePositions(account, assetFilter)` reads the adapter's own NAV-configured set via `getMetaInstances(address(this))` and fans out. A concrete meta-adapter implements `_instancePositions` and `_instanceAssets`, and may optionally override `_instancePositionId(bytes32 instance)` to customise the positionId encoding (default: `abi.encode(_toAddress(instance))`; override with `abi.encode(instance)` for raw-bytes32 coordinates).
+- **Interface:** `IMetaBalanceAdapter` extends `IBalanceAdapter` and adds `getAdapterPositionsForInstances(account, bytes32[] instances, assetFilter)` and `underlyingAssetsSupportedForInstances(bytes32[])`. The instance coordinate is `bytes32` (an address widened to bytes32 for vault/pool/instance-address protocols; raw bytes32 for e.g. Morpho market ids).
+- **Base:** `MetaBalanceAdapter` (abstract) supplies ERC165, the per-instance fan-out (with per-instance revert isolation), and the registered-asset helper. Its `getAdapterPositions(account, assetFilter)` reads the adapter's own NAV-configured set via `getMetaInstances(address(this))` and fans out. A concrete meta-adapter implements `_instancePositions` and `_instanceAssets`, and may optionally override `_instancePositionId(bytes32 instance)` to customise the positionId encoding (default: `abi.encode(_toAddress(instance))`; override with `abi.encode(instance)` for raw-bytes32 coordinates).
 - **Immutability preserved.** Meta-adapters have **no `Ownable`, no write functions** — they stay immutable like every other adapter. The mutable, governed instance set lives on NAVCalculator (UUPS-upgradeable, `MANAGER`-gated). No new mutable-adapter ADR is needed.
 - **Identity is typed, not stored.** `protocolId` is a compile-time `bytes32` constant from `ProtocolIds.sol`. `positionId` is computed at query time via `abi.encode(...)` of the position's key (e.g. vault address, market id). Nothing instance-specific is stored in config or constructor args.
-- **NAVCalculator read path is unchanged.** NAV calls `getOraclePositions(account, assetFilter)` on every oracle uniformly; the meta-adapter pulls its own configured set inside that call, so there is no meta-specific branch in NAV (this also keeps `NAVCalculator` under the EIP-170 size limit).
-- **Configuring the instance set:** `MANAGER` calls `setMetaInstances(oracle, bytes32[])` on NAVCalculator (full-list replace; the caller supplies a deduplicated, non-zero list). In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` and the integration harness emit the `setMetaInstances` Safe TX automatically from either.
+- **NAVCalculator read path is unchanged.** NAV calls `getAdapterPositions(account, assetFilter)` on every adapter uniformly; the meta-adapter pulls its own configured set inside that call, so there is no meta-specific branch in NAV (this also keeps `NAVCalculator` under the EIP-170 size limit).
+- **Configuring the instance set:** `MANAGER` calls `setMetaInstances(adapter, bytes32[])` on NAVCalculator (full-list replace; the caller supplies a deduplicated, non-zero list). In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` and the integration harness emit the `setMetaInstances` Safe TX automatically from either.
 
 ### 6.2 Human-readable labels — `IPositionDescribable`
 
@@ -209,7 +209,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ### 7.1 Meta-adapters (21)
 
-Meta-adapters extend `MetaBalanceOracle`. The instance set is configured on NAVCalculator via `setMetaInstances`.
+Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `setMetaInstances`.
 
 | Adapter | Description | Constructor | Chain config key |
 |---------|-------------|-------------|------------------|
@@ -237,13 +237,13 @@ Meta-adapters extend `MetaBalanceOracle`. The instance set is configured on NAVC
 
 ### 7.2 Per-instance singleton adapters (12)
 
-These adapters implement `IBalanceOracleAdapter` directly (not `MetaBalanceOracle`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
+These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 
 | Adapter | Description | Constructor | Notes |
 |---------|-------------|-------------|-------|
-| **ERC20DefaultOracle** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default oracle; registered by `NAVCalculator.initialize`. |
+| **ERC20DefaultAdapter** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default adapter; registered by `NAVCalculator.initialize`. |
 | **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Two legs per token: `Staking` (staking principal) + `Rewards` (claimable rewards). positionId = `abi.encode(stakeToken)`. | `(navCalculator)` | protocolId = `AAVE_V3_SAFETY_MODULE`. Mainnet only. |
-| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Staking` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-oracle.md`. |
+| **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Staking` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-adapter.md`. |
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
 | **DaiDsr** | DAI Savings Rate. positionId = `""` (account-global). `Supplied` kind. | `(dai, dsrManager, navCalculator)` | protocolId = `DAI_DSR`. |
 | **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family), the Aave sGHO savings vault, and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; chain config key prefix `ERC4626Wrap_`. |
@@ -264,18 +264,18 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 
 1. Add a slug to `src/utils/ProtocolIds.sol` and document the `positionId` ABI-decode schema in its NatSpec comment. Choose `abi.encode(primaryKey)` where `primaryKey` is the most specific stable on-chain identifier for this position.
 
-2. Create a contract that implements `IBalanceOracleAdapter` and `IERC165` (or extend `MetaBalanceOracle` for a multi-instance adapter).
+2. Create a contract that implements `IBalanceAdapter` and `IERC165` (or extend `MetaBalanceAdapter` for a multi-instance adapter).
 
 3. Declare a compile-time constant:
    ```solidity
    bytes32 private constant PROTOCOL_ID = ProtocolIds.<YOUR_CONSTANT>;
    ```
 
-4. Implement **`getOraclePositions(address account, address assetFilter)`**:
+4. Implement **`getAdapterPositions(address account, address assetFilter)`**:
    - Query the protocol for the account's positions.
    - For each position, build `PositionBalance` with:
      - `balanceAsset`: `Asset` from NAVCalculator's registry (must match registry for filtering).
-     - `balanceOracle`: `address(this)`.
+     - `balanceAdapter`: `address(this)`.
      - `amount`: positive `uint256` in asset decimals.
      - `isDebt`: `true` for debts, `false` for everything else.
      - `protocolId`: `PROTOCOL_ID`.
@@ -283,11 +283,11 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
      - `positionKind`: one of `PositionKind.Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees`.
    - If `assetFilter != address(0)`, return only positions for that asset (or empty).
 
-5. Implement **`getOracleBalances`** and **`getOracleBalanceForAsset`** (per-asset amounts and debt flags). Meta-adapters return empty arrays for these (they are not used by the NAV path).
+5. Implement **`getAdapterBalances`** and **`getAdapterBalanceForAsset`** (per-asset amounts and debt flags). Meta-adapters return empty arrays for these (they are not used by the NAV path).
 
-6. Implement **`underlyingAssetsSupported()`**: return the list of underlying token addresses this oracle can report.
+6. Implement **`underlyingAssetsSupported()`**: return the list of underlying token addresses this adapter can report.
 
-7. Implement **`supportsInterface(bytes4)`**: return `true` for `type(IBalanceOracleAdapter).interfaceId` and `type(IERC165).interfaceId`.
+7. Implement **`supportsInterface(bytes4)`**: return `true` for `type(IBalanceAdapter).interfaceId` and `type(IERC165).interfaceId`.
 
 8. Implement **`IPositionDescribable`** (`protocolName()` and `describePosition(bytes)`):
    - Per-instance adapters return `pure` static strings.
@@ -309,14 +309,14 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 ### 8.3 Minimal example (per-instance adapter)
 
 ```solidity
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL;
 
     IMyProtocol public immutable PROTOCOL;
@@ -327,7 +327,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable 
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external view override returns (INAVCalculator.PositionBalance[] memory)
     {
         address underlying = PROTOCOL.underlying();
@@ -343,7 +343,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable 
         INAVCalculator.PositionBalance[] memory out = new INAVCalculator.PositionBalance[](1);
         out[0] = INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: bal,
             isDebt: false,
             protocolId: PROTOCOL_ID,
@@ -357,15 +357,15 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable 
     function protocolName() external pure returns (string memory) { return "My Protocol"; }
     function describePosition(bytes calldata) external pure returns (string memory) { return "supply"; }
 
-    // IBalanceOracleAdapter — simple getters
-    function getOracleBalances(address account)
+    // IBalanceAdapter — simple getters
+    function getAdapterBalances(address account)
         external view override returns (address[] memory, uint256[] memory, bool[] memory) { ... }
-    function getOracleBalanceForAsset(address account, address asset)
+    function getAdapterBalanceForAsset(address account, address asset)
         external view override returns (uint256, bool) { ... }
     function underlyingAssetsSupported() external view override returns (address[] memory) { ... }
 
     function supportsInterface(bytes4 id) external pure override returns (bool) {
-        return id == type(IBalanceOracleAdapter).interfaceId
+        return id == type(IBalanceAdapter).interfaceId
             || id == type(IPositionDescribable).interfaceId
             || id == type(IERC165).interfaceId;
     }
@@ -382,7 +382,7 @@ contract MyProtocolBalanceOracle is IBalanceOracleAdapter, IPositionDescribable 
 }
 ```
 
-For a **meta-adapter**, extend `MetaBalanceOracle` and implement `_instancePositions` and `_instanceAssets` instead. The base handles ERC165, the fan-out loop, and revert isolation.
+For a **meta-adapter**, extend `MetaBalanceAdapter` and implement `_instancePositions` and `_instanceAssets` instead. The base handles ERC165, the fan-out loop, and revert isolation.
 
 ### 8.4 Testing expectations
 
@@ -399,24 +399,24 @@ See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.
 ### 9.1 Asset registration
 
 - Assets (and their price feeds) are registered on **NAVCalculator**, which extends Balances and Prices.
-- Call **`NAVCalculator.registerAsset(asset, oracle, priceType, chainlinkHeartbeat)`** (requires **MANAGER**). This registers the asset in the asset registry and sets the price feed. Only registered assets are included in NAV.
+- Call **`NAVCalculator.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)`** (requires **MANAGER**). This registers the asset in the asset registry and sets the price feed. Only registered assets are included in NAV.
 - Use the chain's native token address convention (e.g. ERC-7528 `NATIVE_ADDRESS`) for the native asset.
 
-### 9.2 Default oracle (no extra config)
+### 9.2 Default adapter (no extra config)
 
-- **ERC20DefaultOracle** is deployed and registered automatically in **`NAVCalculator.initialize(...)`**. It reports wallet ERC20 and native balances for all assets returned by `NAVCalculator.getRegisteredAssets()`. No additional registration step.
+- **ERC20DefaultAdapter** is deployed and registered automatically in **`NAVCalculator.initialize(...)`**. It reports wallet ERC20 and native balances for all assets returned by `NAVCalculator.getRegisteredAssets()`. No additional registration step.
 
-### 9.3 Adding custom oracles
+### 9.3 Adding custom adapters
 
 1. Deploy your adapter, passing constructor args (protocol addresses, `navCalculator`).
-2. As an account with **MANAGER** on NAVCalculator, call **`NAVCalculator.addBalanceOracle(adapter)`**. This runs `checkBalanceOracleSupport(adapter)` (ERC165 for `IBalanceOracleAdapter`) and adds the adapter to the global oracle list.
+2. As an account with **MANAGER** on NAVCalculator, call **`NAVCalculator.addBalanceAdapter(adapter)`**. This runs `checkBalanceAdapterSupport(adapter)` (ERC165 for `IBalanceAdapter`) and adds the adapter to the global adapter list.
 3. For meta-adapters: call **`NAVCalculator.setMetaInstances(adapter, instances)`** to configure the instance set (vault addresses, pool addresses, or raw marketIds widened to bytes32).
 4. Ensure every asset your adapter reports is already registered via `registerAsset` (with a price feed); otherwise those positions will be filtered out when computing NAV.
 
 ### 9.4 Computing NAV
 
 - Call **`NAVCalculator.getAccountNav(account, quoteAsset)`** to get the full NAV for the account in the given quote asset (`address(0)` for USD).
-- Range-based APIs (e.g. `getAccountNavForRange`) use the same oracles and the same flow, restricted to an asset index range for gas control.
+- Range-based APIs (e.g. `getAccountNavForRange`) use the same adapters and the same flow, restricted to an asset index range for gas control.
 - For human-readable output, call verbose methods via `NavLens` (a stateless read-only wrapper that bundles `IPositionDescribable` labels).
 
-No per-oracle "enable for this asset" step is required: all registered oracles are queried for every NAV call; filtering is by **registered assets** (and optional range) on the NAVCalculator side.
+No per-adapter "enable for this asset" step is required: all registered adapters are queried for every NAV call; filtering is by **registered assets** (and optional range) on the NAVCalculator side.

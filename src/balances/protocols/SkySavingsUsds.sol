@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -21,10 +21,10 @@ interface ISavingsUSDS is IERC4626 {
     function usds() external view returns (address);
 }
 
-/// @title SavingsUSDS Balance Oracle
-/// @notice Balance oracle for Savings USDS (sUSDS), an ERC4626 yield-bearing vault for USDS stablecoin
+/// @title SavingsUSDS Balance Adapter
+/// @notice Balance adapter for Savings USDS (sUSDS), an ERC4626 yield-bearing vault for USDS stablecoin
 /// This contract provides balance information by converting sUSDS vault shares to their underlying USDS value
-contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract SkySavingsUsdsBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Libraries
     //
@@ -61,7 +61,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
     // Constructor
     //
 
-    /// @notice Initializes the balance oracle for Savings USDS. Reverts if savingsUsds_ is zero address
+    /// @notice Initializes the balance adapter for Savings USDS. Reverts if savingsUsds_ is zero address
     /// @param savingsUsds_ Address of the Savings USDS (sUSDS) vault contract
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry and pricing access
     constructor(address savingsUsds_, address navCalculator_) {
@@ -92,7 +92,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
         return SAVINGS_USDS.convertToAssets(SAVINGS_USDS.balanceOf(account)); // Savings are always credit (positive)
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = USDS; // Only USDS is supported
@@ -101,7 +101,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -114,11 +114,11 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
@@ -130,8 +130,8 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
         return (_calculateBalance(asset, account), false); // savings are always credit
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
@@ -165,12 +165,12 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account's Sky Savings positions
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     /// @dev Only returns positions for assets that are both supported by Sky Savings and registered in NAVCalculator.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -247,12 +247,12 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
     // Internal Functions - Position Building
     //
 
-    /// @notice Internal helper that builds all positions for this oracle
+    /// @notice Internal helper that builds all positions for this adapter
     /// @param assetBalanceData Array of AssetBalanceData to build positions from
-    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this adapter
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    /// @dev All assets are guaranteed to be registered (filtered in getOraclePositions).
+    /// @dev All assets are guaranteed to be registered (filtered in getAdapterPositions).
     function _buildPositions(AssetBalanceData[] memory assetBalanceData)
         internal
         view
@@ -276,7 +276,7 @@ contract SkySavingsUsdsBalanceOracle is IBalanceOracleAdapter, IPositionDescriba
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
                 balanceAsset: underlyingAsset,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocolId: PROTOCOL_ID,

@@ -87,7 +87,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         assets[5] = DAI;
         assets[6] = USDT;
         assets[7] = RLUSD;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
         poolsMeta = new CurvePoolsMetaBalanceAdapter("Curve", address(balances));
         gaugesMeta = new CurveGaugesMetaBalanceAdapter(CURVE_MINTER, CRV, "Curve", address(balances));
@@ -101,7 +101,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (walletLp == 0) return; // holder redeemed — test is vacuous but not a failure
 
         INAVCalculator.PositionBalance[] memory pos =
-            poolsMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _pool(CRVUSD_USDC_POOL), address(0));
+            poolsMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _pool(CRVUSD_USDC_POOL), address(0));
 
         assertGt(pos.length, 0, "at least one underlying coin leg");
         _assertAllSupplied(pos);
@@ -114,7 +114,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (walletLp == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            poolsMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _pool(WEETH_WETH_POOL), address(0));
+            poolsMeta.getAdapterPositionsForInstances(WEETH_WETH_STAKER, _pool(WEETH_WETH_POOL), address(0));
 
         assertGt(pos.length, 0);
         _assertAllSupplied(pos);
@@ -126,7 +126,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (walletLp == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            poolsMeta.getOraclePositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
+            poolsMeta.getAdapterPositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
 
         assertGt(pos.length, 0, "3pool LP decomposes");
         _assertAllSupplied(pos);
@@ -148,7 +148,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
+            gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
 
         assertGt(pos.length, 0);
         uint256 stakedCount = _countKind(pos, PositionKind.Staking);
@@ -161,7 +161,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            gaugesMeta.getOraclePositionsForInstances(WEETH_WETH_STAKER, _gauge(WEETH_WETH_GAUGE), address(0));
+            gaugesMeta.getAdapterPositionsForInstances(WEETH_WETH_STAKER, _gauge(WEETH_WETH_GAUGE), address(0));
 
         assertGt(pos.length, 0);
         _assertAllValidPositionKinds(pos);
@@ -173,7 +173,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), USDC);
+            gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), USDC);
 
         for (uint256 i; i < pos.length; ++i) {
             assertEq(pos[i].balanceAsset.asset, USDC);
@@ -186,7 +186,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            gaugesMeta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
+            gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
 
         assertGt(pos.length, 0);
         for (uint256 i; i < pos.length; ++i) {

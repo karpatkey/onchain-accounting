@@ -4,11 +4,11 @@ pragma solidity ^0.8.0;
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 
 /// @title Mock_NAVCalculator
 /// @notice Mock implementation of INAVCalculator for adapter testing
-/// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultOracle)
+/// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultAdapter)
 contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Registered assets with their metadata
     struct AssetInfo {
@@ -20,12 +20,12 @@ contract Mock_NAVCalculator is INAVCalculator {
     AssetInfo[] private _assets;
     mapping(address => bool) private _isRegistered;
 
-    /// @notice Optional default oracle; when set, registering an asset also adds it to this oracle's inclusion list
-    address public defaultOracle;
+    /// @notice Optional default adapter; when set, registering an asset also adds it to this adapter's inclusion list
+    address public defaultAdapter;
 
-    /// @notice Set the default oracle so that registerAsset* also add assets to it (for adapter tests)
-    function setDefaultOracle(address defaultOracle_) external {
-        defaultOracle = defaultOracle_;
+    /// @notice Set the default adapter so that registerAsset* also add assets to it (for adapter tests)
+    function setDefaultAdapter(address defaultAdapter_) external {
+        defaultAdapter = defaultAdapter_;
     }
 
     /// @notice Register an asset
@@ -33,8 +33,8 @@ contract Mock_NAVCalculator is INAVCalculator {
         require(!_isRegistered[asset], "Asset already registered");
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
-        if (defaultOracle != address(0)) {
-            ERC20DefaultOracle(defaultOracle).addSupportedAsset(asset);
+        if (defaultAdapter != address(0)) {
+            ERC20DefaultAdapter(defaultAdapter).addSupportedAsset(asset);
         }
     }
 
@@ -45,8 +45,8 @@ contract Mock_NAVCalculator is INAVCalculator {
         string memory symbol = IERC20Metadata(asset).symbol();
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
-        if (defaultOracle != address(0)) {
-            ERC20DefaultOracle(defaultOracle).addSupportedAsset(asset);
+        if (defaultAdapter != address(0)) {
+            ERC20DefaultAdapter(defaultAdapter).addSupportedAsset(asset);
         }
     }
 
@@ -105,25 +105,25 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Asset not registered");
     }
 
-    function checkBalanceOracleSupport(address) external pure override {}
+    function checkBalanceAdapterSupport(address) external pure override {}
 
-    function getAllOracles() external pure override returns (address[] memory) {
+    function getAllAdapters() external pure override returns (address[] memory) {
         return new address[](0);
     }
 
-    function getOracleCount() external pure override returns (uint256) {
+    function getAdapterCount() external pure override returns (uint256) {
         return 0;
     }
 
-    function isOracleRegistered(address) external pure override returns (bool) {
+    function isAdapterRegistered(address) external pure override returns (bool) {
         return false;
     }
 
-    function getOracleType(address) external pure override returns (OracleType) {
-        return OracleType.Default;
+    function getAdapterType(address) external pure override returns (AdapterType) {
+        return AdapterType.Default;
     }
 
-    function getOraclesForAsset(address) external pure override returns (address[] memory) {
+    function getAdaptersForAsset(address) external pure override returns (address[] memory) {
         return new address[](0);
     }
 
@@ -156,19 +156,19 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function addBalanceOracle(address) external pure override {
+    function addBalanceAdapter(address) external pure override {
         revert("Not implemented in mock");
     }
 
-    function removeBalanceOracle(address) external pure override {
+    function removeBalanceAdapter(address) external pure override {
         revert("Not implemented in mock");
     }
 
-    function excludeAssetFromDefaultOracle(address) external pure override {
+    function excludeAssetFromDefaultAdapter(address) external pure override {
         revert("Not implemented in mock");
     }
 
-    function includeAssetInDefaultOracle(address) external pure override {
+    function includeAssetInDefaultAdapter(address) external pure override {
         revert("Not implemented in mock");
     }
 

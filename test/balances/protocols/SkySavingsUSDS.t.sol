@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {SkySavingsUsdsBalanceOracle} from "src/balances/protocols/SkySavingsUsds.sol";
+import {SkySavingsUsdsBalanceAdapter} from "src/balances/protocols/SkySavingsUsds.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -17,6 +17,6 @@ contract SkySavingsUSDSTest is Test {
 
     function test_constructorRevertsOnZeroAddress() public {
         vm.expectRevert(InvalidArguments.selector);
-        new SkySavingsUsdsBalanceOracle(address(0), address(mockBalances));
+        new SkySavingsUsdsBalanceAdapter(address(0), address(mockBalances));
     }
 }

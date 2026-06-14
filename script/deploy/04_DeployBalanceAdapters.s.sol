@@ -9,19 +9,19 @@ import {console2} from "forge-std/console2.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV2InstancesMeta.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
-import {SparkLendBalanceOracle} from "../../src/balances/protocols/SparkLend.sol";
-import {DaiDsrBalanceOracle} from "../../src/balances/protocols/DaiDsr.sol";
-import {SkySavingsUsdsBalanceOracle} from "../../src/balances/protocols/SkySavingsUsds.sol";
+import {SparkLendBalanceAdapter} from "../../src/balances/protocols/SparkLend.sol";
+import {DaiDsrBalanceAdapter} from "../../src/balances/protocols/DaiDsr.sol";
+import {SkySavingsUsdsBalanceAdapter} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
-import {ERC4626WrapBalanceOracle} from "../../src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "../../src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
-import {CapBalanceOracle} from "../../src/balances/protocols/Cap.sol";
+import {CapBalanceAdapter} from "../../src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMeta.sol";
 import {ConvexRewardsMetaBalanceAdapter} from "../../src/balances/protocols/ConvexRewardsMeta.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
-import {AaveUmbrellaBalanceOracle} from "../../src/balances/protocols/AaveUmbrella.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "../../src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveUmbrellaBalanceAdapter} from "../../src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
@@ -30,10 +30,10 @@ import {AuraRewardsMetaBalanceAdapter} from "../../src/balances/protocols/AuraRe
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
-import {KelpWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
-import {LidoWithdrawalQueueBalanceOracle} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
-import {MerklRewardsBalanceOracle} from "../../src/balances/protocols/MerklRewards.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
+import {KelpWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
+import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
+import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
 import {
@@ -44,7 +44,7 @@ import {
 } from "../../src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 /// @title DeployBalanceAdapters
-/// @notice Deploys balance oracle adapters based on per-chain configuration
+/// @notice Deploys balance adapter adapters based on per-chain configuration
 /// @dev Reads enabled adapters from script/config/chains/{chainId}.json and deploys them
 contract DeployBalanceAdapters is BaseDeployScript {
     function run() public override {
@@ -88,7 +88,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
 
-        // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceOracle) ---
+        // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
         _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO
         _deployIfEnabled("ERC4626Wrap_sGHO"); // Mainnet — Aave sGHO savings vault (GHO underlying)
 
@@ -117,13 +117,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Fluid Vaults (meta-adapter: all T1 vaults; vault set on NAV, ADR 0010) ---
         _deployIfEnabled("FluidVaultsMeta");
 
-        // --- Stader (Mainnet only) — withdrawal-queue balance oracle ---
+        // --- Stader (Mainnet only) — withdrawal-queue balance adapter ---
         _deployIfEnabled("StaderWithdrawalQueue");
 
-        // --- Kelp DAO (Mainnet only) — rsETH exit-queue balance oracle ---
+        // --- Kelp DAO (Mainnet only) — rsETH exit-queue balance adapter ---
         _deployIfEnabled("KelpWithdrawalQueue");
 
-        // --- Lido (Mainnet only) — stETH withdrawal-queue balance oracle ---
+        // --- Lido (Mainnet only) — stETH withdrawal-queue balance adapter ---
         _deployIfEnabled("LidoWithdrawalQueue");
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
@@ -384,7 +384,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "dataProvider")
         );
 
-        SparkLendBalanceOracle adapter = new SparkLendBalanceOracle(dataProvider, navCalculator);
+        SparkLendBalanceAdapter adapter = new SparkLendBalanceAdapter(dataProvider, navCalculator);
         return address(adapter);
     }
 
@@ -408,7 +408,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dsrManager")
         );
 
-        DaiDsrBalanceOracle adapter = new DaiDsrBalanceOracle(dai, dsrManager, navCalculator);
+        DaiDsrBalanceAdapter adapter = new DaiDsrBalanceAdapter(dai, dsrManager, navCalculator);
         return address(adapter);
     }
 
@@ -417,7 +417,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "savingsUsds")
         );
 
-        SkySavingsUsdsBalanceOracle adapter = new SkySavingsUsdsBalanceOracle(savingsUsds, navCalculator);
+        SkySavingsUsdsBalanceAdapter adapter = new SkySavingsUsdsBalanceAdapter(savingsUsds, navCalculator);
         return address(adapter);
     }
 
@@ -449,7 +449,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address usdc =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
 
-        CapBalanceOracle adapter = new CapBalanceOracle(cUsd, stcUsd, usdc, navCalculator);
+        CapBalanceAdapter adapter = new CapBalanceAdapter(cUsd, stcUsd, usdc, navCalculator);
         return address(adapter);
     }
 
@@ -484,8 +484,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
-        // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceOracle).
-        AaveV3SafetyModuleBalanceOracle adapter = new AaveV3SafetyModuleBalanceOracle(navCalculator);
+        // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceAdapter).
+        AaveV3SafetyModuleBalanceAdapter adapter = new AaveV3SafetyModuleBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
@@ -505,7 +505,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewardsController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardsController")
         );
-        AaveUmbrellaBalanceOracle adapter = new AaveUmbrellaBalanceOracle(rewardsController, navCalculator);
+        AaveUmbrellaBalanceAdapter adapter = new AaveUmbrellaBalanceAdapter(rewardsController, navCalculator);
         return address(adapter);
     }
 
@@ -615,7 +615,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address wrapper = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "wrapper")
         );
-        ERC4626WrapBalanceOracle adapter = new ERC4626WrapBalanceOracle(wrapper, navCalculator);
+        ERC4626WrapBalanceAdapter adapter = new ERC4626WrapBalanceAdapter(wrapper, navCalculator);
         return address(adapter);
     }
 
@@ -626,8 +626,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        StaderWithdrawalQueueBalanceOracle adapter =
-            new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navCalculator);
+        StaderWithdrawalQueueBalanceAdapter adapter =
+            new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -638,8 +638,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address withdrawalManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawalManager")
         );
-        KelpWithdrawalQueueBalanceOracle adapter =
-            new KelpWithdrawalQueueBalanceOracle(withdrawalManager, navCalculator);
+        KelpWithdrawalQueueBalanceAdapter adapter =
+            new KelpWithdrawalQueueBalanceAdapter(withdrawalManager, navCalculator);
         return address(adapter);
     }
 
@@ -650,8 +650,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        LidoWithdrawalQueueBalanceOracle adapter =
-            new LidoWithdrawalQueueBalanceOracle(withdrawalQueue, underlyingToken, navCalculator);
+        LidoWithdrawalQueueBalanceAdapter adapter =
+            new LidoWithdrawalQueueBalanceAdapter(withdrawalQueue, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -674,7 +674,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceOracle adapter = new MerklRewardsBalanceOracle(distributor, navCalculator, chainConfig.admin);
+        MerklRewardsBalanceAdapter adapter = new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 

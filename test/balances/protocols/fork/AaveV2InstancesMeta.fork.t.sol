@@ -31,7 +31,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[3] = MAINNET_WBTC;
         assetsList[4] = MAINNET_USDT;
         assetsList[5] = STETH;
-        balances = _deployBalancesForOracle(assetsList);
+        balances = _deployBalancesForAdapter(assetsList);
 
         meta = new AaveV2InstancesMetaBalanceAdapter("Aave V2", address(balances));
     }
@@ -55,7 +55,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
 
     function _assertMetaHasPositions(address user) internal view {
         INAVCalculator.PositionBalance[] memory metaPos =
-            meta.getOraclePositionsForInstances(user, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(user, _instance(), address(0));
         uint256 total;
         for (uint256 a = 0; a < assetsList.length; a++) {
             (uint256 mc, uint256 md) = _sums(metaPos, assetsList[a]);
@@ -74,7 +74,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
 
     function test_identityDerivedViaLendingPool() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(PURE_USDC_SUPPLIER, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(PURE_USDC_SUPPLIER, _instance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             (address pool,) = abi.decode(p[i].positionId, (address, address));

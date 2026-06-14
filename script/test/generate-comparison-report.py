@@ -1066,7 +1066,7 @@ def render_unified_table(
         lines += [
             "#### Wallet tokens",
             "",
-            "_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._",
+            "_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultAdapter` and registered Custom price feeds._",
             "",
             "| Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |",
             "|---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|",

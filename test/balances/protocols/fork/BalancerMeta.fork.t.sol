@@ -46,7 +46,7 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function _deployAll() internal {
-        balances = _deployBalancesForOracle(_supportedAssets());
+        balances = _deployBalancesForAdapter(_supportedAssets());
         pools = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(balances));
         gauges = new BalancerV3GaugesMetaBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
     }
@@ -71,11 +71,11 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
 
     /// @notice Sum of the split adapters' legs for a single token (assetFilter restricts to that token).
     function _splitTokenAmount(address user, address token) internal view returns (uint256 sum) {
-        INAVCalculator.PositionBalance[] memory p = pools.getOraclePositionsForInstances(user, _poolInstance(), token);
+        INAVCalculator.PositionBalance[] memory p = pools.getAdapterPositionsForInstances(user, _poolInstance(), token);
         for (uint256 i = 0; i < p.length; i++) {
             sum += p[i].amount;
         }
-        INAVCalculator.PositionBalance[] memory g = gauges.getOraclePositionsForInstances(user, _gaugeInstance(), token);
+        INAVCalculator.PositionBalance[] memory g = gauges.getAdapterPositionsForInstances(user, _gaugeInstance(), token);
         for (uint256 i = 0; i < g.length; i++) {
             sum += g[i].amount;
         }
@@ -94,12 +94,12 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
     /// @notice Identity strings are derived on-chain from the instance coordinate.
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p =
-            pools.getOraclePositionsForInstances(MAINNET_WHALE_USER, _poolInstance(), address(0));
+            pools.getAdapterPositionsForInstances(MAINNET_WHALE_USER, _poolInstance(), address(0));
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, abi.encode(POOL), "pool positionId = pool address");
         }
         INAVCalculator.PositionBalance[] memory g =
-            gauges.getOraclePositionsForInstances(MAINNET_WHALE_USER, _gaugeInstance(), address(0));
+            gauges.getAdapterPositionsForInstances(MAINNET_WHALE_USER, _gaugeInstance(), address(0));
         for (uint256 i = 0; i < g.length; i++) {
             assertEq(g[i].positionId, abi.encode(GAUGE), "gauge positionId = gauge address");
         }

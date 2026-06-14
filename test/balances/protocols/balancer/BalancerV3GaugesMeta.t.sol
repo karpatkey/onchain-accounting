@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -19,7 +19,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    BalancerV3GaugesMetaBalanceAdapter oracle;
+    BalancerV3GaugesMetaBalanceAdapter adapter;
 
     MockBalToken tokenX;
     MockBalToken tokenY;
@@ -51,7 +51,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         gauge = new MockBalancerGauge(address(pool));
         gauge.addRewardToken(address(extraReward));
 
-        oracle = new BalancerV3GaugesMetaBalanceAdapter(address(minter), "Balancer V3", address(nav));
+        adapter = new BalancerV3GaugesMetaBalanceAdapter(address(minter), "Balancer V3", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -60,15 +60,15 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public {
         gauge.setBalance(alice, 100e18);
-        assertEq(oracle.getOraclePositions(alice, address(0)).length, 0);
-        assertEq(oracle.underlyingAssetsSupported().length, 0);
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
+        assertEq(adapter.underlyingAssetsSupported().length, 0);
     }
 
     function test_stakingLegs_plusExtraReward() public {
@@ -76,7 +76,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         gauge.setClaimable(alice, address(extraReward), 7e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
 
         assertEq(pos.length, 3, "two Staking legs + one Rewards leg (BAL is 0 in unit test)");
 
@@ -97,21 +97,21 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         // No staked BPT, but an outstanding reward balance still reports.
         gauge.setClaimable(alice, address(extraReward), 3e18);
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, address(extraReward));
         assertEq(pos[0].amount, 3e18);
     }
 
     function test_emptyAccount_empty() public view {
-        assertEq(oracle.getOraclePositionsForInstances(alice, _instances(), address(0)).length, 0);
+        assertEq(adapter.getAdapterPositionsForInstances(alice, _instances(), address(0)).length, 0);
     }
 
     function test_assetFilter_onlyStakingToken() public {
         gauge.setBalance(alice, 100e18);
         gauge.setClaimable(alice, address(extraReward), 7e18);
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(tokenX));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(tokenX));
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[0].amount, 10e18);
@@ -122,7 +122,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         gauge.setBalance(alice, 100e18);
         gauge.setClaimable(alice, address(extraReward), 7e18);
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _instances(), address(0));
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(pos.length, 2, "only the two registered Staking legs survive");
         assertEq(pos[0].balanceAsset.asset, address(tokenX));
         assertEq(pos[1].balanceAsset.asset, address(tokenY));
@@ -133,12 +133,12 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));
         ins[1] = bytes32(uint256(uint160(address(gauge))));
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 2, "bad gauge isolated, good gauge staking legs returned");
     }
 
     function test_underlyingAssetsForInstances() public view {
-        address[] memory assets = oracle.underlyingAssetsSupportedForInstances(_instances());
+        address[] memory assets = adapter.underlyingAssetsSupportedForInstances(_instances());
         // pool tokens (X, Y) + extra reward (RWD) + BAL
         assertEq(assets.length, 4);
         assertEq(assets[0], address(tokenX));

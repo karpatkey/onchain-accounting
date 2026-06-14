@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -11,9 +11,9 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title ERC-4626 Wrap Balance Oracle
+/// @title ERC-4626 Wrap Balance Adapter
 /// @author kpk
-/// @notice Generic balance oracle for any ERC-4626 share token whose `asset()` returns a NAV-priced
+/// @notice Generic balance adapter for any ERC-4626 share token whose `asset()` returns a NAV-priced
 ///         underlying. Reports the account's holding as `convertToAssets(balanceOf(account))`
 ///         denominated in `asset()`. The position is emitted with `type = Supply` (the wrapper
 ///         represents a credit position in the underlying).
@@ -27,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         errors loud (rather than silently producing a zero-value adapter). A defensive
 ///         runtime check also drops positions if the asset gets later unregistered via
 ///         `nav.unregisterAsset`, mirroring the conservative pattern in the Morpho vaults adapter.
-contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -65,7 +65,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
     ///         no-op (positions would always be dropped), so we fail loudly instead. The harness
     ///         and production deploy flows must register the underlying asset before deploying
     ///         the adapter — production: Safe-TX bundles place `registerAsset(...)` before
-    ///         `addBalanceOracle(...)`; harness: `_registerAllAssets()` runs before
+    ///         `addBalanceAdapter(...)`; harness: `_registerAllAssets()` runs before
     ///         `_deployAllBalanceAdapters()`.
     constructor(address wrapper_, address navCalculator_) {
         if (wrapper_ == address(0)) revert InvalidArguments();
@@ -88,7 +88,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
     //
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -101,7 +101,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
     function underlyingAssetsSupported() external view override returns (address[] memory) {
@@ -110,7 +110,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
         return assets;
     }
 
-    function getOracleBalanceForAsset(address account, address asset)
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -120,7 +120,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
         return (_calculateBalance(account), false);
     }
 
-    function getOracleBalances(address account)
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -141,7 +141,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
     /// @dev Drops the position entirely if `ASSET` is not currently registered in NAVCalculator —
     ///      this is the "discard if no price" policy. Per-account registered-asset intersection
     ///      mirrors the pattern in the Morpho vaults adapter.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -170,7 +170,7 @@ contract ERC4626WrapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: underlyingAsset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: balance,
             isDebt: false,
             protocolId: PROTOCOL_ID,

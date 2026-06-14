@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -61,76 +61,76 @@ contract MockUserWithdrawalManager {
     }
 }
 
-/// @title StaderWithdrawalQueueBalanceOracle unit tests
-contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
-    StaderWithdrawalQueueBalanceOracle public oracle;
+/// @title StaderWithdrawalQueueBalanceAdapter unit tests
+contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
+    StaderWithdrawalQueueBalanceAdapter public adapter;
     MockUserWithdrawalManager public manager;
 
     function setUp() public override {
         super.setUp();
         manager = new MockUserWithdrawalManager();
-        oracle = new StaderWithdrawalQueueBalanceOracle(address(manager), address(weth), address(balances));
+        adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroManager() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceOracle(address(0), address(weth), address(balances));
+        new StaderWithdrawalQueueBalanceAdapter(address(0), address(weth), address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceOracle(address(manager), address(0), address(balances));
+        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(0), address(balances));
     }
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("UserWithdrawalManager must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(eoa, address(weth), address(balances));
+        new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(bytes("NAVCalculator must be a contract"));
-        new StaderWithdrawalQueueBalanceOracle(address(manager), address(weth), eoa);
+        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa);
     }
 
     // ---- Interface ----
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(oracle.supportsInterface(0xdeadbeef));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(adapter.supportsInterface(0xdeadbeef));
     }
 
     function test_underlyingAssetsSupported() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], address(weth));
     }
 
-    // ---- getOracleBalanceForAsset ----
+    // ---- getAdapterBalanceForAsset ----
 
-    function test_getOracleBalanceForAsset_zeroAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(0));
+    function test_getAdapterBalanceForAsset_zeroAsset() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_zeroAccount() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(address(0), address(weth));
+    function test_getAdapterBalanceForAsset_zeroAccount() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(address(0), address(weth));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_singleOpenRequestUsesEthExpected() public {
+    function test_getAdapterBalanceForAsset_singleOpenRequestUsesEthExpected() public {
         manager.pushRequest(
             alice,
             1,
@@ -139,12 +139,12 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             })
         );
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(weth));
         assertEq(amount, 1.05e18);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_finalizedRequestPrefersEthFinalized() public {
+    function test_getAdapterBalanceForAsset_finalizedRequestPrefersEthFinalized() public {
         manager.pushRequest(
             alice,
             1,
@@ -153,11 +153,11 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             })
         );
 
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
         assertEq(amount, 1.04e18, "Should use ethFinalized once set");
     }
 
-    function test_getOracleBalanceForAsset_multipleRequestsSummed() public {
+    function test_getAdapterBalanceForAsset_multipleRequestsSummed() public {
         manager.pushRequest(
             alice,
             1,
@@ -173,11 +173,11 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             })
         );
 
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
         assertEq(amount, 1.05e18 + 2.09e18);
     }
 
-    function test_getOracleBalanceForAsset_skipsClaimedEntries() public {
+    function test_getAdapterBalanceForAsset_skipsClaimedEntries() public {
         manager.pushRequest(
             alice,
             1,
@@ -194,25 +194,25 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
         );
         manager.clearOwner(1); // simulate claim
 
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(weth));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
         assertEq(amount, 2e18, "Claimed request must be excluded");
     }
 
-    // ---- getOracleBalances ----
+    // ---- getAdapterBalances ----
 
-    function test_getOracleBalances_zeroAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(address(0));
+    function test_getAdapterBalances_zeroAccount() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);
     }
 
-    function test_getOracleBalances_emptyForAccountWithNoRequests() public view {
-        (address[] memory assets,,) = oracle.getOracleBalances(alice);
+    function test_getAdapterBalances_emptyForAccountWithNoRequests() public view {
+        (address[] memory assets,,) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 0);
     }
 
-    function test_getOracleBalances_emitsSinglePosition() public {
+    function test_getAdapterBalances_emitsSinglePosition() public {
         manager.pushRequest(
             alice,
             1,
@@ -220,22 +220,22 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
                 owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 1);
         assertEq(assets[0], address(weth));
         assertEq(amounts[0], 1e18);
         assertFalse(isDebt[0]);
     }
 
-    // ---- getOraclePositions ----
+    // ---- getAdapterPositions ----
 
-    function test_getOraclePositions_emptyWhenAssetUnregistered() public {
+    function test_getAdapterPositions_emptyWhenAssetUnregistered() public {
         // Build a fresh adapter pointing at an asset that was never registered with the harness.
         // The constructor only requires non-zero, not contract-shaped, for `underlyingToken_`, so a
         // bare EOA-style address is enough to demonstrate the asset-registry filtering behaviour.
         address unregisteredAsset = makeAddr("unregisteredAsset");
-        StaderWithdrawalQueueBalanceOracle freshOracle =
-            new StaderWithdrawalQueueBalanceOracle(address(manager), unregisteredAsset, address(balances));
+        StaderWithdrawalQueueBalanceAdapter freshAdapter =
+            new StaderWithdrawalQueueBalanceAdapter(address(manager), unregisteredAsset, address(balances));
 
         manager.pushRequest(
             alice,
@@ -245,11 +245,11 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             })
         );
 
-        INAVCalculator.PositionBalance[] memory positions = freshOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = freshAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Unregistered underlying should not produce positions");
     }
 
-    function test_getOraclePositions_filtersByAsset() public {
+    function test_getAdapterPositions_filtersByAsset() public {
         manager.pushRequest(
             alice,
             1,
@@ -258,40 +258,40 @@ contract StaderWithdrawalQueueBalanceOracleTest is BalanceAdapterTestBase {
             })
         );
 
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(usdc));
         assertEq(positions.length, 0, "Filter mismatch should produce empty");
 
-        positions = oracle.getOraclePositions(alice, address(weth));
+        positions = adapter.getAdapterPositions(alice, address(weth));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(weth));
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, 1e18);
         assertFalse(positions[0].isDebt);
     }
 
-    function test_getOraclePositions_zeroBalanceProducesEmpty() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+    function test_getAdapterPositions_zeroBalanceProducesEmpty() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0);
     }
 
     // ---- Panic propagation ----
 
-    function test_getOracleBalanceForAsset_propagatesNonOOBPanic() public {
+    function test_getAdapterBalanceForAsset_propagatesNonOOBPanic() public {
         // OOB panic ends enumeration silently. Any other panic must surface as UnexpectedPanic
         // so NAVCalculator's outer try/catch sees the failure rather than the adapter silently
         // returning 0 and undercounting NAV.
         manager.setInjectArithmeticPanic(true);
         vm.expectRevert(
-            abi.encodeWithSelector(StaderWithdrawalQueueBalanceOracle.UnexpectedPanic.selector, uint256(0x12))
+            abi.encodeWithSelector(StaderWithdrawalQueueBalanceAdapter.UnexpectedPanic.selector, uint256(0x12))
         );
-        oracle.getOracleBalanceForAsset(alice, address(weth));
+        adapter.getAdapterBalanceForAsset(alice, address(weth));
     }
 
-    function test_getOracleBalanceForAsset_propagatesNonEmptyRevert() public {
+    function test_getAdapterBalanceForAsset_propagatesNonEmptyRevert() public {
         // Empty bytes revert is the legacy-Solidity OOB sentinel and must end enumeration; any
         // revert with data must propagate.
         manager.setInjectStringRevert(true);
         vm.expectRevert(bytes("boom"));
-        oracle.getOracleBalanceForAsset(alice, address(weth));
+        adapter.getAdapterBalanceForAsset(alice, address(weth));
     }
 }

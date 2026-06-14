@@ -74,16 +74,16 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
-        nav.addBalanceOracle(address(aaveOracle));
+        aaveAdapter = aaveMeta;
+        nav.addBalanceAdapter(address(aaveAdapter));
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
         nav.setMetaInstances(address(aaveMeta), aaveInstances);
 
         compoundV3UsdcComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceOracle(address(compoundV3UsdcComet));
+        nav.addBalanceAdapter(address(compoundV3UsdcComet));
     }
 }

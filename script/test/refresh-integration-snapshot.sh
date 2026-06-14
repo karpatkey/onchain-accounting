@@ -21,7 +21,7 @@
 #        (b) wallet token_list filtered to NAV-registered assets in script/config/assets.json
 #            (`.tokens.<chainId>`), plus the native sentinel via the chain id when registered.
 #            This mirrors `IERC20.balanceOf(account)` exactly and so is what NAV's default
-#            ERC20 oracle reads (USDC, USDT, GHO, stETH, rsETH, native ETH, …).
+#            ERC20 adapter reads (USDC, USDT, GHO, stETH, rsETH, native ETH, …).
 #      The filter is what makes the comparison apples-to-apples: many accounts hold positions
 #      outside NAV's coverage; an unfiltered DeBank total would always exceed NAV. Logs the
 #      API key tier and remaining units at the start; degrades gracefully if missing/expired/
@@ -534,7 +534,7 @@ if [[ "$debank_active" == "true" ]]; then
       #
       # Native token id from DeBank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
       # is accepted iff NAV registers the ERC-7528 native sentinel (0xEee…eEeE) for this
-      # chain — `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for it.
+      # chain — `ERC20DefaultAdapter._getBalanceForAsset` returns `account.balance` for it.
       tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}&is_all=false")
       if [[ -z "$tok_resp" ]]; then
         echo "  [warn] $label chain $chain_id: token_list request failed; using protocol total only"

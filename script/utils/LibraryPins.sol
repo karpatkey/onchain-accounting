@@ -13,7 +13,7 @@ pragma solidity ^0.8;
 ///         updates exactly two places: this file and foundry.toml.
 library LibraryPins {
     address internal constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
-    address internal constant NAV_REGISTRY_LIB = 0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9;
+    address internal constant NAV_REGISTRY_LIB = 0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a
     ///      pinned library's address directly in the linked creation bytecode.

@@ -8,9 +8,9 @@ Onchain infrastructure for portfolio accounting: **balances** (across protocols)
 
 | Module   | Purpose |
 |----------|--------|
-| **Balances** | Registry of balance oracles. Each oracle reports positions (balances) for an account in one or more protocols (e.g. Aave, Compound III, Morpho). Used by NAVCalculator to aggregate holdings. |
+| **Balances** | Registry of balance adapters. Each adapter reports positions (balances) for an account in one or more protocols (e.g. Aave, Compound III, Morpho). Used by NAVCalculator to aggregate holdings. |
 | **Prices**   | Registry of **N price feeds per asset** (N ≥ 1). Feed types: `Chainlink`, `Redstone`, `API3`, `Custom`. On every read, `_selectFeed` picks the **freshest non-stale feed** (freshest-wins); stale is returned only when every feed fails. Handles heartbeat staleness, clock-skew normalisation, and L2 sequencer uptime checks. |
-| **NAV**      | Single contract that extends Prices + Balances. Registers assets with price feeds, registers balance oracles, and computes **NAV** for an account in a chosen quote currency (e.g. USD or a token). |
+| **NAV**      | Single contract that extends Prices + Balances. Registers assets with price feeds, registers balance adapters, and computes **NAV** for an account in a chosen quote currency (e.g. USD or a token). |
 | **Bridge**   | **BridgeEscrow** holds assets and tracks invoices; authorized accounts call `depositAndBridge` to bridge to another chain. **Adapters** (Across, CCIP, CCTP, Gnosis, Stargate, Superchain) implement protocol-specific logic. On the destination chain, completion triggers `releaseByInvoiceId` so the escrow sends assets to the account. |
 
 There is no tokenized-share or subscription/redemption logic in this repo; that would sit in a separate layer that uses NAV and/or the bridge as primitives.
@@ -21,12 +21,12 @@ There is no tokenized-share or subscription/redemption logic in this repo; that 
 
 ```
 src/
-├── balances/                    # Balance oracles and registry
-│   ├── Balances.sol             # Abstract registry (oracles, assets, meta-instance set)
+├── balances/                    # Balance adapters and registry
+│   ├── Balances.sol             # Abstract registry (adapters, assets, meta-instance set)
 │   ├── IBalances.sol
-│   ├── IBalanceOracleAdapter.sol
-│   ├── IMetaBalanceOracleAdapter.sol  # Extends above; per-instance fan-out
-│   ├── MetaBalanceOracle.sol    # Abstract base for all 21 meta-adapters
+│   ├── IBalanceAdapter.sol
+│   ├── IMetaBalanceAdapter.sol  # Extends above; per-instance fan-out
+│   ├── MetaBalanceAdapter.sol    # Abstract base for all 21 meta-adapters
 │   ├── IPositionDescribable.sol # Human-readable labels (ERC165)
 │   └── protocols/               # Per-protocol adapters. Full inventory in src/balances/BALANCE_ADAPTERS.md.
 ├── prices/                      # Price feeds
@@ -60,17 +60,17 @@ test/
 
 ## Balances
 
-- **`Balances`** (abstract): Holds a **global list of balance oracles** and an **asset registry** (decimals, symbols). Each asset can have multiple oracles (e.g. ERC20 default + protocol-specific). It does not implement NAV or pricing.
-- **`IBalanceOracleAdapter`**: Implemented by every balance oracle. Key methods:
-  - `getOraclePositions(account, assetFilter)` → list of **PositionBalance** entries with typed identity (`protocolId` bytes32 keccak256 hash of the canonical slug, `positionId` abi-encoded key, `positionKind` enum)
-  - `getOracleBalance(account)` → assets and net balances (signed)
-  - `underlyingAssetsSupported()` → which assets this oracle reports on
+- **`Balances`** (abstract): Holds a **global list of balance adapters** and an **asset registry** (decimals, symbols). Each asset can have multiple adapters (e.g. ERC20 default + protocol-specific). It does not implement NAV or pricing.
+- **`IBalanceAdapter`**: Implemented by every balance adapter. Key methods:
+  - `getAdapterPositions(account, assetFilter)` → list of **PositionBalance** entries with typed identity (`protocolId` bytes32 keccak256 hash of the canonical slug, `positionId` abi-encoded key, `positionKind` enum)
+  - `getAdapterBalance(account)` → assets and net balances (signed)
+  - `underlyingAssetsSupported()` → which assets this adapter reports on
 - **Protocol adapters** in `src/balances/protocols/`:
-  - **ERC20DefaultOracle**: Plain ERC20 and native token balances.
+  - **ERC20DefaultAdapter**: Plain ERC20 and native token balances.
   - **21 meta-adapters** ([ADR 0010](docs/decisions/0010-meta-balance-adapters.md)): one immutable contract per protocol family covers every instance of that protocol. The **instance set** (which vaults, pools, or markets to query) is a `bytes32[]` held on `NAVCalculator` and set by the MANAGER role via `setMetaInstances(adapter, instances[])` — **adding a pool is a config TX, not a deploy**. The instance coordinate is the pool/vault/market address widened to `bytes32` for most protocols, or a raw `bytes32` for Morpho market IDs and Balancer V2 pool IDs. Per-instance reverts are isolated so one bad instance cannot zero out the batch. Families: `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AaveV3InstancesMeta`, `AaveV2InstancesMeta`, `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`, `UniswapV3PoolsMeta`, `UniswapV2PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta`, `GearboxMarketsMeta`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `StakeWiseV3VaultsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta`, `AuraRewardsMeta`.
   - **11 per-instance singleton adapters** (no meta equivalent needed): **SparkLend** (AaveV3 logic inlined), **AaveV3SafetyModule**, **AaveUmbrella**, **Cap**, **ERC4626Wrap**, **DaiDsr**, **SkySavingsUsds**, **MerklRewards**, **StaderWithdrawalQueue**, **KelpWithdrawalQueue**, **LidoWithdrawalQueue**. All 11 implement `IPositionDescribable` (ERC165-discoverable human-readable labels). Full inventory + framework reference in [`src/balances/BALANCE_ADAPTERS.md`](src/balances/BALANCE_ADAPTERS.md).
 
-Balance oracles return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`, `protocolId` bytes32, `positionId` bytes, `positionKind` enum). **`PositionKind`** classifies each leg: `Wallet` · `Supplied` · `Borrowed` · `Collateral` · `Staking` (principal locked behind an unstake action — Safety Module, Umbrella, StakeWise vaults, gauge/Convex/Aura-staked LP) · `Rewards` (accrued reward tokens) · `Fees` (uncollected LP/protocol fees). `amount` is always positive; `isDebt` carries the sign for NAV. The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale) and optionally a **VerbosePosition** (adds `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` implementation — for display only, not identity). Full struct schema, per-protocol positionId decode tables, reconciliation key, and TypeScript examples: [`docs/howto/position-identity-schema.md`](docs/howto/position-identity-schema.md).
+Balance adapters return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`, `protocolId` bytes32, `positionId` bytes, `positionKind` enum). **`PositionKind`** classifies each leg: `Wallet` · `Supplied` · `Borrowed` · `Collateral` · `Staking` (principal locked behind an unstake action — Safety Module, Umbrella, StakeWise vaults, gauge/Convex/Aura-staked LP) · `Rewards` (accrued reward tokens) · `Fees` (uncollected LP/protocol fees). `amount` is always positive; `isDebt` carries the sign for NAV. The NAVCalculator enriches these with prices to get **Position** (same + quoteAsset, value, price, stale) and optionally a **VerbosePosition** (adds `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` implementation — for display only, not identity). Full struct schema, per-protocol positionId decode tables, reconciliation key, and TypeScript examples: [`docs/howto/position-identity-schema.md`](docs/howto/position-identity-schema.md).
 
 ---
 
@@ -91,13 +91,13 @@ Balance oracles return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`, 
 ## NAV (NAVCalculator)
 
 - **`NAVCalculator`**: Inherits **Prices** and **Balances**, and adds:
-  - `initialize(admin, chainlinkL2SequencerUptimeFeed, nativeTokenSymbol)`: deploys **ERC20DefaultOracle**, inits Prices and Balances. Pass `address(0)` for the sequencer feed on chains without L2 sequencer (Mainnet, Gnosis).
-  - **MANAGER** role: `registerAsset(asset, feed, priceType, heartbeat)`, `addPriceFeed` / `removePriceFeed`, `addBalanceOracle` / `removeBalanceOracle`, `setMetaInstances(adapter, instances[])`.
+  - `initialize(admin, chainlinkL2SequencerUptimeFeed, nativeTokenSymbol)`: deploys **ERC20DefaultAdapter**, inits Prices and Balances. Pass `address(0)` for the sequencer feed on chains without L2 sequencer (Mainnet, Gnosis).
+  - **MANAGER** role: `registerAsset(asset, feed, priceType, heartbeat)`, `addPriceFeed` / `removePriceFeed`, `addBalanceAdapter` / `removeBalanceAdapter`, `setMetaInstances(adapter, instances[])`.
   - **Assets**: Registered via `registerAsset` (sets price feed + adds to asset registry). Additional feeds per asset via `addPriceFeed`; removal via `removePriceFeed` (cannot remove the last feed).
-  - **Balance oracles**: Added with `addBalanceOracle`; ERC165-checked for `IBalanceOracleAdapter`. For meta-adapters, also call `setMetaInstances` to configure the instance set (vault/pool/market addresses or raw bytes32 IDs).
-- **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered oracles, calls `getOraclePositions` on each (with per-oracle try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`). Range-based variants (`getAccountNavForRange`) restrict to an asset index range for gas control.
+  - **Balance adapters**: Added with `addBalanceAdapter`; ERC165-checked for `IBalanceAdapter`. For meta-adapters, also call `setMetaInstances` to configure the instance set (vault/pool/market addresses or raw bytes32 IDs).
+- **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered adapters, calls `getAdapterPositions` on each (with per-adapter try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`). Range-based variants (`getAccountNavForRange`) restrict to an asset index range for gas control.
 - **Verbose APIs**: `getAccountPositionsVerbose` / `getAccountNavVerbose` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
-- **External libraries** (EIP-170): `PriceFeedLib` (price selection and feed management) and `NavRegistryLib` (asset + oracle registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses. Deployed by scripts `01` before `NAVCalculator`.
+- **External libraries** (EIP-170): `PriceFeedLib` (price selection and feed management) and `NavRegistryLib` (asset + adapter registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses. Deployed by scripts `01` before `NAVCalculator`.
 
 NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_ROLE, MANAGER).
 
@@ -117,10 +117,10 @@ Full flow, invoice system, and how to implement/configure new adapters: see **`s
 
 | Goal | Where to look |
 |------|----------------|
-| Add or understand a **balance** source (e.g. new DeFi protocol) | `src/balances/IBalanceOracleAdapter.sol`, then an adapter in `src/balances/protocols/`. Register via `addBalanceOracle`; for meta-adapters also call `setMetaInstances`. Full how-to: `src/balances/BALANCE_ADAPTERS.md`. |
+| Add or understand a **balance** source (e.g. new DeFi protocol) | `src/balances/IBalanceAdapter.sol`, then an adapter in `src/balances/protocols/`. Register via `addBalanceAdapter`; for meta-adapters also call `setMetaInstances`. Full how-to: `src/balances/BALANCE_ADAPTERS.md`. |
 | Add or understand a **price** source | `src/prices/IPriceFeedCustom.sol`; adapters in `src/prices/protocols/`. Register asset + first feed via `registerAsset`; additional redundant feeds via `addPriceFeed`. Full how-to: `src/prices/PRICE_ADAPTERS.md`. |
 | **Position identity** (protocolId / positionId / PositionKind) | `docs/howto/position-identity-schema.md` — slugs, decode tables, reconciliation key, TypeScript examples. Constants in `src/utils/ProtocolIds.sol` and `src/utils/PositionKind.sol`. |
-| How **NAV** is computed | `src/nav/NAVCalculator.sol`: `getAccountNav` → `_readPositionsRangeWithQuote` fans out over all oracles, prices each position, sums to NAV. |
+| How **NAV** is computed | `src/nav/NAVCalculator.sol`: `getAccountNav` → `_readPositionsRangeWithQuote` fans out over all adapters, prices each position, sums to NAV. |
 | Bridge flow and adapter list | `src/bridge/BRIDGE_ADAPTERS.md`. |
 | Add a new **bridge** adapter | `src/bridge/BridgeAdapter.sol` (base), existing adapter in `src/bridge/adapters/`, and “How to Create a New Adapter” in `BRIDGE_ADAPTERS.md`. |
 | Shared types and errors | `src/constants.sol`, `src/errors.sol`, `src/utils/`. |
@@ -186,7 +186,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 
 - **Balances**: 21 meta-adapters + 12 per-instance singletons covering Aave, Morpho, Balancer, Uniswap, Compound, Curve, Convex, Aura, Fluid, Gearbox, StakeWise, Lido, Kelp, Stader, Sky, Cap, and more — all returning typed `PositionBalance` structs.
 - **Prices**: N feeds per asset (Chainlink / Redstone / API3 / Custom); freshest-wins selector; custom adapters cover LSTs, yield-bearing stables, RTokens, and cross-rates.
-- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + oracles and computes account NAV in any quote currency. Verbose APIs expose human-readable position labels via `IPositionDescribable`.
+- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency. Verbose APIs expose human-readable position labels via `IPositionDescribable`.
 - **Bridge**: Escrow + invoice system + adapters (Across, CCIP, CCTP, Stargate, Gnosis, Superchain); destination release via `releaseByInvoiceId`; source closure via `markInvoiceCompleted`.
 
 For bridge design, flows, and adding adapters, use **`src/bridge/BRIDGE_ADAPTERS.md`**.

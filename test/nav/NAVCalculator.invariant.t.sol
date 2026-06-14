@@ -2,11 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {SuperTest} from "test/SuperTest.sol";
-import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -26,31 +26,31 @@ contract NAVCalculatorInvariantTest is SuperTest {
         return sum;
     }
 
-    /// @notice Helper to setup multiple oracles reporting the same asset
-    function setupMultipleOraclesForAsset(address asset, uint256 oracleCount)
+    /// @notice Helper to setup multiple adapters reporting the same asset
+    function setupMultipleAdaptersForAsset(address asset, uint256 adapterCount)
         internal
-        returns (Mock_CustomBalanceOracle[] memory)
+        returns (Mock_CustomBalanceAdapter[] memory)
     {
-        Mock_CustomBalanceOracle[] memory oracles = new Mock_CustomBalanceOracle[](oracleCount);
+        Mock_CustomBalanceAdapter[] memory adapters = new Mock_CustomBalanceAdapter[](adapterCount);
 
-        for (uint256 i = 0; i < oracleCount; i++) {
-            Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-            oracle.setBalances(IBalances(address(nav)));
+        for (uint256 i = 0; i < adapterCount; i++) {
+            Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+            adapter.setBalances(IBalances(address(nav)));
             address[] memory assets = new address[](1);
             assets[0] = asset;
-            oracle.setUnderlyingAssetsSupported(assets);
-            oracle.setPositionMetadata(
+            adapter.setUnderlyingAssetsSupported(assets);
+            adapter.setPositionMetadata(
                 string(abi.encodePacked("Protocol ", vm.toString(i))),
                 string(abi.encodePacked("Position ", vm.toString(i)))
             );
-            oracles[i] = oracle;
+            adapters[i] = adapter;
 
             vm.startPrank(navCalculatorManager);
-            nav.addBalanceOracle(address(oracle));
+            nav.addBalanceAdapter(address(adapter));
             vm.stopPrank();
         }
 
-        return oracles;
+        return adapters;
     }
 
     /// @notice Helper to assert price consistency
@@ -73,27 +73,27 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     // ============================================
-    // Oracle Aggregation Invariant
+    // Adapter Aggregation Invariant
     // ============================================
 
-    /// @notice Test that multiple oracles reporting same asset aggregate correctly
-    function test_invariant_oracleAggregation() public {
-        // Setup: Multiple oracles reporting USDC
-        uint256 oracleCount = 5;
-        Mock_CustomBalanceOracle[] memory oracles = setupMultipleOraclesForAsset(address(usdc), oracleCount);
+    /// @notice Test that multiple adapters reporting same asset aggregate correctly
+    function test_invariant_adapterAggregation() public {
+        // Setup: Multiple adapters reporting USDC
+        uint256 adapterCount = 5;
+        Mock_CustomBalanceAdapter[] memory adapters = setupMultipleAdaptersForAsset(address(usdc), adapterCount);
 
-        // Set different balances for each oracle
-        int256[] memory oracleBalances = new int256[](oracleCount);
+        // Set different balances for each adapter
+        int256[] memory adapterBalances = new int256[](adapterCount);
         int256 totalExpectedBalance = 0;
 
-        for (uint256 i = 0; i < oracleCount; i++) {
+        for (uint256 i = 0; i < adapterCount; i++) {
             int256 balance = int256((i + 1) * 100 * 10 ** usdc.decimals());
-            oracleBalances[i] = balance;
+            adapterBalances[i] = balance;
             totalExpectedBalance += balance;
-            oracles[i].setBalance(address(usdc), safe, uint256((i + 1) * 100 * 10 ** usdc.decimals()), false);
+            adapters[i].setBalance(address(usdc), safe, uint256((i + 1) * 100 * 10 ** usdc.decimals()), false);
         }
 
-        // Also mint some USDC directly to safe (ERC20DefaultOracle)
+        // Also mint some USDC directly to safe (ERC20DefaultAdapter)
         uint256 directBalance = 50 * 10 ** usdc.decimals();
         usdc.mint(safe, directBalance);
         totalExpectedBalance += SafeCast.toInt256(directBalance);
@@ -106,16 +106,16 @@ contract NAVCalculatorInvariantTest is SuperTest {
             assertEq(positions[i].balanceAsset.asset, address(usdc), "All positions should be for USDC");
         }
 
-        // Verify no duplicate positions (check by balanceOracle address)
+        // Verify no duplicate positions (check by balanceAdapter address)
         for (uint256 i = 0; i < positions.length; i++) {
             for (uint256 j = i + 1; j < positions.length; j++) {
                 assertTrue(
-                    positions[i].balanceOracle != positions[j].balanceOracle, "No duplicate positions from same oracle"
+                    positions[i].balanceAdapter != positions[j].balanceAdapter, "No duplicate positions from same adapter"
                 );
             }
         }
 
-        // Verify total balance matches sum of oracle balances
+        // Verify total balance matches sum of adapter balances
         // positions[i].value is in USD (8 decimals), so we need to convert expected balance to USD
         int256 totalBalance = 0;
         for (uint256 i = 0; i < positions.length; i++) {
@@ -130,7 +130,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         uint256 denominator = assetDecimals + priceDecimals - 8; // NAV_DECIMALS = 8
         int256 totalExpectedUsdValue = (totalExpectedBalance * int256(usdcPrice)) / SafeCast.toInt256(10 ** denominator);
 
-        assertEq(totalBalance, totalExpectedUsdValue, "Total balance should equal sum of all oracle balances");
+        assertEq(totalBalance, totalExpectedUsdValue, "Total balance should equal sum of all adapter balances");
 
         // Verify NAV consistency
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
@@ -138,16 +138,16 @@ contract NAVCalculatorInvariantTest is SuperTest {
         assertEq(navTotal.value, positionsSum, "NAV should equal sum of position values");
     }
 
-    /// @notice Test that oracle aggregation works with negative balances
-    function test_invariant_oracleAggregation_negativeBalances() public {
-        // Setup: Multiple oracles with mixed positive and negative balances
-        uint256 oracleCount = 3;
-        Mock_CustomBalanceOracle[] memory oracles = setupMultipleOraclesForAsset(address(usdc), oracleCount);
+    /// @notice Test that adapter aggregation works with negative balances
+    function test_invariant_adapterAggregation_negativeBalances() public {
+        // Setup: Multiple adapters with mixed positive and negative balances
+        uint256 adapterCount = 3;
+        Mock_CustomBalanceAdapter[] memory adapters = setupMultipleAdaptersForAsset(address(usdc), adapterCount);
 
         // Set mixed balances
-        oracles[0].setBalance(address(usdc), safe, 1000 * 10 ** usdc.decimals(), false);
-        oracles[1].setBalance(address(usdc), safe, 300 * 10 ** usdc.decimals(), true);
-        oracles[2].setBalance(address(usdc), safe, 200 * 10 ** usdc.decimals(), false);
+        adapters[0].setBalance(address(usdc), safe, 1000 * 10 ** usdc.decimals(), false);
+        adapters[1].setBalance(address(usdc), safe, 300 * 10 ** usdc.decimals(), true);
+        adapters[2].setBalance(address(usdc), safe, 200 * 10 ** usdc.decimals(), false);
 
         int256 expectedTotal = int256(900 * 10 ** usdc.decimals());
 
@@ -189,11 +189,11 @@ contract NAVCalculatorInvariantTest is SuperTest {
     /// @notice Test that price staleness is consistent across queries
     function test_invariant_priceFeedConsistency_staleness() public {
         // Create a stale price oracle
-        Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1, 8);
+        Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
 
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
-        nav.removePriceFeed(address(usdc), address(usdcOracle)); // remove original so only staleOracle remains
+        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.removePriceFeed(address(usdc), address(usdcAdapter)); // remove original so only staleAdapter remains
         vm.stopPrank();
 
         // Make price stale by warping time
@@ -269,72 +269,72 @@ contract NAVCalculatorInvariantTest is SuperTest {
     }
 
     // ============================================
-    // Oracle Registry Consistency Invariant
+    // Adapter Registry Consistency Invariant
     // ============================================
 
-    /// @notice Test that all oracles implement IBalanceOracleAdapter
-    function test_invariant_oracleRegistryConsistency() public view {
-        address[] memory allOracles = nav.getAllOracles();
+    /// @notice Test that all adapters implement IBalanceAdapter
+    function test_invariant_adapterRegistryConsistency() public view {
+        address[] memory allAdapters = nav.getAllAdapters();
 
-        // Verify ERC20DefaultOracle is always present
+        // Verify ERC20DefaultAdapter is always present
         bool foundErc20Default = false;
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            if (allOracles[i] == nav.erc20DefaultOracle()) {
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
                 foundErc20Default = true;
             }
 
-            // Verify all oracles implement IBalanceOracleAdapter
-            IBalanceOracleAdapter oracle = IBalanceOracleAdapter(allOracles[i]);
-            try oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId) returns (bool supported) {
-                assertTrue(supported, "Oracle should support IBalanceOracleAdapter");
+            // Verify all adapters implement IBalanceAdapter
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
+            try adapter.supportsInterface(type(IBalanceAdapter).interfaceId) returns (bool supported) {
+                assertTrue(supported, "Adapter should support IBalanceAdapter");
             } catch {
-                revert("Oracle should support IBalanceOracleAdapter interface");
+                revert("Adapter should support IBalanceAdapter interface");
             }
         }
 
-        assertTrue(foundErc20Default, "ERC20DefaultOracle should always be registered");
+        assertTrue(foundErc20Default, "ERC20DefaultAdapter should always be registered");
     }
 
-    /// @notice Test that all oracles can be queried without reverting
-    function test_invariant_oracleRegistryConsistency_queryable() public view {
-        address[] memory allOracles = nav.getAllOracles();
+    /// @notice Test that all adapters can be queried without reverting
+    function test_invariant_adapterRegistryConsistency_queryable() public view {
+        address[] memory allAdapters = nav.getAllAdapters();
 
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            IBalanceOracleAdapter oracle = IBalanceOracleAdapter(allOracles[i]);
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            IBalanceAdapter adapter = IBalanceAdapter(allAdapters[i]);
 
             // Should be able to query underlyingAssetsSupported
-            try oracle.underlyingAssetsSupported() returns (
+            try adapter.underlyingAssetsSupported() returns (
                 address[] memory
             ) {
             // Success
             }
             catch {
-                revert("Oracle should support underlyingAssetsSupported()");
+                revert("Adapter should support underlyingAssetsSupported()");
             }
 
             // Should be able to query balance for a test account
-            try oracle.getOracleBalanceForAsset(safe, address(usdc)) returns (
+            try adapter.getAdapterBalanceForAsset(safe, address(usdc)) returns (
                 uint256, bool
             ) {
             // Success
             }
                 catch {
-                // Some oracles might not support all assets, that's okay
+                // Some adapters might not support all assets, that's okay
             }
         }
     }
 
-    /// @notice Test that oracle count matches actual registered oracles
-    function test_invariant_oracleRegistryConsistency_count() public view {
-        uint256 oracleCount = nav.getOracleCount();
-        address[] memory allOracles = nav.getAllOracles();
+    /// @notice Test that adapter count matches actual registered adapters
+    function test_invariant_adapterRegistryConsistency_count() public view {
+        uint256 adapterCount = nav.getAdapterCount();
+        address[] memory allAdapters = nav.getAllAdapters();
 
-        assertEq(oracleCount, allOracles.length, "Oracle count should match oracles array length");
+        assertEq(adapterCount, allAdapters.length, "Adapter count should match adapters array length");
 
         // Verify no duplicates
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            for (uint256 j = i + 1; j < allOracles.length; j++) {
-                assertTrue(allOracles[i] != allOracles[j], "No duplicate oracles in registry");
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            for (uint256 j = i + 1; j < allAdapters.length; j++) {
+                assertTrue(allAdapters[i] != allAdapters[j], "No duplicate adapters in registry");
             }
         }
     }

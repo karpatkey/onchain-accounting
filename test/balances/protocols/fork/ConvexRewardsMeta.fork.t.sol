@@ -65,7 +65,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         assets[6] = USDT;
         assets[7] = RLUSD;
         assets[8] = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC duplicate guard
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
         meta = new ConvexRewardsMetaBalanceAdapter(CONVEX_BOOSTER, CVX, "Convex", address(balances));
     }
@@ -92,7 +92,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
         uint256 staking = _countKind(pos, PositionKind.Staking);
         assertGt(staking, 0, "LP resolved and decomposed");
@@ -105,7 +105,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
         uint256 staking = _countKind(pos, PositionKind.Staking);
         assertGt(staking, 0, "at least one Staking leg");
@@ -125,7 +125,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         if (crvExpected == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
         uint256 crvReported;
         for (uint256 i; i < pos.length; ++i) {
@@ -139,7 +139,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
         uint256 crvAmt;
         uint256 cvxAmt;
@@ -161,7 +161,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         rs[3] = REWARDER_RLUSD_USDC;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _instances(rs), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _instances(rs), address(0));
 
         // At minimum the crvUSD/USDC rewarder should have results for this staker
         // Other rewarders may return 0 for this specific staker — that's fine
@@ -175,7 +175,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
 
         assertGt(pos.length, 0);
         for (uint256 i; i < pos.length; ++i) {

@@ -16,27 +16,27 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 // Balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
-import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
-import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
+import {CapBalanceAdapter} from "src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
 import {ConvexRewardsMetaBalanceAdapter} from "src/balances/protocols/ConvexRewardsMeta.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
-import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {AuraRewardsMetaBalanceAdapter} from "src/balances/protocols/AuraRewardsMeta.sol";
-import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
+import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
@@ -75,7 +75,7 @@ import "src/constants.sol";
 /// @title IntegrationFromConfigBase
 /// @notice Per-chain integration test harness that mirrors the deploy pipeline:
 ///         deploys NAVCalculator + every enabled price feed adapter (assets.json) + every enabled
-///         balance adapter (chains/<id>.json), registers all assets and balance oracles, then reads
+///         balance adapter (chains/<id>.json), registers all assets and balance adapters, then reads
 ///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_Configure + RegisterAssets
 ///         end-to-end inside a forked-mainnet test.
 /// @dev Deployment dispatch is duplicated from script/deploy/{03,04}*.sol so the test can avoid the
@@ -104,9 +104,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     string internal constant MERKL_PROOFS_JSON = "test/integration/merkl-proofs.json";
 
     /// @notice Address of the deployed MerklRewards adapter for this chain (zero if not deployed).
-    address internal _merklOracle;
+    address internal _merklAdapter;
 
-    /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
+    /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceAdapter pass).
     address[] internal _deployedBalanceAdapters;
 
     /// @notice Config names parallel to `_deployedBalanceAdapters` (used to read per-adapter config such as
@@ -137,7 +137,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
@@ -154,9 +154,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         _deployAllPriceFeeds();
         // Asset registration MUST precede balance-adapter deployment because some adapter
-        // constructors (e.g. ERC4626WrapBalanceOracle) require the underlying asset to be
+        // constructors (e.g. ERC4626WrapBalanceAdapter) require the underlying asset to be
         // registered before they can deploy. Production deploy mirrors this via the Safe-TX
-        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceOracle).
+        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceAdapter).
         _registerAllAssets();
         _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
@@ -622,13 +622,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAaveV3(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
+        return address(new SparkLendBalanceAdapter(dataProvider, navAddr));
     }
 
     function _deploySparkLend(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
+        return address(new SparkLendBalanceAdapter(dataProvider, navAddr));
     }
 
     function _deployCompoundV3CometsMeta(string memory name, address navAddr) internal returns (address) {
@@ -685,7 +685,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
         address wrapper =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
-        return address(new ERC4626WrapBalanceOracle(wrapper, navAddr));
+        return address(new ERC4626WrapBalanceAdapter(wrapper, navAddr));
     }
 
     function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
@@ -698,7 +698,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address stcUsd =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "usdc"));
-        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, navAddr));
+        return address(new CapBalanceAdapter(cUsd, stcUsd, usdc, navAddr));
     }
 
     function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
@@ -724,13 +724,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        return address(new AaveV3SafetyModuleBalanceOracle(navAddr));
+        return address(new AaveV3SafetyModuleBalanceAdapter(navAddr));
     }
 
     function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
         address rewardsController =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
-        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr));
+        return address(new AaveUmbrellaBalanceAdapter(rewardsController, navAddr));
     }
 
     function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
@@ -739,8 +739,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        address adapter = address(new MerklRewardsBalanceOracle(distributor, navAddr, admin));
-        _merklOracle = adapter;
+        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin));
+        _merklAdapter = adapter;
         return adapter;
     }
 
@@ -776,7 +776,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        return address(new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navAddr));
+        return address(new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
     }
 
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
@@ -809,8 +809,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     // -----------------------------------------------------------------------
-    // Asset registration (uses assets.json oracle addresses verbatim — these
-    // are either Chainlink feeds or fund-side Custom oracles already on chain).
+    // Asset registration (uses assets.json adapter addresses verbatim — these
+    // are either Chainlink feeds or fund-side Custom adapters already on chain).
     // -----------------------------------------------------------------------
 
     function _registerAllAssets() internal {
@@ -829,19 +829,19 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory typeStr = ConfigReader.readTokenType(vm, _chainId, symbol);
         if (_equals(typeStr, "None")) return;
 
-        // Resolve the oracle address. Prefer assets.json's hardcoded `pricefeed` (set by
+        // Resolve the adapter address. Prefer assets.json's hardcoded `pricefeed` (set by
         // 03_DeployPriceFeeds at production deploy time). When that field is blank — i.e. the
         // feed contract exists in code but hasn't been deployed to production yet, e.g. ETHx
         // pre-mainnet-deploy — fall back to the ephemerally-deployed instance from
         // _deployAllPriceFeeds. This makes the integration test exercise the feed end-to-end
         // before the production deploy lands. Once the production deploy completes and
         // assets.json.pricefeed is populated, this branch becomes inert for that symbol.
-        address oracle;
+        address adapter;
         if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
-            oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
+            adapter = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
         } else if (_ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)] != address(0)) {
-            oracle = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            console2.log("[asset/ephemeral]", symbol, oracle);
+            adapter = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
+            console2.log("[asset/ephemeral]", symbol, adapter);
         } else {
             return;
         }
@@ -855,13 +855,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // passes the check and is functionally equivalent for fork tests.
         if (pt == IPrices.PriceType.Custom) {
             address fresh = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            if (fresh != address(0)) oracle = fresh;
+            if (fresh != address(0)) adapter = fresh;
         }
 
         // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
         // pre-registered asset) add the first price feed via addPriceFeed.
         if (nav.isAssetRegistered(asset)) {
-            try nav.addPriceFeed(asset, oracle, pt, heartbeat) {
+            try nav.addPriceFeed(asset, adapter, pt, heartbeat) {
                 console2.log("[asset/addFeed]", symbol, asset);
             } catch (bytes memory err) {
                 console2.log("[asset/addFeed]", symbol, "FAILED");
@@ -870,7 +870,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             return;
         }
 
-        try nav.registerAsset(asset, oracle, pt, heartbeat) {
+        try nav.registerAsset(asset, adapter, pt, heartbeat) {
             console2.log("[asset]", symbol, asset);
         } catch (bytes memory err) {
             console2.log("[asset]", symbol, "REGISTER FAILED");
@@ -881,11 +881,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _registerAllBalanceAdapters() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
-            try nav.addBalanceOracle(a) {
+            try nav.addBalanceAdapter(a) {
             // ok
             }
             catch (bytes memory err) {
-                console2.log("[oracle] addBalanceOracle FAILED for", a);
+                console2.log("[adapter] addBalanceAdapter FAILED for", a);
                 console2.logBytes(err);
             }
         }
@@ -893,7 +893,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Applies each meta-adapter's `metaInstances` config to NAVCalculator (ADR 0010). This is how the
     ///         NAV calculator is told which instances of a protocol to query — e.g. the Morpho-vault universe.
-    /// @dev Runs after registration (setMetaInstances requires the oracle to be registered) and within the same
+    /// @dev Runs after registration (setMetaInstances requires the adapter to be registered) and within the same
     ///      `admin` prank that holds MANAGER. Adapters with no `metaInstances` config are skipped.
     function _configureMetaInstances() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
@@ -928,7 +928,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @dev    Called from setUp while vm.startPrank(admin) is active. Submitter must equal the
     ///         adapter's owner (set to `admin` in `_deployMerklRewards`).
     function _seedMerklProofs() internal {
-        if (_merklOracle == address(0)) return;
+        if (_merklAdapter == address(0)) return;
         if (!vm.exists(MERKL_PROOFS_JSON)) {
             console2.log("[merkl] no proof fixture file; skipping cache seed");
             return;
@@ -948,7 +948,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
         if (vm.keyExistsJson(json, expectedRootKey)) {
             bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
-            address distributor = MerklRewardsBalanceOracle(_merklOracle).DISTRIBUTOR();
+            address distributor = MerklRewardsBalanceAdapter(_merklAdapter).DISTRIBUTOR();
             bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
             if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
                 console2.log(
@@ -981,7 +981,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             string memory proofKey = string.concat(chainKey, ".proofs[", vm.toString(i), "]");
             bytes32[] memory proof = vm.parseJsonBytes32Array(json, proofKey);
             uint256 amount = vm.parseUint(amountStrs[i]);
-            try MerklRewardsBalanceOracle(_merklOracle).submitProof(users[i], tokens[i], amount, proof) {
+            try MerklRewardsBalanceAdapter(_merklAdapter).submitProof(users[i], tokens[i], amount, proof) {
                 ok++;
             } catch (bytes memory err) {
                 failed++;
@@ -1133,7 +1133,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Attempt to read human-readable protocol name from the adapter.
         // Used by generate-comparison-report.py to map positions to DeBank protocol IDs.
         string memory protoName = "";
-        try IPositionDescribable(pos.balanceOracle).protocolName() returns (string memory n) {
+        try IPositionDescribable(pos.balanceAdapter).protocolName() returns (string memory n) {
             protoName = n;
         } catch {}
 

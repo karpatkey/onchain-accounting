@@ -42,7 +42,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    MorphoVaultsMetaBalanceAdapter public oracle;
+    MorphoVaultsMetaBalanceAdapter public adapter;
     TestUsdcVault public vault2;
 
     function setUp() public override {
@@ -60,7 +60,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Etch the pre-linked PriceFeedLib so pricing works on the fork.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(PRICE_FEED_LIB, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Real NAVCalculator (L1: no sequencer uptime feed).
         vm.startPrank(admin);
@@ -87,28 +87,28 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         // Deploy the meta-adapter and register it on NAV with both vaults as instances.
-        oracle = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
+        adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
         vm.startPrank(manager);
-        nav.addBalanceOracle(address(oracle));
+        nav.addBalanceAdapter(address(adapter));
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));
         instances[1] = bytes32(uint256(uint160(address(vault2))));
-        nav.setMetaInstances(address(oracle), instances);
+        nav.setMetaInstances(address(adapter), instances);
         vm.stopPrank();
     }
 
     function test_metaInstances_registered() public view {
-        assertEq(nav.getMetaInstances(address(oracle)).length, 2);
+        assertEq(nav.getMetaInstances(address(adapter)).length, 2);
     }
 
     function test_adapterDirect_aggregatesBothVaults() public view {
-        bytes32[] memory instances = nav.getMetaInstances(address(oracle));
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(SAFE, instances, address(0));
+        bytes32[] memory instances = nav.getMetaInstances(address(adapter));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(SAFE, instances, address(0));
 
         assertEq(pos.length, 2, "two USDC positions from one adapter");
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAsset.asset, address(USDC));
-            assertEq(pos[i].balanceOracle, address(oracle));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertFalse(pos[i].isDebt);
             assertGt(pos[i].amount, 0);
         }
@@ -117,16 +117,16 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(pos[1].positionId, abi.encode(address(vault2)));
     }
 
-    function test_navRouting_aggregatesViaMetaOracle() public view {
+    function test_navRouting_aggregatesViaMetaAdapter() public view {
         INAVCalculator.PositionBalance[] memory expected =
-            oracle.getOraclePositionsForInstances(SAFE, nav.getMetaInstances(address(oracle)), address(0));
+            adapter.getAdapterPositionsForInstances(SAFE, nav.getMetaInstances(address(adapter)), address(0));
 
         // NAVCalculator should route through the meta interface and surface both positions, attributed to the adapter.
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(SAFE, address(0));
 
         uint256 metaCount = 0;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].balanceOracle == address(oracle)) metaCount++;
+            if (positions[i].balanceAdapter == address(adapter)) metaCount++;
         }
         assertEq(metaCount, expected.length, "NAV surfaces every meta-adapter position");
         assertEq(metaCount, 2);
@@ -139,7 +139,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Cross-check the real Morpho vault leg against an actual redemption (mutating; isolated per test).
         bytes32[] memory one = new bytes32[](1);
         one[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(SAFE, one, address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(SAFE, one, address(0));
         assertEq(pos.length, 1);
 
         uint256 shares = KPK_USDC_VAULT.balanceOf(SAFE);
@@ -153,13 +153,13 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_assetFilter_usdc() public view {
-        bytes32[] memory instances = nav.getMetaInstances(address(oracle));
+        bytes32[] memory instances = nav.getMetaInstances(address(adapter));
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(SAFE, instances, address(USDC));
+            adapter.getAdapterPositionsForInstances(SAFE, instances, address(USDC));
         assertEq(pos.length, 2);
 
         INAVCalculator.PositionBalance[] memory none =
-            oracle.getOraclePositionsForInstances(SAFE, instances, address(0xdead));
+            adapter.getAdapterPositionsForInstances(SAFE, instances, address(0xdead));
         assertEq(none.length, 0);
     }
 }

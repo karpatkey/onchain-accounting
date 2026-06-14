@@ -61,7 +61,7 @@ If a future situation calls for a different posture (clean-room MIT port, GPL-on
 
 PancakeSwap V3 is a Uniswap V3 fork: same pool view surface, same NPM `positions` struct, same fee-growth math, same `LiquidityAmounts.getAmountsForLiquidity` mapping. The single divergence is that PancakeSwap's `slot0().feeProtocol` is `uint32` (per-token tiers packed into 32 bits) where Uniswap V3's is `uint8` (both tiers packed into 4-bit halves of a single byte). Solidity 0.8's strict ABI decoder rejects a `uint8` read whenever the high bits of the 32-byte word are set, which is the case on every active PancakeSwap V3 pool.
 
-Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, we marked `UniswapV3PoolsMetaBalanceAdapter._slot0()` `virtual` and have PancakeSwap V3 inherit the parent and override only that one read with a local interface declaration containing `uint32 feeProtocol`. The pattern matches `SparkLendBalanceOracle (self-contained, no inheritance)` — note that SparkLend.sol was refactored to a standalone adapter and no longer inherits from an Aave V3 base.
+Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, we marked `UniswapV3PoolsMetaBalanceAdapter._slot0()` `virtual` and have PancakeSwap V3 inherit the parent and override only that one read with a local interface declaration containing `uint32 feeProtocol`. The pattern matches `SparkLendBalanceAdapter (self-contained, no inheritance)` — note that SparkLend.sol was refactored to a standalone adapter and no longer inherits from an Aave V3 base.
 
 Implications for this ADR:
 

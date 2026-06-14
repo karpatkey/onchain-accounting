@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {IBalances} from "./IBalances.sol";
-import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
@@ -14,7 +14,7 @@ import {InvalidArguments} from "src/errors.sol";
 
 /// @title Balances
 /// @author kpk
-/// @notice Manages the balance oracles for different tokens and their latest balances.
+/// @notice Manages the balance adapters for different tokens and their latest balances.
 abstract contract Balances is IBalances, Initializable {
     //
     // Libraries
@@ -37,35 +37,35 @@ abstract contract Balances is IBalances, Initializable {
     // Storage
     //
 
-    /// @notice Mapping from token address to balance oracles.
-    mapping(address token => EnumerableMap.AddressToUintMap oracles) private _balanceOracles;
+    /// @notice Mapping from token address to balance adapters.
+    mapping(address token => EnumerableMap.AddressToUintMap adapters) private _balanceAdapters;
 
-    /// @notice Total count of balance oracles.
-    uint256 public balanceOracleTotalCount;
+    /// @notice Total count of balance adapters.
+    uint256 public balanceAdapterTotalCount;
 
-    /// @notice Global oracle registry - all oracles in the system
-    address[] private _globalOracles;
+    /// @notice Global adapter registry - all adapters in the system
+    address[] private _globalAdapters;
 
-    /// @notice Mapping from oracle address to oracle type
-    mapping(address oracle => OracleType) private _oracleTypes;
+    /// @notice Mapping from adapter address to adapter type
+    mapping(address adapter => AdapterType) private _adapterTypes;
 
-    /// @notice Quick lookup for oracle registration
-    mapping(address oracle => bool) private _isOracleRegistered;
+    /// @notice Quick lookup for adapter registration
+    mapping(address adapter => bool) private _isAdapterRegistered;
 
-    /// @notice ERC20Default oracle singleton (automatically registered)
+    /// @notice ERC20Default adapter singleton (automatically registered)
     /// @dev Set during initialization by derived contract
-    address public erc20DefaultOracle;
+    address public erc20DefaultAdapter;
 
-    /// @notice Per-oracle list of meta-adapter instance coordinates to query (e.g. vault addresses widened to
+    /// @notice Per-adapter list of meta-adapter instance coordinates to query (e.g. vault addresses widened to
     ///         bytes32). This is the governed, mutable "which instances" registry that keeps adapters immutable.
-    ///         Only meta-adapters read it (via getMetaInstances(address(this))); it is inert for other oracles.
+    ///         Only meta-adapters read it (via getMetaInstances(address(this))); it is inert for other adapters.
     ///         Callers of setMetaInstances must supply a deduplicated list (a duplicate would double-count NAV).
-    mapping(address oracle => bytes32[] instances) private _metaInstances;
+    mapping(address adapter => bytes32[] instances) private _metaInstances;
 
-    /// @notice Running total of configured meta instances across all oracles (cheap NAV buffer sizing).
+    /// @notice Running total of configured meta instances across all adapters (cheap NAV buffer sizing).
     uint256 internal _metaInstanceTotal;
 
-    /// @dev Reserved storage gap for future Balances expansions (48 slots; 2 consumed by meta-oracle registry).
+    /// @dev Reserved storage gap for future Balances expansions (48 slots; 2 consumed by meta-adapter registry).
     // solhint-disable-next-line var-name-mixedcase
     uint256[48] private __balancesGap;
 
@@ -74,7 +74,7 @@ abstract contract Balances is IBalances, Initializable {
     //
 
     /// @notice Initializer for UUPS proxy
-    /// @dev Derived contracts should deploy ERC20DefaultOracle and call _setErc20DefaultOracle()
+    /// @dev Derived contracts should deploy ERC20DefaultAdapter and call _setErc20DefaultAdapter()
     // solhint-disable-next-line func-name-mixedcase
     // forge-lint: disable-next-line(mixed-case-function)
     function __Balances_init() internal onlyInitializing {
@@ -87,19 +87,19 @@ abstract contract Balances is IBalances, Initializable {
         _nativeTokenSymbol = symbol;
     }
 
-    /// @notice Internal function to set and register the ERC20Default oracle
-    /// @dev Called by derived contracts after deploying ERC20DefaultOracle
-    /// @param defaultOracle The address of the deployed ERC20DefaultOracle
-    function _setErc20DefaultOracle(address defaultOracle) internal {
-        if (erc20DefaultOracle != address(0)) {
+    /// @notice Internal function to set and register the ERC20Default adapter
+    /// @dev Called by derived contracts after deploying ERC20DefaultAdapter
+    /// @param defaultAdapter The address of the deployed ERC20DefaultAdapter
+    function _setErc20DefaultAdapter(address defaultAdapter) internal {
+        if (erc20DefaultAdapter != address(0)) {
             revert InvalidArguments(); // Already set
         }
-        erc20DefaultOracle = defaultOracle;
+        erc20DefaultAdapter = defaultAdapter;
 
-        // Add to global oracle registry
-        _globalOracles.push(erc20DefaultOracle);
-        _oracleTypes[erc20DefaultOracle] = OracleType.Default; // ERC20Default handles both ERC20 and Native
-        _isOracleRegistered[erc20DefaultOracle] = true;
+        // Add to global adapter registry
+        _globalAdapters.push(erc20DefaultAdapter);
+        _adapterTypes[erc20DefaultAdapter] = AdapterType.Default; // ERC20Default handles both ERC20 and Native
+        _isAdapterRegistered[erc20DefaultAdapter] = true;
     }
 
     //
@@ -107,50 +107,50 @@ abstract contract Balances is IBalances, Initializable {
     //
 
     /// @inheritdoc IBalances
-    function checkBalanceOracleSupport(address oracle) public view {
-        if (oracle == address(0)) revert InvalidArguments();
+    function checkBalanceAdapterSupport(address adapter) public view {
+        if (adapter == address(0)) revert InvalidArguments();
 
-        if (!oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId)) {
-            revert InvalidBalanceOracle();
+        if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) {
+            revert InvalidBalanceAdapter();
         }
     }
 
     /// @inheritdoc IBalances
-    function getAllOracles() public view override returns (address[] memory) {
-        return _globalOracles;
+    function getAllAdapters() public view override returns (address[] memory) {
+        return _globalAdapters;
     }
 
     /// @inheritdoc IBalances
-    function getOracleCount() public view override returns (uint256) {
-        return _globalOracles.length;
+    function getAdapterCount() public view override returns (uint256) {
+        return _globalAdapters.length;
     }
 
     /// @inheritdoc IBalances
-    function isOracleRegistered(address oracle) public view override returns (bool) {
-        return _isOracleRegistered[oracle];
+    function isAdapterRegistered(address adapter) public view override returns (bool) {
+        return _isAdapterRegistered[adapter];
     }
 
     /// @inheritdoc IBalances
-    function getOracleType(address oracle) public view override returns (OracleType) {
-        if (!_isOracleRegistered[oracle]) {
-            revert InvalidBalanceOracle();
+    function getAdapterType(address adapter) public view override returns (AdapterType) {
+        if (!_isAdapterRegistered[adapter]) {
+            revert InvalidBalanceAdapter();
         }
-        return _oracleTypes[oracle];
+        return _adapterTypes[adapter];
     }
 
     /// @inheritdoc IBalances
-    function getOraclesForAsset(address asset) public view override returns (address[] memory) {
-        uint256 oracleCount = _globalOracles.length;
-        address[] memory temp = new address[](oracleCount);
+    function getAdaptersForAsset(address asset) public view override returns (address[] memory) {
+        uint256 adapterCount = _globalAdapters.length;
+        address[] memory temp = new address[](adapterCount);
         uint256 count = 0;
 
-        for (uint256 i = 0; i < oracleCount; i++) {
-            try IBalanceOracleAdapter(_globalOracles[i]).underlyingAssetsSupported() returns (
+        for (uint256 i = 0; i < adapterCount; i++) {
+            try IBalanceAdapter(_globalAdapters[i]).underlyingAssetsSupported() returns (
                 address[] memory supportedAssets
             ) {
                 for (uint256 j = 0; j < supportedAssets.length; j++) {
                     if (supportedAssets[j] == asset) {
-                        temp[count++] = _globalOracles[i];
+                        temp[count++] = _globalAdapters[i];
                         break;
                     }
                 }
@@ -166,55 +166,55 @@ abstract contract Balances is IBalances, Initializable {
     // Internal API
     //
 
-    /// @notice Adds a balance oracle globally.
-    /// @param oracle The address of the oracle.
-    function _addBalanceOracle(address oracle) internal {
+    /// @notice Adds a balance adapter globally.
+    /// @param adapter The address of the adapter.
+    function _addBalanceAdapter(address adapter) internal {
         // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to
         // keep NAVCalculator under EIP-170; the running count + event stay inline (cheaper than crossing the boundary).
-        NavRegistryLib.addBalanceOracle(_isOracleRegistered, _globalOracles, _oracleTypes, oracle);
-        balanceOracleTotalCount++;
+        NavRegistryLib.addBalanceAdapter(_isAdapterRegistered, _globalAdapters, _adapterTypes, adapter);
+        balanceAdapterTotalCount++;
 
-        // Emit event with address(0) for underlyingAsset since oracles are global
-        emit BalanceOracleAdded(address(0), oracle, OracleType.Custom);
+        // Emit event with address(0) for underlyingAsset since adapters are global
+        emit BalanceAdapterAdded(address(0), adapter, AdapterType.Custom);
     }
 
-    /// @notice Removes the oracle from the global registry.
-    /// @param oracle The address of the oracle.
-    function _removeBalanceOracle(address oracle) internal {
-        // Storage mutation + guards delegated to NavRegistryLib (see _addBalanceOracle); count + event stay inline.
-        NavRegistryLib.removeBalanceOracle(
-            _isOracleRegistered, _globalOracles, _oracleTypes, oracle, erc20DefaultOracle
+    /// @notice Removes the adapter from the global registry.
+    /// @param adapter The address of the adapter.
+    function _removeBalanceAdapter(address adapter) internal {
+        // Storage mutation + guards delegated to NavRegistryLib (see _addBalanceAdapter); count + event stay inline.
+        NavRegistryLib.removeBalanceAdapter(
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultAdapter
         );
-        balanceOracleTotalCount--;
+        balanceAdapterTotalCount--;
 
-        // Note: a removed oracle's configured meta-instance set (if any) is left dormant — it is no longer
-        // queried since the oracle is out of the registry. _metaInstanceTotal only sizes read buffers (an
-        // overestimate is harmless), and a re-registered oracle's set is reset by the next setMetaInstances.
+        // Note: a removed adapter's configured meta-instance set (if any) is left dormant — it is no longer
+        // queried since the adapter is out of the registry. _metaInstanceTotal only sizes read buffers (an
+        // overestimate is harmless), and a re-registered adapter's set is reset by the next setMetaInstances.
 
-        // Emit event with address(0) for underlyingAsset since oracles are global
-        emit BalanceOracleRemoved(address(0), oracle);
+        // Emit event with address(0) for underlyingAsset since adapters are global
+        emit BalanceAdapterRemoved(address(0), adapter);
     }
 
     //
-    // Meta-oracle instance registry
+    // Meta-adapter instance registry
     //
 
     /// @inheritdoc IBalances
-    function getMetaInstances(address oracle) public view override returns (bytes32[] memory) {
-        return _metaInstances[oracle];
+    function getMetaInstances(address adapter) public view override returns (bytes32[] memory) {
+        return _metaInstances[adapter];
     }
 
-    /// @notice Replaces the full instance set for a meta-oracle (ADR 0010). The caller must supply a
-    ///         deduplicated list; only meta-adapters read this set, so it is a no-op for other oracles. A zero
+    /// @notice Replaces the full instance set for a meta-adapter (ADR 0010). The caller must supply a
+    ///         deduplicated list; only meta-adapters read this set, so it is a no-op for other adapters. A zero
     ///         entry is harmless — the adapter's per-instance read reverts and is isolated to an empty result.
-    /// @param oracle The registered oracle.
+    /// @param adapter The registered adapter.
     /// @param instances The new instance coordinates.
-    function _setMetaInstances(address oracle, bytes32[] memory instances) internal {
-        if (!_isOracleRegistered[oracle]) {
-            revert InvalidBalanceOracle();
+    function _setMetaInstances(address adapter, bytes32[] memory instances) internal {
+        if (!_isAdapterRegistered[adapter]) {
+            revert InvalidBalanceAdapter();
         }
 
-        _metaInstanceTotal = _metaInstanceTotal - _metaInstances[oracle].length + instances.length;
-        _metaInstances[oracle] = instances;
+        _metaInstanceTotal = _metaInstanceTotal - _metaInstances[adapter].length + instances.length;
+        _metaInstances[adapter] = instances;
     }
 }

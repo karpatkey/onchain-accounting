@@ -1,16 +1,16 @@
-# 0006 — Aave Umbrella Balance Oracle: dynamic discovery via RewardsController
+# 0006 — Aave Umbrella Balance Adapter: dynamic discovery via RewardsController
 
 **Status:** accepted
 
 ## Context
 
-Aave Umbrella is the successor to the legacy Aave V3 Safety Module. It deploys a new contract architecture (`Umbrella` controller, per-asset `UmbrellaStakeToken` ERC4626 vaults, and a multi-reward `RewardsController`) that the existing `AaveV3SafetyModuleBalanceOracle` adapter does not see — that adapter only knows about the four legacy stake tokens (`stkAAVE`, `stkABPT`, `stkABPTv2`, `stkGHO @ 0x1a88…1d`). ADR 0005 anticipated this transition: *"A future Aave Umbrella migration … requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work goes in its own ADR."*
+Aave Umbrella is the successor to the legacy Aave V3 Safety Module. It deploys a new contract architecture (`Umbrella` controller, per-asset `UmbrellaStakeToken` ERC4626 vaults, and a multi-reward `RewardsController`) that the existing `AaveV3SafetyModuleBalanceAdapter` adapter does not see — that adapter only knows about the four legacy stake tokens (`stkAAVE`, `stkABPT`, `stkABPTv2`, `stkGHO @ 0x1a88…1d`). ADR 0005 anticipated this transition: *"A future Aave Umbrella migration … requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work goes in its own ADR."*
 
 The Umbrella set on Mainnet today (verified via `RewardsController.getAllAssets()` at planning time): `stkwaEthUSDC.v1`, `stkwaEthUSDT.v1`, `stkwaEthWETH.v1`, `stkGHO.v1`. All four share the same `RewardsController` at `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`. The wa-backed stake tokens hold StataTokenV2 wrappers (waEthUSDC etc.) over the matching aTokens; rewards are paid in the matching aToken. `stkGHO.v1`'s `asset()` is plain GHO and its reward is also plain GHO.
 
 ## Decision
 
-Ship a new, separate `AaveUmbrellaBalanceOracle` (`src/balances/protocols/AaveUmbrella.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
+Ship a new, separate `AaveUmbrellaBalanceAdapter` (`src/balances/protocols/AaveUmbrella.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
 
 ```solidity
 constructor(address rewardsController, address navCalculator)
@@ -44,7 +44,7 @@ The adapter still pins **one** address — the `RewardsController` — as constr
 
 ## Reward-token forward compatibility
 
-Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls the full `(rewardTokens[], amounts[])` tuple via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and emits one `Rewards` leg per non-zero entry whose mapped bare reserve equals the stake token's staked-side bare reserve. If governance adds an extra reward token whose bare reserve differs (e.g. an AAVE incentive on top of the aToken reward), it would be silently dropped — `_claimableRewardInBareReserve` only sums entries that map to the same `wantedBareReserve`. This is conservative by design: surfacing AAVE rewards inside an entry whose `balanceAsset` is USDC would mis-price them. If/when multi-reward Umbrella stake tokens go live, the framework can either extend this adapter to emit additional `Rewards` legs per reward bare reserve or rely on the existing `ERC20DefaultOracle` to surface the held AAVE balance separately.
+Each stake token currently pays one reward token (the matching aToken; or GHO for stkGHO). The adapter pulls the full `(rewardTokens[], amounts[])` tuple via `RewardsController.calculateCurrentUserRewards(stakeToken, user)` and emits one `Rewards` leg per non-zero entry whose mapped bare reserve equals the stake token's staked-side bare reserve. If governance adds an extra reward token whose bare reserve differs (e.g. an AAVE incentive on top of the aToken reward), it would be silently dropped — `_claimableRewardInBareReserve` only sums entries that map to the same `wantedBareReserve`. This is conservative by design: surfacing AAVE rewards inside an entry whose `balanceAsset` is USDC would mis-price them. If/when multi-reward Umbrella stake tokens go live, the framework can either extend this adapter to emit additional `Rewards` legs per reward bare reserve or rely on the existing `ERC20DefaultAdapter` to surface the held AAVE balance separately.
 
 ## Debank cross-check classification
 
@@ -63,7 +63,7 @@ The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and rema
 
 **Negative / things to watch**
 
-- A few extra view calls per `getOraclePositions` invocation (per stake token: `balanceOf` + `convertToAssets` + 1-2 `asset()` + symbol + per-reward `UNDERLYING_ASSET_ADDRESS`). Acceptable for a view function called for NAV computation, not on a hot path.
+- A few extra view calls per `getAdapterPositions` invocation (per stake token: `balanceOf` + `convertToAssets` + 1-2 `asset()` + symbol + per-reward `UNDERLYING_ASSET_ADDRESS`). Acceptable for a view function called for NAV computation, not on a hot path.
 - A misconfigured RewardsController that returns malicious stake-token addresses would be trusted. This is the same trust assumption every dynamically-discovered adapter has — mitigated by pinning the *controller* address at deploy time, so the trust root is fixed even though the discovered set is not.
 - Multi-reward stake tokens whose extra rewards land in a *different* bare reserve are silently dropped (rather than mis-attributed). When this becomes a real configuration, extend the adapter to emit additional `Rewards` legs per distinct reward bare reserve.
 - Mainnet-only in spirit. The RewardsController is Mainnet-specific; deploying on another chain requires passing that chain's controller (or none, if Umbrella is not deployed there).
@@ -88,7 +88,7 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 1. **Hardcode every stake-token, waToken, aToken, and reserve address as `address public constant` in source (mirroring ADR 0005).** Rejected because Umbrella, unlike the legacy SM, exposes a usable on-chain registry. The framework convention is *use the registry when it exists* (cf. `AaveV3InstancesMetaBalanceAdapter`), and a code change every time governance adds a stake token is friction the registry lets us avoid.
 2. **Hybrid: pass the stake-token list via constructor but discover the rest dynamically.** Rejected because the stake-token list is the part most likely to change. Pinning the controller and discovering everything beneath it from a single trust anchor is a strict simplification.
 3. **Report positions in waToken or aToken units instead of the bare reserve.** Rejected because `NAVCalculator` does not have price feeds registered for waEth* or aEth* (only for the bare reserves). Adding four custom price feeds would be a larger surface area and require independent ADRs.
-4. **Reuse `AaveV3SafetyModuleBalanceOracle` and add Umbrella entries.** Rejected because the two protocols have entirely different read interfaces (`stkAAVE.previewRedeem` / `getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
+4. **Reuse `AaveV3SafetyModuleBalanceAdapter` and add Umbrella entries.** Rejected because the two protocols have entirely different read interfaces (`stkAAVE.previewRedeem` / `getTotalRewardsBalance` vs. `UmbrellaStakeToken.convertToAssets` + `RewardsController.calculateCurrentUserRewards`). One adapter per protocol-shape keeps each adapter narrow.
 5. **Merge Staked + Rewards into a single position when both legs land in the same bare reserve (mirroring the legacy SM's stkAAVE collapse).** Rejected because the value of the user's "position" is more useful broken out — the staked principal accrues yield via the waToken's exchange rate, while the rewards are claimable but unclaimed aToken balances. Two `PositionBalance` entries with distinct `positionKind` values (`Staking` for the staked principal, `Rewards` for the claimable rewards) preserve that breakdown for downstream accounting.
 
 ## Reference

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -29,14 +29,14 @@ interface IUmbrellaRewardsControllerForkView {
         returns (address[] memory rewardTokens, uint256[] memory amounts);
 }
 
-/// @title AaveUmbrellaBalanceOracleForkTest
-/// @notice Fork tests for the dynamic-discovery AaveUmbrellaBalanceOracle against real Mainnet contracts.
+/// @title AaveUmbrellaBalanceAdapterForkTest
+/// @notice Fork tests for the dynamic-discovery AaveUmbrellaBalanceAdapter against real Mainnet contracts.
 /// @dev The adapter takes only the RewardsController address as constructor input and discovers the
 ///      stake-token set + bare reserves + reward-token-to-bare-reserve mapping at runtime. These
 ///      tests verify the discovery is correct against the live state at a pinned block, with real
 ///      holders chosen to have non-zero stake balances and non-zero accrued rewards on each stake
 ///      token.
-contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
+contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @notice Aave Umbrella RewardsController on Mainnet — the only address this test pins as a
     ///         constant. The adapter under test learns everything else from here.
     IUmbrellaRewardsControllerForkView public constant REWARDS_CONTROLLER =
@@ -54,7 +54,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
     ///      rewards. Confirmed by direct RPC reads at planning time.
     uint256 public constant FORK_BLOCK = 25_000_000;
 
-    AaveUmbrellaBalanceOracle public oracle;
+    AaveUmbrellaBalanceAdapter public adapter;
 
     // positionDetail prefix must match the constructor arg used in setUp.
     string private constant _PD_PREFIX = "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"";
@@ -73,21 +73,21 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         _setupFork();
-        _setupOracle();
+        _setupAdapter();
     }
 
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
     }
 
-    function _setupOracle() internal {
+    function _setupAdapter() internal {
         address[] memory assets = new address[](4);
         assets[0] = USDC;
         assets[1] = USDT;
         assets[2] = WETH;
         assets[3] = GHO;
-        balances = _deployBalancesForOracle(assets);
-        oracle = new AaveUmbrellaBalanceOracle(address(REWARDS_CONTROLLER), address(balances));
+        balances = _deployBalancesForAdapter(assets);
+        adapter = new AaveUmbrellaBalanceAdapter(address(REWARDS_CONTROLLER), address(balances));
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
     }
 
     function test_underlyingAssetsSupported_dedupesToBareReserves() public view {
-        address[] memory list = oracle.underlyingAssetsSupported();
+        address[] memory list = adapter.underlyingAssetsSupported();
         // Today's set resolves to four distinct bare reserves (USDC, USDT, WETH, GHO). If governance
         // adds a stake token whose bare reserve is already in the set the dedup keeps the count
         // at 4; if governance adds a brand-new reserve the count goes up. Either is acceptable —
@@ -147,14 +147,14 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
 
     // ─── Position attribution and labels ──────────────────────────────────────
 
-    function test_getOraclePositions_emitsStakedAndRewardsLegsForUSDCHolder() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_WA_USDC_HOLDER, address(0));
+    function test_getAdapterPositions_emitsStakedAndRewardsLegsForUSDCHolder() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_WA_USDC_HOLDER, address(0));
 
         bool sawStaked;
         bool sawRewards;
         for (uint256 i; i < positions.length; ++i) {
             assertGt(positions[i].amount, 0);
-            assertEq(positions[i].balanceOracle, address(oracle));
+            assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
 
             if (positions[i].balanceAsset.asset == USDC) {
@@ -166,10 +166,10 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         assertTrue(sawRewards, "missing USDC/stkwaEthUSDC.v1 Rewards position");
     }
 
-    function test_getOraclePositions_emitsStakedAndRewardsLegsForGHOHolder() public view {
+    function test_getAdapterPositions_emitsStakedAndRewardsLegsForGHOHolder() public view {
         // stkGHO.v1 staked and rewards are BOTH in GHO, so the holder sees two GHO entries with
         // distinct positionDetail strings — exactly the disambiguation the framework needs.
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, address(0));
 
         bool sawStaked;
         bool sawRewards;
@@ -182,26 +182,26 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         assertTrue(sawRewards, "missing GHO/stkGHO.v1 Rewards position");
     }
 
-    function test_getOraclePositions_assetFilter_onlyEmitsMatchingAsset() public view {
+    function test_getAdapterPositions_assetFilter_onlyEmitsMatchingAsset() public view {
         // GHO holder filtered to GHO — should emit both legs (Staked + Rewards).
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 2);
         for (uint256 i; i < positions.length; ++i) {
             assertEq(positions[i].balanceAsset.asset, GHO);
         }
     }
 
-    function test_getOraclePositions_assetFilter_excludesUnrelatedHolderPositions() public view {
+    function test_getAdapterPositions_assetFilter_excludesUnrelatedHolderPositions() public view {
         // GHO holder doesn't hold any wa-stake; filter to USDC should yield nothing.
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, USDC);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, USDC);
         assertEq(positions.length, 0);
     }
 
-    // ─── getOracleBalances aggregation ────────────────────────────────────────
+    // ─── getAdapterBalances aggregation ────────────────────────────────────────
 
-    function test_getOracleBalances_returnsOneEntryPerNonZeroUnderlying() public view {
+    function test_getAdapterBalances_returnsOneEntryPerNonZeroUnderlying() public view {
         (address[] memory assetsArr, uint256[] memory amountsArr, bool[] memory isDebtArr) =
-            oracle.getOracleBalances(STK_WA_USDC_HOLDER);
+            adapter.getAdapterBalances(STK_WA_USDC_HOLDER);
         assertEq(assetsArr.length, 1, "USDC holder should report exactly one underlying");
         assertEq(assetsArr[0], USDC);
         assertGt(amountsArr[0], 0);
@@ -211,8 +211,8 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /// @dev Compute the expected (staked + rewards-mapped-to-bare-reserve) total for a holder by
-    ///      walking the same path as the adapter, then assert the adapter's getOracleBalanceForAsset
-    ///      matches and that getOraclePositions emits the right two legs with the expected labels.
+    ///      walking the same path as the adapter, then assert the adapter's getAdapterBalanceForAsset
+    ///      matches and that getAdapterPositions emits the right two legs with the expected labels.
     function _assertHolderBalanceMatches(address holder, address bareReserve, string memory expectedSymbol)
         internal
         view
@@ -236,7 +236,7 @@ contract AaveUmbrellaBalanceOracleForkTest is BalanceAdapterTestBase {
         uint256 expectedStaked = _expectedStakedUnderlying(stakeToken, holder);
         uint256 expectedRewards = _expectedRewardsInBareReserve(stakeToken, holder, bareReserve);
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(holder, bareReserve);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(holder, bareReserve);
         assertEq(amount, expectedStaked + expectedRewards, "adapter sum diverges from independent computation");
         assertGt(amount, 0);
         assertFalse(isDebt);

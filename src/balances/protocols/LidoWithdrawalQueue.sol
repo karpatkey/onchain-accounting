@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -9,21 +9,21 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Lido Withdrawal Queue Balance Oracle
+/// @title Lido Withdrawal Queue Balance Adapter
 /// @author kpk
 /// @notice Reports the ETH owed to an account from open requests in Lido's `WithdrawalQueueERC721`.
 /// @dev When a user requests an unstake, stETH is locked and an ERC721 request id is minted. The
 ///      claim pays out **native ETH** (the stETH is burned), so the position is denominated in ETH —
 ///      not stETH — matching what the account actually receives (and pricing it via ETH/USD rather
 ///      than stETH/USD, so a stETH depeg can't mis-value a claim that settles in full ETH). While
-///      queued the value is invisible to wallet/receipt-token oracles. This oracle enumerates the
+///      queued the value is invisible to wallet/receipt-token adapters. This adapter enumerates the
 ///      account's request ids (`getWithdrawalRequests`), reads their status (`getWithdrawalStatus`),
 ///      and sums `amountOfStETH` across all **un-claimed** requests into a single position
 ///      denominated in `UNDERLYING_TOKEN` (native ETH). `amountOfStETH` is fixed at request time and
 ///      equals the ETH paid on claim (verified on-chain; it can differ only on a negative rebase
 ///      between request and finalization, where Lido caps the payout). NAVCalculator prices it via
 ///      the registered ETH feed.
-contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Constants
     //
@@ -129,10 +129,10 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = UNDERLYING_TOKEN;
@@ -141,7 +141,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -153,8 +153,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         return "stETH withdrawal queue";
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -166,8 +166,8 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         return (_ethOwed(account), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -190,16 +190,16 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         isDebt[0] = false;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the account's open withdrawal-queue position as a single ETH credit.
     /// @dev Dropped if the underlying asset is not registered in NAVCalculator.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        // Asset-filter mismatch → no positions for this oracle.
+        // Asset-filter mismatch → no positions for this adapter.
         if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
             return new INAVCalculator.PositionBalance[](0);
         }
@@ -227,7 +227,7 @@ contract LidoWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: underlying,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
@@ -244,7 +244,7 @@ interface ILidoWithdrawalQueue {
     /// @param amountOfShares Lido shares locked at request time.
     /// @param owner Owner of the request NFT.
     /// @param timestamp Request creation timestamp.
-    /// @param isFinalized Whether the request has been finalized by an oracle report.
+    /// @param isFinalized Whether the request has been finalized by an adapter report.
     /// @param isClaimed Whether the ETH has already been claimed (request burned).
     struct WithdrawalRequestStatus {
         uint256 amountOfStETH;

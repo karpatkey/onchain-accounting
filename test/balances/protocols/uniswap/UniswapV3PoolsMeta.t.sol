@@ -4,8 +4,8 @@ pragma solidity ^0.8;
 import {Test} from "forge-std/Test.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -81,20 +81,20 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     function _metaToken(bytes32 instance, address token) internal view returns (uint256 sum) {
         bytes32[] memory one = new bytes32[](1);
         one[0] = instance;
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].balanceAsset.asset == token) sum += p[i].amount;
         }
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
@@ -109,11 +109,11 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_acrossPools_andIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // poolA: WBTC supply, WETH supply, WBTC fees, WETH fees (4) + poolB: USDC supply, WETH supply, USDC fees, WETH fees (4)
         assertEq(p.length, 8, "4 legs per pool");
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].balanceOracle, address(meta));
+            assertEq(p[i].balanceAdapter, address(meta));
             assertFalse(p[i].isDebt);
         }
         // poolA legs carry positionId = abi.encode(npm, tokenId=1)
@@ -123,7 +123,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_feesLegType() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // The 3rd/4th poolA legs are Fees (tokensOwed 42/1337).
         assertEq(p[2].amount, 42);
         assertEq(uint8(p[2].positionKind), uint8(PositionKind.Fees));
@@ -134,7 +134,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     function test_assetFilter() public view {
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(wbtc));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(wbtc));
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, address(wbtc));
         }
@@ -145,7 +145,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         nav.unregisterAssetHelper(address(weth));
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, address(wbtc), "only WBTC legs survive");
         }
@@ -156,12 +156,12 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead)))); // no code -> reverts internally, isolated
         ins[1] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 4, "bad instance isolated, poolA's 4 legs returned");
     }
 
     function test_emptyInstances() public view {
-        assertEq(meta.getOraclePositionsForInstances(alice, new bytes32[](0), address(0)).length, 0);
+        assertEq(meta.getAdapterPositionsForInstances(alice, new bytes32[](0), address(0)).length, 0);
     }
 
     function test_underlyingAssetsForInstances() public view {

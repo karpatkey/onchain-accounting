@@ -111,7 +111,7 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID -
 # 05 — deploy bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis)
 forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 06 — register balance oracles + meta-instances + authorize bridge adapters (EOA broadcast; idempotent)
+# 06 — register balance adapters + meta-instances + authorize bridge adapters (EOA broadcast; idempotent)
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles

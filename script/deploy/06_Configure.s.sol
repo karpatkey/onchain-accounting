@@ -13,9 +13,9 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Post-deployment configuration for NAVCalculator and BridgeEscrow, broadcast directly by the deployer EOA.
 /// @dev EOA flow (no Safe): the caller must hold DEFAULT_ADMIN_ROLE + MANAGER on the proxies (granted by the atomic
 ///      deployer in 02 when chainConfig.admin == chainConfig.manager == the deployer EOA). For each enabled+deployed
-///      balance adapter it calls `addBalanceOracle` (idempotent) and, for meta-adapters (ADR 0010), `setMetaInstances`
+///      balance adapter it calls `addBalanceAdapter` (idempotent) and, for meta-adapters (ADR 0010), `setMetaInstances`
 ///      with the configured instance set; for each enabled+deployed bridge adapter it authorizes it on BridgeEscrow.
-///      Idempotent: skips oracles already registered and adapters already authorized, so it can be re-run safely.
+///      Idempotent: skips adapters already registered and adapters already authorized, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
 contract Configure is BaseDeployScript {
     function run() public override {
@@ -47,7 +47,7 @@ contract Configure is BaseDeployScript {
         vm.startBroadcast();
         if (navProxy != address(0)) {
             _ensureManager(navProxy);
-            _configureBalanceOracles(navProxy);
+            _configureBalanceAdapters(navProxy);
         }
         if (bridgeProxy != address(0)) {
             _authorizeBridgeAdapters(bridgeProxy);
@@ -70,7 +70,7 @@ contract Configure is BaseDeployScript {
 
     /// @notice Registers each enabled+deployed balance adapter on NAVCalculator (idempotent) and configures the
     ///         instance set for meta-adapters (ADR 0010).
-    function _configureBalanceOracles(address navProxy) internal {
+    function _configureBalanceAdapters(address navProxy) internal {
         string[] memory adapterNames = _balanceAdapterNames();
         uint256 added;
         uint256 configured;
@@ -80,17 +80,17 @@ contract Configure is BaseDeployScript {
             address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
             if (deployed == address(0)) continue;
 
-            if (!IBalances(navProxy).isOracleRegistered(deployed)) {
+            if (!IBalances(navProxy).isAdapterRegistered(deployed)) {
                 (bool ok, bytes memory data) =
-                    navProxy.call(abi.encodeWithSignature("addBalanceOracle(address)", deployed));
+                    navProxy.call(abi.encodeWithSignature("addBalanceAdapter(address)", deployed));
                 if (!ok) {
                     revert(
                         string(
-                            abi.encodePacked("addBalanceOracle failed for ", adapterNames[i], ": ", _decodeRevert(data))
+                            abi.encodePacked("addBalanceAdapter failed for ", adapterNames[i], ": ", _decodeRevert(data))
                         )
                     );
                 }
-                console2.log("[OK] Added balance oracle:", adapterNames[i], deployed);
+                console2.log("[OK] Added balance adapter:", adapterNames[i], deployed);
                 added++;
             } else {
                 console2.log("[SKIP] Already registered:", adapterNames[i], deployed);
@@ -113,7 +113,7 @@ contract Configure is BaseDeployScript {
                 configured++;
             }
         }
-        console2.log("--- Balance oracles: added", added, "; meta sets configured", configured);
+        console2.log("--- Balance adapters: added", added, "; meta sets configured", configured);
     }
 
     /// @notice Authorizes each enabled+deployed bridge adapter on BridgeEscrow (idempotent via isAuthorizedAdapter).
@@ -182,7 +182,7 @@ contract Configure is BaseDeployScript {
         names[i++] = "MorphoVaultsMeta";
         // Morpho Markets meta-adapter (ADR 0010): marketId set configured via setMetaInstances (metaInstancesRaw)
         names[i++] = "MorphoMarketsMeta";
-        // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceOracle)
+        // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter)
         names[i++] = "ERC4626Wrap_waEthLidoGHO";
         names[i++] = "ERC4626Wrap_sGHO";
         // Gearbox meta-adapter (ADR 0010): market set configured via setMetaInstances

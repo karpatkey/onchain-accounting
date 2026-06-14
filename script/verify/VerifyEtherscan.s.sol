@@ -115,7 +115,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
-            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceOracle";
+            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceAdapter";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
@@ -135,7 +135,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "DaiDsr")) {
-            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceOracle";
+            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceAdapter";
             address dai = _parseAddr("balanceAdapters", name, "dai", address(0));
             address dsrManager = _parseAddr("balanceAdapters", name, "dsrManager", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
@@ -146,7 +146,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SkySavingsUsds")) {
-            path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceOracle";
+            path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceAdapter";
             address savingsUsds = _parseAddr("balanceAdapters", name, "savingsUsds", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             string memory positionDetail = _readParam("balanceAdapters", name, "positionDetail");
@@ -156,7 +156,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "ERC20Default") || _startsWith(name, "ERC20Default_")) {
-            path = "src/balances/protocols/ERC20DefaultOracle.sol:ERC20DefaultOracle";
+            path = "src/balances/protocols/ERC20DefaultAdapter.sol:ERC20DefaultAdapter";
             address nav = _navOrDefault(navCalculator, name);
             if (nav == address(0)) return ("", "");
             address[] memory initialAssets = new address[](0);

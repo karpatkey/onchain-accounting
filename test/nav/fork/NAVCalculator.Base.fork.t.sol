@@ -76,18 +76,18 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
+        aaveAdapter = aaveMeta;
 
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
 
-        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
-        nav.addBalanceOracle(address(aaveOracle));
-        nav.addBalanceOracle(address(compoundV3Comet));
-        nav.addBalanceOracle(address(morphoBlueOracle));
+        nav.addBalanceAdapter(address(aaveAdapter));
+        nav.addBalanceAdapter(address(compoundV3Comet));
+        nav.addBalanceAdapter(address(morphoBlueAdapter));
 
         // Configure meta-adapter instance sets
         bytes32[] memory aaveInstances = new bytes32[](1);
@@ -100,7 +100,7 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
         bytes32[] memory markets = new bytes32[](1);
         markets[0] = marketIdCbbtcUsdc;
-        nav.setMetaInstances(address(morphoBlueOracle), markets);
+        nav.setMetaInstances(address(morphoBlueAdapter), markets);
     }
 
     function test_logPositions() public view {

@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {AuraRewardsMetaBalanceAdapter} from "src/balances/protocols/AuraRewardsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -476,8 +476,8 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
     // ─── 1. Interface detection ───────────────────────────────────────────────
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
@@ -522,7 +522,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setBalance(alice, 100e18); // 10% of 1000e18
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         uint256 stakingCount = _count(pos, PositionKind.Staking);
         assertEq(stakingCount, 2, "2 Staking legs for 2-token pool");
@@ -546,7 +546,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setEarned(alice, balEarned);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory balPos = _find(pos, address(bal));
         assertEq(balPos.amount, balEarned, "BAL amount equals rewarder.earned()");
@@ -570,7 +570,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setEarned(alice, balEarned);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory auraPos = _find(pos, address(aura));
         uint256 expectedAura = 3900e18;
@@ -589,7 +589,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         // metaL2 uses a separate rewarder (same mock rewarder but queried via metaL2's booster)
         // The rewarder.pid() = 0 which boosterL2 maps to address(pool)
         INAVCalculator.PositionBalance[] memory pos =
-            metaL2.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            metaL2.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory auraPos = _find(pos, address(auraL2Token));
         uint256 expectedAura = (balEarned * 3e17) / 1e18;
@@ -608,7 +608,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.addExtra(address(extra));
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory ldoPos = _find(pos, address(ldo));
         assertEq(ldoPos.amount, 77e18, "Extra direct reward amount");
@@ -626,7 +626,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.addExtra(address(extra));
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory snxPos = _find(pos, address(snx));
         assertEq(snxPos.amount, 55e18, "Stash-wrapped extra reward unwrapped to base token");
@@ -652,7 +652,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.addExtra(address(extraPool));
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         INAVCalculator.PositionBalance memory auraPos = _find(pos, address(aura));
         // Main: 1000e18 * 1950 / 500 = 3900e18
@@ -675,7 +675,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(tok0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(tok0));
 
         assertGt(pos.length, 0, "filter must return at least one position");
         for (uint256 i; i < pos.length; ++i) {
@@ -689,7 +689,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setEarned(alice, 200e18); // BAL earned, no staked BPT
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         // No Staking legs
         assertEq(_count(pos, PositionKind.Staking), 0, "no Staking legs when stakedBpt = 0");
@@ -707,7 +707,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad instance
         instances[1] = bytes32(uint256(uint160(address(rewarder))));
 
-        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getAdapterPositionsForInstances(alice, instances, address(0));
 
         assertGt(pos.length, 0, "good rewarder still returns positions");
     }
@@ -748,13 +748,13 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _single(address(rewarder)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _single(address(rewarder)), address(0));
 
         assertGt(pos.length, 0);
         for (uint256 i; i < pos.length; ++i) {
             assertEq(pos[i].protocolId, ProtocolIds.AURA, "protocolId = AURA");
             assertEq(pos[i].positionId, abi.encode(address(rewarder)), "positionId = abi.encode(rewarder)");
-            assertEq(pos[i].balanceOracle, address(meta), "balanceOracle = meta address");
+            assertEq(pos[i].balanceAdapter, address(meta), "balanceAdapter = meta address");
         }
     }
 
@@ -785,7 +785,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         v2Rewarder.setBalance(alice, 100e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            v2Meta.getOraclePositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
+            v2Meta.getAdapterPositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
 
         uint256 stakingCount;
         for (uint256 i; i < pos.length; ++i) {
@@ -826,7 +826,7 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
         v2Rewarder.setEarned(alice, 200e18); // BAL earned
 
         INAVCalculator.PositionBalance[] memory pos =
-            noVaultMeta.getOraclePositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
+            noVaultMeta.getAdapterPositionsForInstances(alice, _single(address(v2Rewarder)), address(0));
 
         // No Staking legs (vault is address(0)) but BAL Rewards leg present
         for (uint256 i; i < pos.length; ++i) {

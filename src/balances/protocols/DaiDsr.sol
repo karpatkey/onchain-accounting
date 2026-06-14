@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -12,8 +12,8 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @notice A balance oracle for the DAI token that uses the DSRManager contract to calculate the balance.
-contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+/// @notice A balance adapter for the DAI token that uses the DSRManager contract to calculate the balance.
+contract DaiDsrBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Libraries
     //
@@ -86,7 +86,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         return _daiBalance(account); // DSR is always credit (positive)
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = DAI;
@@ -176,7 +176,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -189,11 +189,11 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
@@ -205,8 +205,8 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         return (_calculateBalance(asset, account), false); // DSR is always credit
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
@@ -242,12 +242,12 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account's DAI DSR positions
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
     /// @dev Only returns positions for assets that are both supported by DSR and registered in NAVCalculator.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -324,12 +324,12 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     // Internal Functions - Position Building
     //
 
-    /// @notice Internal helper that builds all positions for this oracle
+    /// @notice Internal helper that builds all positions for this adapter
     /// @param assetBalanceData Array of AssetBalanceData to build positions from
-    /// @return positions Array of balance-only PositionBalance structs from this oracle
+    /// @return positions Array of balance-only PositionBalance structs from this adapter
     /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
     /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
-    /// @dev All assets are guaranteed to be registered (filtered in getOraclePositions).
+    /// @dev All assets are guaranteed to be registered (filtered in getAdapterPositions).
     function _buildPositions(AssetBalanceData[] memory assetBalanceData)
         internal
         view
@@ -353,7 +353,7 @@ contract DaiDsrBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
             // Build position (balance-only, pricing will be added by NAVCalculator)
             tempPositions[positionCount] = INAVCalculator.PositionBalance({
                 balanceAsset: underlyingAsset,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: assetBalanceData[i].amount,
                 isDebt: assetBalanceData[i].isDebt,
                 protocolId: PROTOCOL_ID,

@@ -51,7 +51,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
         nav.addPriceFeed(WBTC, REDSTONE_BTC_USD, IPrices.PriceType.Redstone, REDSTONE_HEARTBEAT);
     }
 
-    function setupBalanceOracle() internal override {}
+    function setupBalanceAdapter() internal override {}
 
     // ─── Registration ──────────────────────────────────────────────────────────
 

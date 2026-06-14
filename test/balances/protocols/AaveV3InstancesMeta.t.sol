@@ -5,8 +5,8 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTest
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
 import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -74,7 +74,7 @@ contract MockAaveDataProvider {
 contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
     using Strings for address;
 
-    AaveV3InstancesMetaBalanceAdapter public oracle;
+    AaveV3InstancesMetaBalanceAdapter public adapter;
     MockAaveDataProvider public dp;
     MockAaveAddressesProvider public addrProvider;
     address public constant pool = 0x1111111111111111111111111111111111111111;
@@ -85,7 +85,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         dp = new MockAaveDataProvider(address(addrProvider));
         dp.addReserve("USDC", address(usdc));
         dp.addReserve("WETH", address(weth));
-        oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
+        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {
@@ -94,14 +94,14 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_empty() public {
         dp.setUserData(alice, address(usdc), 100e6, 0, true);
-        assertEq(oracle.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
     }
 
     function test_collateralSupplyBorrow_legs() public {
@@ -109,7 +109,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         dp.setUserData(alice, address(weth), 5e18, 0, true);
         dp.setUserData(alice, address(usdc), 1000e6, 400e6, false);
 
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, _ids(), address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
         assertEq(pos.length, 3, "collateral(WETH) + supply(USDC) + borrow(USDC)");
 
         // Reserve order: USDC first, WETH second.
@@ -125,7 +125,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
 
         // Identity derived on-chain: positionId = abi.encode(pool, reserve), protocolId = AAVE_V3_LENDING.
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].balanceOracle, address(oracle));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertEq(pos[i].protocolId, keccak256("aave-v3-lending"));
         }
     }
@@ -135,19 +135,19 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         dp.setUserData(alice, address(usdc), 1000e6, 400e6, false);
 
         INAVCalculator.PositionBalance[] memory pos =
-            oracle.getOraclePositionsForInstances(alice, _ids(), address(usdc));
+            adapter.getAdapterPositionsForInstances(alice, _ids(), address(usdc));
         assertEq(pos.length, 2, "USDC supply + borrow");
         assertEq(pos[0].balanceAsset.asset, address(usdc));
         assertEq(pos[1].balanceAsset.asset, address(usdc));
     }
 
     function test_noPosition_empty() public view {
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(alice, _ids(), address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
         assertEq(pos.length, 0);
     }
 
     function test_underlyingAssetsForInstances() public view {
-        address[] memory assets = oracle.underlyingAssetsSupportedForInstances(_ids());
+        address[] memory assets = adapter.underlyingAssetsSupportedForInstances(_ids());
         assertEq(assets.length, 2);
         assertEq(assets[0], address(usdc));
         assertEq(assets[1], address(weth));

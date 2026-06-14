@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -31,14 +31,14 @@ interface IStcUsd {
     function convertToAssets(uint256 shares) external view returns (uint256);
 }
 
-/// @title Cap Protocol Balance Oracle
+/// @title Cap Protocol Balance Adapter
 /// @author kpk
 /// @notice Returns the USDC-equivalent balance for an account's Cap Finance positions (cUSD + stcUSD).
 /// @dev Combines cUSD and stcUSD positions into a single USDC amount:
 ///      1. Reads cUSD balance directly via ERC20.balanceOf
 ///      2. Converts stcUSD shares to cUSD via ERC4626 convertToAssets
 ///      3. Calls ICUsd.getBurnAmount on the combined cUSD total to get the USDC equivalent
-contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // State
     //
@@ -49,7 +49,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     /// @notice Cap protocol stcUSD token (ERC4626-like, redeems to cUSD)
     IStcUsd public immutable STCUSD;
 
-    /// @notice The underlying asset returned by this oracle (USDC)
+    /// @notice The underlying asset returned by this adapter (USDC)
     address public immutable USDC;
 
     /// @notice Reference to NAVCalculator for asset registry access
@@ -87,7 +87,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
+        return interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -100,18 +100,18 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = USDC;
         return assets;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -121,8 +121,8 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         return (_calculateBalance(account), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -142,9 +142,9 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         isDebt[0] = false;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the combined cUSD + stcUSD position as a single USDC-denominated PositionBalance.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -178,7 +178,7 @@ contract CapBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: underlyingAsset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: balance,
             isDebt: false,
             protocolId: PROTOCOL_ID,

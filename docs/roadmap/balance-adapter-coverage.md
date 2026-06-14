@@ -2,17 +2,17 @@
 
 > **PR #47 (meta-adapter framework):** Coverage was expanded significantly. One meta-adapter now covers every instance of 16 protocol families (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura). The active instance set for each is governed on NAVCalculator via `setMetaInstances` instead of deploying a contract per instance.
 
-Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance oracles, with the goal of growing NAV coverage one PR at a time.
+Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
 The Stader withdrawal-queue adapter (`src/balances/protocols/StaderWithdrawalQueue.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports a single aggregated credit position in the underlying asset. Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
 
-When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultOracle` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
+When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultAdapter` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
 
 ---
 
 ## LST/LRT withdrawal queues
 
-The point of these adapters is to track value that has left the LST as ERC20 but hasn't yet returned as ETH/native. While in the queue the position is invisible to `ERC20DefaultOracle`.
+The point of these adapters is to track value that has left the LST as ERC20 but hasn't yet returned as ETH/native. While in the queue the position is invisible to `ERC20DefaultAdapter`.
 
 | Protocol | Manager (mainnet) | Shape | Notes |
 |---|---|---|---|
@@ -24,7 +24,7 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 | **Kelp (rsETH)** ✅ | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16` | Per-supported-asset deques: `userAssociatedNonces(asset, user) → (begin, end)` and `getUserWithdrawalRequest(asset, user, i) → (rsETHAmount, expectedAssetAmount, withdrawalStartBlock, userNonce)`. Payout-asset set discovered via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH at time of writing). | Implemented in this repo (`KelpWithdrawalQueue.sol`): single multi-asset adapter, one credit position per NAV-registered payout asset. |
 | **Mantle (mETH)** | `Staking` contract; `unstakeRequest`/`claimUnstakeRequest` | Sequential `unstakeRequestId` per user; struct includes `mETHLocked`, `ethRequested`, `cumulativeETHRequested`, `blockNumber`. | Similar shape to Stader. |
 | **StakeWise V3 exit queue** | per-Vault `enterExitQueue(shares)` returning a position id | Already partially addressed by `StakeWiseV3Vault.sol` for queued shares. **Verify** whether the exit-queue position is tracked end-to-end before adding a separate adapter. | Possibly already covered. |
-| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultOracle` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
+| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
 | **Coinbase (cbETH)** | n/a (centralised) | Off-chain wrap/unwrap. | No on-chain queue position. |
 
 ### Implementation notes (apply across the queue family)
@@ -71,7 +71,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Pendle PT/YT**: principal-token (PT) and yield-token (YT) positions in markets and SY vaults. Each Pendle market issues distinct PT and YT ERC20s; the underlying value is non-trivial (PT depends on time-to-maturity, YT depends on accrued yield since last redemption). One adapter per market or per-LP.
 - **Yearn V3 vaults**: pure ERC4626; could reuse the `ERC4626Wrap` adapter or get a thin wrapper.
 - **Beefy vaults**: ERC4626-shaped, same pattern.
-- **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultOracle` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
+- **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultAdapter` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
 - **Maple direct lending pools** (beyond syrupUSDC): pool tokens with withdrawal cooldowns.
 
 ### Money markets and credit
@@ -94,7 +94,7 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Perps / derivatives
 
-- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 oracle migration (see `docs/historical/oracle-migration-plan.md`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
+- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 adapter migration (see `docs/historical/adapter-migration-plan.md`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
 - **Hyperliquid (EVM bridge side)**: bridged collateral on `HyperEVM` if used.
 - **Synthetix V3**: collateral and debt positions per pool.
 

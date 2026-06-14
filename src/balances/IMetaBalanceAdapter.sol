@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "./IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title IMetaBalanceOracleAdapter
+/// @title IMetaBalanceAdapter
 /// @author kpk
-/// @notice Interface for *meta* balance oracle adapters: a single immutable adapter that can report positions
+/// @notice Interface for *meta* balance adapter adapters: a single immutable adapter that can report positions
 ///         for an arbitrary number of instances of one protocol (e.g. every Morpho vault, every Balancer pool).
 /// @dev A meta-adapter is universal and instance-stateless — it holds no list of "active" instances and has no
-///      admin/write functions. The set of instances to actually query lives on NAVCalculator (per-oracle,
+///      admin/write functions. The set of instances to actually query lives on NAVCalculator (per-adapter,
 ///      MANAGER-gated). This keeps adapters immutable while making the governed "which instances" set mutable in
 ///      the upgradeable, AccessControl-gated NAVCalculator.
 ///
@@ -17,19 +17,19 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      bytes32 (vault / pool / instance-DataProvider address); the wider type also accommodates protocols whose
 ///      instance key is itself a bytes32 (e.g. Morpho market ids).
 ///
-///      Call path: NAVCalculator calls the inherited `getOraclePositions(account, assetFilter)` on every oracle
+///      Call path: NAVCalculator calls the inherited `getAdapterPositions(account, assetFilter)` on every adapter
 ///      uniformly (no ERC165 routing). A meta-adapter services it by reading its own NAV-configured set via
-///      `getMetaInstances(address(this))` and fanning out over it — see `MetaBalanceOracle`. The instance-aware
+///      `getMetaInstances(address(this))` and fanning out over it — see `MetaBalanceAdapter`. The instance-aware
 ///      methods below take an explicit instance list for off-chain/explicit queries and per-instance breakdowns.
-///      (The other no-arg `IBalanceOracleAdapter` methods — `getOracleBalances`/`getOracleBalanceForAsset` —
+///      (The other no-arg `IBalanceAdapter` methods — `getAdapterBalances`/`getAdapterBalanceForAsset` —
 ///      are not used by the NAV path and return empty.)
-interface IMetaBalanceOracleAdapter is IBalanceOracleAdapter {
+interface IMetaBalanceAdapter is IBalanceAdapter {
     /// @notice Get all positions for an account across the supplied instances.
     /// @param account The account to query.
     /// @param instances The instance coordinates to query (e.g. vault addresses widened to bytes32).
     /// @param assetFilter Optional asset filter (address(0) for all assets).
     /// @return positions Array of balance-only PositionBalance structs aggregated across the instances.
-    function getOraclePositionsForInstances(address account, bytes32[] calldata instances, address assetFilter)
+    function getAdapterPositionsForInstances(address account, bytes32[] calldata instances, address assetFilter)
         external
         view
         returns (INAVCalculator.PositionBalance[] memory positions);

@@ -101,7 +101,7 @@
       },
       "deployed": "",
       "legacy_deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD",
-      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceOracle(legacy_deployed) and addBalanceOracle(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source \u2014 adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
+      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceAdapter(legacy_deployed) and addBalanceAdapter(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source \u2014 adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
     },
     "AaveUmbrella": {
       "enabled": true,
@@ -112,7 +112,7 @@
         "positionId": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
       },
       "deployed": "",
-      "comment": "Dynamic-discovery adapter for Aave Umbrella stake tokens. The full stake-token set (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1 today) is enumerated at runtime via RewardsController.getAllAssets(); each stake token's bare reserve is resolved by walking its ERC4626 asset() chain. The only address pinned in this adapter is the RewardsController above, passed via constructor and treated as the protocol's trust anchor. New stake tokens added by Aave governance are picked up automatically as long as their bare reserve is registered with NAVCalculator. See docs/decisions/0006-aave-umbrella-balance-oracle.md."
+      "comment": "Dynamic-discovery adapter for Aave Umbrella stake tokens. The full stake-token set (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1 today) is enumerated at runtime via RewardsController.getAllAssets(); each stake token's bare reserve is resolved by walking its ERC4626 asset() chain. The only address pinned in this adapter is the RewardsController above, passed via constructor and treated as the protocol's trust anchor. New stake tokens added by Aave governance are picked up automatically as long as their bare reserve is registered with NAVCalculator. See docs/decisions/0006-aave-umbrella-balance-adapter.md."
     },
     "Cap": {
       "enabled": true,

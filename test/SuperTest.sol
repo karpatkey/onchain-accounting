@@ -17,7 +17,7 @@ import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/price_oracles.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
-import "test/mocks/balance_oracles.sol";
+import "test/mocks/balance_adapters.sol";
 
 /// A test setup that includes a lot of boilerplate used by various tests,
 /// such as setting up various accounts, contracts, tokens and price oracles
@@ -42,18 +42,18 @@ abstract contract SuperTest is Test {
 
     // tokens
     Mock_ERC20 public usdc;
-    Mock_CustomPriceFeed public usdcOracle;
+    Mock_CustomPriceFeed public usdcAdapter;
     Mock_ERC20 public dai;
-    Mock_PriceOracleChainlink public daiOracle;
+    Mock_PriceOracleChainlink public daiAdapter;
     Mock_ERC20 public weth;
-    Mock_CustomPriceFeed public wethOracle;
-    Mock_PriceOracleChainlink public ethOracle;
+    Mock_CustomPriceFeed public wethAdapter;
+    Mock_PriceOracleChainlink public ethAdapter;
     Mock_ChainlinkL2SequencerUptimeFeed public sequencerUptimeFeed;
     Mock_ChainlinkL2SequencerUptimeFeedDown public sequencerUptimeFeedDown;
     Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod public sequencerUptimeFeedtWithinGracePeriod;
 
-    // balance oracle
-    Mock_CustomBalanceOracle public mockBalanceOracle;
+    // balance adapter
+    Mock_CustomBalanceAdapter public mockBalanceAdapter;
 
     // fund
     address safe = makeAddr("safe");
@@ -79,18 +79,18 @@ abstract contract SuperTest is Test {
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.warp(block.timestamp + 2 hours); // To pass the L2 sequencer default grace period set at deployment
-        usdcOracle = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);
-        daiOracle = new Mock_PriceOracleChainlink("DAI", 100_000_000, 8);
-        wethOracle = new Mock_CustomPriceFeed("WETH", address(weth), 324_057_000_000, 8);
-        ethOracle = new Mock_PriceOracleChainlink("ETH", 324_057_000_000, 8);
+        usdcAdapter = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);
+        daiAdapter = new Mock_PriceOracleChainlink("DAI", 100_000_000, 8);
+        wethAdapter = new Mock_CustomPriceFeed("WETH", address(weth), 324_057_000_000, 8);
+        ethAdapter = new Mock_PriceOracleChainlink("ETH", 324_057_000_000, 8);
         sequencerUptimeFeed = new Mock_ChainlinkL2SequencerUptimeFeed();
         sequencerUptimeFeedDown = new Mock_ChainlinkL2SequencerUptimeFeedDown();
         sequencerUptimeFeedtWithinGracePeriod = new Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod();
 
-        mockBalanceOracle = new Mock_CustomBalanceOracle();
+        mockBalanceAdapter = new Mock_CustomBalanceAdapter();
 
         // https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades?tab=readme-ov-file#coverage-testing
         vm.startPrank(admin);
@@ -107,17 +107,17 @@ abstract contract SuperTest is Test {
 
         // Native is pre-registered in initialize; set price feed only
         nav.addPriceFeed(
-            address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+            address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
         );
-        // Note: The native address balance oracle is handled by ERC20DefaultOracle which is set up in initialize()
-        // The ERC20DefaultOracle automatically handles native balances, so we don't need to add it explicitly
-        // However, if tests need it, they can access it via nav.erc20DefaultOracle()
+        // Note: The native address balance adapter is handled by ERC20DefaultAdapter which is set up in initialize()
+        // The ERC20DefaultAdapter automatically handles native balances, so we don't need to add it explicitly
+        // However, if tests need it, they can access it via nav.erc20DefaultAdapter()
 
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
-        nav.registerAsset(address(dai), address(daiOracle), IPrices.PriceType.Chainlink, 86_400);
+        nav.registerAsset(address(dai), address(daiAdapter), IPrices.PriceType.Chainlink, 86_400);
 
-        nav.registerAsset(address(weth), address(wethOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(weth), address(wethAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
         vm.stopPrank();
     }
@@ -153,9 +153,9 @@ abstract contract SuperTest is Test {
         vm.label(address(usdc), "USDC");
         vm.label(address(dai), "DAI");
         vm.label(address(weth), "WETH");
-        vm.label(address(usdcOracle), "usdcPrice");
-        vm.label(address(daiOracle), "daiPrice");
-        vm.label(address(wethOracle), "wethPrice");
+        vm.label(address(usdcAdapter), "usdcPrice");
+        vm.label(address(daiAdapter), "daiPrice");
+        vm.label(address(wethAdapter), "wethPrice");
         vm.label(address(nav), "nav");
     }
 

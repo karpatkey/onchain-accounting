@@ -21,7 +21,7 @@ interface IBalV2Bpt {
 /// @notice Proves BalancerV2PoolsMetaBalanceAdapter reproduces the on-chain pro-rata share of a real account's
 ///         wallet-held BPT for the canonical B-80BAL-20WETH pool on mainnet. The expected per-token amounts are
 ///         computed directly from the Vault's live balances and the BPT supply (`balances[i] * walletBpt /
-///         totalSupply`), so this is a self-consistent oracle test (no per-instance V2 adapter exists to parity
+///         totalSupply`), so this is a self-consistent adapter test (no per-instance V2 adapter exists to parity
 ///         against). B-80BAL-20WETH is a legacy weighted pool, so `getActualSupply()` reverts and the adapter
 ///         falls back to `totalSupply()`.
 contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
@@ -41,7 +41,7 @@ contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         _setupFork();
-        balances = _deployBalancesForOracle(_supportedAssets());
+        balances = _deployBalancesForAdapter(_supportedAssets());
         adapter = new BalancerV2PoolsMetaBalanceAdapter(VAULT, "Balancer V2", address(balances));
     }
 
@@ -69,11 +69,11 @@ contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
         (address[] memory tokens, uint256[] memory bals,) = IBalV2Vault(VAULT).getPoolTokens(POOL_ID);
 
         INAVCalculator.PositionBalance[] memory pos =
-            adapter.getOraclePositionsForInstances(HOLDER, _instance(), address(0));
+            adapter.getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
         assertEq(pos.length, 2, "BAL + WETH legs");
 
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].balanceOracle, address(adapter));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertFalse(pos[i].isDebt);
             assertEq(pos[i].positionId, abi.encode(POOL_ID), "positionId = poolId");
 
@@ -89,7 +89,7 @@ contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice assetFilter restricts the legs to a single underlying token.
     function test_assetFilter() public view {
-        INAVCalculator.PositionBalance[] memory pos = adapter.getOraclePositionsForInstances(HOLDER, _instance(), WETH);
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(HOLDER, _instance(), WETH);
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, WETH);
     }
@@ -97,7 +97,7 @@ contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
     /// @notice Identity (name) is derived on-chain from the BPT token name.
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory pos =
-            adapter.getOraclePositionsForInstances(HOLDER, _instance(), address(0));
+            adapter.getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
         assertGt(pos.length, 0);
     }
 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 contract MockAavePoolAddressesProvider {
@@ -82,34 +82,34 @@ contract MockAaveProtocolDataProvider {
     }
 }
 
-/// @title SparkLendBalanceOracleTest
-/// @notice Unit and implementation tests for SparkLendBalanceOracle
+/// @title SparkLendBalanceAdapterTest
+/// @notice Unit and implementation tests for SparkLendBalanceAdapter
 /// @dev Tests adapter logic and error handling without requiring fork
 /// @dev SparkLend inherits from AaveV3Instance, so most logic is tested there
-contract SparkLendBalanceOracleTest is BalanceAdapterTestBase {
-    SparkLendBalanceOracle public oracle;
+contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
+    SparkLendBalanceAdapter public adapter;
     MockAaveProtocolDataProvider public mockDataProvider;
 
     function setUp() public override {
         super.setUp();
         mockDataProvider = new MockAaveProtocolDataProvider();
-        oracle = new SparkLendBalanceOracle(address(mockDataProvider), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(mockDataProvider), address(balances));
     }
 
     // ============================================
     // Error Handling Tests
     // ============================================
 
-    function test_getOracleBalanceForAsset_returns_zero_for_invalid_token() public {
+    function test_getAdapterBalanceForAsset_returns_zero_for_invalid_token() public {
         address invalidToken = makeAddr("invalidToken");
 
-        // getOracleBalanceForAsset should return 0 for unsupported tokens
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, invalidToken);
+        // getAdapterBalanceForAsset should return 0 for unsupported tokens
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, invalidToken);
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_returns_zero_for_zero_address() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+    function test_getAdapterBalanceForAsset_returns_zero_for_zero_address() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(0), address(usdc));
         assertEq(amount, 0);
     }
 
@@ -117,15 +117,15 @@ contract SparkLendBalanceOracleTest is BalanceAdapterTestBase {
     // Interface Compliance Tests
     // ============================================
 
-    function test_getOracleBalance_returnsEmptyArraysForZeroAddress() public view {
-        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(address(0));
+    function test_getAdapterBalance_returnsEmptyArraysForZeroAddress() public view {
+        (address[] memory assets, uint256[] memory amounts,) = adapter.getAdapterBalances(address(0));
 
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
     }
 
-    function test_getOraclePositions_returnsEmptyArrayForZeroAddress() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(address(0), address(0));
+    function test_getAdapterPositions_returnsEmptyArrayForZeroAddress() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(address(0), address(0));
 
         assertEq(positions.length, 0);
     }

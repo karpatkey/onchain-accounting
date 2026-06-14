@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -15,23 +15,23 @@ contract NAVCalculatorHarness is NAVCalculator {
     }
 }
 
-/// @notice Balance oracle whose read methods always revert.
-/// @dev Used to prove `hasPositions` is fail-open: a single misbehaving oracle must not DoS the scan.
-///      Reverts on both `getOraclePositions` (the path `hasPositions` reads) and `getOracleBalances`.
-contract RevertingBalanceOracle is IBalanceOracleAdapter {
+/// @notice Balance adapter whose read methods always revert.
+/// @dev Used to prove `hasPositions` is fail-open: a single misbehaving adapter must not DoS the scan.
+///      Reverts on both `getAdapterPositions` (the path `hasPositions` reads) and `getAdapterBalances`.
+contract RevertingBalanceAdapter is IBalanceAdapter {
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
         return new address[](0);
     }
 
-    function getOracleBalanceForAsset(address, address) external pure override returns (uint256, bool) {
+    function getAdapterBalanceForAsset(address, address) external pure override returns (uint256, bool) {
         return (0, false);
     }
 
-    function getOracleBalances(address)
+    function getAdapterBalances(address)
         external
         pure
         override
@@ -40,7 +40,7 @@ contract RevertingBalanceOracle is IBalanceOracleAdapter {
         revert("boom");
     }
 
-    function getOraclePositions(address, address)
+    function getAdapterPositions(address, address)
         external
         pure
         override
@@ -53,7 +53,7 @@ contract RevertingBalanceOracle is IBalanceOracleAdapter {
 contract NAVCalculatorTest is SuperTest {
     Mock_PriceOracleChainlink public chainlinkOracle;
 
-    Mock_CustomBalanceOracle public depositedWethOracle;
+    Mock_CustomBalanceAdapter public depositedWethAdapter;
 
     function setUp() public {
         setupAll();
@@ -69,48 +69,48 @@ contract NAVCalculatorTest is SuperTest {
         return sum;
     }
 
-    /// @notice Helper function to configure mockBalanceOracle with specific assets
+    /// @notice Helper function to configure mockBalanceAdapter with specific assets
     /// @param assets Array of asset addresses to configure
     /// @param balances Optional array of balances for each asset (same length as assets, or empty for defaults)
     /// @param protocol Optional protocol name (defaults to "Mock Protocol")
     /// @param position Optional position name (defaults to "Mock Position")
-    function setupMockBalanceOracle(
+    function setupMockBalanceAdapter(
         address[] memory assets,
         int256[] memory balances,
         string memory protocol,
         string memory position
     ) internal {
         // Set balances reference if nav is available
-        mockBalanceOracle.setBalances(IBalances(address(nav)));
+        mockBalanceAdapter.setBalances(IBalances(address(nav)));
 
         // Set underlying assets supported
-        mockBalanceOracle.setUnderlyingAssetsSupported(assets);
+        mockBalanceAdapter.setUnderlyingAssetsSupported(assets);
 
         // Set balances for each asset (use provided balances or defaults)
         for (uint256 i = 0; i < assets.length; i++) {
             int256 balance = balances.length > i ? balances[i] : int256(0);
             if (balance >= 0) {
-                mockBalanceOracle.setBalance(assets[i], safe, SafeCast.toUint256(balance), false);
+                mockBalanceAdapter.setBalance(assets[i], safe, SafeCast.toUint256(balance), false);
             } else {
-                mockBalanceOracle.setBalance(assets[i], safe, SafeCast.toUint256(-balance), true);
+                mockBalanceAdapter.setBalance(assets[i], safe, SafeCast.toUint256(-balance), true);
             }
         }
 
         // Set position metadata
-        mockBalanceOracle.setPositionMetadata(
+        mockBalanceAdapter.setPositionMetadata(
             bytes(protocol).length > 0 ? protocol : "Mock Protocol",
             bytes(position).length > 0 ? position : "Mock Position"
         );
     }
 
     /// @notice Convenience overload for single asset
-    function setupMockBalanceOracle(address asset, int256 balance) internal {
+    function setupMockBalanceAdapter(address asset, int256 balance) internal {
         address[] memory assets = new address[](1);
         assets[0] = asset;
         int256[] memory balances = new int256[](1);
         balances[0] = balance;
-        // Note: setupMockBalanceOracle still uses int256[] for backward compatibility
-        setupMockBalanceOracle(assets, balances, "", "");
+        // Note: setupMockBalanceAdapter still uses int256[] for backward compatibility
+        setupMockBalanceAdapter(assets, balances, "", "");
     }
 
     function findPositionByAsset(INAVCalculator.Position[] memory positions, address asset)
@@ -120,7 +120,7 @@ contract NAVCalculatorTest is SuperTest {
     {
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].balanceAsset.asset == asset) {
-                // Check if this matches the balance oracle index by checking metadata
+                // Check if this matches the balance adapter index by checking metadata
                 // We'll need to match by protocol/positionDetail or use a different approach
                 // For now, return first match - tests should be more specific
                 return (positions[i], true);
@@ -163,30 +163,30 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(foundNative, "Native address should be registered");
 
         IPrices.PriceFeedConfig memory cfg_ = nav.getPriceFeedAt(address(usdc), 0);
-        assertEq(cfg_.priceFeed, address(usdcOracle));
+        assertEq(cfg_.priceFeed, address(usdcAdapter));
         assertEq(cfg_.decimals, 8);
         assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
         assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Custom));
 
         cfg_ = nav.getPriceFeedAt(address(dai), 0);
-        assertEq(cfg_.priceFeed, address(daiOracle));
+        assertEq(cfg_.priceFeed, address(daiAdapter));
         assertEq(cfg_.decimals, 8);
         assertEq(cfg_.chainlinkHeartbeat, 86_400);
         assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Chainlink));
 
         cfg_ = nav.getPriceFeedAt(address(weth), 0);
-        assertEq(cfg_.priceFeed, address(wethOracle));
+        assertEq(cfg_.priceFeed, address(wethAdapter));
         assertEq(cfg_.decimals, 8);
         assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
         assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Custom));
 
         cfg_ = nav.getPriceFeedAt(nav.NATIVE_ADDRESS(), 0);
-        assertEq(cfg_.priceFeed, address(ethOracle));
+        assertEq(cfg_.priceFeed, address(ethAdapter));
         assertEq(cfg_.decimals, 8);
         assertEq(cfg_.chainlinkHeartbeat, type(uint256).max);
         assertEq(uint8(cfg_.priceType), uint8(IPrices.PriceType.Chainlink));
 
-        // Configure mockBalanceOracle with all three assets
+        // Configure mockBalanceAdapter with all three assets
         address[] memory mockAssets = new address[](3);
         mockAssets[0] = address(usdc);
         mockAssets[1] = address(dai);
@@ -195,55 +195,55 @@ contract NAVCalculatorTest is SuperTest {
         mockBalances[0] = int256(123 * 10 ** usdc.decimals());
         mockBalances[1] = int256(456 * 10 ** dai.decimals());
         mockBalances[2] = int256(789 * 10 ** weth.decimals());
-        setupMockBalanceOracle(mockAssets, mockBalances, "Mock Protocol", "Mock Position");
+        setupMockBalanceAdapter(mockAssets, mockBalances, "Mock Protocol", "Mock Position");
 
         vm.startPrank(navCalculatorManager);
-        // Oracles are now global - add the oracle once
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        // Adapters are now global - add the adapter once
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
 
-        // getAllOracles returns all global oracles
-        address[] memory allOracles = nav.getAllOracles();
-        // Should include ERC20DefaultOracle (from initialization) and mockBalanceOracle
-        assertGe(allOracles.length, 2, "Should have at least ERC20DefaultOracle and mockBalanceOracle");
-        bool foundMockOracle = false;
+        // getAllAdapters returns all global adapters
+        address[] memory allAdapters = nav.getAllAdapters();
+        // Should include ERC20DefaultAdapter (from initialization) and mockBalanceAdapter
+        assertGe(allAdapters.length, 2, "Should have at least ERC20DefaultAdapter and mockBalanceAdapter");
+        bool foundMockAdapter = false;
         bool foundErc20Default = false;
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            if (allOracles[i] == address(mockBalanceOracle)) {
-                foundMockOracle = true;
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            if (allAdapters[i] == address(mockBalanceAdapter)) {
+                foundMockAdapter = true;
             }
-            if (allOracles[i] == nav.erc20DefaultOracle()) {
+            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
                 foundErc20Default = true;
             }
         }
-        assertTrue(foundMockOracle, "Should find mockBalanceOracle in global oracles");
-        assertTrue(foundErc20Default, "Should find ERC20DefaultOracle in global oracles");
+        assertTrue(foundMockAdapter, "Should find mockBalanceAdapter in global adapters");
+        assertTrue(foundErc20Default, "Should find ERC20DefaultAdapter in global adapters");
 
         assertEq(nav.chainlinkL2SequencerGracePeriod(), 3600);
     }
 
-    function test_addBalanceOracle() public {
+    function test_addBalanceAdapter() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
         vm.stopPrank();
     }
 
-    function test_addBalanceOracle_notAuthorized() public {
+    function test_addBalanceAdapter_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
-        address erc20Oracle = nav.erc20DefaultOracle();
+        address erc20Adapter = nav.erc20DefaultAdapter();
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.addBalanceOracle(erc20Oracle);
+        nav.addBalanceAdapter(erc20Adapter);
         vm.stopPrank();
     }
 
@@ -254,7 +254,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -266,59 +266,59 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_addBalanceOracle_withoutAsset() public {
+    function test_addBalanceAdapter_withoutAsset() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
-        // With global oracles, you can add an oracle without an asset being registered
-        // ERC20DefaultOracle is already registered, so try adding a custom oracle
-        address customOracle = address(mockBalanceOracle);
+        // With global adapters, you can add an adapter without an asset being registered
+        // ERC20DefaultAdapter is already registered, so try adding a custom adapter
+        address customAdapter = address(mockBalanceAdapter);
         vm.prank(navCalculatorManager);
-        nav.addBalanceOracle(customOracle);
+        nav.addBalanceAdapter(customAdapter);
 
         // Verify it was added
-        assertTrue(nav.isOracleRegistered(customOracle), "Custom oracle should be registered");
+        assertTrue(nav.isAdapterRegistered(customAdapter), "Custom adapter should be registered");
     }
 
-    function test_removeBalanceOracle_ops() public {
+    function test_removeBalanceAdapter_ops() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        // Add a custom oracle to test removal
-        nav.addBalanceOracle(address(mockBalanceOracle));
-        assertTrue(nav.isOracleRegistered(address(mockBalanceOracle)), "Oracle should be registered");
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        // Add a custom adapter to test removal
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
+        assertTrue(nav.isAdapterRegistered(address(mockBalanceAdapter)), "Adapter should be registered");
 
-        // Remove the oracle
-        nav.removeBalanceOracle(address(mockBalanceOracle));
-        assertFalse(nav.isOracleRegistered(address(mockBalanceOracle)), "Oracle should be removed");
+        // Remove the adapter
+        nav.removeBalanceAdapter(address(mockBalanceAdapter));
+        assertFalse(nav.isAdapterRegistered(address(mockBalanceAdapter)), "Adapter should be removed");
         vm.stopPrank();
     }
 
-    function test_removeBalanceOracle_notAuthorized() public {
+    function test_removeBalanceAdapter_notAuthorized() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        // Add a custom oracle to test removal
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        // Add a custom adapter to test removal
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
 
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.removeBalanceOracle(address(mockBalanceOracle));
+        nav.removeBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
     }
 
@@ -329,10 +329,10 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
-        Mock_PriceOracleChainlink secondOracle = new Mock_PriceOracleChainlink("Second", 1, 8);
-        nav.addPriceFeed(address(usdc), address(secondOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        Mock_PriceOracleChainlink secondAdapter = new Mock_PriceOracleChainlink("Second", 1, 8);
+        nav.addPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
         nav.removePriceFeedAt(address(usdc), 0);
         vm.stopPrank();
     }
@@ -344,9 +344,9 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        Mock_PriceOracleChainlink secondOracle = new Mock_PriceOracleChainlink("Second", 1, 8);
-        nav.addPriceFeed(address(usdc), address(secondOracle), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        Mock_PriceOracleChainlink secondAdapter = new Mock_PriceOracleChainlink("Second", 1, 8);
+        nav.addPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -366,10 +366,10 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
         vm.expectRevert(InvalidArguments.selector);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -381,11 +381,11 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
-        nav.registerAsset(address(0), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(0), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
-    function test_registerAsset_zeroOracle() public {
+    function test_registerAsset_zeroAdapter() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
@@ -423,22 +423,22 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
     }
 
-    function test_unregisterAsset_withBalanceOracles() public {
-        // Configure mockBalanceOracle for USDC
-        setupMockBalanceOracle(address(usdc), int256(123 * 10 ** usdc.decimals()));
+    function test_unregisterAsset_withBalanceAdapters() public {
+        // Configure mockBalanceAdapter for USDC
+        setupMockBalanceAdapter(address(usdc), int256(123 * 10 ** usdc.decimals()));
 
         vm.startPrank(navCalculatorManager);
-        // USDC is already registered in setup. Add the custom oracle globally
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        // USDC is already registered in setup. Add the custom adapter globally
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
 
-        // Verify balance oracles exist (ERC20DefaultOracle from setup + custom oracle)
-        assertGe(nav.getOracleCount(), 2, "Should have at least ERC20DefaultOracle and custom oracle");
+        // Verify balance adapters exist (ERC20DefaultAdapter from setup + custom adapter)
+        assertGe(nav.getAdapterCount(), 2, "Should have at least ERC20DefaultAdapter and custom adapter");
 
-        // Unregister asset - oracles are global and should not be removed
+        // Unregister asset - adapters are global and should not be removed
         nav.unregisterAsset(address(usdc));
 
-        // Verify balance oracles are still present (oracles are global, not removed when asset is unregistered)
-        assertGe(nav.getOracleCount(), 2, "Oracles should still exist after asset unregistration");
+        // Verify balance adapters are still present (adapters are global, not removed when asset is unregistered)
+        assertGe(nav.getAdapterCount(), 2, "Adapters should still exist after asset unregistration");
         vm.stopPrank();
     }
 
@@ -458,110 +458,110 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // ============================================
-    // Default oracle inclusion list (exclude / include)
+    // Default adapter inclusion list (exclude / include)
     // ============================================
 
-    function test_registerAsset_addsAssetToDefaultOracleInclusionList() public {
+    function test_registerAsset_addsAssetToDefaultAdapterInclusionList() public {
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
+        Mock_CustomPriceFeed newTokenAdapter = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
 
         vm.prank(navCalculatorManager);
-        nav.registerAsset(address(newToken), address(newTokenOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(newToken), address(newTokenAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
-        address defaultOracle = nav.erc20DefaultOracle();
-        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        address defaultAdapter = nav.erc20DefaultAdapter();
+        address[] memory supported = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         bool found = false;
         for (uint256 i = 0; i < supported.length; i++) {
             if (supported[i] == address(newToken)) found = true;
         }
-        assertTrue(found, "Default oracle should support newly registered asset");
+        assertTrue(found, "Default adapter should support newly registered asset");
 
-        address[] memory oracles = nav.getOraclesForAsset(address(newToken));
+        address[] memory adapters = nav.getAdaptersForAsset(address(newToken));
         bool defaultFound = false;
-        for (uint256 i = 0; i < oracles.length; i++) {
-            if (oracles[i] == defaultOracle) defaultFound = true;
+        for (uint256 i = 0; i < adapters.length; i++) {
+            if (adapters[i] == defaultAdapter) defaultFound = true;
         }
-        assertTrue(defaultFound, "getOraclesForAsset should include default oracle for new asset");
+        assertTrue(defaultFound, "getAdaptersForAsset should include default adapter for new asset");
     }
 
-    function test_excludeAssetFromDefaultOracle_removesFromInclusionList() public {
-        address defaultOracle = nav.erc20DefaultOracle();
-        address[] memory oraclesBefore = nav.getOraclesForAsset(address(usdc));
+    function test_excludeAssetFromDefaultAdapter_removesFromInclusionList() public {
+        address defaultAdapter = nav.erc20DefaultAdapter();
+        address[] memory adaptersBefore = nav.getAdaptersForAsset(address(usdc));
         bool hadDefaultBefore = false;
-        for (uint256 i = 0; i < oraclesBefore.length; i++) {
-            if (oraclesBefore[i] == defaultOracle) hadDefaultBefore = true;
+        for (uint256 i = 0; i < adaptersBefore.length; i++) {
+            if (adaptersBefore[i] == defaultAdapter) hadDefaultBefore = true;
         }
-        assertTrue(hadDefaultBefore, "Default oracle should support USDC before exclude");
+        assertTrue(hadDefaultBefore, "Default adapter should support USDC before exclude");
 
         vm.prank(navCalculatorManager);
-        nav.excludeAssetFromDefaultOracle(address(usdc));
+        nav.excludeAssetFromDefaultAdapter(address(usdc));
 
-        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        address[] memory supported = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         for (uint256 i = 0; i < supported.length; i++) {
-            assertTrue(supported[i] != address(usdc), "USDC should not be in default oracle after exclude");
+            assertTrue(supported[i] != address(usdc), "USDC should not be in default adapter after exclude");
         }
-        address[] memory oraclesAfter = nav.getOraclesForAsset(address(usdc));
-        for (uint256 i = 0; i < oraclesAfter.length; i++) {
-            assertTrue(oraclesAfter[i] != defaultOracle, "Default oracle should not support USDC after exclude");
+        address[] memory adaptersAfter = nav.getAdaptersForAsset(address(usdc));
+        for (uint256 i = 0; i < adaptersAfter.length; i++) {
+            assertTrue(adaptersAfter[i] != defaultAdapter, "Default adapter should not support USDC after exclude");
         }
     }
 
-    function test_includeAssetInDefaultOracle_addsBack() public {
+    function test_includeAssetInDefaultAdapter_addsBack() public {
         vm.prank(navCalculatorManager);
-        nav.excludeAssetFromDefaultOracle(address(usdc));
+        nav.excludeAssetFromDefaultAdapter(address(usdc));
 
         vm.prank(navCalculatorManager);
-        nav.includeAssetInDefaultOracle(address(usdc));
+        nav.includeAssetInDefaultAdapter(address(usdc));
 
-        address defaultOracle = nav.erc20DefaultOracle();
-        address[] memory supported = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        address defaultAdapter = nav.erc20DefaultAdapter();
+        address[] memory supported = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         bool found = false;
         for (uint256 i = 0; i < supported.length; i++) {
             if (supported[i] == address(usdc)) found = true;
         }
-        assertTrue(found, "USDC should be in default oracle after include");
-        address[] memory oracles = nav.getOraclesForAsset(address(usdc));
+        assertTrue(found, "USDC should be in default adapter after include");
+        address[] memory adapters = nav.getAdaptersForAsset(address(usdc));
         bool defaultFound = false;
-        for (uint256 i = 0; i < oracles.length; i++) {
-            if (oracles[i] == defaultOracle) defaultFound = true;
+        for (uint256 i = 0; i < adapters.length; i++) {
+            if (adapters[i] == defaultAdapter) defaultFound = true;
         }
-        assertTrue(defaultFound, "getOraclesForAsset should include default oracle after include");
+        assertTrue(defaultFound, "getAdaptersForAsset should include default adapter after include");
     }
 
-    function test_excludeAssetFromDefaultOracle_notAuthorized() public {
+    function test_excludeAssetFromDefaultAdapter_notAuthorized() public {
         vm.prank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.excludeAssetFromDefaultOracle(address(usdc));
+        nav.excludeAssetFromDefaultAdapter(address(usdc));
     }
 
-    function test_includeAssetInDefaultOracle_notAuthorized() public {
+    function test_includeAssetInDefaultAdapter_notAuthorized() public {
         vm.prank(alice);
         vm.expectRevert(NotAuthorized.selector);
-        nav.includeAssetInDefaultOracle(address(usdc));
+        nav.includeAssetInDefaultAdapter(address(usdc));
     }
 
-    function test_includeAssetInDefaultOracle_revertsForUnregisteredAsset() public {
+    function test_includeAssetInDefaultAdapter_revertsForUnregisteredAsset() public {
         address unregisteredAsset = makeAddr("unregistered");
         vm.prank(navCalculatorManager);
         vm.expectRevert(AssetNotFound.selector);
-        nav.includeAssetInDefaultOracle(unregisteredAsset);
+        nav.includeAssetInDefaultAdapter(unregisteredAsset);
     }
 
-    function test_unregisterAsset_removesFromDefaultOracleInclusionList() public {
-        address defaultOracle = nav.erc20DefaultOracle();
-        address[] memory supportedBefore = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+    function test_unregisterAsset_removesFromDefaultAdapterInclusionList() public {
+        address defaultAdapter = nav.erc20DefaultAdapter();
+        address[] memory supportedBefore = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         uint256 countBefore = 0;
         for (uint256 i = 0; i < supportedBefore.length; i++) {
             if (supportedBefore[i] == address(usdc)) countBefore++;
         }
-        assertEq(countBefore, 1, "USDC should be in default oracle before unregister");
+        assertEq(countBefore, 1, "USDC should be in default adapter before unregister");
 
         vm.prank(navCalculatorManager);
         nav.unregisterAsset(address(usdc));
 
-        address[] memory supportedAfter = IBalanceOracleAdapter(defaultOracle).underlyingAssetsSupported();
+        address[] memory supportedAfter = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         for (uint256 i = 0; i < supportedAfter.length; i++) {
-            assertTrue(supportedAfter[i] != address(usdc), "USDC should not be in default oracle after unregister");
+            assertTrue(supportedAfter[i] != address(usdc), "USDC should not be in default adapter after unregister");
         }
     }
 
@@ -631,15 +631,15 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
-        assertEq(priceFeed.updatedAt, 0); // Custom oracle should have 0 updatedAt
+        assertEq(priceFeed.updatedAt, 0); // Custom adapter should have 0 updatedAt
     }
 
     function test_getPriceData_stalePrice() public {
         // Create a stale price oracle with short heartbeat
-        Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1, 8);
+        Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
-        nav.removePriceFeed(address(usdc), address(usdcOracle));
+        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.removePriceFeed(address(usdc), address(usdcAdapter));
         vm.stopPrank();
 
         // Make price stale by warping time
@@ -656,7 +656,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
@@ -713,42 +713,42 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     // ============================================
-    // Global Oracle Registry Tests
+    // Global Adapter Registry Tests
     // ============================================
 
-    function test_getAllOracles() public view {
-        address[] memory oracles = nav.getAllOracles();
+    function test_getAllAdapters() public view {
+        address[] memory adapters = nav.getAllAdapters();
 
-        assertTrue(oracles.length > 0);
-        assertEq(oracles.length, nav.getOracleCount());
+        assertTrue(adapters.length > 0);
+        assertEq(adapters.length, nav.getAdapterCount());
     }
 
-    function test_getOracleCount() public view {
-        uint256 count = nav.getOracleCount();
+    function test_getAdapterCount() public view {
+        uint256 count = nav.getAdapterCount();
 
         assertTrue(count > 0);
-        // Should have at least ERC20DefaultOracle
+        // Should have at least ERC20DefaultAdapter
         assertTrue(count >= 1);
     }
 
-    function test_isOracleRegistered() public {
-        // ERC20DefaultOracle should be registered
-        assertTrue(nav.isOracleRegistered(nav.erc20DefaultOracle()));
+    function test_isAdapterRegistered() public {
+        // ERC20DefaultAdapter should be registered
+        assertTrue(nav.isAdapterRegistered(nav.erc20DefaultAdapter()));
 
         // Random address should not be registered
-        assertFalse(nav.isOracleRegistered(makeAddr("random")));
+        assertFalse(nav.isAdapterRegistered(makeAddr("random")));
     }
 
-    function test_getOracleType() public view {
-        IBalances.OracleType oracleType = nav.getOracleType(nav.erc20DefaultOracle());
-        assertEq(uint8(oracleType), uint8(IBalances.OracleType.Default));
+    function test_getAdapterType() public view {
+        IBalances.AdapterType adapterType = nav.getAdapterType(nav.erc20DefaultAdapter());
+        assertEq(uint8(adapterType), uint8(IBalances.AdapterType.Default));
     }
 
-    function test_getOracleType_invalidOracle() public {
-        address invalidOracle = makeAddr("invalid");
+    function test_getAdapterType_invalidAdapter() public {
+        address invalidAdapter = makeAddr("invalid");
 
-        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
-        nav.getOracleType(invalidOracle);
+        vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
+        nav.getAdapterType(invalidAdapter);
     }
 
     // ============================================
@@ -854,7 +854,7 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(AssetNotFound.selector);
-        nav.addPriceFeed(unregisteredAsset, address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addPriceFeed(unregisteredAsset, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -865,30 +865,30 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
     }
 
-    function test_addBalanceOracle_duplicate() public {
+    function test_addBalanceAdapter_duplicate() public {
         vm.startPrank(navCalculatorManager);
-        // ERC20DefaultOracle is already registered, try to add it again - should revert with DuplicateBalanceOracle
-        address erc20Oracle = nav.erc20DefaultOracle();
-        vm.expectRevert(IBalances.DuplicateBalanceOracle.selector);
-        nav.addBalanceOracle(erc20Oracle);
+        // ERC20DefaultAdapter is already registered, try to add it again - should revert with DuplicateBalanceAdapter
+        address erc20Adapter = nav.erc20DefaultAdapter();
+        vm.expectRevert(IBalances.DuplicateBalanceAdapter.selector);
+        nav.addBalanceAdapter(erc20Adapter);
         vm.stopPrank();
     }
 
-    function test_removeBalanceOracle_invalidOracle() public {
+    function test_removeBalanceAdapter_invalidAdapter() public {
         vm.startPrank(navCalculatorManager);
-        address invalidOracle = makeAddr("invalid");
+        address invalidAdapter = makeAddr("invalid");
 
-        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
-        nav.removeBalanceOracle(invalidOracle);
+        vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
+        nav.removeBalanceAdapter(invalidAdapter);
         vm.stopPrank();
     }
 
-    function test_removeBalanceOracle_nativeAddress() public {
+    function test_removeBalanceAdapter_nativeAddress() public {
         vm.startPrank(navCalculatorManager);
-        address oracle = nav.erc20DefaultOracle();
-        // Cannot remove ERC20DefaultOracle, it's protected
+        address adapter = nav.erc20DefaultAdapter();
+        // Cannot remove ERC20DefaultAdapter, it's protected
         vm.expectRevert(InvalidArguments.selector);
-        nav.removeBalanceOracle(oracle);
+        nav.removeBalanceAdapter(adapter);
         vm.stopPrank();
     }
 
@@ -951,11 +951,11 @@ contract NAVCalculatorTest is SuperTest {
         // Native address is already registered in setupNav(), only set price feed if not already set
         if (!nav.isAssetRegistered(address(nav.NATIVE_ADDRESS()))) {
             nav.registerAsset(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
             nav.addPriceFeed(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
         vm.stopPrank();
@@ -975,11 +975,11 @@ contract NAVCalculatorTest is SuperTest {
         // Native address is already registered in setupNav(), only set price feed if not already set
         if (!nav.isAssetRegistered(address(nav.NATIVE_ADDRESS()))) {
             nav.registerAsset(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
             nav.addPriceFeed(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
         vm.stopPrank();
@@ -999,21 +999,21 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(p.value, 3_564_627_000_000);
     }
 
-    // Test 13: metadataConsistencyInvariant - custom oracle
-    function test_getAccountPositions_customOracleMetadata() public {
-        // Configure mockBalanceOracle for USDC
-        setupMockBalanceOracle(address(usdc), int256(123 * 10 ** usdc.decimals()));
+    // Test 13: metadataConsistencyInvariant - custom adapter
+    function test_getAccountPositions_customAdapterMetadata() public {
+        // Configure mockBalanceAdapter for USDC
+        setupMockBalanceAdapter(address(usdc), int256(123 * 10 ** usdc.decimals()));
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
 
-        // Find the position from custom oracle (should be index 1, but we'll search)
+        // Find the position from custom adapter (should be index 1, but we'll search)
         bool found = false;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].balanceOracle == address(mockBalanceOracle)) {
+            if (positions[i].balanceAdapter == address(mockBalanceAdapter)) {
                 INAVCalculator.Position memory p = positions[i];
                 assertEq(p.balanceAsset.symbol, "USDC");
                 assertEq(p.balanceAsset.decimals, usdc.decimals());
@@ -1027,7 +1027,7 @@ contract NAVCalculatorTest is SuperTest {
                 break;
             }
         }
-        assertTrue(found, "Custom oracle position not found");
+        assertTrue(found, "Custom adapter position not found");
     }
 
     // Test 3: getAccountNav_multipleAssets
@@ -1047,17 +1047,17 @@ contract NAVCalculatorTest is SuperTest {
     function test_getAccountPositions_multiplePositions() public {
         dai.mint(safe, 10 ** dai.decimals());
 
-        // Configure mockBalanceOracle for DAI
-        setupMockBalanceOracle(address(dai), int256(456 * 10 ** dai.decimals()));
+        // Configure mockBalanceAdapter for DAI
+        setupMockBalanceAdapter(address(dai), int256(456 * 10 ** dai.decimals()));
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
 
-        // Should have 2 positions: ERC20 DAI and Custom oracle DAI
+        // Should have 2 positions: ERC20 DAI and Custom adapter DAI
         assertEq(positions.length, 2);
 
         // Verify both positions are for DAI
@@ -1079,8 +1079,8 @@ contract NAVCalculatorTest is SuperTest {
         vm.stopPrank();
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcOracle), IPrices.PriceType.Custom, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
@@ -1099,18 +1099,18 @@ contract NAVCalculatorTest is SuperTest {
 
     // Test 16: getAccountPositions_multipleBalancesSameAsset
     function test_getAccountPositions_multipleBalancesSameAsset() public {
-        Mock_CustomBalanceOracle stakingBalanceOracle = new Mock_CustomBalanceOracle();
-        stakingBalanceOracle.setBalances(IBalances(address(nav)));
+        Mock_CustomBalanceAdapter stakingBalanceAdapter = new Mock_CustomBalanceAdapter();
+        stakingBalanceAdapter.setBalances(IBalances(address(nav)));
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
-        stakingBalanceOracle.setUnderlyingAssetsSupported(assets);
-        stakingBalanceOracle.setPositionMetadata("Staking", "Staked USDC");
+        stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
+        stakingBalanceAdapter.setPositionMetadata("Staking", "Staked USDC");
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(stakingBalanceOracle));
+        nav.addBalanceAdapter(address(stakingBalanceAdapter));
         vm.stopPrank();
 
-        // mint 1 USDC to both the safe and the custom oracle
-        stakingBalanceOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), false);
+        // mint 1 USDC to both the safe and the custom adapter
+        stakingBalanceAdapter.setBalance(address(usdc), safe, 10 ** usdc.decimals(), false);
         usdc.mint(safe, 10 ** usdc.decimals());
 
         INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
@@ -1133,17 +1133,17 @@ contract NAVCalculatorTest is SuperTest {
 
     // Test 15: getAccountPositions_negativeBalances
     function test_getAccountPositions_negativeBalances() public {
-        Mock_CustomBalanceOracle stakingBalanceOracle = new Mock_CustomBalanceOracle();
-        stakingBalanceOracle.setBalances(IBalances(address(nav)));
+        Mock_CustomBalanceAdapter stakingBalanceAdapter = new Mock_CustomBalanceAdapter();
+        stakingBalanceAdapter.setBalances(IBalances(address(nav)));
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
-        stakingBalanceOracle.setUnderlyingAssetsSupported(assets);
-        stakingBalanceOracle.setPositionMetadata("Debt", "Borrowed USDC");
+        stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
+        stakingBalanceAdapter.setPositionMetadata("Debt", "Borrowed USDC");
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(stakingBalanceOracle));
+        nav.addBalanceAdapter(address(stakingBalanceAdapter));
 
-        //Set the custom oracle to -1 USDC  and  mint 1 USDC to the safe
-        stakingBalanceOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
+        //Set the custom adapter to -1 USDC  and  mint 1 USDC to the safe
+        stakingBalanceAdapter.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
         vm.stopPrank();
         usdc.mint(safe, 10 ** usdc.decimals());
 
@@ -1290,11 +1290,11 @@ contract NAVCalculatorTest is SuperTest {
         // Native address is already registered in setupNav(), only set price feed if not already set
         if (!nav.isAssetRegistered(address(nav.NATIVE_ADDRESS()))) {
             nav.registerAsset(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
             nav.addPriceFeed(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
         vm.stopPrank();
@@ -1334,11 +1334,11 @@ contract NAVCalculatorTest is SuperTest {
         // Native address is already registered in setupNav(), only set price feed if not already set
         if (!nav.isAssetRegistered(address(nav.NATIVE_ADDRESS()))) {
             nav.registerAsset(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
             nav.addPriceFeed(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
         vm.stopPrank();
@@ -1389,14 +1389,14 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(nav3.value, sumPositionValues(positions3));
 
         // Test with negative balances
-        Mock_CustomBalanceOracle debtOracle = new Mock_CustomBalanceOracle();
-        debtOracle.setBalances(IBalances(address(nav)));
+        Mock_CustomBalanceAdapter debtAdapter = new Mock_CustomBalanceAdapter();
+        debtAdapter.setBalances(IBalances(address(nav)));
         address[] memory debtAssets = new address[](1);
         debtAssets[0] = address(usdc);
-        debtOracle.setUnderlyingAssetsSupported(debtAssets);
+        debtAdapter.setUnderlyingAssetsSupported(debtAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(debtOracle));
-        debtOracle.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
+        nav.addBalanceAdapter(address(debtAdapter));
+        debtAdapter.setBalance(address(usdc), safe, 10 ** usdc.decimals(), true);
         vm.stopPrank();
 
         INAVCalculator.NAV memory nav4 = nav.getAccountNav(safe, address(0));
@@ -1411,19 +1411,19 @@ contract NAVCalculatorTest is SuperTest {
         // dai has zero balance
         // weth has zero balance
 
-        Mock_CustomBalanceOracle customOracle = new Mock_CustomBalanceOracle();
-        customOracle.setBalances(IBalances(address(nav)));
+        Mock_CustomBalanceAdapter customAdapter = new Mock_CustomBalanceAdapter();
+        customAdapter.setBalances(IBalances(address(nav)));
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
-        customOracle.setUnderlyingAssetsSupported(assets);
+        customAdapter.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(customOracle));
-        customOracle.setBalance(address(usdc), safe, 0, false); // Zero balance
+        nav.addBalanceAdapter(address(customAdapter));
+        customAdapter.setBalance(address(usdc), safe, 0, false); // Zero balance
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
 
-        // Should only have 1 position (ERC20 USDC), not the zero custom oracle position
+        // Should only have 1 position (ERC20 USDC), not the zero custom adapter position
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(usdc));
         assertTrue(positions[0].amount != 0);
@@ -1438,28 +1438,28 @@ contract NAVCalculatorTest is SuperTest {
     function test_metadataConsistencyInvariant() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Test ERC20 oracle metadata
+        // Test ERC20 adapter metadata
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory erc20Pos = positions[0];
         assertPositionMetadata(erc20Pos, address(usdc), "wallet", "{\"protocol\":\"wallet\",\"product\":\"Holding\"}");
 
-        // Configure mockBalanceOracle for USDC
-        setupMockBalanceOracle(address(usdc), int256(123 * 10 ** usdc.decimals()));
+        // Configure mockBalanceAdapter for USDC
+        setupMockBalanceAdapter(address(usdc), int256(123 * 10 ** usdc.decimals()));
 
-        // Test custom oracle metadata
+        // Test custom adapter metadata
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(mockBalanceOracle));
+        nav.addBalanceAdapter(address(mockBalanceAdapter));
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions2 = nav.getAccountPositions(safe, address(0));
         bool foundCustom = false;
         for (uint256 i = 0; i < positions2.length; i++) {
-            if (positions2[i].balanceOracle == address(mockBalanceOracle)) {
+            if (positions2[i].balanceAdapter == address(mockBalanceAdapter)) {
                 assertPositionMetadata(positions2[i], address(usdc), "Mock Protocol", "Mock Position");
                 foundCustom = true;
             }
         }
-        assertTrue(foundCustom, "Custom oracle position not found");
+        assertTrue(foundCustom, "Custom adapter position not found");
     }
 
     // ============================================
@@ -1472,15 +1472,15 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         assertEq(positions.length, 0);
 
-        // Add a custom oracle with zero balance
-        Mock_CustomBalanceOracle zeroOracle = new Mock_CustomBalanceOracle();
-        zeroOracle.setBalances(IBalances(address(nav)));
+        // Add a custom adapter with zero balance
+        Mock_CustomBalanceAdapter zeroAdapter = new Mock_CustomBalanceAdapter();
+        zeroAdapter.setBalances(IBalances(address(nav)));
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
-        zeroOracle.setUnderlyingAssetsSupported(assets);
+        zeroAdapter.setUnderlyingAssetsSupported(assets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(zeroOracle));
-        zeroOracle.setBalance(address(usdc), safe, 0, false);
+        nav.addBalanceAdapter(address(zeroAdapter));
+        zeroAdapter.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 
         INAVCalculator.Position[] memory positions2 = nav.getAccountPositions(safe, address(0));
@@ -1490,11 +1490,11 @@ contract NAVCalculatorTest is SuperTest {
     // Test 17: getAccountPositions_stalePrices
     function test_getAccountPositions_stalePrices() public {
         // Create a stale price oracle with short heartbeat
-        Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1, 8);
+        Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
         // USDC is already registered, just update the price oracle with short heartbeat
-        nav.addPriceFeed(address(usdc), address(staleOracle), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
-        nav.removePriceFeed(address(usdc), address(usdcOracle));
+        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.removePriceFeed(address(usdc), address(usdcAdapter));
         vm.stopPrank();
 
         // Make price stale by warping time
@@ -1523,12 +1523,12 @@ contract NAVCalculatorTest is SuperTest {
     function test_getAccountPositions_assetWithoutPriceFeed() public {
         // Create a new token that's not in setUp
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
+        Mock_CustomPriceFeed newTokenAdapter = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
 
         vm.startPrank(navCalculatorManager);
         // Asset must be registered with a price feed - this is now required
-        nav.registerAsset(address(newToken), address(newTokenOracle), IPrices.PriceType.Custom, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(newToken), address(newTokenAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
         vm.stopPrank();
 
         newToken.mint(safe, 10 ** newToken.decimals());
@@ -1578,9 +1578,9 @@ contract NAVCalculatorTest is SuperTest {
 
         // Create a new token, register it with price oracle
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
-        Mock_CustomPriceFeed newTokenOracle = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
+        Mock_CustomPriceFeed newTokenAdapter = new Mock_CustomPriceFeed("NEW", address(newToken), 1e8, 8);
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(newToken), address(newTokenOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(newToken), address(newTokenAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
         nav.getAccountPositions(safe, address(newToken));
     }
@@ -1628,11 +1628,11 @@ contract NAVCalculatorTest is SuperTest {
         // Native address is already registered in setupNav(), only set price feed if not already set
         if (!nav.isAssetRegistered(address(nav.NATIVE_ADDRESS()))) {
             nav.registerAsset(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
             nav.addPriceFeed(
-                address(nav.NATIVE_ADDRESS()), address(ethOracle), IPrices.PriceType.Chainlink, type(uint256).max
+                address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
         vm.stopPrank();
@@ -1692,16 +1692,16 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(withPositions.length > 0);
     }
 
-    // Test 26b: hasPositions is fail-open — a reverting oracle must not DoS the scan.
-    function test_hasPositions_resilientToRevertingOracle() public {
-        RevertingBalanceOracle reverter = new RevertingBalanceOracle();
+    // Test 26b: hasPositions is fail-open — a reverting adapter must not DoS the scan.
+    function test_hasPositions_resilientToRevertingAdapter() public {
+        RevertingBalanceAdapter reverter = new RevertingBalanceAdapter();
         vm.prank(navCalculatorManager);
-        nav.addBalanceOracle(address(reverter));
+        nav.addBalanceAdapter(address(reverter));
 
-        // Empty account: the reverting oracle is skipped, hasPositions returns false (no revert).
+        // Empty account: the reverting adapter is skipped, hasPositions returns false (no revert).
         assertFalse(nav.hasPositions(safe));
 
-        // Real wallet position via the default oracle is still detected despite the reverting oracle.
+        // Real wallet position via the default adapter is still detected despite the reverting adapter.
         usdc.mint(safe, 10 ** usdc.decimals());
         assertTrue(nav.hasPositions(safe));
     }
@@ -1892,38 +1892,38 @@ contract NAVCalculatorTest is SuperTest {
         }
     }
 
-    // Test getAssetsWithPositions_multipleBalanceOracles
-    function test_getAssetsWithPositions_multipleBalanceOracles() public {
+    // Test getAssetsWithPositions_multipleBalanceAdapters
+    function test_getAssetsWithPositions_multipleBalanceAdapters() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Add a custom balance oracle for USDC
-        Mock_CustomBalanceOracle customOracle = new Mock_CustomBalanceOracle();
-        customOracle.setBalances(IBalances(address(nav)));
-        address[] memory oracleAssets = new address[](1);
-        oracleAssets[0] = address(usdc);
-        customOracle.setUnderlyingAssetsSupported(oracleAssets);
+        // Add a custom balance adapter for USDC
+        Mock_CustomBalanceAdapter customAdapter = new Mock_CustomBalanceAdapter();
+        customAdapter.setBalances(IBalances(address(nav)));
+        address[] memory adapterAssets = new address[](1);
+        adapterAssets[0] = address(usdc);
+        customAdapter.setUnderlyingAssetsSupported(adapterAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(customOracle));
-        customOracle.setBalance(address(usdc), safe, 5 * 10 ** (usdc.decimals() - 1), false);
+        nav.addBalanceAdapter(address(customAdapter));
+        customAdapter.setBalance(address(usdc), safe, 5 * 10 ** (usdc.decimals() - 1), false);
         vm.stopPrank();
 
         address[] memory assetsWithPos = nav.getAssetsWithPositions(safe);
-        // Should still return USDC (has positions from both oracles)
+        // Should still return USDC (has positions from both adapters)
         assertEq(assetsWithPos.length, 1);
         assertEq(assetsWithPos[0], address(usdc));
     }
 
     // Test getAssetsWithPositions_allZeroBalances
     function test_getAssetsWithPositions_allZeroBalances() public {
-        // Add a custom oracle with zero balance
-        Mock_CustomBalanceOracle zeroOracle = new Mock_CustomBalanceOracle();
-        zeroOracle.setBalances(IBalances(address(nav)));
-        address[] memory oracleAssets = new address[](1);
-        oracleAssets[0] = address(usdc);
-        zeroOracle.setUnderlyingAssetsSupported(oracleAssets);
+        // Add a custom adapter with zero balance
+        Mock_CustomBalanceAdapter zeroAdapter = new Mock_CustomBalanceAdapter();
+        zeroAdapter.setBalances(IBalances(address(nav)));
+        address[] memory adapterAssets = new address[](1);
+        adapterAssets[0] = address(usdc);
+        zeroAdapter.setUnderlyingAssetsSupported(adapterAssets);
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(zeroOracle));
-        zeroOracle.setBalance(address(usdc), safe, 0, false);
+        nav.addBalanceAdapter(address(zeroAdapter));
+        zeroAdapter.setBalance(address(usdc), safe, 0, false);
         vm.stopPrank();
 
         address[] memory assetsWithPos = nav.getAssetsWithPositions(safe);
@@ -1949,19 +1949,19 @@ contract NAVCalculatorTest is SuperTest {
         Mock_ERC20 token5 = new Mock_ERC20("T5", 18);
 
         // Create price oracles for the new tokens
-        Mock_PriceOracleChainlink token3Oracle = new Mock_PriceOracleChainlink("T3", 1, 8);
-        Mock_PriceOracleChainlink token4Oracle = new Mock_PriceOracleChainlink("T4", 1, 8);
-        Mock_PriceOracleChainlink token5Oracle = new Mock_PriceOracleChainlink("T5", 1, 8);
+        Mock_PriceOracleChainlink token3Adapter = new Mock_PriceOracleChainlink("T3", 1, 8);
+        Mock_PriceOracleChainlink token4Adapter = new Mock_PriceOracleChainlink("T4", 1, 8);
+        Mock_PriceOracleChainlink token5Adapter = new Mock_PriceOracleChainlink("T5", 1, 8);
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(token3), address(token3Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(token3), address(token3Adapter), IPrices.PriceType.Chainlink, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
 
-        nav.registerAsset(address(token4), address(token4Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(token4), address(token4Adapter), IPrices.PriceType.Chainlink, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
 
-        nav.registerAsset(address(token5), address(token5Oracle), IPrices.PriceType.Chainlink, type(uint256).max);
-        // ERC20DefaultOracle is already registered globally, no need to add it again
+        nav.registerAsset(address(token5), address(token5Adapter), IPrices.PriceType.Chainlink, type(uint256).max);
+        // ERC20DefaultAdapter is already registered globally, no need to add it again
         vm.stopPrank();
 
         // Measure gas for getAllPositions (should skip empty assets)

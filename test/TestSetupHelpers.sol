@@ -71,7 +71,11 @@ abstract contract TestSetupHelpers is Test {
     /// @param idx The adapter index in the global registry
     /// @return adapter The adapter address
     /// @return exists Whether the adapter exists at that index
-    function safeGetBalanceAdapter(Balances balances, uint256 idx) internal view returns (address adapter, bool exists) {
+    function safeGetBalanceAdapter(Balances balances, uint256 idx)
+        internal
+        view
+        returns (address adapter, bool exists)
+    {
         address[] memory allAdapters = balances.getAllAdapters();
         if (idx >= allAdapters.length) {
             return (address(0), false);

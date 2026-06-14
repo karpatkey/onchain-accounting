@@ -75,7 +75,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < p.length; i++) {
             sum += p[i].amount;
         }
-        INAVCalculator.PositionBalance[] memory g = gauges.getAdapterPositionsForInstances(user, _gaugeInstance(), token);
+        INAVCalculator.PositionBalance[] memory g =
+            gauges.getAdapterPositionsForInstances(user, _gaugeInstance(), token);
         for (uint256 i = 0; i < g.length; i++) {
             sum += g[i].amount;
         }

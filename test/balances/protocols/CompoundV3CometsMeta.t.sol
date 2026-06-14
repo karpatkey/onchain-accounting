@@ -87,7 +87,8 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_allLegTypes() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // cometA: Supply(USDC) + Collateral(WBTC) + Rewards(COMP) = 3; cometB: Borrow(WETH) = 1 -> 4
         assertEq(p.length, 4);
 

@@ -100,8 +100,8 @@ contract BalancesHarness is Balances {
 /// @notice Minimal mock advertising the meta-adapter interface (for registry tests).
 contract Mock_MetaAdapter is IMetaBalanceAdapter {
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IMetaBalanceAdapter).interfaceId
-            || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IMetaBalanceAdapter).interfaceId || interfaceId == type(IBalanceAdapter).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     function getAdapterPositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {
@@ -233,8 +233,8 @@ contract BalancesTest is Test {
         deal(alice, 1337);
 
         // Get balance from ERC20DefaultAdapter for native address
-        (uint256 amount, bool isDebt) = IBalanceAdapter(balances.erc20DefaultAdapter())
-            .getAdapterBalanceForAsset(alice, balances.NATIVE_ADDRESS());
+        (uint256 amount, bool isDebt) =
+            IBalanceAdapter(balances.erc20DefaultAdapter()).getAdapterBalanceForAsset(alice, balances.NATIVE_ADDRESS());
         assertEq(amount, 1337);
         assertFalse(isDebt);
     }

@@ -23,7 +23,9 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Uniswap V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceAdapter(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pair address. Emits up to 2 `Supply` legs, dropping zeros and unregistered assets,

@@ -89,7 +89,8 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_threeLegs_present() public view {
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(USER, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos =
+            adapter.getAdapterPositionsForInstances(USER, instances, address(0));
         assertEq(pos.length, 3, "collateral + loan-supply + loan-borrow");
 
         uint256 collateral;

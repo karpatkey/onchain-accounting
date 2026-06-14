@@ -32,8 +32,8 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────

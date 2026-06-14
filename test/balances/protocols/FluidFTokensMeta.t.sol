@@ -92,7 +92,8 @@ contract FluidFTokensMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_supplyLegsAndIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2);
         assertEq(p[0].balanceAsset.asset, address(usdc));
         assertEq(p[0].amount, 110e6); // 100 * 1.1
@@ -111,14 +112,16 @@ contract FluidFTokensMetaBalanceAdapterTest is Test {
 
     function test_unregisteredAsset_skipped() public {
         nav.unregisterAssetHelper(address(usdc));
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_zeroBalance_skipped() public {
         fUSDC.setBalance(alice, 0);
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(weth));
     }

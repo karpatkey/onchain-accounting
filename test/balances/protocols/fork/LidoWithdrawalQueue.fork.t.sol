@@ -91,7 +91,8 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterBalances_realHolder() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            adapter.getAdapterBalances(TEST_USER);
         assertEq(assets.length, 1);
         assertEq(assets[0], NATIVE_ETH);
         assertEq(amounts[0], TEST_USER_EXPECTED_ETH);

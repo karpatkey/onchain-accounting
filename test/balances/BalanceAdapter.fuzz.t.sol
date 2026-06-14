@@ -129,7 +129,8 @@ contract BalanceAdapterFuzzTest is Test {
         customAdapter.setBalance(address(usdc), account, amount, true);
 
         // Get balance - should be debt
-        (uint256 retrievedAmount, bool retrievedIsDebt) = customAdapter.getAdapterBalanceForAsset(account, address(usdc));
+        (uint256 retrievedAmount, bool retrievedIsDebt) =
+            customAdapter.getAdapterBalanceForAsset(account, address(usdc));
         assertEq(retrievedAmount, amount, "Amount should match");
         assertTrue(retrievedIsDebt, "Debt balance should have isDebt true");
     }
@@ -151,7 +152,8 @@ contract BalanceAdapterFuzzTest is Test {
         }
 
         // Should not revert
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(account, assetFilter);
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultAdapter.getAdapterPositions(account, assetFilter);
 
         // Verify no zero amounts
         for (uint256 i = 0; i < positions.length; i++) {

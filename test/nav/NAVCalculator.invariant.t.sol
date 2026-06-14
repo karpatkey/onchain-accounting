@@ -110,7 +110,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
         for (uint256 i = 0; i < positions.length; i++) {
             for (uint256 j = i + 1; j < positions.length; j++) {
                 assertTrue(
-                    positions[i].balanceAdapter != positions[j].balanceAdapter, "No duplicate positions from same adapter"
+                    positions[i].balanceAdapter != positions[j].balanceAdapter,
+                    "No duplicate positions from same adapter"
                 );
             }
         }

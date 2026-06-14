@@ -90,7 +90,8 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
     }
 
     function test_legs_andIdentityViaLendingPool() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2); // USDC Collateral + WETH Borrow
 
         assertEq(p[0].balanceAsset.asset, address(usdc));
@@ -121,7 +122,8 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
 
     function test_unregisteredReserve_skipped() public {
         nav.unregisterAssetHelper(address(weth));
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(usdc));
     }

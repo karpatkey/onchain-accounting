@@ -45,8 +45,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
-        return interfaceId == type(IMetaBalanceAdapter).interfaceId
-            || interfaceId == type(IBalanceAdapter).interfaceId
+        return interfaceId == type(IMetaBalanceAdapter).interfaceId || interfaceId == type(IBalanceAdapter).interfaceId
             || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 

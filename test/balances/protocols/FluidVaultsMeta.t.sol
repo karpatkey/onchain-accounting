@@ -68,7 +68,8 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_collateralAndBorrow() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 4);
 
         // vaultA Collateral (wstETH)

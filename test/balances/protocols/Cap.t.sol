@@ -63,7 +63,8 @@ contract CapBalanceAdapterTest is Test {
         mockUsdc = new MockUsdc();
         mockCUsd = new MockCUsd(address(mockUsdc));
         mockStcUsd = new MockStcUsd();
-        adapter = new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        adapter =
+            new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(mockBalances));
     }
 
     // ============================================

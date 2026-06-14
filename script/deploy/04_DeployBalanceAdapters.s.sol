@@ -674,7 +674,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceAdapter adapter = new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin);
+        MerklRewardsBalanceAdapter adapter =
+            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 

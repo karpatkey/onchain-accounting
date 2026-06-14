@@ -22,7 +22,9 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceAdapter(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the market (ERC4626 pool) address. Emits one `Supplied` leg in the market's underlying,

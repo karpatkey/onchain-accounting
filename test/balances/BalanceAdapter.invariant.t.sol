@@ -91,8 +91,7 @@ contract BalanceAdapterInvariantTest is Test {
 
             // Verify supportsInterface
             assertTrue(
-                adapter.supportsInterface(type(IBalanceAdapter).interfaceId),
-                "Adapter should support IBalanceAdapter"
+                adapter.supportsInterface(type(IBalanceAdapter).interfaceId), "Adapter should support IBalanceAdapter"
             );
             assertTrue(adapter.supportsInterface(type(IERC165).interfaceId), "Adapter should support IERC165");
 
@@ -299,7 +298,8 @@ contract BalanceAdapterInvariantTest is Test {
         dai.mint(alice, 2000 * 10 ** dai.decimals());
 
         // Get all positions
-        INAVCalculator.PositionBalance[] memory allPositions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory allPositions =
+            erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
         // Get filtered positions (USDC only)
         INAVCalculator.PositionBalance[] memory filteredPositions =

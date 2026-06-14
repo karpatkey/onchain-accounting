@@ -92,7 +92,8 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_supplyLegsAndIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2);
 
         assertEq(p[0].balanceAsset.asset, address(weth));
@@ -115,14 +116,16 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
 
     function test_unregisteredAsset_skipped() public {
         nav.unregisterAssetHelper(address(weth));
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_zeroBalance_skipped() public {
         marketA.setBalance(alice, 0);
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }

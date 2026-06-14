@@ -81,7 +81,8 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_acrossPairs() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 4, "2 legs per pair");
         assertEq(p[2].balanceAsset.asset, address(usdc));
         assertEq(p[2].amount, 100e18);

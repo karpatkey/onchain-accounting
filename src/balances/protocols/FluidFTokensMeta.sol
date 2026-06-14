@@ -21,7 +21,9 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceAdapter(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the fToken (ERC4626) address. Emits one `Supplied` leg in the fToken's underlying.

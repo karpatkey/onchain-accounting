@@ -89,7 +89,8 @@ contract DaiDsrBalanceAdapterForkTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_getAdapterBalance_returnsCorrectBalance() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(TEST_USER);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            adapter.getAdapterBalances(TEST_USER);
 
         // Should have DAI position
         assertGe(assets.length, 1, "Should have at least one position");

@@ -284,7 +284,8 @@ contract BalanceAdapterErrorTest is Test {
         address invalidFilter = makeAddr("invalid");
 
         // Filter by invalid asset should return empty array, not revert
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, invalidFilter);
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultAdapter.getAdapterPositions(alice, invalidFilter);
         assertEq(positions.length, 0, "Invalid filter should return empty array");
     }
 

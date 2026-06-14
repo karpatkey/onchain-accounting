@@ -94,7 +94,8 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_legsAndIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // vaultA: Staking(10) + Borrow(2); vaultB: Staking(3) -> 3 legs total
         assertEq(p.length, 3);
 

@@ -35,7 +35,9 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceAdapter(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
     // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 

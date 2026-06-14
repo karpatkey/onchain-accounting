@@ -109,7 +109,8 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_acrossPools_andIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // poolA: WBTC supply, WETH supply, WBTC fees, WETH fees (4) + poolB: USDC supply, WETH supply, USDC fees, WETH fees (4)
         assertEq(p.length, 8, "4 legs per pool");
         for (uint256 i = 0; i < p.length; i++) {
@@ -123,7 +124,8 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_feesLegType() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // The 3rd/4th poolA legs are Fees (tokensOwed 42/1337).
         assertEq(p[2].amount, 42);
         assertEq(uint8(p[2].positionKind), uint8(PositionKind.Fees));

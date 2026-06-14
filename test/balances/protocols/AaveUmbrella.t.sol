@@ -74,7 +74,8 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterBalances_returnsEmptyArraysForZeroAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(address(0));
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            adapter.getAdapterBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);

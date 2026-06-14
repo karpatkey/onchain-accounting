@@ -103,7 +103,8 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_adapterDirect_aggregatesBothVaults() public view {
         bytes32[] memory instances = nav.getMetaInstances(address(adapter));
-        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(SAFE, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos =
+            adapter.getAdapterPositionsForInstances(SAFE, instances, address(0));
 
         assertEq(pos.length, 2, "two USDC positions from one adapter");
         for (uint256 i = 0; i < pos.length; i++) {

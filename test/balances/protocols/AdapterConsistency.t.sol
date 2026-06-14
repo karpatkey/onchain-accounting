@@ -68,8 +68,7 @@ contract AdapterConsistencyTest is Test {
 
         // Get interface IDs from first adapter as reference
         IBalanceAdapter firstAdapter = adapters[0];
-        bool firstSupportsIBalanceAdapter =
-            firstAdapter.supportsInterface(type(IBalanceAdapter).interfaceId);
+        bool firstSupportsIBalanceAdapter = firstAdapter.supportsInterface(type(IBalanceAdapter).interfaceId);
         bool firstSupportsIERC165 = firstAdapter.supportsInterface(type(IERC165).interfaceId);
 
         // All adapters should have the same interface support
@@ -177,7 +176,8 @@ contract AdapterConsistencyTest is Test {
         customAdapter.setBalance(address(dai), alice, 1000 * 10 ** dai.decimals(), false);
 
         // Test filtering with both adapters
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
+        INAVCalculator.PositionBalance[] memory positions1 =
+            erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, address(usdc));
 
         // All filtered positions should be for USDC
@@ -212,7 +212,8 @@ contract AdapterConsistencyTest is Test {
         assertEq(amount2, 0, "CustomAdapter should return zero for invalid asset");
 
         // Both should return empty arrays for invalid asset filter
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, invalidAsset);
+        INAVCalculator.PositionBalance[] memory positions1 =
+            erc20DefaultAdapter.getAdapterPositions(alice, invalidAsset);
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, invalidAsset);
 
         assertEq(positions1.length, 0, "ERC20DefaultAdapter should return empty for invalid filter");
@@ -250,7 +251,8 @@ contract AdapterConsistencyTest is Test {
         for (uint256 i = 0; i < adapters.length; i++) {
             IBalanceAdapter adapter = adapters[i];
 
-            (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
+            (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+                adapter.getAdapterBalances(alice);
             assertEq(assets.length, amounts.length, "assets and amounts length match");
 
             // Get positions

@@ -86,7 +86,9 @@ contract Configure is BaseDeployScript {
                 if (!ok) {
                     revert(
                         string(
-                            abi.encodePacked("addBalanceAdapter failed for ", adapterNames[i], ": ", _decodeRevert(data))
+                            abi.encodePacked(
+                                "addBalanceAdapter failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                            )
                         )
                     );
                 }

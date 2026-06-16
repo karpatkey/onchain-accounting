@@ -281,32 +281,19 @@ contract Configure is BaseDeployScript {
             vm, currentChainId, "balanceAdapters", adapterName, "metaInstancesRaw"
         );
 
-        bytes32[] memory unioned = new bytes32[](addrs.length + raw.length);
+        // The configured coordinates must be unique across `metaInstances` (addresses, widened) ∪ `metaInstancesRaw`
+        // (raw bytes32). addMetaInstances is all-or-nothing and reverts DuplicateMetaInstance, so a duplicated
+        // config entry surfaces as a clear, per-adapter reconcile failure ("addMetaInstances failed for <name>:
+        // DuplicateMetaInstance") that must be corrected in config — it is a config error, not a transient. We do
+        // NOT de-duplicate in-script: NAVCalculator runs near the EIP-170 limit and, under via-IR whole-program
+        // optimization, adding the dedup loop here measurably grows NAVCalculator's own runtime bytecode past
+        // 24,576 (see the EIP-170 note on the NAVCalculator contract).
+        instances = new bytes32[](addrs.length + raw.length);
         for (uint256 i = 0; i < addrs.length; i++) {
-            unioned[i] = bytes32(uint256(uint160(addrs[i])));
+            instances[i] = bytes32(uint256(uint160(addrs[i])));
         }
         for (uint256 i = 0; i < raw.length; i++) {
-            unioned[addrs.length + i] = raw[i];
-        }
-
-        // Deduplicate: addMetaInstances rejects duplicates (all-or-nothing), so a benign config typo — the same
-        // coordinate listed twice, or an address in `metaInstances` whose widened form also appears in
-        // `metaInstancesRaw` — would otherwise hard-fail the reconcile. Dedup here keeps 06_Configure idempotent.
-        bytes32[] memory tmp = new bytes32[](unioned.length);
-        uint256 count;
-        for (uint256 i = 0; i < unioned.length; i++) {
-            bool seen;
-            for (uint256 j = 0; j < count; j++) {
-                if (tmp[j] == unioned[i]) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (!seen) tmp[count++] = unioned[i];
-        }
-        instances = new bytes32[](count);
-        for (uint256 i = 0; i < count; i++) {
-            instances[i] = tmp[i];
+            instances[addrs.length + i] = raw[i];
         }
     }
 

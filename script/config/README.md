@@ -119,7 +119,7 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 
 ### Structure
 
-- **`tokens`** — `tokens.{chainId}.{symbol}`: token address, adapter type, price feed address, heartbeat, optional note.
+- **`tokens`** — `tokens.{chainId}.{symbol}`: token address, oracle type, price feed address, heartbeat, optional note.
 - **`priceFeeds`** (if used) — custom price feed adapter constructor params per chain (e.g. sDAI, LDO).
 
 ### Template (tokens section)
@@ -161,8 +161,8 @@ One file per chain. Contains chain metadata, role addresses, deployed contract a
 | `address` | string | Token contract address on that chain |
 | `type` | string | `"Chainlink"`, `"Custom"`, `"Redstone"`, `"API3"`, or `"None"` |
 | `pricefeed` | string | Chainlink or custom price feed address (empty if None) |
-| `heartbeat` | number | Adapter heartbeat in seconds |
-| `note` | string | Optional (e.g. "No adapter available", "Native USDC (BridgeEscrow/CCTP)") |
+| `heartbeat` | number | Oracle heartbeat in seconds |
+| `note` | string | Optional (e.g. "No oracle available", "Native USDC (BridgeEscrow/CCTP)") |
 
 ---
 
@@ -627,8 +627,10 @@ MANAGER (keccak256("MANAGER"))
 │  ├─ addPriceFeed()
 │  ├─ removePriceFeedAt()
 │  ├─ removePriceFeed()
-│  ├─ addBalanceAdapter()
-│  ├─ removeBalanceAdapter()
+│  ├─ addBalanceAdapters()
+│  ├─ removeBalanceAdapters()
+│  ├─ addMetaInstances()
+│  ├─ removeMetaInstances()
 │  ├─ includeAssetInDefaultAdapter()
 │  ├─ excludeAssetFromDefaultAdapter()
 │  └─ setChainlinkL2SequencerGracePeriod()

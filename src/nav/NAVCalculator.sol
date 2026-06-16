@@ -24,6 +24,12 @@ import "src/constants.sol";
 /// @title NAV Calculator
 /// @notice NAV Calculator.
 /// @author kpk
+/// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
+///      enforces it). Heavy storage-mutation loops are deliberately delegated to the external `NavRegistryLib`
+///      (DELEGATECALL) to stay under it — see `Balances._addBalanceAdapter`, `_addMetaInstances`,
+///      `getAdaptersForAsset`. When adding code here, watch the margin and prefer moving substantial loops into
+///      `NavRegistryLib`; note that extracting *small* helpers can backfire (the dynamic-array-return call
+///      plumbing can cost more than the inlined body), so measure with a clean `forge build --sizes`.
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // Libraries

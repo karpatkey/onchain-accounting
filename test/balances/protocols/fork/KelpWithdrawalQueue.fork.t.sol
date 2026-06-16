@@ -2,10 +2,13 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
+import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {KelpWithdrawalQueueBalanceOracle} from "src/balances/protocols/KelpWithdrawalQueue.sol";
 import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title KelpWithdrawalQueueBalanceOracleForkTest
 /// @notice Fork tests against Kelp DAO's rsETH exit queue (LRTWithdrawalManager) on mainnet.
@@ -126,5 +129,108 @@ contract KelpWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function test_immutableAddresses() public view {
         assertEq(address(oracle.WITHDRAWAL_MANAGER()), WITHDRAWAL_MANAGER);
+    }
+}
+
+/// @title KelpWithdrawalQueueBalanceOracleForkTest_Fresh
+/// @notice Fresh multi-asset, multi-request pin at the verification block (augments the original suite above;
+///         does not replace it).
+/// @dev Captured 2026-06-16 at block 25_331_379 — see `script/development/test/kelp/README.md`. The single
+///      holder `0x13833b44…` exercises every gap the original (stETH-only, single-request) suite left:
+///      - **stETH leg** — TWO open requests (nonces 7177 + 7203) summed: 322.038966142406605154 +
+///        332.890371974143452160 = 654.929338116550057314 stETH (real on-chain multi-request summing).
+///      - **native-ETH leg** — ONE open request (nonce 5937) = 0.010734990037748145 ETH (the native-ETH
+///        payout branch; ETH is registered via the sentinel like Lido).
+///      So `getOraclePositions` emits TWO legs from one oracle — the multi-asset path, previously mock-only.
+///      Kelp also supports ETHx, but this holder has no ETHx request and ETHx is not registered on the dev
+///      NAV (custom feed) — the unit test covers the registered-vs-unregistered drop. Requests can be claimed
+///      by the owner at any time after this block; the pin keeps them reproducible.
+contract KelpWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBase {
+    address public constant WITHDRAWAL_MANAGER = 0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16;
+    address public constant MAINNET_STETH = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84;
+    /// @dev ERC-7528 native-ETH sentinel — Kelp can pay out native ETH; the adapter denominates it here.
+    address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    uint256 public constant FORK_BLOCK = 25_331_379;
+
+    address public constant HOLDER = 0x13833b44341288dF27cc85e3eFDA8CD3830a4d35;
+    /// @dev stETH leg = sum of two open requests (nonces 7177 + 7203).
+    uint256 public constant STETH_REQ_7177 = 322_038_966_142_406_605_154;
+    uint256 public constant STETH_REQ_7203 = 332_890_371_974_143_452_160;
+    uint256 public constant STETH_EXPECTED = STETH_REQ_7177 + STETH_REQ_7203;
+    /// @dev native-ETH leg = one open request (nonce 5937).
+    uint256 public constant NETH_EXPECTED = 10_734_990_037_748_145;
+
+    KelpWithdrawalQueueBalanceOracle public oracle;
+
+    function setUp() public override {
+        // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
+        super.setUp();
+
+        // Register stETH + native ETH directly: the default fork harness probes decimals()/symbol() on each
+        // asset, which foundry rejects for the codeless native sentinel. registerAssetForTest is pure storage.
+        balances = new BalancesHarnessForFork();
+        balances.registerAssetForTest(MAINNET_STETH, 18, "stETH");
+        balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
+        // ETHx deliberately NOT registered — mirrors the dev NAV (custom feed) and proves the drop path.
+
+        oracle = new KelpWithdrawalQueueBalanceOracle(WITHDRAWAL_MANAGER, address(balances));
+    }
+
+    function _setupFork() internal override {
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
+    }
+
+    // ---- Per-asset balances ----
+
+    function test_stETH_sumsTwoRequests() public view {
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(HOLDER, MAINNET_STETH);
+        assertEq(amount, STETH_EXPECTED, "stETH leg = sum of the two open requests");
+        assertFalse(isDebt);
+    }
+
+    function test_nativeETH_singleRequest() public view {
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(HOLDER, NATIVE_ETH);
+        assertEq(amount, NETH_EXPECTED, "native-ETH leg = single open request");
+        assertFalse(isDebt);
+    }
+
+    // ---- Multi-asset getOraclePositions: TWO legs from one oracle ----
+
+    function test_getOraclePositions_twoLegs() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(HOLDER, address(0));
+        assertEq(positions.length, 2, "stETH + native-ETH legs (ETHx skipped: no request / unregistered)");
+
+        // Emitted in getSupportedAssetList order: stETH (index 0), then native ETH (index 2; ETHx at 1 skipped).
+        assertEq(positions[0].balanceAsset.asset, MAINNET_STETH);
+        assertEq(positions[0].amount, STETH_EXPECTED);
+        assertEq(positions[1].balanceAsset.asset, NATIVE_ETH);
+        assertEq(positions[1].amount, NETH_EXPECTED);
+
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceOracle, address(oracle));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
+            assertEq(positions[i].positionId.length, 0, "account-global positionId is empty");
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+        }
+    }
+
+    function test_getOraclePositions_filterToNativeETH() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(HOLDER, NATIVE_ETH);
+        assertEq(positions.length, 1, "asset filter narrows to the native-ETH leg only");
+        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
+        assertEq(positions[0].amount, NETH_EXPECTED);
+    }
+
+    function test_getOracleBalances_bothAssets() public view {
+        (address[] memory assets, uint256[] memory amounts,) = oracle.getOracleBalances(HOLDER);
+        assertEq(assets.length, 2);
+        assertEq(assets[0], MAINNET_STETH);
+        assertEq(amounts[0], STETH_EXPECTED);
+        assertEq(assets[1], NATIVE_ETH);
+        assertEq(amounts[1], NETH_EXPECTED);
     }
 }

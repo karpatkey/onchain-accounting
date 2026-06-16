@@ -62,7 +62,11 @@ const managerAbi = [
   },
 ] as const
 
-const keyOf = (chainId: number, oracle: string) => `${chainId}:${oracle.toLowerCase()}`
+// Drill-down key includes the leg asset (chainId:oracle:asset) so it stays consistent with multi-asset
+// adapters like Kelp. Stader's leg is always denominated in WETH (the adapter's UNDERLYING_TOKEN on mainnet).
+const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2' as const
+const keyOf = (chainId: number, oracle: string, asset: string) =>
+  `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`
 const ZERO = '0x0000000000000000000000000000000000000000' as const
 
 /// Fetches the per-request-id breakdown for each Stader withdrawal-queue position the account holds, valuing
@@ -125,7 +129,7 @@ export function useStaderWithdrawals(
 
   // Stage 3 — read each request struct. Flatten across managers; remember which manager each id belongs to.
   const idLookups = withIds.flatMap((m) =>
-    m.ids.map((id) => ({ chainId: m.chainId, manager: m.manager, key: keyOf(m.chainId, m.oracle), id })),
+    m.ids.map((id) => ({ chainId: m.chainId, manager: m.manager, key: keyOf(m.chainId, m.oracle, WETH), id })),
   )
   const { data: requestData } = useReadContracts({
     contracts: idLookups.map((l) => ({

@@ -10,6 +10,7 @@ import { useAccountNav } from '@/hooks/use-account-nav'
 import { useAccountPositions, type ChainPositions } from '@/hooks/use-account-positions'
 import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdrawals'
 import { useStaderWithdrawals, type StaderOracleRef } from '@/hooks/use-stader-withdrawals'
+import { useKelpWithdrawals, type KelpOracleRef } from '@/hooks/use-kelp-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { shortenAddress } from '@/lib/format'
 
@@ -218,17 +219,36 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     return refs
   }, [positionResults])
 
+  // Kelp withdrawal-queue oracles the account touches — drives the per-request-id drill-down (display only).
+  // Kelp is multi-asset (one leg per payout asset), so its drill-down map is keyed by oracle AND asset.
+  const kelpOracles = useMemo<KelpOracleRef[]>(() => {
+    const seen = new Set<string>()
+    const refs: KelpOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocol !== 'Kelp' && p.protocol !== 'Kelp DAO') continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
   const lidoWithdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
   const staderWithdrawalsByKey = useStaderWithdrawals(account, staderOracles)
+  const kelpWithdrawalsByKey = useKelpWithdrawals(account, kelpOracles)
 
-  // Merge both per-request drill-down maps into one (keys are `${chainId}:${oracle}`, unique per adapter, so no
-  // collision). protocol-group looks each leg up by that key regardless of protocol.
+  // Merge the per-request drill-down maps into one. Keys are `${chainId}:${oracle}:${asset}`, unique per
+  // (adapter, leg), so no collision. protocol-group looks each leg up by that asset-aware key.
   const withdrawalsByKey = useMemo<WithdrawalsByKey>(() => {
     const m = new Map<string, WithdrawalRequestRow[]>()
     for (const [k, v] of lidoWithdrawalsByKey) m.set(k, v)
     for (const [k, v] of staderWithdrawalsByKey) m.set(k, v)
+    for (const [k, v] of kelpWithdrawalsByKey) m.set(k, v)
     return m
-  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey])
+  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey, kelpWithdrawalsByKey])
 
   const totalPortfolioNav = navResults.reduce((s, r) => s + (r.nav?.value ?? 0n), 0n)
 

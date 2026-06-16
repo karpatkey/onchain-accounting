@@ -153,4 +153,86 @@ library NavRegistryLib {
         delete isAdapterRegistered[adapter];
         delete adapterTypes[adapter];
     }
+
+    // -------------------------------------------------------------------------
+    // Meta-adapter instance registry (ADR 0010)
+    // -------------------------------------------------------------------------
+
+    /// @notice Appends instance coordinates to a meta-adapter's set (all-or-nothing). Reverts DuplicateMetaInstance
+    ///         on a coordinate already present or repeated within the batch, InvalidArguments on an empty list, and
+    ///         InvalidBalanceAdapter if the adapter is not registered. The running total stays in the caller wrapper.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param metaInstances The per-adapter instance-set map (storage ref)
+    /// @param adapter The registered meta-adapter
+    /// @param instances The instance coordinates to add
+    /// @return added The number of coordinates appended (== instances.length on success)
+    function addMetaInstances(
+        mapping(address => bool) storage isAdapterRegistered,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        bytes32[] memory instances
+    ) external returns (uint256 added) {
+        if (!isAdapterRegistered[adapter]) {
+            revert IBalances.InvalidBalanceAdapter();
+        }
+        added = instances.length;
+        if (added == 0) {
+            revert InvalidArguments();
+        }
+
+        bytes32[] storage set = metaInstances[adapter];
+        for (uint256 i = 0; i < added; i++) {
+            bytes32 instance = instances[i];
+            // Reject duplicates against the live set, which already includes coordinates pushed earlier in this
+            // batch — so a coordinate repeated within `instances` is caught too.
+            uint256 len = set.length;
+            for (uint256 j = 0; j < len; j++) {
+                if (set[j] == instance) {
+                    revert IBalances.DuplicateMetaInstance();
+                }
+            }
+            set.push(instance);
+        }
+    }
+
+    /// @notice Removes instance coordinates from a meta-adapter's set (all-or-nothing, swap-and-pop). Reverts
+    ///         MetaInstanceNotFound on a coordinate not present (a coordinate repeated within the batch also reverts),
+    ///         InvalidArguments on an empty list, and InvalidBalanceAdapter if the adapter is not registered.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param metaInstances The per-adapter instance-set map (storage ref)
+    /// @param adapter The registered meta-adapter
+    /// @param instances The instance coordinates to remove
+    /// @return removed The number of coordinates removed (== instances.length on success)
+    function removeMetaInstances(
+        mapping(address => bool) storage isAdapterRegistered,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        bytes32[] memory instances
+    ) external returns (uint256 removed) {
+        if (!isAdapterRegistered[adapter]) {
+            revert IBalances.InvalidBalanceAdapter();
+        }
+        removed = instances.length;
+        if (removed == 0) {
+            revert InvalidArguments();
+        }
+
+        bytes32[] storage set = metaInstances[adapter];
+        for (uint256 i = 0; i < removed; i++) {
+            bytes32 instance = instances[i];
+            uint256 len = set.length;
+            bool found = false;
+            for (uint256 j = 0; j < len; j++) {
+                if (set[j] == instance) {
+                    set[j] = set[len - 1];
+                    set.pop();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                revert IBalances.MetaInstanceNotFound();
+            }
+        }
+    }
 }

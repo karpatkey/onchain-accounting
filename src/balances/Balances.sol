@@ -214,28 +214,9 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The registered adapter.
     /// @param instances The instance coordinates to add.
     function _addMetaInstances(address adapter, bytes32[] memory instances) internal {
-        if (!_isAdapterRegistered[adapter]) {
-            revert InvalidBalanceAdapter();
-        }
-        uint256 toAdd = instances.length;
-        if (toAdd == 0) {
-            revert InvalidArguments();
-        }
-
-        bytes32[] storage set = _metaInstances[adapter];
-        for (uint256 i = 0; i < toAdd; i++) {
-            bytes32 instance = instances[i];
-            // Reject duplicates against the live set, which already includes coordinates pushed earlier in this
-            // batch — so a coordinate repeated within `instances` is caught too.
-            uint256 len = set.length;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    revert DuplicateMetaInstance();
-                }
-            }
-            set.push(instance);
-        }
-        _metaInstanceTotal += toAdd;
+        // Loop + validation delegated to NavRegistryLib (external library, DELEGATECALL) to keep NAVCalculator
+        // under EIP-170; only the running total stays inline.
+        _metaInstanceTotal += NavRegistryLib.addMetaInstances(_isAdapterRegistered, _metaInstances, adapter, instances);
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
@@ -245,31 +226,9 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The registered adapter.
     /// @param instances The instance coordinates to remove.
     function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
-        if (!_isAdapterRegistered[adapter]) {
-            revert InvalidBalanceAdapter();
-        }
-        uint256 toRemove = instances.length;
-        if (toRemove == 0) {
-            revert InvalidArguments();
-        }
-
-        bytes32[] storage set = _metaInstances[adapter];
-        for (uint256 i = 0; i < toRemove; i++) {
-            bytes32 instance = instances[i];
-            uint256 len = set.length;
-            bool found = false;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    set[j] = set[len - 1];
-                    set.pop();
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                revert MetaInstanceNotFound();
-            }
-        }
-        _metaInstanceTotal -= toRemove;
+        // Loop + validation delegated to NavRegistryLib (see _addMetaInstances); only the running total stays inline.
+        _metaInstanceTotal -= NavRegistryLib.removeMetaInstances(
+            _isAdapterRegistered, _metaInstances, adapter, instances
+        );
     }
 }

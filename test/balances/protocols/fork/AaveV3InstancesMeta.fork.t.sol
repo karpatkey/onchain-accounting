@@ -41,7 +41,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp(); // forks mainnet at DEFAULT_FORK_BLOCK
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0xC1a8D82555aBB46bCdbFDe09E4B9aB6a862A18d1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xB47b227eA8B8bcFD3c2e5D54d2ff7Ffa3c1B138D, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());

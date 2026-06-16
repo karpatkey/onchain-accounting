@@ -7,7 +7,6 @@ import {IBalances} from "./IBalances.sol";
 import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
@@ -141,26 +140,9 @@ abstract contract Balances is IBalances, Initializable {
 
     /// @inheritdoc IBalances
     function getAdaptersForAsset(address asset) public view override returns (address[] memory) {
-        uint256 adapterCount = _globalAdapters.length;
-        address[] memory temp = new address[](adapterCount);
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < adapterCount; i++) {
-            try IBalanceAdapter(_globalAdapters[i]).underlyingAssetsSupported() returns (
-                address[] memory supportedAssets
-            ) {
-                for (uint256 j = 0; j < supportedAssets.length; j++) {
-                    if (supportedAssets[j] == asset) {
-                        temp[count++] = _globalAdapters[i];
-                        break;
-                    }
-                }
-            } catch {
-                continue;
-            }
-        }
-
-        return ArrayLib.copySliceAddress(temp, count);
+        // Loop + per-adapter try/catch delegated to NavRegistryLib (external library) to keep NAVCalculator
+        // under EIP-170.
+        return NavRegistryLib.getAdaptersForAsset(_globalAdapters, asset);
     }
 
     //

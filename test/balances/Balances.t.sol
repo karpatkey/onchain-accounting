@@ -151,7 +151,7 @@ contract BalancesTest is Test {
         // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml). In tests there's no
         // chain state, so etch its runtime code there so the DELEGATECALL from _addBalanceAdapter/_removeBalanceAdapter
         // succeeds.
-        vm.etch(0xB47b227eA8B8bcFD3c2e5D54d2ff7Ffa3c1B138D, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         vm.startPrank(admin);
         balances = new BalancesHarness();
         balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());

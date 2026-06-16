@@ -6,6 +6,7 @@ import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165C
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -152,6 +153,38 @@ library NavRegistryLib {
 
         delete isAdapterRegistered[adapter];
         delete adapterTypes[adapter];
+    }
+
+    /// @notice Returns every registered adapter that lists `asset` in its `underlyingAssetsSupported()`. A faulty
+    ///         adapter (reverting that call) is skipped. Mirrors the storage work of the former
+    ///         Balances.getAdaptersForAsset; extracted here to keep NAVCalculator under EIP-170.
+    /// @param globalAdapters The global adapter list (storage ref)
+    /// @param asset The asset to match
+    function getAdaptersForAsset(address[] storage globalAdapters, address asset)
+        external
+        view
+        returns (address[] memory)
+    {
+        uint256 adapterCount = globalAdapters.length;
+        address[] memory temp = new address[](adapterCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < adapterCount; i++) {
+            try IBalanceAdapter(globalAdapters[i]).underlyingAssetsSupported() returns (
+                address[] memory supportedAssets
+            ) {
+                for (uint256 j = 0; j < supportedAssets.length; j++) {
+                    if (supportedAssets[j] == asset) {
+                        temp[count++] = globalAdapters[i];
+                        break;
+                    }
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        return ArrayLib.copySliceAddress(temp, count);
     }
 
     // -------------------------------------------------------------------------

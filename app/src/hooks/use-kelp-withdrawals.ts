@@ -126,20 +126,24 @@ export function useKelpWithdrawals(
     query: { enabled: !!account && managers.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
-  const withConfig = managers.map((m, i) => {
-    const res = configData?.[i]
-    return { ...m, config: res?.status === 'success' ? (res.result as `0x${string}`) : undefined }
-  })
+  // Keep only managers whose LRTConfig resolved — unresolved ones have nothing to read in Stage 3, and issuing
+  // a getSupportedAssetList call against a ZERO placeholder just adds a guaranteed multicall failure each refresh.
+  const withConfig = managers
+    .map((m, i) => {
+      const res = configData?.[i]
+      return { ...m, config: res?.status === 'success' ? (res.result as `0x${string}`) : undefined }
+    })
+    .filter((m): m is KelpOracleRef & { manager: `0x${string}`; config: `0x${string}` } => !!m.config)
 
   // Stage 3 — the supported (payout) asset list per config.
   const { data: assetListData } = useReadContracts({
     contracts: withConfig.map((m) => ({
       chainId: m.chainId,
-      address: (m.config ?? ZERO) as `0x${string}`,
+      address: m.config,
       abi: configAbi,
       functionName: 'getSupportedAssetList' as const,
     })),
-    query: { enabled: !!account && withConfig.some((m) => !!m.config), refetchInterval: AUTOREFRESH_INTERVAL_MS },
+    query: { enabled: !!account && withConfig.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
   // Flatten to one (oracle, manager, asset) row per supported asset.
@@ -177,10 +181,11 @@ export function useKelpWithdrawals(
     const begin = range ? range[0] : 0n
     const end = range ? range[1] : 0n
     const nextLocked = lockRes?.status === 'success' ? (lockRes.result as bigint) : 0n
-    // Number of live requests; cap parity with the adapter.
-    let count = Number(end - begin)
-    if (count > MAX_REQUESTS) count = MAX_REQUESTS
-    if (count < 0) count = 0
+    // Number of live requests; cap parity with the adapter. Cap in bigint space first, then convert — the
+    // range can be arbitrarily large, and Number() on a huge bigint loses precision (or yields Infinity).
+    const raw = end - begin
+    const capped = raw < 0n ? 0n : raw > BigInt(MAX_REQUESTS) ? BigInt(MAX_REQUESTS) : raw
+    const count = Number(capped)
     return { ...oa, count, nextLocked }
   })
 

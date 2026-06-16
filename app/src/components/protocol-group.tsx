@@ -2,7 +2,6 @@
 
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
-import { type LidoWithdrawalsByKey, lidoWithdrawalsKey } from '@/hooks/use-lido-withdrawals'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import {
@@ -20,6 +19,13 @@ import {
   SparkCircleColor,
   GearboxCircleColor,
 } from '@karpatkey/design-system'
+
+// Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader request ids). Display only —
+// the adapter aggregates these into a single leg; the hooks (use-lido-withdrawals / use-stader-withdrawals)
+// re-derive the per-request detail and produce this shared shape, keyed by `${chainId}:${oracle.toLowerCase()}`.
+export type WithdrawalRequestRow = { id: bigint; ethOwed: bigint; isFinalized: boolean }
+export type WithdrawalsByKey = Map<string, WithdrawalRequestRow[]>
+export const withdrawalsKey = (chainId: number, oracle: string) => `${chainId}:${oracle.toLowerCase()}`
 
 const CHAIN_ICONS: Record<number, React.ComponentType<{ className?: string }>> = {
   1: EthCircleColor,
@@ -146,14 +152,14 @@ function PositionRow({
   pos: OnchainPosition
   chainId: number
   sectionTotal: bigint
-  withdrawalsByKey?: LidoWithdrawalsByKey
+  withdrawalsByKey?: WithdrawalsByKey
 }) {
   const pct = pctOfSection(pos.value, sectionTotal)
-  // Per-NFT-id drill-down for Lido withdrawal-queue legs. The adapter aggregates all open requests into
-  // this one ETH leg; these rows re-derive the components from the WithdrawalQueue for visibility only.
-  // Each request's ethOwed is valued the same way the adapter sums it (claimable ETH for finalized,
-  // amountOfStETH for pending), so the sub-rows are genuine ETH amounts and reconcile with the aggregate.
-  const requests = withdrawalsByKey?.get(lidoWithdrawalsKey(chainId, pos.balanceOracle)) ?? []
+  // Per-request drill-down for withdrawal-queue legs (Lido NFT ids / Stader request ids). The adapter
+  // aggregates all open requests into this one ETH/WETH leg; these rows re-derive the components from the
+  // protocol's queue for visibility only. Each request's ethOwed is valued the same way the adapter sums it
+  // (finalized → exact owed, pending → estimate), so the sub-rows are genuine amounts and reconcile with it.
+  const requests = withdrawalsByKey?.get(withdrawalsKey(chainId, pos.balanceOracle)) ?? []
   // Total ETH-owed across the requests (== the adapter's aggregate, barring an unresolved claimable fetch).
   // Used to split the parent USD value; the last row takes the remainder so the sub-rows sum *exactly* to
   // pos.value despite bigint truncation in the proportional division.
@@ -391,7 +397,7 @@ function PositionSection({
   total: bigint
   isDebt: boolean
   chainId: number
-  withdrawalsByKey?: LidoWithdrawalsByKey
+  withdrawalsByKey?: WithdrawalsByKey
 }) {
   if (positions.length === 0) return null
 
@@ -479,7 +485,7 @@ export type ProtocolGroupData = {
 interface ProtocolGroupProps {
   group: ProtocolGroupData
   totalPortfolioNav: bigint
-  withdrawalsByKey?: LidoWithdrawalsByKey
+  withdrawalsByKey?: WithdrawalsByKey
 }
 
 export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: ProtocolGroupProps) {

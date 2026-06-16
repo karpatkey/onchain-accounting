@@ -5,10 +5,11 @@ import { isAddress, formatUnits } from 'viem'
 import { TooltipProvider } from '@karpatkey/design-system'
 import { ProfileHeader } from '@/components/profile-header'
 import { ChainSidebar } from '@/components/chain-sidebar'
-import { ProtocolGroup, type ProtocolGroupData } from '@/components/protocol-group'
+import { ProtocolGroup, type ProtocolGroupData, type WithdrawalsByKey, type WithdrawalRequestRow } from '@/components/protocol-group'
 import { useAccountNav } from '@/hooks/use-account-nav'
 import { useAccountPositions, type ChainPositions } from '@/hooks/use-account-positions'
 import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdrawals'
+import { useStaderWithdrawals, type StaderOracleRef } from '@/hooks/use-stader-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { shortenAddress } from '@/lib/format'
 
@@ -200,7 +201,34 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     return refs
   }, [positionResults])
 
-  const withdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
+  // Stader withdrawal-queue oracles the account touches — drives the per-request-id drill-down (display only;
+  // the adapter aggregates to a single WETH leg). Same shape as Lido, keyed off the resolved protocol name.
+  const staderOracles = useMemo<StaderOracleRef[]>(() => {
+    const seen = new Set<string>()
+    const refs: StaderOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocol !== 'Stader') continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
+  const lidoWithdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
+  const staderWithdrawalsByKey = useStaderWithdrawals(account, staderOracles)
+
+  // Merge both per-request drill-down maps into one (keys are `${chainId}:${oracle}`, unique per adapter, so no
+  // collision). protocol-group looks each leg up by that key regardless of protocol.
+  const withdrawalsByKey = useMemo<WithdrawalsByKey>(() => {
+    const m = new Map<string, WithdrawalRequestRow[]>()
+    for (const [k, v] of lidoWithdrawalsByKey) m.set(k, v)
+    for (const [k, v] of staderWithdrawalsByKey) m.set(k, v)
+    return m
+  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey])
 
   const totalPortfolioNav = navResults.reduce((s, r) => s + (r.nav?.value ?? 0n), 0n)
 

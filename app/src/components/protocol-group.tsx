@@ -20,12 +20,15 @@ import {
   GearboxCircleColor,
 } from '@karpatkey/design-system'
 
-// Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader request ids). Display only —
-// the adapter aggregates these into a single leg; the hooks (use-lido-withdrawals / use-stader-withdrawals)
-// re-derive the per-request detail and produce this shared shape, keyed by `${chainId}:${oracle.toLowerCase()}`.
+// Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader & Kelp request ids).
+// Display only — the adapter aggregates requests into a leg; the hooks (use-lido/stader/kelp-withdrawals)
+// re-derive the per-request detail and produce this shared shape. Keyed by chainId:oracle:asset (the asset
+// is required because a multi-asset adapter like Kelp emits several legs from one oracle, each with its own
+// requests — keying by oracle alone would cross-contaminate the legs).
 export type WithdrawalRequestRow = { id: bigint; ethOwed: bigint; isFinalized: boolean }
 export type WithdrawalsByKey = Map<string, WithdrawalRequestRow[]>
-export const withdrawalsKey = (chainId: number, oracle: string) => `${chainId}:${oracle.toLowerCase()}`
+export const withdrawalsKey = (chainId: number, oracle: string, asset: string) =>
+  `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`
 
 const CHAIN_ICONS: Record<number, React.ComponentType<{ className?: string }>> = {
   1: EthCircleColor,
@@ -159,7 +162,7 @@ function PositionRow({
   // aggregates all open requests into this one ETH/WETH leg; these rows re-derive the components from the
   // protocol's queue for visibility only. Each request's ethOwed is valued the same way the adapter sums it
   // (finalized → exact owed, pending → estimate), so the sub-rows are genuine amounts and reconcile with it.
-  const requests = withdrawalsByKey?.get(withdrawalsKey(chainId, pos.balanceOracle)) ?? []
+  const requests = withdrawalsByKey?.get(withdrawalsKey(chainId, pos.balanceOracle, pos.underlyingAsset.asset)) ?? []
   // Total ETH-owed across the requests (== the adapter's aggregate, barring an unresolved claimable fetch).
   // Used to split the parent USD value; the last row takes the remainder so the sub-rows sum *exactly* to
   // pos.value despite bigint truncation in the proportional division.

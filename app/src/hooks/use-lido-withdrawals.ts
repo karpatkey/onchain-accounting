@@ -86,7 +86,11 @@ const queueAbi = [
   },
 ] as const
 
-const keyOf = (chainId: number, oracle: string) => `${chainId}:${oracle.toLowerCase()}`
+// Drill-down key includes the leg asset (chainId:oracle:asset) so it stays consistent with multi-asset
+// adapters like Kelp. Lido's leg is always denominated in the native-ETH sentinel.
+const NATIVE_ETH = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' as const
+const keyOf = (chainId: number, oracle: string, asset: string) =>
+  `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`
 const ZERO = '0x0000000000000000000000000000000000000000' as const
 
 type RawStatus = {
@@ -184,7 +188,7 @@ export function useLidoWithdrawals(
     const res = statusData?.[i]
     if (res?.status !== 'success') return
     const statuses = res.result as readonly RawStatus[]
-    const key = keyOf(q.chainId, q.oracle)
+    const key = keyOf(q.chainId, q.oracle, NATIVE_ETH)
     const list: Pending[] = []
     statuses.forEach((s, j) => {
       if (s.isClaimed) return // claimed requests are burned — the adapter excludes them too

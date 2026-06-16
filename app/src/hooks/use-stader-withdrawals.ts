@@ -25,9 +25,10 @@ export type StaderWithdrawalsByKey = Map<string, StaderWithdrawalRequest[]>
 
 export type StaderOracleRef = { chainId: number; oracle: `0x${string}` }
 
-// Mirror the adapter's MAX_REQUESTS_PROBED — accounts above the cap are skipped there (reported as 0), so the
-// drill-down would have no aggregate leg to reconcile against. Probing the full cap keeps the sub-rows summing
-// exactly to the adapter's leg; the array getter is contiguous, so we stop at the first revert anyway.
+// Mirror the adapter's MAX_REQUESTS_PROBED. The adapter sums only the first 256 requests (it stops at the cap
+// and returns that partial total — it does NOT zero out an above-cap account), so probing the same 256 here
+// keeps the sub-rows reconciling with the adapter's leg. The index getter is contiguous, so we stop at the
+// first revert anyway.
 const MAX_REQUESTS = 256
 
 // StaderWithdrawalQueueBalanceOracle exposes the manager address as a public immutable.

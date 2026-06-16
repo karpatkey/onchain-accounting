@@ -9,7 +9,7 @@
     "timestamp": 1781621771,
     "timestamp_hex": "0x6a31640b",
     "timestamp_utc": "2026-06-16 14:56:11 UTC",
-    "rationale": "Fresh verification block. Stader queue state at capture: nextRequestId=8219, nextRequestIdToFinalize=8215 (ids <= 8214 finalized, 8215-8218 still pending). The two holders below together exercise both math branches (ethExpected for un-finalized, ethFinalized for finalized) and prove the finalized-preference (the finalized holder's ethFinalized is 9 wei below its ethExpected). ethExpected is fixed at request time, so the PENDING value is stable; the FINALIZED request could be claimed by its owner at any time, which would zero its position (fine for a pinned fork block; re-verify before any live cross-check)."
+    "rationale": "Fresh verification block. Stader queue state at capture: nextRequestId=8219, nextRequestIdToFinalize=8215 (ids <= 8214 finalized, 8215-8218 still pending). The three holders below exercise both value branches (ethExpected for un-finalized, ethFinalized for finalized) and prove the finalized-preference (the FINALIZED holder's ethFinalized is 9 wei below its ethExpected), plus real on-chain multi-request summing (the MULTI holder's two requests). ethExpected is fixed at request time, so the PENDING value is stable; the FINALIZED request could be claimed by its owner at any time, which would zero its position (fine for a pinned fork block; re-verify before any live cross-check)."
   },
   "instance": {
     "userWithdrawalManager": "0x9F0491B32DBce587c50c4C43AB303b06478193A7",

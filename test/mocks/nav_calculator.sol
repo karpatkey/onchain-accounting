@@ -164,6 +164,10 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function addMetaBalanceAdapter(address, bytes32[] calldata) external pure override {
+        revert("Not implemented in mock");
+    }
+
     function removeBalanceAdapters(address[] calldata) external pure override {
         revert("Not implemented in mock");
     }

@@ -168,17 +168,16 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @inheritdoc INAVCalculator
     function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
-        uint256 length = adapters.length;
-        if (length == 0) {
+        _addBalanceAdapters(adapters);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function addMetaBalanceAdapter(address adapter, bytes32[] calldata instances) external {
+        _requireManager();
+        if (adapter == address(0)) {
             revert InvalidArguments();
         }
-
-        for (uint256 i = 0; i < length; i++) {
-            if (adapters[i] == address(0)) {
-                revert InvalidArguments();
-            }
-            _addBalanceAdapter(adapters[i]);
-        }
+        _addMetaBalanceAdapter(adapter, instances);
     }
 
     /// @inheritdoc INAVCalculator
@@ -198,15 +197,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @inheritdoc INAVCalculator
     function removeBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
-
-        uint256 length = adapters.length;
-        if (length == 0) {
-            revert InvalidArguments();
-        }
-
-        for (uint256 i = 0; i < length; i++) {
-            _removeBalanceAdapter(adapters[i]);
-        }
+        _removeBalanceAdapters(adapters);
     }
 
     /// @inheritdoc INAVCalculator
@@ -547,8 +538,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 temp[count++] = feed.asset;
             }
         }
+        // No dedup needed: `priceFeeds` is always built from `_extractUniqueAssets` output, so its assets — and
+        // hence this stale subset — are already unique.
         address[] memory staleAddrs = ArrayLib.copySliceAddress(temp, count);
-        staleAddrs = ArrayLib.deduplicateAddresses(staleAddrs);
 
         uint256 staleLength = staleAddrs.length;
         staleAssets = new INAVCalculator.Asset[](staleLength);
@@ -582,15 +574,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @return uniqueAssets Array of unique asset addresses
     function _extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)
         internal
-        pure
-        returns (address[] memory uniqueAssets)
+        view
+        returns (address[] memory)
     {
-        uint256 length = positions.length;
-        address[] memory allAssets = new address[](length);
-        for (uint256 i = 0; i < length; i++) {
-            allAssets[i] = positions[i].balanceAsset.asset;
-        }
-        uniqueAssets = ArrayLib.deduplicateAddresses(allAssets);
+        // Delegated to NavRegistryLib (external library) so the O(n^2) dedup leaves NAVCalculator's bytecode
+        // (EIP-170). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is immaterial.
+        return NavRegistryLib.extractUniqueAssets(positions);
     }
 
     /// @inheritdoc INAVCalculator

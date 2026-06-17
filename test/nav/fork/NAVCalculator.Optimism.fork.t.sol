@@ -97,17 +97,17 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
     function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveAdapter = aaveMeta;
-        nav.addBalanceAdapters(aa(address(aaveAdapter)));
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.addMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveAdapter), aaveInstances);
 
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
+        // Meta-adapters with no instances in this test: register with an empty set.
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), new bytes32[](0));
 
         compoundV3UsdtComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3 USDT", address(nav));
-        nav.addBalanceAdapters(aa(address(compoundV3UsdtComet)));
+        nav.addMetaBalanceAdapter(address(compoundV3UsdtComet), new bytes32[](0));
     }
 }

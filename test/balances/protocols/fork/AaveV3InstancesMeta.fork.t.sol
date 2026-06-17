@@ -41,7 +41,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp(); // forks mainnet at DEFAULT_FORK_BLOCK
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
@@ -79,10 +79,9 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         perInstance = new SparkLendBalanceAdapter(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(uint160(CORE_DATA_PROVIDER)));
-        nav.addMetaInstances(address(adapter), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
     }
 

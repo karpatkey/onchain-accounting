@@ -149,7 +149,10 @@ abstract contract Balances is IBalances, Initializable {
     // Internal API
     //
 
-    /// @notice Adds a balance adapter globally.
+    /// @notice Adds a single (non-meta) balance adapter globally.
+    /// @dev Not on the production path — NAVCalculator registers through the batch `_addBalanceAdapters` /
+    ///      `_addMetaBalanceAdapter`. Retained for the test harness (`addBalanceAdapterDirect`); kept thin so the
+    ///      single and batch validation stay equivalent (both delegate to `NavRegistryLib.addBalanceAdapter`).
     /// @param adapter The address of the adapter.
     function _addBalanceAdapter(address adapter) internal {
         // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to
@@ -159,6 +162,19 @@ abstract contract Balances is IBalances, Initializable {
 
         // Emit event with address(0) for underlyingAsset since adapters are global
         emit BalanceAdapterAdded(address(0), adapter, AdapterType.Custom);
+    }
+
+    /// @notice Registers a meta-adapter and seeds its instance set atomically (ADR 0010). The adapter must
+    ///         implement IMetaBalanceAdapter; plain adapters use _addBalanceAdapter instead. Storage mutation +
+    ///         interface validation are delegated to NavRegistryLib; the running counts + event stay inline.
+    /// @param adapter The meta-adapter to register.
+    /// @param instances The instance coordinates to seed (may be empty).
+    function _addMetaBalanceAdapter(address adapter, bytes32[] memory instances) internal {
+        // Storage mutation + BalanceAdapterAdded event delegated to NavRegistryLib; only the running counts inline.
+        _metaInstanceTotal += NavRegistryLib.addMetaBalanceAdapter(
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, adapter, instances
+        );
+        balanceAdapterTotalCount++;
     }
 
     /// @notice Removes the adapter from the global registry.
@@ -177,6 +193,24 @@ abstract contract Balances is IBalances, Initializable {
 
         // Emit event with address(0) for underlyingAsset since adapters are global
         emit BalanceAdapterRemoved(address(0), adapter);
+    }
+
+    /// @notice Batch-registers non-meta balance adapters. The loop + validation + per-adapter event are delegated
+    ///         to NavRegistryLib (external library, DELEGATECALL) to keep NAVCalculator under EIP-170; only the
+    ///         running count stays inline.
+    /// @param adapters The adapters to register.
+    function _addBalanceAdapters(address[] calldata adapters) internal {
+        balanceAdapterTotalCount += NavRegistryLib.addBalanceAdapters(
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapters
+        );
+    }
+
+    /// @notice Batch-removes balance adapters. Loop + guards + per-adapter event delegated to NavRegistryLib.
+    /// @param adapters The adapters to remove.
+    function _removeBalanceAdapters(address[] calldata adapters) internal {
+        balanceAdapterTotalCount -= NavRegistryLib.removeBalanceAdapters(
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultAdapter, adapters
+        );
     }
 
     //

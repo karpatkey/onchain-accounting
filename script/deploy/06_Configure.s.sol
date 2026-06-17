@@ -4,8 +4,10 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {IBalances} from "../../src/balances/IBalances.sol";
+import {IMetaBalanceAdapter} from "../../src/balances/IMetaBalanceAdapter.sol";
 import {IBridgeEscrow} from "../../src/bridge/IBridgeEscrow.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -80,19 +82,25 @@ contract Configure is BaseDeployScript {
             address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
             if (deployed == address(0)) continue;
 
+            // Meta-adapters (those implementing IMetaBalanceAdapter) register via addMetaBalanceAdapter (atomic
+            // register + seed), since addBalanceAdapters rejects them; plain adapters use addBalanceAdapters. The
+            // adapter type is decided by the interface (ERC165), not by whether instances are configured, so a
+            // meta-adapter with an empty configured set still registers correctly (seeded later via the reconcile).
+            bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+            bool isMeta = ERC165Checker.supportsInterface(deployed, type(IMetaBalanceAdapter).interfaceId);
+
             if (!IBalances(navProxy).isAdapterRegistered(deployed)) {
-                address[] memory one = new address[](1);
-                one[0] = deployed;
-                (bool ok, bytes memory data) =
-                    navProxy.call(abi.encodeWithSignature("addBalanceAdapters(address[])", one));
+                bytes memory regData;
+                if (isMeta) {
+                    regData = abi.encodeWithSignature("addMetaBalanceAdapter(address,bytes32[])", deployed, desired);
+                } else {
+                    address[] memory one = new address[](1);
+                    one[0] = deployed;
+                    regData = abi.encodeWithSignature("addBalanceAdapters(address[])", one);
+                }
+                (bool ok, bytes memory data) = navProxy.call(regData);
                 if (!ok) {
-                    revert(
-                        string(
-                            abi.encodePacked(
-                                "addBalanceAdapters failed for ", adapterNames[i], ": ", _decodeRevert(data)
-                            )
-                        )
-                    );
+                    revert(string(abi.encodePacked("register failed for ", adapterNames[i], ": ", _decodeRevert(data))));
                 }
                 console2.log("[OK] Added balance adapter:", adapterNames[i], deployed);
                 added++;
@@ -103,8 +111,8 @@ contract Configure is BaseDeployScript {
             // Meta-adapters (ADR 0010): reconcile the on-chain set to the configured set. addMetaInstances /
             // removeMetaInstances are incremental and all-or-nothing, so we diff against the current set (rather
             // than blindly add) to stay idempotent across re-runs: remove coordinates no longer in config, then
-            // add the ones not yet present.
-            bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+            // add the ones not yet present. For a meta-adapter just registered via addMetaBalanceAdapter the set is
+            // already seeded, so the diff below is a no-op.
             bytes32[] memory current = IBalances(navProxy).getMetaInstances(deployed);
             bytes32[] memory toRemove = _metaDiff(current, desired);
             bytes32[] memory toAdd = _metaDiff(desired, current);

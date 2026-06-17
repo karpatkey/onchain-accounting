@@ -88,6 +88,10 @@ contract BalancesHarness is Balances {
         _removeBalanceAdapter(adapter);
     }
 
+    function addMetaBalanceAdapterDirect(address adapter, bytes32[] memory instances) public {
+        _addMetaBalanceAdapter(adapter, instances);
+    }
+
     function addMetaInstancesDirect(address adapter, bytes32[] memory instances) public {
         _addMetaInstances(adapter, instances);
     }
@@ -151,7 +155,7 @@ contract BalancesTest is Test {
         // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml). In tests there's no
         // chain state, so etch its runtime code there so the DELEGATECALL from _addBalanceAdapter/_removeBalanceAdapter
         // succeeds.
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         vm.startPrank(admin);
         balances = new BalancesHarness();
         balances.addSupportedAssetForTest(balances.NATIVE_ADDRESS());
@@ -458,7 +462,9 @@ contract BalancesTest is Test {
     function _registerMeta() internal returns (Mock_MetaAdapter meta) {
         meta = new Mock_MetaAdapter();
         vm.prank(admin);
-        balances.addBalanceAdapterDirect(address(0), address(meta), IBalances.AdapterType.Custom);
+        // Meta-adapters register via the dedicated path (plain addBalanceAdapters rejects them); seed empty here so
+        // the per-test add/remove cases drive the instance set explicitly.
+        balances.addMetaBalanceAdapterDirect(address(meta), new bytes32[](0));
     }
 
     function test_meta_addInstances() public {
@@ -562,5 +568,38 @@ contract BalancesTest is Test {
         instances[0] = bytes32(uint256(1));
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
         balances.addMetaInstancesDirect(address(meta), instances);
+    }
+
+    // --- meta/non-meta split (addMetaBalanceAdapter) ---
+
+    function test_addMetaBalanceAdapter_registersAndSeeds() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        bytes32[] memory instances = new bytes32[](2);
+        instances[0] = bytes32(uint256(1));
+        instances[1] = bytes32(uint256(2));
+
+        vm.prank(admin);
+        balances.addMetaBalanceAdapterDirect(address(meta), instances);
+
+        assertTrue(balances.isAdapterRegistered(address(meta)), "meta-adapter registered");
+        assertEq(balances.getMetaInstances(address(meta)).length, 2, "instances seeded");
+        assertEq(balances.metaInstanceTotalForTest(), 2, "running total reflects seed");
+    }
+
+    function test_addBalanceAdapters_rejectsMetaAdapter() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        vm.prank(admin);
+        vm.expectRevert(IBalances.MetaAdapterNotAllowed.selector);
+        balances.addBalanceAdapterDirect(address(0), address(meta), IBalances.AdapterType.Custom);
+    }
+
+    function test_addMetaInstances_revertsOnNonMetaAdapter() public {
+        // customAdapter (Mock_CustomBalanceAdapter) implements IBalanceAdapter but NOT IMetaBalanceAdapter.
+        vm.prank(admin);
+        balances.addBalanceAdapterDirect(address(0), address(customAdapter), IBalances.AdapterType.Custom);
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(1));
+        vm.expectRevert(IBalances.NotMetaAdapter.selector);
+        balances.addMetaInstancesDirect(address(customAdapter), instances);
     }
 }

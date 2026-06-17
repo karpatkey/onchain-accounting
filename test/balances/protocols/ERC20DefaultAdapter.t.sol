@@ -37,7 +37,7 @@ contract ERC20DefaultAdapterTest is Test {
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Set up tokens
         usdc = new Mock_ERC20("USDC", 6);

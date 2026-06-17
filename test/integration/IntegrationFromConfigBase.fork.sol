@@ -12,6 +12,8 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 // Balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
@@ -138,7 +140,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
@@ -882,12 +884,24 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _registerAllBalanceAdapters() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
-            try nav.addBalanceAdapters(aa(a)) {
-            // ok
-            }
-            catch (bytes memory err) {
-                console2.log("[adapter] addBalanceAdapter FAILED for", a);
-                console2.logBytes(err);
+            // Meta-adapters cannot use the plain path (addBalanceAdapters rejects them); register them via
+            // addMetaBalanceAdapter with an empty set here, then _configureMetaInstances seeds the actual set.
+            if (ERC165Checker.supportsInterface(a, type(IMetaBalanceAdapter).interfaceId)) {
+                try nav.addMetaBalanceAdapter(a, new bytes32[](0)) {
+                // ok
+                }
+                catch (bytes memory err) {
+                    console2.log("[adapter] addMetaBalanceAdapter FAILED for", a);
+                    console2.logBytes(err);
+                }
+            } else {
+                try nav.addBalanceAdapters(aa(a)) {
+                // ok
+                }
+                catch (bytes memory err) {
+                    console2.log("[adapter] addBalanceAdapters FAILED for", a);
+                    console2.logBytes(err);
+                }
             }
         }
     }

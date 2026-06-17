@@ -150,15 +150,17 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
         daiDsr = new DaiDsrBalanceAdapter(dai, dsr, address(nav));
 
-        nav.addBalanceAdapters(aa(address(aaveAdapter)));
+        // Non-meta adapters register via the plain batch path.
         nav.addBalanceAdapters(aa(address(smAdapter)));
-        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
-        nav.addBalanceAdapters(aa(address(morphoBlueAdapter)));
         nav.addBalanceAdapters(aa(address(daiDsr)));
 
+        // Meta-adapters register via addMetaBalanceAdapter (atomic register + seed). The Compound/Morpho metas
+        // carry no instances in this test, so they register with an empty set (contribute nothing).
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.addMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), new bytes32[](0));
+        nav.addMetaBalanceAdapter(address(morphoBlueAdapter), new bytes32[](0));
     }
 
     function test_logPositions() public view {

@@ -193,11 +193,22 @@ interface INAVCalculator is IBalances {
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Registers one or more balance adapters in the global registry in a single call.
-    /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, and with
-    ///      DuplicateBalanceAdapter if any adapter is already registered (the batch is all-or-nothing).
-    /// @param adapters Adapter addresses (each must implement IBalanceAdapter).
+    /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
+    /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
+    ///      if any adapter is already registered, and MetaAdapterNotAllowed if any adapter implements
+    ///      IMetaBalanceAdapter (meta-adapters must use addMetaBalanceAdapter). The batch is all-or-nothing.
+    /// @param adapters Adapter addresses (each must implement IBalanceAdapter and NOT IMetaBalanceAdapter).
     function addBalanceAdapters(address[] calldata adapters) external;
+
+    /// @notice Registers a meta-adapter (ADR 0010) and seeds its instance set atomically, in one MANAGER call.
+    /// @dev The adapter must implement both IBalanceAdapter and IMetaBalanceAdapter (else InvalidBalanceAdapter /
+    ///      NotMetaAdapter). Reverts InvalidArguments on a zero adapter, DuplicateBalanceAdapter if already
+    ///      registered, and DuplicateMetaInstance on a repeated coordinate. An empty instance list is allowed
+    ///      (registers the meta-adapter with no instances yet; seed later via addMetaInstances). Plain adapters use
+    ///      addBalanceAdapters; subsequent instance changes use addMetaInstances / removeMetaInstances.
+    /// @param adapter The meta-adapter address.
+    /// @param instances Instance coordinates to seed (e.g. vault addresses widened to bytes32, or raw bytes32 IDs).
+    function addMetaBalanceAdapter(address adapter, bytes32[] calldata instances) external;
 
     /// @notice Removes the price feed at the given index. Reverts if it is the last feed (CannotRemoveLastFeed).
     /// @param asset Registered asset address.
@@ -218,16 +229,17 @@ interface INAVCalculator is IBalances {
     /// @notice Adds instance coordinates to a registered meta-adapter's queried set.
     /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable.
     ///      All-or-nothing: reverts DuplicateMetaInstance if any coordinate is already present or repeated within
-    ///      the batch (a duplicate would double-count NAV), and InvalidArguments on an empty list. Coordinate
-    ///      values are otherwise not validated; a malformed/unknown coordinate is isolated per-instance by the
-    ///      adapter's fan-out (it cannot zero out the batch).
+    ///      the batch (a duplicate would double-count NAV), InvalidArguments on an empty list, and NotMetaAdapter
+    ///      if the adapter does not implement IMetaBalanceAdapter. Coordinate values are otherwise not validated; a
+    ///      malformed/unknown coordinate is isolated per-instance by the adapter's fan-out (cannot zero the batch).
     /// @param adapter Registered meta-adapter address.
     /// @param instances Instance coordinates to add (e.g. vault addresses widened to bytes32).
     function addMetaInstances(address adapter, bytes32[] calldata instances) external;
 
     /// @notice Removes instance coordinates from a registered meta-adapter's queried set.
     /// @dev All-or-nothing: reverts MetaInstanceNotFound if any coordinate is not present (a coordinate repeated
-    ///      within the batch also reverts), and InvalidArguments on an empty list. Order is not preserved.
+    ///      within the batch also reverts), InvalidArguments on an empty list, and NotMetaAdapter if the adapter
+    ///      does not implement IMetaBalanceAdapter. Order is not preserved.
     /// @param adapter Registered meta-adapter address.
     /// @param instances Instance coordinates to remove.
     function removeMetaInstances(address adapter, bytes32[] calldata instances) external;

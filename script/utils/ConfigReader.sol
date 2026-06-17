@@ -6,13 +6,20 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 /// @title ConfigReader
 /// @notice Utility for reading/parsing the NAV deployment configuration.
-/// @dev Config is split across four files (all under `script/config/`):
-///      - `chains/<id>.json`     — chain meta, roles, and `bridgeAdapters` intent.
-///      - `assets.json`          — `.<chainId>.assets.<SYMBOL>` (address + `priceFeeds[]` list) and
-///                                 `.<chainId>.customPriceFeeds.<name>` (deploy config for Custom feed adapters).
-///      - `balance-adapters.json`— `.<chainId>.<name>` (enabled, constructor, `instances`/`instancesRaw`).
-///      - `deployments/<id>.json`— deployed addresses (state). Top-level for proxies/impls; nested
-///                                 `.balanceAdapters/.customPriceFeeds/.bridgeAdapters.<name>` for adapters.
+/// @dev Config is organized by concern, one JSON file per chain (top-level keys; the file *is* the chain). All
+///      paths are under `script/config/`:
+///      - `chains/<id>.json`                              — chain meta, roles, and `bridgeAdapters` intent.
+///      - `contracts-deployment-config/price-feeds/<id>.json`     — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/balance-adapters/<id>.json`— balance + meta adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `nav-config/assets-and-price-feeds/<id>.json`   — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
+///      - `nav-config/balance-adapters/<id>.json`         — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
+///      - `nav-config/meta-balance-adapters/<id>.json`    — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
+///      - `deployments/<id>.json`                         — deployed addresses (state). Top-level for proxies/impls;
+///                                                          nested `.balanceAdapters/.customPriceFeeds/.bridgeAdapters.<name>`.
+///      The `adapterType` token passed to the adapter readers selects the file: `deployBalanceAdapters`,
+///      `deployPriceFeeds` (alias `priceFeeds`/`customPriceFeeds`), `navBalanceAdapters`, `navMetaBalanceAdapters`,
+///      `bridgeAdapters`. Deployments-file accessors still take the section token (`balanceAdapters`/`customPriceFeeds`/
+///      `bridgeAdapters`).
 library ConfigReader {
     using stdJson for string;
 
@@ -37,12 +44,50 @@ library ConfigReader {
         return string(abi.encodePacked(vm.projectRoot(), "/script/config/chains/", vm.toString(chainId), ".json"));
     }
 
-    function _assetsPath(Vm vm) private view returns (string memory) {
-        return string(abi.encodePacked(vm.projectRoot(), "/script/config/assets.json"));
+    function _navAssetsPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/assets-and-price-feeds/", vm.toString(chainId), ".json"
+            )
+        );
     }
 
-    function _balanceAdaptersPath(Vm vm) private view returns (string memory) {
-        return string(abi.encodePacked(vm.projectRoot(), "/script/config/balance-adapters.json"));
+    function _navBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/balance-adapters/", vm.toString(chainId), ".json"
+            )
+        );
+    }
+
+    function _navMetaBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/meta-balance-adapters/", vm.toString(chainId), ".json"
+            )
+        );
+    }
+
+    function _deployPriceFeedsPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/price-feeds/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/balance-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
     }
 
     function _deploymentsPath(Vm vm, uint256 chainId) private view returns (string memory) {
@@ -141,21 +186,42 @@ library ConfigReader {
     // Balance adapters (balance-adapters.json) + bridge adapters (chains/<id>.json)
     // -------------------------------------------------------------------------
 
-    /// @dev Returns the file + jsonPath prefix for an adapter section. balanceAdapters live in their own file keyed
-    ///      by chainId; bridgeAdapters stay in the chain config.
+    /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is a per-chain file with top-level
+    ///      keys (empty prefix); bridgeAdapters stay nested in the chain config. The token selects the file:
+    ///      `deployBalanceAdapters`/`navBalanceAdapters`/`navMetaBalanceAdapters`/`deployPriceFeeds`
+    ///      (aliases `priceFeeds`/`customPriceFeeds`) → their per-chain files; anything else → chain config.
     function _adapterFileAndPrefix(Vm vm, uint256 chainId, string memory adapterType)
         private
         view
         returns (string memory json, string memory prefix)
     {
-        if (_equals(adapterType, "balanceAdapters")) {
-            json = _readOrEmpty(vm, _balanceAdaptersPath(vm));
-            prefix = string(abi.encodePacked(".", vm.toString(chainId)));
+        if (_equals(adapterType, "deployBalanceAdapters") || _equals(adapterType, "balanceAdapters")) {
+            // "balanceAdapters" is the legacy alias for the deploy-config file (deploy scripts read enabled/constructor
+            // from here). The NAV-registration side uses the explicit navBalanceAdapters/navMetaBalanceAdapters tokens.
+            json = _readOrEmpty(vm, _deployBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "navBalanceAdapters")) {
+            json = _readOrEmpty(vm, _navBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "navMetaBalanceAdapters")) {
+            json = _readOrEmpty(vm, _navMetaBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (
+            _equals(adapterType, "deployPriceFeeds") || _equals(adapterType, "priceFeeds")
+                || _equals(adapterType, "customPriceFeeds")
+        ) {
+            json = _readOrEmpty(vm, _deployPriceFeedsPath(vm, chainId));
+            prefix = "";
         } else {
             // bridgeAdapters (and any other) — chain config, nested under the type key.
             json = _readOrEmpty(vm, _chainPath(vm, chainId));
             prefix = string(abi.encodePacked(".", adapterType));
         }
+    }
+
+    /// @dev The parseJsonKeys path for an adapter container: root ("$") for top-level per-chain files, else the prefix.
+    function _containerPath(string memory prefix) private pure returns (string memory) {
+        return bytes(prefix).length == 0 ? "$" : prefix;
     }
 
     /// @notice Returns every adapter name under a section (excludes `$`-prefixed metadata keys). Does NOT filter by
@@ -165,14 +231,8 @@ library ConfigReader {
         view
         returns (string[] memory names)
     {
-        string memory json;
-        string memory jsonPath;
-        if (_equals(adapterType, "priceFeeds") || _equals(adapterType, "customPriceFeeds")) {
-            json = _readOrEmpty(vm, _assetsPath(vm));
-            jsonPath = string(abi.encodePacked(".", vm.toString(chainId), ".customPriceFeeds"));
-        } else {
-            (json, jsonPath) = _adapterFileAndPrefix(vm, chainId, adapterType);
-        }
+        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        string memory jsonPath = _containerPath(prefix);
         if (!vm.keyExists(json, jsonPath)) return new string[](0);
 
         string[] memory allKeys = vm.parseJsonKeys(json, jsonPath);
@@ -187,16 +247,12 @@ library ConfigReader {
         }
     }
 
-    /// @notice Whether an adapter is enabled. balanceAdapters → balance-adapters.json; priceFeeds/customPriceFeeds →
-    ///         assets.json customPriceFeeds; bridgeAdapters → chain config.
+    /// @notice Whether an adapter is enabled in its config file (selected by `adapterType` — see `_adapterFileAndPrefix`).
     function isAdapterEnabled(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
         internal
         view
         returns (bool)
     {
-        if (_equals(adapterType, "priceFeeds") || _equals(adapterType, "customPriceFeeds")) {
-            return isPriceFeedEnabled(vm, chainId, adapterName);
-        }
         (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
         string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".enabled"));
         if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
@@ -271,55 +327,47 @@ library ConfigReader {
     }
 
     // -------------------------------------------------------------------------
-    // Custom price feeds (assets.json → .<chainId>.customPriceFeeds.<name>)
+    // Custom price feeds (contracts-deployment-config/price-feeds/<id>.json → .<name>)
     // -------------------------------------------------------------------------
 
+    /// @notice Reads a Custom price-feed adapter's constructor param from its deploy-config file. "" if absent.
     function readPriceFeedParam(Vm vm, uint256 chainId, string memory adapterName, string memory paramName)
         internal
         view
         returns (string memory)
     {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory jsonPath = string(
-            abi.encodePacked(".", vm.toString(chainId), ".customPriceFeeds.", adapterName, ".constructor.", paramName)
-        );
-        if (vm.keyExists(json, jsonPath)) return json.readString(jsonPath);
-        return "";
+        return readAdapterParam(vm, chainId, "deployPriceFeeds", adapterName, paramName);
     }
 
+    /// @notice Whether a Custom price-feed adapter is enabled for deployment.
     function isPriceFeedEnabled(Vm vm, uint256 chainId, string memory adapterName) internal view returns (bool) {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory jsonPath =
-            string(abi.encodePacked(".", vm.toString(chainId), ".customPriceFeeds.", adapterName, ".enabled"));
-        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
-        return false;
+        return isAdapterEnabled(vm, chainId, "deployPriceFeeds", adapterName);
     }
 
     // -------------------------------------------------------------------------
-    // Assets + per-asset price-feed list (assets.json → .<chainId>.assets.<SYMBOL>)
+    // Assets + per-asset price-feed list (nav-config/assets-and-price-feeds/<id>.json → .<SYMBOL>)
     // -------------------------------------------------------------------------
 
     /// @notice Returns every asset symbol configured for a chain.
     function getAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory) {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory jsonPath = string(abi.encodePacked(".", vm.toString(chainId), ".assets"));
-        if (!vm.keyExists(json, jsonPath)) return new string[](0);
-        return vm.parseJsonKeys(json, jsonPath);
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        if (!vm.keyExists(json, "$")) return new string[](0);
+        return vm.parseJsonKeys(json, "$");
     }
 
     /// @notice Reads an asset's token address ("" if absent).
     function readAssetAddress(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory jsonPath = string(abi.encodePacked(".", vm.toString(chainId), ".assets.", symbol, ".address"));
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", symbol, ".address"));
         if (vm.keyExists(json, jsonPath)) return json.readString(jsonPath);
         return "";
     }
 
     /// @notice Number of price feeds configured for an asset (length of its `priceFeeds[]`).
     function assetFeedCount(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256 n) {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
         // Probe indices until `.priceFeeds[i].type` is absent.
-        while (vm.keyExists(json, _feedPath(vm, chainId, symbol, n, "type"))) {
+        while (vm.keyExists(json, _feedPath(vm, symbol, n, "type"))) {
             ++n;
         }
     }
@@ -330,8 +378,8 @@ library ConfigReader {
         view
         returns (string memory)
     {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory p = _feedPath(vm, chainId, symbol, i, "type");
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "type");
         return vm.keyExists(json, p) ? json.readString(p) : "";
     }
 
@@ -341,8 +389,8 @@ library ConfigReader {
         view
         returns (string memory)
     {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory p = _feedPath(vm, chainId, symbol, i, "heartbeat");
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "heartbeat");
         if (vm.keyExists(json, p)) return vm.toString(json.readUint(p));
         return "3600";
     }
@@ -355,11 +403,11 @@ library ConfigReader {
         view
         returns (string memory)
     {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory addrPath = _feedPath(vm, chainId, symbol, i, "address");
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory addrPath = _feedPath(vm, symbol, i, "address");
         if (vm.keyExists(json, addrPath)) return json.readString(addrPath);
         // Custom feed: resolve the deployed adapter address by name.
-        string memory feedPath = _feedPath(vm, chainId, symbol, i, "feed");
+        string memory feedPath = _feedPath(vm, symbol, i, "feed");
         if (vm.keyExists(json, feedPath)) {
             address dep = readDeployedAdapterAddress(vm, chainId, "customPriceFeeds", json.readString(feedPath));
             if (dep != address(0)) return vm.toString(dep);
@@ -374,19 +422,17 @@ library ConfigReader {
         view
         returns (string memory)
     {
-        string memory json = _readOrEmpty(vm, _assetsPath(vm));
-        string memory p = _feedPath(vm, chainId, symbol, i, "feed");
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "feed");
         return vm.keyExists(json, p) ? json.readString(p) : "";
     }
 
-    function _feedPath(Vm vm, uint256 chainId, string memory symbol, uint256 i, string memory field)
+    function _feedPath(Vm vm, string memory symbol, uint256 i, string memory field)
         private
         view
         returns (string memory)
     {
-        return string(
-            abi.encodePacked(".", vm.toString(chainId), ".assets.", symbol, ".priceFeeds[", vm.toString(i), "].", field)
-        );
+        return string(abi.encodePacked(".", symbol, ".priceFeeds[", vm.toString(i), "].", field));
     }
 
     // -------------------------------------------------------------------------

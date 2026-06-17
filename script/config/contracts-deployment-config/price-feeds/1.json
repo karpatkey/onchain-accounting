@@ -1,0 +1,118 @@
+{
+  "ETHPlus": {
+    "enabled": true,
+    "constructor": {
+      "ethPlus": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+      "reserveProtocolHeartbeat": "86400"
+    }
+  },
+  "wstETH": {
+    "enabled": true,
+    "constructor": {
+      "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "stEthToEthChainlinkHeartbeat": "86400",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "stETH": {
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
+    }
+  },
+  "rETH": {
+    "enabled": true,
+    "constructor": {
+      "rEth": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "osETH": {
+    "enabled": true,
+    "constructor": {
+      "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+      "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
+      "underlyingToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "underlyingToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "weETH": {
+    "enabled": true,
+    "constructor": {
+      "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+      "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "weEthToEthChainlinkHeartbeat": "86400",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "eETH": {
+    "enabled": true,
+    "constructor": {
+      "eEth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+      "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+      "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "weEthToEthChainlinkHeartbeat": "86400",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "ezETH": {
+    "enabled": true,
+    "constructor": {
+      "ezEth": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+      "restakeManager": "0x74a09653A083691711cF8215a6ab074BB4e99ef5",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "rsETH": {
+    "enabled": true,
+    "constructor": {
+      "rsEth": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
+      "rateProvider": "0x0788906B19bA8f8d0e8a7015f0714DF3179D9aB6",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "ETHx": {
+    "enabled": true,
+    "constructor": {
+      "ethx": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+      "stakePoolsManager": "0xcf5EA1b38380f6aF39068375516Daf40Ed70D299",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "sUSDe": {
+    "enabled": true,
+    "constructor": {
+      "sUsde": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+      "usdeToUsdChainlinkAddress": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
+      "usdeToUsdChainlinkHeartbeat": "82800"
+    }
+  },
+  "sUSDS": {
+    "enabled": true,
+    "constructor": {
+      "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+      "usdsToUsdChainlinkAddress": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
+      "usdsToUsdChainlinkHeartbeat": "82800"
+    }
+  },
+  "syrupUSDC": {
+    "enabled": true,
+    "constructor": {
+      "syrupUsdc": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+      "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+      "usdcToUsdChainlinkHeartbeat": "82800"
+    }
+  }
+}

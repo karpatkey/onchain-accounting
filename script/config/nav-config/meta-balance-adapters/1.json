@@ -1,0 +1,175 @@
+{
+  "AaveV2InstancesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V2 instance. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool()). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). positionId derived on-chain = the instance LendingPool; name = LendingPoolAddressesProvider.getMarketId(). Supersedes the per-instance AaveV2_* adapters, disabled below.",
+    "instances": [
+      "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d"
+    ]
+  },
+  "AaveV3InstancesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
+    "instances": [
+      "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
+      "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5"
+    ]
+  },
+  "MorphoVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via addMetaInstances/removeMetaInstances in 06_Configure (from `instances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below \u2014 the NAV calculator now learns the Morpho-vault universe from this list.",
+    "instances": [
+      "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
+      "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
+      "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+      "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
+      "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
+      "0xD5cCe260E7a755DDf0Fb9cdF06443d593AaeaA13",
+      "0x870F0BF29A25A40E7CC087cD5C53e70C11F2C8A8",
+      "0x5dbf760b4fd0cDdDe0366b33aEb338b2A6d77725"
+    ]
+  },
+  "MorphoMarketsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. The active marketId set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instancesRaw below). Supersedes the per-market MorphoMarket_* adapters, which are disabled below.",
+    "instancesRaw": [
+      "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+      "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+      "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
+      "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
+      "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+      "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
+      "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+      "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
+      "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
+      "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
+      "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
+      "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942"
+    ]
+  },
+  "GearboxMarketsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
+    "instances": [
+      "0x9396DCbf78fc526bb003665337C5E73b699571EF",
+      "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
+    ]
+  },
+  "BalancerV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "instances": [
+      "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
+      "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
+    ]
+  },
+  "BalancerV3GaugesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "instances": [
+      "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
+      "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f"
+    ]
+  },
+  "BalancerV2PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 pool's wallet-held BPT, decomposed pro-rata into the underlying tokens (composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply()). The instance coordinate is the raw 32-byte poolId (instancesRaw below), NOT an address \u2014 the BPT address is derived on-chain as address(uint160(uint256(poolId) >> 96)). positionId derived on-chain = the BPT address; name = the BPT name(). Gauge-staked BPT is the separate BalancerV2GaugesMeta adapter. Disabled: no fund holds Balancer V2 positions today \u2014 the example instance is B-80BAL-20WETH, enable + add poolIds via addMetaInstances/removeMetaInstancesRaw when a position is opened.",
+    "instancesRaw": [
+      "0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014"
+    ]
+  },
+  "BalancerV2GaugesMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 gauge's staked BPT (decomposed pro-rata like BalancerV2PoolsMeta) + claimable BAL and extra reward tokens. The instance coordinate is the gauge address (instances below); the BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Wallet-held (unstaked) BPT is the separate BalancerV2PoolsMeta adapter. Disabled: no fund holds Balancer V2 gauge positions today \u2014 the example instance is the B-stETH-STABLE gauge, enable + add gauges via addMetaInstances/removeMetaInstances when a position is opened.",
+    "instances": [
+      "0xcD4722B7c24C29e0413BDCd9e51404B4539D14aE"
+    ]
+  },
+  "AuraRewardsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
+    "instances": [
+      "0x8e89d41c563e6C3d9901ad75B75e2d8e140DEF04",
+      "0x20283cce209b29D19329E8aDa47215a52188aFDc"
+    ]
+  },
+  "CurvePoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters, disabled below.",
+    "instances": [
+      "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
+      "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
+      "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
+      "0xD001aE433f254283FeCE51d4ACcE8c53263aa186"
+    ]
+  },
+  "CurveGaugesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving gauge-staked LP + CRV + extra rewards for every configured Curve gauge. Instance coordinate = gauge address. Supersedes staked-LP + reward reporting in per-instance Curve_* adapters, disabled below.",
+    "instances": [
+      "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
+      "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
+      "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
+      "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
+    ]
+  },
+  "ConvexRewardsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
+    "instances": [
+      "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
+      "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
+      "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
+      "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3"
+    ]
+  },
+  "FluidFTokensMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
+    "instances": [
+      "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
+      "0x5C20B550819128074FD538Edf79791733ccEdd18",
+      "0x90551c1795392094FE6D29B758EcCD233cFAa260",
+      "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
+      "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
+      "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11"
+    ]
+  },
+  "FluidVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
+    "instances": [
+      "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
+      "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
+      "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469"
+    ]
+  },
+  "CompoundV3CometsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
+    "instances": [
+      "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+      "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
+      "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
+      "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
+      "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
+      "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3"
+    ]
+  },
+  "StakeWiseV3VaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
+    "instances": [
+      "0xAC0F906E433d58FA868F936E8A43230473652885",
+      "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
+    ]
+  },
+  "UniswapV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
+    "instances": [
+      "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+      "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+      "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
+    ]
+  }
+}

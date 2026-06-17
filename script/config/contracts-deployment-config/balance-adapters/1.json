@@ -1,0 +1,776 @@
+{
+  "AaveV2InstancesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V2 instance. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool()). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). positionId derived on-chain = the instance LendingPool; name = LendingPoolAddressesProvider.getMarketId(). Supersedes the per-instance AaveV2_* adapters, disabled below.",
+    "constructor": {
+      "protocol": "Aave V2"
+    }
+  },
+  "AaveV2_Mainnet": {
+    "enabled": false,
+    "constructor": {
+      "dataProvider": "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d",
+      "protocol": "Aave V2",
+      "positionDetail": "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Mainnet Market\"",
+      "positionId": "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9"
+    }
+  },
+  "AaveV3InstancesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
+    "constructor": {
+      "protocol": "Aave V3"
+    }
+  },
+  "AaveV3_Core": {
+    "enabled": false,
+    "constructor": {
+      "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
+      "protocol": "Aave V3",
+      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Core Instance\"",
+      "positionId": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+    }
+  },
+  "AaveV3_Prime": {
+    "enabled": false,
+    "constructor": {
+      "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
+      "protocol": "Aave V3",
+      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Prime Instance\"",
+      "positionId": "0x4e033931ad43597d96D6bcc25c280717730B58B1"
+    }
+  },
+  "SparkLend": {
+    "enabled": true,
+    "constructor": {
+      "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
+      "protocol": "Spark",
+      "positionDetail": "{\"protocol\":\"Spark\",\"product\":\"Lending\",\"name\":\"SparkLend\"",
+      "positionId": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987"
+    }
+  },
+  "AaveV3SafetyModule": {
+    "enabled": true,
+    "constructor": {
+      "protocol": "Aave V3",
+      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Safety Module\"",
+      "positionId": "0x4da27a545c0c5B758a6BA100e3a049001de870f5"
+    }
+  },
+  "AaveUmbrella": {
+    "enabled": true,
+    "constructor": {
+      "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
+      "protocol": "Aave V3",
+      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"",
+      "positionId": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
+    }
+  },
+  "Cap": {
+    "enabled": true,
+    "constructor": {
+      "cUsd": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC",
+      "stcUsd": "0x88887bE419578051FF9F4eb6C858A951921D8888",
+      "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "protocol": "Cap",
+      "positionDetail": "{\"protocol\":\"Cap\",\"product\":\"Lending\",\"name\":\"cUSD + stcUSD\"",
+      "positionId": "0x88887bE419578051FF9F4eb6C858A951921D8888"
+    }
+  },
+  "MorphoVault_kpkETHPrime_V1": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk ETH Prime V1\"",
+      "positionId": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8"
+    }
+  },
+  "MorphoVault_kpkETHPrime_V2": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk ETH Prime V2\"",
+      "positionId": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9"
+    }
+  },
+  "MorphoVault_kpkUSDCPrime_V1": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Prime V1\"",
+      "positionId": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd"
+    }
+  },
+  "MorphoVault_kpkUSDCPrime_V2": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Prime V2\"",
+      "positionId": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6"
+    }
+  },
+  "MorphoVault_kpkEURC_V1": {
+    "enabled": false,
+    "$comment": "kpk EURC vault (MetaMorpho ERC4626). Superseded by MorphoVaultsMeta (ADR 0010); vault still queried via instances.",
+    "constructor": {
+      "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk EURC\"",
+      "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
+    }
+  },
+  "MorphoVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via addMetaInstances/removeMetaInstances in 06_Configure (from `instances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below \u2014 the NAV calculator now learns the Morpho-vault universe from this list.",
+    "constructor": {
+      "protocol": "Morpho"
+    }
+  },
+  "ERC4626Wrap_sGHO": {
+    "enabled": true,
+    "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg.",
+    "constructor": {
+      "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+      "protocol": "Aave",
+      "positionDetail": "{\"protocol\":\"Aave\",\"product\":\"Savings\",\"name\":\"sGHO\"",
+      "positionId": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d"
+    }
+  },
+  "ERC4626Wrap_waEthLidoGHO": {
+    "enabled": true,
+    "$comment": "Aave V3 Lido instance stata-token wrap of aEthLidoGHO. waEthLidoGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. ACCOUNT_11 holds ~$233 of this token. Production adapter not deployed yet \u2014 integration test deploys it ephemerally from this config block. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
+    "constructor": {
+      "wrapper": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C",
+      "protocol": "Aave V3",
+      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Prime Instance (LidoGHO stata wrap)\"",
+      "positionId": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C"
+    }
+  },
+  "MorphoMarketsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. The active marketId set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instancesRaw below). Supersedes the per-market MorphoMarket_* adapters, which are disabled below.",
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "protocol": "Morpho"
+    }
+  },
+  "MorphoMarket_wstETH_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstETH/USDC\""
+    }
+  },
+  "MorphoMarket_cbBTC_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"cbBTC/USDC\""
+    }
+  },
+  "MorphoMarket_wstUSR_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstUSR/USDC\""
+    }
+  },
+  "MorphoMarket_ETHPlus_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"ETH+/USDC\""
+    }
+  },
+  "MorphoMarket_WBTC_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"WBTC/USDC\""
+    }
+  },
+  "MorphoMarket_RLP_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"RLP/USDC\""
+    }
+  },
+  "MorphoMarket_syrupUSDC_USDC": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"syrupUSDC/USDC\""
+    }
+  },
+  "MorphoMarket_sUSDS_USDT": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"sUSDS/USDT\""
+    }
+  },
+  "MorphoMarket_ETHPlus_WETH": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"ETH+/WETH\""
+    }
+  },
+  "MorphoMarket_wstETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstETH/WETH\""
+    }
+  },
+  "MorphoMarket_weETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"weETH/WETH\""
+    }
+  },
+  "MorphoMarket_rsETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
+      "protocol": "Morpho",
+      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"rsETH/WETH\""
+    }
+  },
+  "GearboxMarketsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
+    "constructor": {
+      "protocol": "Gearbox"
+    }
+  },
+  "GearboxMarket_kpkWETH": {
+    "enabled": false,
+    "constructor": {
+      "market": "0x9396DCbf78fc526bb003665337C5E73b699571EF",
+      "protocol": "Gearbox",
+      "positionDetail": "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk WETH market\"",
+      "positionId": "0x9396DCbf78fc526bb003665337C5E73b699571EF"
+    }
+  },
+  "GearboxMarket_kpkwstETH": {
+    "enabled": false,
+    "constructor": {
+      "market": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64",
+      "protocol": "Gearbox",
+      "positionDetail": "{\"protocol\":\"Gearbox\",\"product\":\"Market\",\"name\":\"kpk wstETH market\"",
+      "positionId": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
+    }
+  },
+  "BalancerV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "constructor": {
+      "protocol": "Balancer V3"
+    }
+  },
+  "BalancerV3GaugesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "constructor": {
+      "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+      "protocol": "Balancer V3"
+    }
+  },
+  "BalancerV2PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 pool's wallet-held BPT, decomposed pro-rata into the underlying tokens (composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply()). The instance coordinate is the raw 32-byte poolId (instancesRaw below), NOT an address \u2014 the BPT address is derived on-chain as address(uint160(uint256(poolId) >> 96)). positionId derived on-chain = the BPT address; name = the BPT name(). Gauge-staked BPT is the separate BalancerV2GaugesMeta adapter. Disabled: no fund holds Balancer V2 positions today \u2014 the example instance is B-80BAL-20WETH, enable + add poolIds via addMetaInstances/removeMetaInstancesRaw when a position is opened.",
+    "constructor": {
+      "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+      "protocol": "Balancer V2"
+    }
+  },
+  "BalancerV2GaugesMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V2 gauge's staked BPT (decomposed pro-rata like BalancerV2PoolsMeta) + claimable BAL and extra reward tokens. The instance coordinate is the gauge address (instances below); the BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Wallet-held (unstaked) BPT is the separate BalancerV2PoolsMeta adapter. Disabled: no fund holds Balancer V2 gauge positions today \u2014 the example instance is the B-stETH-STABLE gauge, enable + add gauges via addMetaInstances/removeMetaInstances when a position is opened.",
+    "constructor": {
+      "vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+      "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+      "protocol": "Balancer V2"
+    }
+  },
+  "BalancerV3_rETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
+      "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
+      "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+      "protocol": "Balancer V3",
+      "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"rETH/Aave WETH\"",
+      "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
+    }
+  },
+  "BalancerV3_GHO_USDT_USDC": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
+      "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
+      "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
+      "protocol": "Balancer V3",
+      "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
+      "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
+    }
+  },
+  "AuraRewardsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
+    "constructor": {
+      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
+      "balancerV2Vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+      "protocol": "Aura"
+    }
+  },
+  "Aura_GHO_USDT_USDC": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
+      "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
+      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
+      "pid": "246",
+      "protocol": "Aura",
+      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
+      "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
+    }
+  },
+  "Aura_rETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
+      "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
+      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
+      "pid": "271",
+      "protocol": "Aura",
+      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"rETH/Aave WETH\"",
+      "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
+    }
+  },
+  "CurvePoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters, disabled below.",
+    "constructor": {
+      "protocol": "Curve"
+    }
+  },
+  "CurveGaugesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving gauge-staked LP + CRV + extra rewards for every configured Curve gauge. Instance coordinate = gauge address. Supersedes staked-LP + reward reporting in per-instance Curve_* adapters, disabled below.",
+    "constructor": {
+      "minter": "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0",
+      "crvToken": "0xD533a949740bb3306d119CC777fa900bA034cd52",
+      "protocol": "Curve"
+    }
+  },
+  "Curve_weETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
+      "protocol": "Curve",
+      "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"weETH/WETH\"",
+      "positionId": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2"
+    }
+  },
+  "Curve_crvUSD_USDC": {
+    "enabled": false,
+    "constructor": {
+      "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
+      "protocol": "Curve",
+      "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"crvUSD/USDC\"",
+      "positionId": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1"
+    }
+  },
+  "Curve_crvUSD_USDT": {
+    "enabled": false,
+    "constructor": {
+      "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
+      "protocol": "Curve",
+      "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"crvUSD/USDT\"",
+      "positionId": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939"
+    }
+  },
+  "Curve_RLUSD_USDC": {
+    "enabled": false,
+    "constructor": {
+      "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
+      "protocol": "Curve",
+      "positionDetail": "{\"protocol\":\"Curve\",\"product\":\"LP\",\"name\":\"RLUSD/USDC\"",
+      "positionId": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
+    }
+  },
+  "ConvexRewardsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
+    "constructor": {
+      "booster": "0xF403C135812408BFbE8713b5A23a04b3D48AAE31",
+      "cvxToken": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
+      "protocol": "Convex"
+    }
+  },
+  "Convex_weETH_WETH": {
+    "enabled": false,
+    "constructor": {
+      "rewarder": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
+      "lpToken": "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
+      "protocol": "Convex",
+      "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"weETH/WETH\"",
+      "positionId": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58"
+    }
+  },
+  "Convex_crvUSD_USDC": {
+    "enabled": false,
+    "constructor": {
+      "rewarder": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
+      "lpToken": "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
+      "protocol": "Convex",
+      "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"crvUSD/USDC\"",
+      "positionId": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA"
+    }
+  },
+  "Convex_crvUSD_USDT": {
+    "enabled": false,
+    "constructor": {
+      "rewarder": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
+      "lpToken": "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
+      "protocol": "Convex",
+      "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"crvUSD/USDT\"",
+      "positionId": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824"
+    }
+  },
+  "Convex_RLUSD_USDC": {
+    "enabled": false,
+    "constructor": {
+      "rewarder": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3",
+      "lpToken": "0xD001aE433f254283FeCE51d4ACcE8c53263aa186",
+      "protocol": "Convex",
+      "positionDetail": "{\"protocol\":\"Convex\",\"product\":\"LP\",\"name\":\"RLUSD/USDC\"",
+      "positionId": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3"
+    }
+  },
+  "FluidFTokensMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
+    "constructor": {
+      "protocol": "Fluid"
+    }
+  },
+  "Fluid_fToken_USDC": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
+      "positionId": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33"
+    }
+  },
+  "Fluid_fToken_USDT": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDT\"",
+      "positionId": "0x5C20B550819128074FD538Edf79791733ccEdd18"
+    }
+  },
+  "Fluid_fToken_WETH": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fWETH\"",
+      "positionId": "0x90551c1795392094FE6D29B758EcCD233cFAa260"
+    }
+  },
+  "Fluid_fToken_wstETH": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fwstETH\"",
+      "positionId": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C"
+    }
+  },
+  "Fluid_fToken_GHO": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fGHO\"",
+      "positionId": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B"
+    }
+  },
+  "Fluid_fToken_sUSDe": {
+    "enabled": false,
+    "constructor": {
+      "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fsUSDe\"",
+      "positionId": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11"
+    }
+  },
+  "FluidVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
+    "constructor": {
+      "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+      "protocol": "Fluid"
+    }
+  },
+  "Fluid_Vault_wstETH_USDC": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
+      "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"wstETH/USDC\"",
+      "positionId": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE"
+    }
+  },
+  "Fluid_Vault_weETH_wstETH": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
+      "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"weETH/wstETH\"",
+      "positionId": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82"
+    }
+  },
+  "Fluid_Vault_sUSDe_USDC": {
+    "enabled": false,
+    "constructor": {
+      "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
+      "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
+      "protocol": "Fluid",
+      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Vault\",\"name\":\"sUSDe/USDC\"",
+      "positionId": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469"
+    }
+  },
+  "CompoundV3CometsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound V3"
+    }
+  },
+  "CompoundV3_USDC": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
+      "positionId": "0xc3d688B66703497DAA19211EEdff47f25384cdc3"
+    }
+  },
+  "CompoundV3_USDS": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDS\"",
+      "positionId": "0x5D409e56D886231aDAf00c8775665AD0f9897b56"
+    }
+  },
+  "CompoundV3_USDT": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
+      "positionId": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840"
+    }
+  },
+  "CompoundV3_WBTC": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WBTC\"",
+      "positionId": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293"
+    }
+  },
+  "CompoundV3_WETH": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
+      "positionId": "0xA17581A9E3356d9A858b789D68B4d866e593aE94"
+    }
+  },
+  "CompoundV3_wstETH": {
+    "enabled": false,
+    "constructor": {
+      "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
+      "comet": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",
+      "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+      "protocol": "Compound v3",
+      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"wstETH\"",
+      "positionId": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3"
+    }
+  },
+  "StakeWiseV3VaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
+    "constructor": {
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "protocol": "StakeWise V3"
+    }
+  },
+  "StakeWiseV3Vault_Genesis": {
+    "enabled": false,
+    "constructor": {
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
+      "protocol": "StakeWise V3",
+      "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Genesis Vault\"",
+      "positionId": "0xAC0F906E433d58FA868F936E8A43230473652885"
+    }
+  },
+  "StakeWiseV3Vault_MetaVault": {
+    "enabled": false,
+    "constructor": {
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "vault": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3",
+      "protocol": "StakeWise V3",
+      "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Vault\",\"name\":\"Meta Vault\"",
+      "positionId": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
+    }
+  },
+  "StaderWithdrawalQueue": {
+    "enabled": true,
+    "constructor": {
+      "userWithdrawalManager": "0x9F0491B32DBce587c50c4C43AB303b06478193A7",
+      "underlyingToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "protocol": "Stader",
+      "positionDetail": "{\"protocol\":\"Stader\",\"product\":\"Staking\",\"name\":\"ETH Withdrawal Queue\"",
+      "positionId": "0x9F0491B32DBce587c50c4C43AB303b06478193A7"
+    }
+  },
+  "KelpWithdrawalQueue": {
+    "enabled": true,
+    "constructor": {
+      "withdrawalManager": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
+      "protocol": "Kelp",
+      "positionDetail": "{\"protocol\":\"Kelp\",\"product\":\"Staking\",\"name\":\"rsETH Withdrawal Queue\"",
+      "positionId": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16"
+    }
+  },
+  "LidoWithdrawalQueue": {
+    "enabled": true,
+    "constructor": {
+      "withdrawalQueue": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "protocol": "Lido",
+      "positionDetail": "{\"protocol\":\"Lido\",\"product\":\"Staking\",\"name\":\"stETH Withdrawal Queue\"",
+      "positionId": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
+    }
+  },
+  "MerklRewards": {
+    "enabled": false,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
+      "protocol": "Merkl",
+      "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
+      "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
+  },
+  "UniswapV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
+    "constructor": {
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3"
+    }
+  },
+  "UniswapV3_WBTC_WETH_3000": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3",
+      "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WBTC/WETH 0.3%\"",
+      "positionId": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD"
+    }
+  },
+  "UniswapV3_WETH_COW_3000": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3",
+      "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WETH/COW 0.3%\"",
+      "positionId": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af"
+    }
+  },
+  "UniswapV3_USDC_WETH_500": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3",
+      "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"USDC/WETH 0.05%\"",
+      "positionId": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
+    }
+  },
+  "UniswapV3_WETH_USDT_3000": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3",
+      "positionDetail": "{\"protocol\":\"Uniswap V3\",\"product\":\"LP\",\"name\":\"WETH/USDT 0.3%\"",
+      "positionId": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
+    }
+  },
+  "UniswapV3_ETH_sETH2": {
+    "enabled": false,
+    "constructor": {
+      "pool": "0x7379e81228514a1d2a6cf7559203998e20598346"
+    }
+  }
+}

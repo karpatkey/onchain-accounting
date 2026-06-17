@@ -225,39 +225,69 @@ Run with `FOUNDRY_PROFILE=slow` to throttle RPC.
 
 ## 3. Wire chain config
 
-File: `script/config/balance-adapters.json`.
+Config is split by concern. **Deploy config** (constructor args, read by `04_DeployBalanceAdapters.s.sol`) lives in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json`. **NAV registration** (read by `06_Configure.s.sol`) lives in `script/config/nav-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/nav-config/meta-balance-adapters/<chainId>.json` for meta adapters. Each file's top-level keys are the adapter names — the filename is the chain.
 
-Add an entry under `<chainId>`. For a **per-instance adapter** the constructor block lists only the protocol-specific addresses the adapter needs:
+### 3.1 Deploy config (both adapter kinds)
+
+In `contracts-deployment-config/balance-adapters/<chainId>.json`, the constructor block lists only the protocol-specific / chain-level addresses the adapter needs (no instances here). For a **per-instance adapter**:
 
 ```json
-"MyProtocol": {
-  "enabled": true,
-  "constructor": {
-    "protocolContract": "0x..."
+{
+  "MyProtocol": {
+    "enabled": true,
+    "constructor": {
+      "protocolContract": "0x..."
+    }
   }
 }
 ```
 
-For a **meta-adapter**, add an `instances` array (the instance coordinates applied via `addMetaInstances`/`removeMetaInstances` on NAVCalculator). Use `instancesRaw` instead when the coordinates are raw `bytes32` (Morpho marketIds, Balancer V2 poolIds) rather than addresses. The constructor block lists only chain-level constants (the protocol's global contracts). For example, the Gearbox meta-adapter:
+For a **meta-adapter**, the constructor block lists only chain-level constants (the protocol's global contracts):
 
 ```json
-"GearboxMarketsMeta": {
-  "enabled": true,
-  "constructor": {
-    "protocol": "Gearbox"
-  },
-  "instances": [
-    "0x9396DCbf78fc526bb003665337C5E73b699571EF",
-    "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
-  ]
+{
+  "GearboxMarketsMeta": {
+    "enabled": true,
+    "constructor": {
+      "protocol": "Gearbox"
+    }
+  }
 }
 ```
 
-Instances are applied incrementally — `06_Configure` diffs the configured set against on-chain state and calls `addMetaInstances`/`removeMetaInstances` as needed.
+### 3.2 NAV registration — plain adapter
+
+Add the name to `nav-config/balance-adapters/<chainId>.json`:
+
+```json
+{
+  "MyProtocol": { "enabled": true }
+}
+```
+
+`06_Configure` adds these via `addBalanceAdapters`.
+
+### 3.3 NAV registration — meta adapter
+
+Add the name to `nav-config/meta-balance-adapters/<chainId>.json` with its `instances` array (the instance coordinates applied via `addMetaInstances`/`removeMetaInstances` on NAVCalculator). Use `instancesRaw` instead when the coordinates are raw `bytes32` (Morpho marketIds, Balancer V2 poolIds) rather than addresses:
+
+```json
+{
+  "GearboxMarketsMeta": {
+    "enabled": true,
+    "instances": [
+      "0x9396DCbf78fc526bb003665337C5E73b699571EF",
+      "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
+    ]
+  }
+}
+```
+
+Instances are applied incrementally — `06_Configure` registers the meta-adapter via `addMetaBalanceAdapter`, then diffs the configured set against on-chain state and calls `addMetaInstances`/`removeMetaInstances` as needed.
 
 Notes:
 
-- The key (`MyProtocol` or `MyProtocol_<instance>`) is the lookup name used by `04_DeployBalanceAdapters.s.sol`.
+- The key (`MyProtocol` or `MyProtocol_<instance>`) is the lookup name used by `04_DeployBalanceAdapters.s.sol`; the same key must appear in the matching `nav-config` file to register on NAV.
 - For multi-instance per-instance adapters, use an instance disambiguator in the key (`AaveV3_Core`, `AaveV3_Prime`).
 - For chains where the protocol does not exist, set `"enabled": false` or omit the key.
 - The `navCalculator` param is **not** listed in `constructor` — the deploy script resolves it automatically from the deployed NAVCalculatorProxy address.
@@ -307,7 +337,7 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
 
 `04` writes the deployed address into `deployments/<chainId>.json` under `balanceAdapters.MyProtocol`. Verify it's there before opening the PR.
 
-Registration: the OIV Safe calls `NAVCalculator.addBalanceAdapters(adapters)` via the `06_Configure.s.sol` Safe TX bundle. `06_Configure` detects whether each adapter is a meta-adapter via ERC165 (there is no meta flag in config) and, for meta-adapters, calls `addMetaInstances(adapter, instances[])` (or the `instancesRaw` variant) to wire the active instance set.
+Registration: `06_Configure.s.sol` registers each adapter on NAVCalculator. Plain adapters listed in `nav-config/balance-adapters/<chainId>.json` are added via `addBalanceAdapters(adapters)`; meta adapters listed in `nav-config/meta-balance-adapters/<chainId>.json` are registered via `addMetaBalanceAdapter(adapter, instances[])` (or the `instancesRaw` variant) and have their active instance set reconciled with `addMetaInstances`/`removeMetaInstances`. Meta-vs-plain is also confirmed on-chain via ERC165.
 
 Then verify on-chain:
 

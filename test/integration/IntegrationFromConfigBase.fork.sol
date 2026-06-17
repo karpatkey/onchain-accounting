@@ -892,11 +892,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address a = _deployedBalanceAdapters[i];
             string memory name = _deployedBalanceAdapterNames[i];
 
-            // Union address-keyed (`metaInstances`, widened) + raw bytes32 (`metaInstancesRaw`, e.g. marketIds).
+            // Union address-keyed (`instances`, widened) + raw bytes32 (`instancesRaw`, e.g. marketIds) from the
+            // meta-adapter NAV-config file (nav-config/meta-balance-adapters/<id>.json).
             address[] memory addrs =
-                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "instances");
+                ConfigReader.readAdapterAddressArray(vm, _chainId, "navMetaBalanceAdapters", name, "instances");
             bytes32[] memory raw =
-                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "instancesRaw");
+                ConfigReader.readAdapterBytes32Array(vm, _chainId, "navMetaBalanceAdapters", name, "instancesRaw");
             if (addrs.length + raw.length == 0) continue;
 
             bytes32[] memory instances = new bytes32[](addrs.length + raw.length);

@@ -1,0 +1,6 @@
+{
+  "PancakeSwapV2_ETH_COW": {
+    "enabled": false,
+    "$comment": "Cake-LP for Binance-Peg ETH (0x2170...) / CoW Protocol Token (0x5BfdAa...). Test holder 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669 is the genesis LP. Disabled by default: COW has no Chainlink feed on BSC, so registering it would require a custom price feed first. Until that lands, NAVCalculator's per-asset registry filter would silently drop the COW leg of any PCS V2 ETH/COW LP and value the position only on its ETH side \u2014 i.e. understate it by ~half. Enable once COW is priced (or replace this entry with a different pair that has fully-priced tokens)."
+  }
+}

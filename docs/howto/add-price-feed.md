@@ -22,9 +22,9 @@ Use this path when a Chainlink USD feed for the asset already exists and is cano
    Cross-reference the `updatedAt` timestamp against recent block times to confirm the heartbeat in practice.
 4. Record the token's contract address on each chain you want to support.
 
-### A.2 Add to `assets.json`
+### A.2 Add to `nav-config/assets-and-price-feeds/<chainId>.json`
 
-Under `<chainId>.assets.<SYMBOL>`:
+Add a top-level entry keyed by `<SYMBOL>`:
 
 ```json
 "WBTC": {
@@ -47,7 +47,7 @@ Rules:
 
 ### A.3 No symbol list to edit
 
-There is no `_symbolsForChain` list to update anymore. Both `script/manage/RegisterAssets.s.sol` and the integration harness `test/integration/IntegrationFromConfigBase.fork.sol` read symbols directly from `assets.json` (via `getAssetSymbols`). Adding the asset under `<chainId>.assets` is sufficient.
+There is no `_symbolsForChain` list to update anymore. Both `script/manage/RegisterAssets.s.sol` and the integration harness `test/integration/IntegrationFromConfigBase.fork.sol` read symbols directly from `nav-config/assets-and-price-feeds/<chainId>.json` (via `getAssetSymbols`). Adding the asset as a top-level key there is sufficient.
 
 ### A.4 Add constant to `test/ChainlinkPriceFeeds.sol` (if not already present)
 
@@ -61,7 +61,7 @@ Check for an existing entry before adding. The constant is used in fork tests an
 
 ### A.5 Register via deploy script
 
-No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `assets.json` (`getAssetSymbols`) and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for the first feed, then `NAVCalculator.addPriceFeed(...)` for the rest. Run it as part of the next deployment cycle or management TX.
+No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `nav-config/assets-and-price-feeds/<chainId>.json` (`getAssetSymbols`) and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for the first feed, then `NAVCalculator.addPriceFeed(...)` for the rest. Run it as part of the next deployment cycle or management TX.
 
 To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
 
@@ -219,52 +219,48 @@ Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fo
 
 ## B.4 Wire chain config
 
-File: `script/config/assets.json`. Add the custom-feed constructor args under `<chainId>.customPriceFeeds.<name>`:
+Two files. First, the custom-feed deploy config — `script/config/contracts-deployment-config/price-feeds/<chainId>.json`, keyed by feed name (top-level; no chainId wrapper):
 
 ```json
-"1": {
-  "customPriceFeeds": {
-    "myAsset": {
-      "enabled": true,
-      "constructor": {
-        "myAsset": "0x...",
-        "rateProvider": "0x...",
-        "usdChainlinkOracle": "0x...",
-        "usdChainlinkHeartbeat": "3600"
+{
+  "myAsset": {
+    "enabled": true,
+    "constructor": {
+      "myAsset": "0x...",
+      "rateProvider": "0x...",
+      "usdChainlinkOracle": "0x...",
+      "usdChainlinkHeartbeat": "3600"
+    }
+  }
+}
+```
+
+Second, the asset entry — `script/config/nav-config/assets-and-price-feeds/<chainId>.json`, with a `Custom` feed that references the custom feed by name:
+
+```json
+{
+  "MYASSET": {
+    "address": "0x...",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "myAsset",
+        "heartbeat": 3600
       }
-    }
+    ]
   }
 }
 ```
 
-And add the asset entry under `<chainId>.assets.<SYM>` with a `Custom` feed that references the custom feed by name:
+Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `contracts-deployment-config/price-feeds` entry needed at all.
 
-```json
-"1": {
-  "assets": {
-    "MYASSET": {
-      "address": "0x...",
-      "priceFeeds": [
-        {
-          "type": "Custom",
-          "feed": "myAsset",
-          "heartbeat": 3600
-        }
-      ]
-    }
-  }
-}
-```
-
-Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `customPriceFeeds` entry needed at all.
-
-There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `assets.json`, so adding the asset under `<chainId>.assets` is enough. In the integration test, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()`, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
+There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `nav-config/assets-and-price-feeds/<chainId>.json`, so adding the asset there is enough. In the integration test, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()`, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
 
 ---
 
 ## B.5 Deploy and register
 
-Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `assets.json` `<chainId>.customPriceFeeds` and calls `_deployIfEnabled` per entry — your new entry from §B.4 above will get picked up automatically. The deployed feed address is written into `deployments/<chainId>.json .customPriceFeeds.<name>`; the asset's `Custom` entry references it by `feed: "<name>"`, and `06_Configure` resolves the on-chain address from the deployments file at registration time (no manual copy needed).
+Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `contracts-deployment-config/price-feeds/<chainId>.json` and calls `_deployIfEnabled` per entry — your new entry from §B.4 above will get picked up automatically. The deployed feed address is written into `deployments/<chainId>.json .customPriceFeeds.<name>`; the asset's `Custom` entry references it by `feed: "<name>"`, and `06_Configure` resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
 After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
 
@@ -291,7 +287,7 @@ PR checklist:
 - [ ] `forge build` clean
 - [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
 - [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
-- [ ] `assets.json` updated for every chain where the feed applies (`<chainId>.assets` with `priceFeeds` arrays + `<chainId>.customPriceFeeds` constructor sections)
+- [ ] `nav-config/assets-and-price-feeds/<chainId>.json` updated for every chain where the feed applies (assets with `priceFeeds` arrays) + `contracts-deployment-config/price-feeds/<chainId>.json` constructor sections for any Custom feeds
 - [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `test/integration/IntegrationFromConfigBase.fork.sol`
 - [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
 - [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations

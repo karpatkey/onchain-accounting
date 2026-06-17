@@ -197,8 +197,8 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
   `addMetaInstances` reverts on a coordinate already present or repeated within the batch (a duplicate would
   double-count NAV), `removeMetaInstances` reverts on a coordinate not present, an empty list reverts, and both
   revert `NotMetaAdapter` if the target is not a meta-adapter. In deploy config, list the instances in
-  `script/config/balance-adapters.json` (keyed by chainId) under `<AdapterKey>.instances` (address array, widened to
-  bytes32 — for vault/pool-address adapters) or `<AdapterKey>.instancesRaw` (raw bytes32 — for marketId-keyed adapters
+  `script/config/nav-config/meta-balance-adapters/<chainId>.json` under `<AdapterKey>.instances` (address array, widened
+  to bytes32 — for vault/pool-address adapters) or `<AdapterKey>.instancesRaw` (raw bytes32 — for marketId-keyed adapters
   like `MorphoMarketsMeta`); `06_Configure` detects meta-vs-plain on-chain via ERC165, registers meta-adapters via
   `addMetaBalanceAdapter` (seeded from config), and on re-runs reconciles the on-chain set against config by diffing
   `getMetaInstances` (current) vs the configured set, then emits the `addMetaInstances`/`removeMetaInstances` TX.
@@ -226,7 +226,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
-| Adapter | Description | Constructor | Config key (`balance-adapters.json`) |
+| Adapter | Description | Constructor | Config key (deploy: `contracts-deployment-config/balance-adapters/<chainId>.json`; register: `nav-config/meta-balance-adapters/<chainId>.json`) |
 |---------|-------------|-------------|------------------|
 | **AaveV3InstancesMeta** | All Aave V3 instances (Core, Prime, …). Instance coordinate = ProtocolDataProvider address. Up to 2 rows per reserve (`Supplied`/`Collateral` + `Borrowed`). Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV3InstancesMeta`; DataProviders under `instances`. |
 | **AaveV2InstancesMeta** | All Aave V2 instances. Thin subclass of `AaveV3InstancesMeta` (same DataProvider ABI; pool resolved via `getLendingPool()`). Instance coordinate = ProtocolDataProvider address. Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV2InstancesMeta`; DataProviders under `instances`. |
@@ -261,7 +261,7 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 | **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Staking` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-adapter.md`. |
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
 | **DaiDsr** | DAI Savings Rate. positionId = `""` (account-global). `Supplied` kind. | `(dai, dsrManager, navCalculator)` | protocolId = `DAI_DSR`. |
-| **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family), the Aave sGHO savings vault, and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; `balance-adapters.json` config key prefix `ERC4626Wrap_`. |
+| **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family), the Aave sGHO savings vault, and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; config key prefix `ERC4626Wrap_` (in `contracts-deployment-config/balance-adapters/<chainId>.json` and `nav-config/balance-adapters/<chainId>.json`). |
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Sums each account's open requests' `expectedAssetAmount` per payout asset. Payout-asset set discovered at runtime. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalManager, navCalculator)` | protocolId = `KELP_WITHDRAWAL`. Mainnet only. |
 | **LidoWithdrawalQueue** | Lido `WithdrawalQueueERC721`. Open (un-claimed) withdrawal requests summed into a native-ETH credit. Finalized → exact claimable ETH (`getClaimableEther`); not finalized → `amountOfStETH`. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalQueue, underlyingToken, navCalculator)` | protocolId = `LIDO_WITHDRAWAL`. Mainnet only. |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(rewardToken)`. `Rewards` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. The framework's documented mutable-adapter exception (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |

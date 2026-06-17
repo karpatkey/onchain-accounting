@@ -85,21 +85,35 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(deployed == address(0) || deployed != address(0), "Invalid address");
     }
 
-    /// @notice Test that isAdapterEnabled reads a value when the adapter exists in chain config
+    /// @notice isAdapterEnabled reads a real enabled adapter from the deploy-config file.
     function test_IsAdapterEnabled() public view {
-        // Read enabled state for an adapter that exists (e.g. ERC20Default on mainnet)
-        bool enabled = ConfigReader.isAdapterEnabled(vm, 1, "balanceAdapters", "ERC20Default");
-
-        // We only verify the read succeeds; enabled may be true or false depending on config
-        assertTrue(enabled == true || enabled == false, "isAdapterEnabled should return a boolean when config exists");
+        // AaveV3InstancesMeta is enabled in contracts-deployment-config/balance-adapters/1.json.
+        assertTrue(
+            ConfigReader.isAdapterEnabled(vm, 1, "deployBalanceAdapters", "AaveV3InstancesMeta"),
+            "AaveV3InstancesMeta should be enabled in deploy config"
+        );
+        // The legacy "balanceAdapters" token aliases the same deploy-config file.
+        assertTrue(
+            ConfigReader.isAdapterEnabled(vm, 1, "balanceAdapters", "AaveV3InstancesMeta"),
+            "balanceAdapters alias resolves the deploy-config file"
+        );
     }
 
-    /// @notice Test that we can read adapter enabled state when the key exists (no assertion on value)
-    function test_ERC20DefaultIsEnabledByDefault() public view {
-        bool enabled = ConfigReader.isAdapterEnabled(vm, 1, "balanceAdapters", "ERC20Default");
-
-        // Just verify we can read; value depends on config
-        assertTrue(enabled || !enabled, "ERC20Default enabled state is read when it exists in config");
+    /// @notice A meta adapter appears in nav-config/meta-balance-adapters, a plain one in nav-config/balance-adapters.
+    function test_NavAdapterSplit() public view {
+        assertTrue(
+            ConfigReader.isAdapterEnabled(vm, 1, "navMetaBalanceAdapters", "AaveV3InstancesMeta"),
+            "AaveV3InstancesMeta should be an enabled meta adapter on NAV"
+        );
+        assertTrue(
+            ConfigReader.isAdapterEnabled(vm, 1, "navBalanceAdapters", "SparkLend"),
+            "SparkLend should be an enabled plain adapter on NAV"
+        );
+        // A meta adapter must NOT appear in the plain nav file, and vice-versa.
+        assertFalse(
+            ConfigReader.isAdapterEnabled(vm, 1, "navBalanceAdapters", "AaveV3InstancesMeta"),
+            "meta adapter must not be in the plain nav-config file"
+        );
     }
 
     /// @notice Test that readAdapterParam returns when the adapter/param path exists (no assertion on content)
@@ -111,14 +125,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(bytes(param).length >= 0, "readAdapterParam should return when path exists");
     }
 
-    /// @notice Test reading price feed parameters from assets config
-    /// @dev When assets.json has priceFeeds.{adapter}.{chainId}.constructor.{param}, returns that value; otherwise empty.
+    /// @notice readPriceFeedParam reads a Custom feed's constructor arg from contracts-deployment-config/price-feeds.
     function test_ReadPriceFeedParam() public view {
-        // readPriceFeedParam reads from assets.json under .priceFeeds.{adapter}.{chainId}.constructor.{param}
-        string memory sDai = ConfigReader.readPriceFeedParam(vm, 1, "sDAI", "sDai");
-
-        // If priceFeeds.sDAI is configured for chain 1, param should be set; else empty is valid
-        assertTrue(bytes(sDai).length == 0 || bytes(sDai).length > 0, "readPriceFeedParam should return value or empty");
+        // ETHPlus is an enabled Custom feed on chain 1 with a `ethPlus` constructor arg.
+        string memory ethPlus = ConfigReader.readPriceFeedParam(vm, 1, "ETHPlus", "ethPlus");
+        assertTrue(bytes(ethPlus).length > 0, "ETHPlus constructor arg should be set in price-feeds deploy config");
+        assertTrue(ConfigReader.isPriceFeedEnabled(vm, 1, "ETHPlus"), "ETHPlus should be enabled for deployment");
     }
 
     /// @notice Test reading bridge adapter parameters
@@ -161,26 +173,61 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(true, "Test skipped - cheatcode reverts can't be easily tested with vm.expectRevert()");
     }
 
-    /// @notice Test that we can read adapter enabled state per chain when config exists (no assertion on values)
-    function test_AdapterEnabledPerChain() public view {
-        // Read enabled state on different chains; we only verify reads succeed when config exists
-        bool mainnet = ConfigReader.isAdapterEnabled(vm, 1, "balanceAdapters", "ERC20Default");
-        bool arbitrum = ConfigReader.isAdapterEnabled(vm, 42161, "balanceAdapters", "ERC20Default");
+    /// @notice Every adapter listed in a NAV-config file must be a deployable adapter (matching enabled entry in
+    ///         contracts-deployment-config/balance-adapters) — names are the join key across deploy/nav/deployments,
+    ///         so a mismatch silently breaks the link (deployed-but-not-added, or added-with-zero-address).
+    function test_NavAdaptersHaveDeployConfig() public view {
+        uint256[] memory chainIds = _allConfiguredChainIds();
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            _assertNavAdaptersDeployable(chainIds[i], "navBalanceAdapters");
+            _assertNavAdaptersDeployable(chainIds[i], "navMetaBalanceAdapters");
+        }
+    }
 
-        assertTrue(mainnet || !mainnet, "mainnet read succeeds");
-        assertTrue(arbitrum || !arbitrum, "arbitrum read succeeds");
+    function _assertNavAdaptersDeployable(uint256 chainId, string memory navType) internal view {
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, chainId, navType);
+        for (uint256 i = 0; i < names.length; i++) {
+            if (!ConfigReader.isAdapterEnabled(vm, chainId, navType, names[i])) continue; // only enabled must be deployable
+            assertTrue(
+                ConfigReader.isAdapterEnabled(vm, chainId, "deployBalanceAdapters", names[i]),
+                string(
+                    abi.encodePacked(
+                        "NAV adapter '",
+                        names[i],
+                        "' (chain ",
+                        vm.toString(chainId),
+                        ") has no enabled entry in contracts-deployment-config/balance-adapters"
+                    )
+                )
+            );
+        }
     }
 
     /// @notice Test that reading params for a non-existent adapter returns empty strings (no revert)
     function test_ReadMissingAdapterParamsReturnsEmpty() public view {
         // MorphoBlue_USDC is not present in chain 1 config — reads should return "" not revert
-        string memory morpho = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "morpho");
-        string memory marketId = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "marketId");
-        string memory protocol = ConfigReader.readAdapterParam(vm, 1, "balanceAdapters", "MorphoBlue_USDC", "protocol");
+        string memory morpho =
+            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "morpho");
+        string memory marketId =
+            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "marketId");
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "protocol");
 
         assertEq(bytes(morpho).length, 0, "missing adapter param should return empty string");
         assertEq(bytes(marketId).length, 0, "missing adapter param should return empty string");
         assertEq(bytes(protocol).length, 0, "missing adapter param should return empty string");
+    }
+
+    /// @notice All chains that carry config files (broader than `_supportedChainIds`, which is deployed-proxy chains).
+    function _allConfiguredChainIds() internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](7);
+        ids[0] = 1;
+        ids[1] = 10;
+        ids[2] = 56;
+        ids[3] = 100;
+        ids[4] = 137;
+        ids[5] = 8453;
+        ids[6] = 42161;
     }
 
     /// @notice Test that config files are properly formatted JSON

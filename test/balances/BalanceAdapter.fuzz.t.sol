@@ -22,7 +22,7 @@ contract BalanceAdapterFuzzTest is Test {
 
     function setUp() public {
         // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x706cD291D3164B7F50e8FEBDE5d744a3eb12Ed56, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultAdapter = balances.defaultAdapter();
         customAdapter = new Mock_CustomBalanceAdapter();

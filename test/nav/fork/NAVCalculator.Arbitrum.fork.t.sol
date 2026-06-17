@@ -78,13 +78,13 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
         aaveAdapter = aaveMeta;
-        nav.addBalanceAdapters(aa(address(aaveAdapter)));
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.addMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveAdapter), aaveInstances);
 
         compoundV3UsdcComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceAdapters(aa(address(compoundV3UsdcComet)));
+        // Meta-adapter with no instances in this test: register with an empty set.
+        nav.addMetaBalanceAdapter(address(compoundV3UsdcComet), new bytes32[](0));
     }
 }

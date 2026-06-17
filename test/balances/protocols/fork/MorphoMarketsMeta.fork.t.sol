@@ -42,7 +42,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x706cD291D3164B7F50e8FEBDE5d744a3eb12Ed56, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
@@ -80,10 +80,9 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         adapter = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        nav.addMetaInstances(address(adapter), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
     }
 

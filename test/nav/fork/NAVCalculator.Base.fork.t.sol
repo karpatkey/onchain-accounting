@@ -86,22 +86,18 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
 
         morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
-        nav.addBalanceAdapters(aa(address(aaveAdapter)));
-        nav.addBalanceAdapters(aa(address(compoundV3Comet)));
-        nav.addBalanceAdapters(aa(address(morphoBlueAdapter)));
-
-        // Configure meta-adapter instance sets
+        // Meta-adapters register + seed atomically via addMetaBalanceAdapter (plain addBalanceAdapters rejects meta).
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.addMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveMeta), aaveInstances);
 
         bytes32[] memory comets = new bytes32[](1);
         comets[0] = bytes32(uint256(uint160(cUsdCv3)));
-        nav.addMetaInstances(address(compoundV3Comet), comets);
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), comets);
 
         bytes32[] memory markets = new bytes32[](1);
         markets[0] = marketIdCbbtcUsdc;
-        nav.addMetaInstances(address(morphoBlueAdapter), markets);
+        nav.addMetaBalanceAdapter(address(morphoBlueAdapter), markets);
     }
 
     function test_logPositions() public view {

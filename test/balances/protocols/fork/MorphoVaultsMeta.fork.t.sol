@@ -61,7 +61,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Etch the pre-linked PriceFeedLib so pricing works on the fork.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(PRICE_FEED_LIB, priceFeedLibImpl.code);
-        vm.etch(0xe4A3e8ba3d087A17A94fBd5eB8Cb8F198e705089, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x706cD291D3164B7F50e8FEBDE5d744a3eb12Ed56, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Real NAVCalculator (L1: no sequencer uptime feed).
         vm.startPrank(admin);
@@ -90,11 +90,10 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Deploy the meta-adapter and register it on NAV with both vaults as instances.
         adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
         vm.startPrank(manager);
-        nav.addBalanceAdapters(aa(address(adapter)));
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));
         instances[1] = bytes32(uint256(uint160(address(vault2))));
-        nav.addMetaInstances(address(adapter), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
     }
 

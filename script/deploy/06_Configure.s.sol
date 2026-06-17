@@ -80,19 +80,24 @@ contract Configure is BaseDeployScript {
             address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
             if (deployed == address(0)) continue;
 
+            // A meta-adapter is identified by having a configured instance set; it registers via
+            // addMetaBalanceAdapter (atomic register + seed) since addBalanceAdapters rejects meta-adapters.
+            // Plain adapters register via addBalanceAdapters. (A meta-adapter with no configured instances is not
+            // expected; it would fail addBalanceAdapters loudly with MetaAdapterNotAllowed.)
+            bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+
             if (!IBalances(navProxy).isAdapterRegistered(deployed)) {
-                address[] memory one = new address[](1);
-                one[0] = deployed;
-                (bool ok, bytes memory data) =
-                    navProxy.call(abi.encodeWithSignature("addBalanceAdapters(address[])", one));
+                bytes memory regData;
+                if (desired.length > 0) {
+                    regData = abi.encodeWithSignature("addMetaBalanceAdapter(address,bytes32[])", deployed, desired);
+                } else {
+                    address[] memory one = new address[](1);
+                    one[0] = deployed;
+                    regData = abi.encodeWithSignature("addBalanceAdapters(address[])", one);
+                }
+                (bool ok, bytes memory data) = navProxy.call(regData);
                 if (!ok) {
-                    revert(
-                        string(
-                            abi.encodePacked(
-                                "addBalanceAdapters failed for ", adapterNames[i], ": ", _decodeRevert(data)
-                            )
-                        )
-                    );
+                    revert(string(abi.encodePacked("register failed for ", adapterNames[i], ": ", _decodeRevert(data))));
                 }
                 console2.log("[OK] Added balance adapter:", adapterNames[i], deployed);
                 added++;
@@ -103,8 +108,8 @@ contract Configure is BaseDeployScript {
             // Meta-adapters (ADR 0010): reconcile the on-chain set to the configured set. addMetaInstances /
             // removeMetaInstances are incremental and all-or-nothing, so we diff against the current set (rather
             // than blindly add) to stay idempotent across re-runs: remove coordinates no longer in config, then
-            // add the ones not yet present.
-            bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+            // add the ones not yet present. For a meta-adapter just registered via addMetaBalanceAdapter the set is
+            // already seeded, so the diff below is a no-op.
             bytes32[] memory current = IBalances(navProxy).getMetaInstances(deployed);
             bytes32[] memory toRemove = _metaDiff(current, desired);
             bytes32[] memory toAdd = _metaDiff(desired, current);

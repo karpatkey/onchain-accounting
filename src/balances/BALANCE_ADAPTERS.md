@@ -186,16 +186,21 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
 - **Immutability preserved.** Meta-adapters have **no `Ownable`, no write functions** — they stay immutable like every other adapter. The mutable, governed instance set lives on NAVCalculator (UUPS-upgradeable, `MANAGER`-gated). No new mutable-adapter ADR is needed.
 - **Identity is typed, not stored.** `protocolId` is a compile-time `bytes32` constant from `ProtocolIds.sol`. `positionId` is computed at query time via `abi.encode(...)` of the position's key (e.g. vault address, market id). Nothing instance-specific is stored in config or constructor args.
 - **NAVCalculator read path is unchanged.** NAV calls `getAdapterPositions(account, assetFilter)` on every adapter uniformly; the meta-adapter pulls its own configured set inside that call, so there is no meta-specific branch in NAV (this also keeps `NAVCalculator` under the EIP-170 size limit).
-- **Configuring the instance set:** `MANAGER` calls `addMetaInstances(adapter, bytes32[])` / `removeMetaInstances(adapter, bytes32[])` on NAVCalculator. Both are incremental and all-or-nothing: `addMetaInstances` reverts on a coordinate already present or repeated within the batch (a duplicate would double-count NAV), `removeMetaInstances` reverts on a coordinate not present, and an empty list reverts. In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` reconciles the on-chain set to the configured set (diffs current vs desired, then emits the add/remove TX) automatically from either.
+- **Registering a meta-adapter:** meta-adapters (those implementing `IMetaBalanceAdapter`) register via
+  **`addMetaBalanceAdapter(adapter, bytes32[] instances)`** (MANAGER), which registers the adapter **and** seeds its
+  instance set atomically in one call. The plain `addBalanceAdapters([...])` path is reserved for non-meta adapters
+  and **reverts `MetaAdapterNotAllowed`** if handed a meta-adapter; conversely `addBalanceAdapters` is the only path
+  for non-meta adapters. The instance list may be empty (registers the meta-adapter with no instances yet).
 
-- **Registering a meta-adapter with its instances in one shot:** there is intentionally **no** combined
-  `addMetaBalanceAdapter(...)` on NAVCalculator — meta-adapters register through the same
-  `addBalanceAdapters([adapter])` as any other adapter (the registry has no meta/non-meta branch; ADR 0010 keeps it
-  that way to stay under EIP-170). To register **and** seed instances atomically in a single signer action, bundle the
-  two calls in one **Safe multiSend** transaction:
-  `addBalanceAdapters([metaAdapter])` + `addMetaInstances(metaAdapter, instances)`. The deploy path already does
-  this within one `06_Configure` broadcast. (Order matters: `addMetaInstances` reverts `InvalidBalanceAdapter` until
-  the adapter is registered, so the `addBalanceAdapters` call must come first in the bundle.)
+- **Updating the instance set:** once registered, `MANAGER` calls `addMetaInstances(adapter, bytes32[])` /
+  `removeMetaInstances(adapter, bytes32[])` on NAVCalculator. Both are incremental and all-or-nothing:
+  `addMetaInstances` reverts on a coordinate already present or repeated within the batch (a duplicate would
+  double-count NAV), `removeMetaInstances` reverts on a coordinate not present, an empty list reverts, and both
+  revert `NotMetaAdapter` if the target is not a meta-adapter. In deploy config, list the instances under
+  `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or
+  `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` registers
+  meta-adapters via `addMetaBalanceAdapter` (seeded from config) and on re-runs reconciles the on-chain set to the
+  configured set (diffs current vs desired, then emits the add/remove TX).
 
 ### 6.2 Human-readable labels — `IPositionDescribable`
 

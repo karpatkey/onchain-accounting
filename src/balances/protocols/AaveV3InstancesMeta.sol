@@ -90,12 +90,34 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     }
 
     /// @inheritdoc MetaBalanceOracle
-    /// @dev `virtual` so the Aave V2 subclass can override.
+    /// @dev Label is "<reserve symbol> position (<market id>)" — the market id (e.g. "Aave Ethereum Market" vs
+    ///      "Aave V3 Lido Ethereum") distinguishes instances that share a reserve symbol, since protocolId is the
+    ///      same across all instances and positionId carries the market only as the pool address. Falls back to
+    ///      "<reserve symbol> position" when the market id is unavailable. `virtual` so the V2 subclass can override.
     function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
         if (pid.length < 64) return "";
-        (, address reserve) = abi.decode(pid, (address, address));
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            return string.concat(sym, " position");
+        (address pool, address reserve) = abi.decode(pid, (address, address));
+        string memory sym;
+        try IERC20Metadata(reserve).symbol() returns (string memory s) {
+            sym = s;
+        } catch {
+            return "";
+        }
+        string memory market = _marketId(pool);
+        return
+            bytes(market).length == 0 ? string.concat(sym, " position") : string.concat(sym, " position (", market, ")");
+    }
+
+    /// @notice Resolves the instance's market id (for the display label) from its pool.
+    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`; the V2 subclass overrides to use `getAddressesProvider()`.
+    ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
+    function _marketId(address pool) internal view virtual returns (string memory) {
+        try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
+            try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
+                return m;
+            } catch {
+                return "";
+            }
         } catch {
             return "";
         }

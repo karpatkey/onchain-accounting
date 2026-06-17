@@ -1,0 +1,181 @@
+{
+  "protocol": "Uniswap V3",
+  "adapter": "src/balances/protocols/uniswap/UniswapV3Pool.sol",
+  "adapter_test": "test/balances/protocols/fork/UniswapV3Pool.fork.t.sol",
+  "test_contract": "UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP",
+  "chain": { "id": 1, "name": "mainnet" },
+  "block": {
+    "number": 25151872,
+    "timestamp": 1779465815,
+    "timestamp_hex": "0x6a107e57",
+    "timestamp_utc": "2026-05-22 16:03:35 UTC",
+    "rationale": "Dev-anvil pin captured at the moment start-forks.sh ran; FORK_BLOCK in the new test class matches exactly. Refork performed right before user handoff so the Debank side-channel cross-check sees minutes of drift, not hours."
+  },
+  "npm": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+  "pools": [
+    {
+      "key": "USDC_WETH_500",
+      "address": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+      "label": "USDC/WETH 0.05%",
+      "token0": { "symbol": "USDC", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "decimals": 6 },
+      "token1": { "symbol": "WETH", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18 },
+      "fee": 500,
+      "currentTick_at_fork_block": 199730
+    },
+    {
+      "key": "WETH_USDT_3000",
+      "address": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
+      "label": "WETH/USDT 0.3%",
+      "token0": { "symbol": "WETH", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18 },
+      "token1": { "symbol": "USDT", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "decimals": 6 },
+      "fee": 3000,
+      "currentTick_at_fork_block": -199732
+    },
+    {
+      "key": "WBTC_WETH_3000",
+      "address": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
+      "label": "WBTC/WETH 0.3%",
+      "token0": { "symbol": "WBTC", "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", "decimals": 8 },
+      "token1": { "symbol": "WETH", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18 },
+      "fee": 3000,
+      "currentTick_at_fork_block": 266166
+    }
+  ],
+  "holders": [
+    {
+      "label": "ACCOUNT_12",
+      "address": "0x8d27DEB2405717d649346502F52B959AAB4eb3af",
+      "notes": [
+        "Already in test/integration/accounts.json as ACCOUNT_12_MAINNET_UNISWAP_V3_LP.",
+        "Purpose-built for V3 verification. 4 NFTs at the fork block, all in registered pools."
+      ],
+      "nfts_at_fork_block": [
+        {
+          "tokenId": 1204560,
+          "pool_key": "USDC_WETH_500",
+          "tickLower": 199820, "tickUpper": 202240,
+          "liquidity": "0",
+          "tokensOwed0": "0", "tokensOwed1": "0",
+          "branch": "closed (filter)"
+        },
+        {
+          "tokenId": 1231724,
+          "pool_key": "USDC_WETH_500",
+          "tickLower": 198400, "tickUpper": 199450,
+          "liquidity": "189077004069066",
+          "tokensOwed0": "0", "tokensOwed1": "0",
+          "branch": "above-range (tickCurrent 199730 >= tickUpper 199450) — principal allocates to token1 (WETH)"
+        },
+        {
+          "tokenId": 1258127,
+          "pool_key": "WETH_USDT_3000",
+          "tickLower": -198960, "tickUpper": -198660,
+          "liquidity": "0",
+          "tokensOwed0": "0", "tokensOwed1": "0",
+          "branch": "closed (filter)"
+        },
+        {
+          "tokenId": 1276763,
+          "pool_key": "WETH_USDT_3000",
+          "tickLower": -198660, "tickUpper": -198420,
+          "liquidity": "510687061207343",
+          "tokensOwed0": "0", "tokensOwed1": "0",
+          "branch": "below-range (tickCurrent -199732 < tickLower -198660) — principal allocates to token0 (WETH)"
+        }
+      ],
+      "expected_per_pool": [
+        {
+          "pool_key": "USDC_WETH_500",
+          "expected": { "USDC": "0", "WETH": "207115068443336551" },
+          "humanized": { "USDC": 0, "WETH": 0.20711506844333655 },
+          "branch": "above-range principal (token1 only) + fee delta (rounds to 0 at this block)",
+          "getOraclePositions_legs": [
+            { "asset": "WETH", "type": "Supply", "amount": "207115068443336551" }
+          ]
+        },
+        {
+          "pool_key": "WETH_USDT_3000",
+          "expected": { "WETH": "125889614410826179", "USDT": "740253" },
+          "humanized": { "WETH": 0.1258896144108262, "USDT": 0.740253 },
+          "branch": "below-range principal (token0 only) + fee delta on both tokens",
+          "getOraclePositions_legs": [
+            { "asset": "WETH", "type": "Supply" },
+            { "asset": "WETH", "type": "Fees" },
+            { "asset": "USDT", "type": "Fees" }
+          ]
+        },
+        {
+          "pool_key": "WBTC_WETH_3000",
+          "expected": { "WBTC": "0", "WETH": "0" },
+          "branch": "no exposure (no NFTs in this pool)"
+        }
+      ]
+    },
+    {
+      "label": "HOLDER_B",
+      "address": "0xa1097367be4C8bbdEf3D881E3c24E6260Afef36E",
+      "notes": [
+        "Heavy mainnet Uniswap V3 LP manager — 33 NFTs total at the fork block.",
+        "19 of the 33 NFTs are in our 3 registered pools (18 closed, 1 active in-range).",
+        "The active NFT (#1287303, WETH/USDT 0.3%) sits in-range AND has non-zero tokensOwed on both tokens.",
+        "The other 14 NFTs are in foreign pools (different (token0,token1,fee) tuples) — exercise the filter at scale.",
+        "Total iteration: 33 NFTs per query, well under the adapter's _MAX_POSITIONS = 256 bound."
+      ],
+      "nft_count_total": 33,
+      "nft_count_in_our_pools": 19,
+      "nft_count_active": 1,
+      "active_nft": {
+        "tokenId": 1287303,
+        "pool_key": "WETH_USDT_3000",
+        "tickLower": -199740, "tickUpper": -199380,
+        "liquidity": "39208686269998470",
+        "tokensOwed0": "56046245273173549",
+        "tokensOwed1": "130421016",
+        "branch": "IN-RANGE (tickLower -199740 <= tickCurrent -199732 < tickUpper -199380) — principal on both tokens + fee delta + settled tokensOwed on both"
+      },
+      "expected_per_pool": [
+        {
+          "pool_key": "USDC_WETH_500",
+          "expected": { "USDC": "0", "WETH": "0" },
+          "branch": "only closed NFTs in this pool (filter test)"
+        },
+        {
+          "pool_key": "WETH_USDT_3000",
+          "expected": { "WETH": "14895136734773279820", "USDT": "914254606" },
+          "humanized": { "WETH": 14.89513673477328, "USDT": 914.254606 },
+          "branch": "in-range principal (both tokens) + fee delta (both tokens) + settled tokensOwed (both tokens) on NFT #1287303; foreign-pool + closed filters drop the other 32 NFTs",
+          "getOraclePositions_legs": [
+            { "asset": "WETH", "type": "Supply" },
+            { "asset": "USDT", "type": "Supply" },
+            { "asset": "WETH", "type": "Fees" },
+            { "asset": "USDT", "type": "Fees" }
+          ]
+        },
+        {
+          "pool_key": "WBTC_WETH_3000",
+          "expected": { "WBTC": "0", "WETH": "0" },
+          "branch": "1 closed NFT (#1239418) in this pool — filter test"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "method": "decreaseLiquidity-collect-simulation + strict-equality-baseline",
+    "ground_truth_source": "Each of the 3 active NFTs is run through `vm.prank(holder)` + `NPM.decreaseLiquidity(fullLiquidity)` + `NPM.collect(uint128.max)` against the same forked Alchemy archive at block 25,151,872. The collect-return amounts are the canonical Uniswap V3 settlement: principal at current price + accrued fees + settled tokensOwed. The adapter's `getOracleBalanceForAsset(holder, token)` MUST equal that amount.",
+    "notes": [
+      "This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity + collect` simulation — same NPM contract, same archive state, same EVM. No derivation drift possible between adapter math and protocol settlement math.",
+      "The 18 strict-equality tests pin the adapter's outputs as regression baselines (catches future drift). The 3 ground-truth tests independently validate those baselines against the protocol itself (catches initial adapter-math bugs).",
+      "Branch coverage in one block: in-range + above-range + below-range principal/fees + settled tokensOwed > 0 (both tokens) + foreign-pool + closed-position filters + bounded iteration at 33 NFTs.",
+      "Math libs are bit-equivalent to Uniswap v3-periphery PositionValue per docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md."
+    ]
+  },
+  "result": {
+    "tests_run": 21,
+    "tests_passed": 21,
+    "tests_failed": 0,
+    "strict_equality_tests": 18,
+    "ground_truth_cross_check_tests": 3,
+    "delta_observed_minus_expected": "0 across all assertions",
+    "captured_at": "2026-05-22 16:03:35 UTC (mainnet block 25,151,872) — forge test --match-contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP"
+  }
+}

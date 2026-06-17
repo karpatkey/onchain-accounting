@@ -1025,13 +1025,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             s[25] = "crvUSD";
             s[26] = "sUSDS";
             s[27] = "syrupUSDC";
-            s[28] = "ETHx";
-            s[29] = "COMP";
-            s[30] = "EURC";
-            s[31] = "WBTC";
-            s[32] = "AAVE";
-            s[33] = "osETH";
-            s[34] = "EIGEN";
+            s[28] = "COMP";
+            s[29] = "WBTC";
+            s[30] = "AAVE";
+            s[31] = "osETH"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * ETH/USD
+            s[32] = "EIGEN";
+            s[33] = "ETHx"; // Custom-priced (ETHx_PriceOracle); skipped until assets.json .tokens.1.ETHx.pricefeed is set
+            s[34] = "EURC";
             return s;
         }
         if (chainId == 42161) {

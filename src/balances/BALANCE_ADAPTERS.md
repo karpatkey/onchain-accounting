@@ -188,6 +188,15 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
 - **NAVCalculator read path is unchanged.** NAV calls `getAdapterPositions(account, assetFilter)` on every adapter uniformly; the meta-adapter pulls its own configured set inside that call, so there is no meta-specific branch in NAV (this also keeps `NAVCalculator` under the EIP-170 size limit).
 - **Configuring the instance set:** `MANAGER` calls `addMetaInstances(adapter, bytes32[])` / `removeMetaInstances(adapter, bytes32[])` on NAVCalculator. Both are incremental and all-or-nothing: `addMetaInstances` reverts on a coordinate already present or repeated within the batch (a duplicate would double-count NAV), `removeMetaInstances` reverts on a coordinate not present, and an empty list reverts. In deploy config, list the instances under `balanceAdapters.<name>.metaInstances` (address array, widened to bytes32 — for vault/pool-address adapters) or `metaInstancesRaw` (raw bytes32 — for marketId-keyed adapters like `MorphoMarketsMeta`); `06_Configure` reconciles the on-chain set to the configured set (diffs current vs desired, then emits the add/remove TX) automatically from either.
 
+- **Registering a meta-adapter with its instances in one shot:** there is intentionally **no** combined
+  `addMetaBalanceAdapter(...)` on NAVCalculator — meta-adapters register through the same
+  `addBalanceAdapters([adapter])` as any other adapter (the registry has no meta/non-meta branch; ADR 0010 keeps it
+  that way to stay under EIP-170). To register **and** seed instances atomically in a single signer action, bundle the
+  two calls in one **Safe multiSend** transaction:
+  `addBalanceAdapters([metaAdapter])` + `addMetaInstances(metaAdapter, instances)`. The deploy path already does
+  this within one `06_Configure` broadcast. (Order matters: `addMetaInstances` reverts `InvalidBalanceAdapter` until
+  the adapter is registered, so the `addBalanceAdapters` call must come first in the bundle.)
+
 ### 6.2 Human-readable labels — `IPositionDescribable`
 
 All adapters implement `IPositionDescribable`:

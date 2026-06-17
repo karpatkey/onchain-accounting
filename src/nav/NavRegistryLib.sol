@@ -115,7 +115,8 @@ library NavRegistryLib {
     ///         implement both IBalanceAdapter and IMetaBalanceAdapter. Reverts DuplicateBalanceAdapter if already
     ///         registered, InvalidBalanceAdapter / NotMetaAdapter on the interface checks, and DuplicateMetaInstance
     ///         on a repeated coordinate. An empty instance list is allowed (registers the meta-adapter with no
-    ///         instances yet). The running count + event stay in the caller wrapper.
+    ///         instances yet). Emits BalanceAdapterAdded here (surfaces from the caller's address via DELEGATECALL);
+    ///         the running counts (balanceAdapterTotalCount, _metaInstanceTotal) stay in the caller wrapper.
     /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
     /// @param globalAdapters The global adapter list (storage ref)
     /// @param adapterTypes The adapter-type map (storage ref)

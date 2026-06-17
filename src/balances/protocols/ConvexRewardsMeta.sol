@@ -21,7 +21,7 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      This eliminates the need to pass lpToken as a constructor arg (as the per-instance adapter did).
 ///
 ///      Per-rewarder positions emitted:
-///        1. **Supplied** legs — one per registered Curve pool coin, pro-rata from staked LP.
+///        1. **Staking** legs — one per registered Curve pool coin, pro-rata from staked LP.
 ///           `stakedLp = rewarder.balanceOf(account)`; decomposition via CurvePoolLib.
 ///        2. **Rewards** leg for CRV — `rewarder.earned(account)` (view-safe; exact, not a lower bound
 ///           like the Curve Minter approach — Convex accounts for all pending CRV in earned()).
@@ -78,14 +78,14 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         address rewarder = _toAddress(instance);
         uint256 stakedLp = IConvexRewarder(rewarder).balanceOf(account);
 
-        // Pre-allocate: MAX_COINS Supplied + CRV Earned + CVX Earned + MAX_EXTRA Earned
+        // Pre-allocate: MAX_COINS Staking + CRV Rewards + CVX Rewards + MAX_EXTRA Rewards
         INAVCalculator.PositionBalance[] memory tmp =
             new INAVCalculator.PositionBalance[](CurvePoolLib.MAX_COINS + 2 + _MAX_EXTRA);
         uint256 n;
 
         bytes memory pid = _instancePositionId(instance);
 
-        // ── 1. Supplied legs: staked LP → underlying Curve pool tokens ────────
+        // ── 1. Staking legs: staked LP → underlying Curve pool tokens ─────────
         if (stakedLp > 0) {
             address lpToken = _lpTokenOf(rewarder);
             if (lpToken != address(0)) {

@@ -619,8 +619,8 @@ Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName                | positionLabel       |
 |-------|--------|-------------|--------------|------------------------------|---------------------|
-| AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3 Safety Module"`    | `"lending position"` |
-| AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3 Safety Module"`    | `"lending position"` |
+| AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3"`                  | `"safety module"`   |
+| AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3"`                  | `"safety module"`   |
 | **NAV** | | **+102 000** | | | |
 
 #### `AaveUmbrella` — Umbrella stake
@@ -629,8 +629,8 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | positionLabel       |
 |-------|--------|-------------|--------------|-------------------|---------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"lending position"` |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"lending position"` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"umbrella stake"`  |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"umbrella stake"`  |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD
@@ -639,7 +639,7 @@ Scenario: 2 000 USDC deposited in Cap.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
 |-------|--------|-------------|--------------|--------------|---------------------|
-| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"lending position"` |
+| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"supply"`          |
 
 #### `DaiDsr` — DAI Savings Rate
 
@@ -647,7 +647,7 @@ Scenario: 3 000 DAI earning DSR.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
 |-------|--------|-------------|--------------|--------------|---------------------|
-| DAI   | 3 000  | +3 000      | `Supplied`   | `"DAI DSR"`  | `"lending position"` |
+| DAI   | 3 000  | +3 000      | `Supplied`   | `"MakerDAO"` | `"DAI savings rate"` |
 
 #### `ERC4626Wrap` — wrapper
 
@@ -967,7 +967,7 @@ positions are NOT account-global — each uses `abi.encode(asset)` to identify t
 ```solidity
 enum PositionKind {
     Wallet,     // plain ERC20 / native balance (ERC20DefaultOracle)
-    Supplied,   // lending supply, vault shares, staking principal, LP principal
+    Supplied,   // lending supply, vault shares, unstaked LP principal
     Borrowed,   // any debt position (isDebt = true)
     Collateral, // supply locked as collateral (e.g. Aave usageAsCollateralEnabled = true)
     Staking,    // staking principal: tokens locked in a staking contract
@@ -1093,7 +1093,7 @@ const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
 ```typescript
 const [stakeToken] = abi.decode(["address"], pos.positionId);
 // stakeToken — stkAAVE, stkABPT, stkABPTv2, or stkGHO
-// Supplied   → staked principal (denominated in the stake token's STAKED_TOKEN())
+// Staking    → staked principal (denominated in the stake token's STAKED_TOKEN())
 // Rewards    → claimable AAVE rewards
 ```
 
@@ -1102,7 +1102,7 @@ const [stakeToken] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [stakeToken] = abi.decode(["address"], pos.positionId);
 // stakeToken — UmbrellaStakeToken (e.g. stkwaEthUSDC.v1, stkGHO.v1)
-// Supplied   → principal, denominated in the bare reserve (USDC, WETH, GHO …)
+// Staking    → principal, denominated in the bare reserve (USDC, WETH, GHO …)
 // Rewards    → claimable rewards, same bare reserve denomination
 ```
 
@@ -1167,7 +1167,7 @@ const [comet] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [vault] = abi.decode(["address"], pos.positionId);
 // vault — StakeWise V3 ERC4626-like vault
-// Supplied → vault shares → underlying (ETH / GNO)
+// Staking  → vault shares → underlying (ETH / GNO)
 // Borrowed → minted osToken debt → underlying equivalent
 ```
 
@@ -1184,7 +1184,7 @@ const [pool] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [gauge] = abi.decode(["address"], pos.positionId);
 // gauge — Balancer V3 liquidity gauge
-// Supplied → one leg per pool token (gauge-staked BPT share)
+// Staking  → one leg per pool token (gauge-staked BPT share)
 // Rewards  → BAL + extra reward token legs
 ```
 
@@ -1204,7 +1204,7 @@ const bpt = "0x" + poolId.slice(2, 42);          // top 20 bytes of poolId
 ```typescript
 const [gauge] = abi.decode(["address"], pos.positionId);
 // gauge — Balancer V2 liquidity gauge (child or root)
-// Supplied → one leg per pool token (gauge-staked BPT share)
+// Staking  → one leg per pool token (gauge-staked BPT share)
 // Rewards  → BAL + extra reward token legs
 ```
 
@@ -1221,7 +1221,7 @@ const [pool] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [gauge] = abi.decode(["address"], pos.positionId);
 // gauge — Curve liquidity gauge
-// Supplied → one leg per pool coin (staked LP share, pro-rata)
+// Staking  → one leg per pool coin (staked LP share, pro-rata)
 // Rewards  → CRV (lower-bound) + extra reward token legs
 ```
 
@@ -1230,7 +1230,7 @@ const [gauge] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [rewarder] = abi.decode(["address"], pos.positionId);
 // rewarder — Convex BaseRewardPool address
-// Supplied → one leg per underlying Curve pool coin (staked LP, pro-rata)
+// Staking  → one leg per underlying Curve pool coin (staked LP, pro-rata)
 // Rewards  → CRV, CVX, and extra reward token legs
 ```
 
@@ -1239,7 +1239,7 @@ const [rewarder] = abi.decode(["address"], pos.positionId);
 ```typescript
 const [auraRewards] = abi.decode(["address"], pos.positionId);
 // auraRewards — Aura BaseRewardPool4626 address
-// Supplied → one leg per Balancer pool token (staked BPT share)
+// Staking  → one leg per Balancer pool token (staked BPT share)
 // Rewards  → BAL, AURA, and extra reward token legs
 ```
 

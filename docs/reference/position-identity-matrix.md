@@ -4,7 +4,7 @@ Verified against `src/balances/` emission code on 2026-06-03 (includes the `Posi
 
 ## How a position is identified
 
-Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceOracle` (provenance) and `isDebt` (sign, derivable from `positionKind == Borrowed`) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
+Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceOracle` (provenance) and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
 
 **Kind assignment rule:** `positionKind` reflects the **outermost action family** — what the account does to enter/exit the position. A position exited via unstake is `Staking` regardless of what is wrapped inside (the inner exposure stays recoverable from `protocolId`/`positionId`); LP principal sitting unstaked in the wallet is `Supplied`.
 
@@ -87,7 +87,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-03, post-assignment):
 
 ## Other observable invariants
 
-- `isDebt == true` occurs **only** with `positionKind == Borrowed` (all 6 sites) — the documented derivability holds everywhere.
+- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 6 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
 - Empty `positionId` (`""`) marks account-global positions: DaiDsr and the three withdrawal queues. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {LibraryPins} from "../utils/LibraryPins.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
 import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
@@ -18,15 +19,6 @@ import {console2} from "forge-std/console2.sol";
 ///      references them via DELEGATECALL.
 contract DeployNAVImplementation is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
-
-    // The library addresses NAVCalculator is linked against (the `libraries` pins in foundry.toml).
-    // The CREATE2 addresses computed below from the current library bytecode MUST equal these, or the
-    // deployed NAVCalculator would DELEGATECALL an address with no code and revert on initialize. The
-    // LibraryPinConsistency test re-derives both from current bytecode in CI; this is the deploy-time
-    // backstop. If these ever fire, the library bytecode drifted — regenerate the pins (and update both
-    // here and in foundry.toml) for the pinned solc + bytecode_hash.
-    address internal constant LINKED_PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
-    address internal constant LINKED_NAV_REGISTRY_LIB = 0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9;
 
     struct ImplPlan {
         address priceFeedLib;
@@ -48,13 +40,30 @@ contract DeployNAVImplementation is BaseDeployScript {
 
         // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked
         // against — otherwise NAV would deploy fine but revert on initialize (DELEGATECALL to empty code).
+        // LibraryPins is the single Solidity source of truth for these pins (shared with the CI guard in
+        // test/LibraryPinConsistency.t.sol); if these fire the library bytecode drifted — regenerate the pins
+        // (LibraryPins + foundry.toml) for the pinned solc + bytecode_hash.
         require(
-            plan.priceFeedLib == LINKED_PRICE_FEED_LIB,
+            plan.priceFeedLib == LibraryPins.PRICE_FEED_LIB,
             "PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
         );
         require(
-            plan.navRegistryLib == LINKED_NAV_REGISTRY_LIB,
+            plan.navRegistryLib == LibraryPins.NAV_REGISTRY_LIB,
             "NavRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+
+        // End-to-end: the NAVCalculator impl bytecode about to be broadcast must actually be linked against
+        // both pinned addresses. The two checks above only confirm the libs' own bytecode maps to LibraryPins;
+        // if foundry.toml `libraries` drifts from LibraryPins, those still pass but NAVCalculator would
+        // DELEGATECALL the wrong (empty) address and revert on initialize(). Mirrors the CI guard in
+        // test/LibraryPinConsistency.t.sol.
+        require(
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.PRICE_FEED_LIB),
+            "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
+        );
+        require(
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.NAV_REGISTRY_LIB),
+            "NAVCalculator impl not linked against pinned NavRegistryLib (foundry.toml `libraries` drift)"
         );
 
         // EOA deploy: broadcast the three CREATE2 deploys (PriceFeedLib, NavRegistryLib, NAVCalculator impl) directly

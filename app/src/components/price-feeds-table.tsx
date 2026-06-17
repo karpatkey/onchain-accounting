@@ -20,7 +20,10 @@ import { TokenLogo } from '@/components/token-logo'
 import { formatAge, formatHeartbeat, formatPrice, isStaleWarning, shortenAddress } from '@/lib/format'
 import { explorerAddressUrl } from '@/config/chains'
 
-const PRICE_TYPES = ['Chainlink', 'Custom'] as const
+// Indices match the Solidity IPrices.PriceType enum: Chainlink=0, Redstone=1, API3=2, Custom=3.
+const PRICE_TYPES = ['Chainlink', 'Redstone', 'API3', 'Custom'] as const
+// Only Custom (IPriceFeedCustom) feeds use the updatedAt==0 "Live" sentinel.
+const PRICE_TYPE_CUSTOM = 3
 
 export type FilterStatus = 'all' | 'fresh' | 'warning'
 type SortKey = 'asset' | 'price' | 'heartbeat' | 'lastUpdated' | 'status'
@@ -255,7 +258,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                         {new Date(Number(feed.updatedAt) * 1000).toLocaleString()}
                       </TooltipContent>
                     </Tooltip>
-                  ) : feed.priceType === 1 ? (
+                  ) : feed.priceType === PRICE_TYPE_CUSTOM ? (
                     <Tooltip>
                       <TooltipTrigger className="cursor-default text-muted-foreground">Live</TooltipTrigger>
                       <TooltipContent>{CUSTOM_LIVE_TIP}</TooltipContent>

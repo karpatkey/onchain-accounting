@@ -129,7 +129,7 @@ interface TokenLogoProps {
 export function TokenLogo({ symbol, address, chainId, className = 'w-5 h-5' }: TokenLogoProps) {
   const [urlIndex, setUrlIndex] = useState(0)
 
-  useEffect(() => { setUrlIndex(0) }, [address, chainId])
+  useEffect(() => { setUrlIndex(0) }, [address, chainId, symbol])
 
   const urls = buildUrls(chainId, address, symbol)
   const currentUrl = urls[urlIndex]

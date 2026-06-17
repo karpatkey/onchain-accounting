@@ -61,6 +61,12 @@ function buildProtocolGroups(
   })
 }
 
+// Truncate a fixed-point bigint to `dp` decimals as a string — avoids Number() precision loss / Infinity on large values.
+function csvFixed(value: bigint, decimals: number, dp: number): string {
+  const [int, frac = ''] = formatUnits(value, decimals).split('.')
+  return dp === 0 ? int : `${int}.${(frac + '0'.repeat(dp)).slice(0, dp)}`
+}
+
 function exportCsv(positionResults: ChainPositions[], address: string) {
   const rows = ['Protocol,Chain,Type,Asset,Balance,Price (USD),Value (USD)']
   for (const { label, positions } of positionResults) {
@@ -70,9 +76,9 @@ function exportCsv(positionResults: ChainPositions[], address: string) {
         `"${label}"`,
         pos.isDebt ? 'Borrow' : 'Supply',
         `"${pos.underlyingAsset.symbol}"`,
-        Number(formatUnits(pos.amount, pos.underlyingAsset.decimals)).toFixed(6),
-        Number(formatUnits(pos.price, pos.priceDecimals)).toFixed(6),
-        Number(formatUnits(pos.value < 0n ? -pos.value : pos.value, 8)).toFixed(2),
+        csvFixed(pos.amount, pos.underlyingAsset.decimals, 6),
+        csvFixed(pos.price, pos.priceDecimals, 6),
+        csvFixed(pos.value < 0n ? -pos.value : pos.value, 8, 2),
       ].join(','))
     }
   }

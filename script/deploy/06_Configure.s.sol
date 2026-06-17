@@ -4,8 +4,10 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {IBalances} from "../../src/balances/IBalances.sol";
+import {IMetaBalanceAdapter} from "../../src/balances/IMetaBalanceAdapter.sol";
 import {IBridgeEscrow} from "../../src/bridge/IBridgeEscrow.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -80,15 +82,16 @@ contract Configure is BaseDeployScript {
             address deployed = _readAdapterDeployed("balanceAdapters", adapterNames[i]);
             if (deployed == address(0)) continue;
 
-            // A meta-adapter is identified by having a configured instance set; it registers via
-            // addMetaBalanceAdapter (atomic register + seed) since addBalanceAdapters rejects meta-adapters.
-            // Plain adapters register via addBalanceAdapters. (A meta-adapter with no configured instances is not
-            // expected; it would fail addBalanceAdapters loudly with MetaAdapterNotAllowed.)
+            // Meta-adapters (those implementing IMetaBalanceAdapter) register via addMetaBalanceAdapter (atomic
+            // register + seed), since addBalanceAdapters rejects them; plain adapters use addBalanceAdapters. The
+            // adapter type is decided by the interface (ERC165), not by whether instances are configured, so a
+            // meta-adapter with an empty configured set still registers correctly (seeded later via the reconcile).
             bytes32[] memory desired = _readMetaInstances(adapterNames[i]);
+            bool isMeta = ERC165Checker.supportsInterface(deployed, type(IMetaBalanceAdapter).interfaceId);
 
             if (!IBalances(navProxy).isAdapterRegistered(deployed)) {
                 bytes memory regData;
-                if (desired.length > 0) {
+                if (isMeta) {
                     regData = abi.encodeWithSignature("addMetaBalanceAdapter(address,bytes32[])", deployed, desired);
                 } else {
                     address[] memory one = new address[](1);

@@ -149,7 +149,10 @@ abstract contract Balances is IBalances, Initializable {
     // Internal API
     //
 
-    /// @notice Adds a balance adapter globally.
+    /// @notice Adds a single (non-meta) balance adapter globally.
+    /// @dev Not on the production path — NAVCalculator registers through the batch `_addBalanceAdapters` /
+    ///      `_addMetaBalanceAdapter`. Retained for the test harness (`addBalanceAdapterDirect`); kept thin so the
+    ///      single and batch validation stay equivalent (both delegate to `NavRegistryLib.addBalanceAdapter`).
     /// @param adapter The address of the adapter.
     function _addBalanceAdapter(address adapter) internal {
         // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to

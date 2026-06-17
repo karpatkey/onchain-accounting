@@ -108,21 +108,7 @@ library NavRegistryLib {
         mapping(address => IBalances.AdapterType) storage adapterTypes,
         address adapter
     ) external {
-        if (isAdapterRegistered[adapter]) {
-            revert IBalances.DuplicateBalanceAdapter();
-        }
-        if (adapter == address(0)) revert InvalidArguments();
-        if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) {
-            revert IBalances.InvalidBalanceAdapter();
-        }
-        // Meta-adapters must register via addMetaBalanceAdapter (atomic register + instance seed), not the plain path.
-        if (adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
-            revert IBalances.MetaAdapterNotAllowed();
-        }
-
-        globalAdapters.push(adapter);
-        adapterTypes[adapter] = IBalances.AdapterType.Custom;
-        isAdapterRegistered[adapter] = true;
+        _registerAdapter(isAdapterRegistered, globalAdapters, adapterTypes, adapter, false);
     }
 
     /// @notice Registers a meta-adapter and seeds its instance set in one operation. Requires the adapter to
@@ -145,35 +131,9 @@ library NavRegistryLib {
         address adapter,
         bytes32[] memory instances
     ) external returns (uint256 added) {
-        if (isAdapterRegistered[adapter]) {
-            revert IBalances.DuplicateBalanceAdapter();
-        }
-        if (adapter == address(0)) revert InvalidArguments();
-        if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) {
-            revert IBalances.InvalidBalanceAdapter();
-        }
-        if (!adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
-            revert IBalances.NotMetaAdapter();
-        }
-
-        globalAdapters.push(adapter);
-        adapterTypes[adapter] = IBalances.AdapterType.Custom;
-        isAdapterRegistered[adapter] = true;
+        _registerAdapter(isAdapterRegistered, globalAdapters, adapterTypes, adapter, true);
         emit IBalances.BalanceAdapterAdded(address(0), adapter, IBalances.AdapterType.Custom);
-
-        // Seed instances (same dup-rejecting append as addMetaInstances; the live set already includes prior pushes).
-        added = instances.length;
-        bytes32[] storage set = metaInstances[adapter];
-        for (uint256 i = 0; i < added; i++) {
-            bytes32 instance = instances[i];
-            uint256 len = set.length;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    revert IBalances.DuplicateMetaInstance();
-                }
-            }
-            set.push(instance);
-        }
+        added = _appendInstances(metaInstances[adapter], instances);
     }
 
     /// @notice Removes an adapter from the global registry (swap-remove). Reverts on the ERC20Default singleton or an
@@ -226,17 +186,7 @@ library NavRegistryLib {
         if (count == 0) revert InvalidArguments();
         for (uint256 i = 0; i < count; i++) {
             address adapter = adapters[i];
-            if (adapter == address(0)) revert InvalidArguments();
-            if (isAdapterRegistered[adapter]) revert IBalances.DuplicateBalanceAdapter();
-            if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) {
-                revert IBalances.InvalidBalanceAdapter();
-            }
-            if (adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
-                revert IBalances.MetaAdapterNotAllowed();
-            }
-            globalAdapters.push(adapter);
-            adapterTypes[adapter] = IBalances.AdapterType.Custom;
-            isAdapterRegistered[adapter] = true;
+            _registerAdapter(isAdapterRegistered, globalAdapters, adapterTypes, adapter, false);
             emit IBalances.BalanceAdapterAdded(address(0), adapter, IBalances.AdapterType.Custom);
         }
     }
@@ -346,24 +296,10 @@ library NavRegistryLib {
         if (!adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
             revert IBalances.NotMetaAdapter();
         }
-        added = instances.length;
-        if (added == 0) {
+        if (instances.length == 0) {
             revert InvalidArguments();
         }
-
-        bytes32[] storage set = metaInstances[adapter];
-        for (uint256 i = 0; i < added; i++) {
-            bytes32 instance = instances[i];
-            // Reject duplicates against the live set, which already includes coordinates pushed earlier in this
-            // batch — so a coordinate repeated within `instances` is caught too.
-            uint256 len = set.length;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    revert IBalances.DuplicateMetaInstance();
-                }
-            }
-            set.push(instance);
-        }
+        added = _appendInstances(metaInstances[adapter], instances);
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (all-or-nothing, swap-and-pop). Reverts
@@ -408,6 +344,54 @@ library NavRegistryLib {
             if (!found) {
                 revert IBalances.MetaInstanceNotFound();
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers (shared by the single / batch / meta registration paths)
+    // -------------------------------------------------------------------------
+
+    /// @notice Validates and stores one adapter in the global registry (Custom type). Reverts DuplicateBalanceAdapter
+    ///         if already registered, InvalidArguments on a zero address, InvalidBalanceAdapter if it does not
+    ///         implement IBalanceAdapter, and — depending on `requireMeta` — NotMetaAdapter (meta path, adapter is
+    ///         not a meta-adapter) or MetaAdapterNotAllowed (plain path, adapter IS a meta-adapter). Does not emit;
+    ///         the caller emits BalanceAdapterAdded so the batch path can log per-item.
+    function _registerAdapter(
+        mapping(address => bool) storage isAdapterRegistered,
+        address[] storage globalAdapters,
+        mapping(address => IBalances.AdapterType) storage adapterTypes,
+        address adapter,
+        bool requireMeta
+    ) private {
+        if (isAdapterRegistered[adapter]) {
+            revert IBalances.DuplicateBalanceAdapter();
+        }
+        if (adapter == address(0)) revert InvalidArguments();
+        if (!adapter.supportsInterface(type(IBalanceAdapter).interfaceId)) revert IBalances.InvalidBalanceAdapter();
+        bool isMeta = adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId);
+        if (requireMeta && !isMeta) revert IBalances.NotMetaAdapter();
+        if (!requireMeta && isMeta) revert IBalances.MetaAdapterNotAllowed();
+
+        globalAdapters.push(adapter);
+        adapterTypes[adapter] = IBalances.AdapterType.Custom;
+        isAdapterRegistered[adapter] = true;
+    }
+
+    /// @notice Appends `instances` to a meta-adapter's set, rejecting duplicates (DuplicateMetaInstance) against the
+    ///         live set — which already includes coordinates pushed earlier in this batch, so an in-batch repeat is
+    ///         caught too. Empty input is a no-op (returns 0); callers that forbid empty check before calling.
+    /// @return added The number of coordinates appended (== instances.length).
+    function _appendInstances(bytes32[] storage set, bytes32[] memory instances) private returns (uint256 added) {
+        added = instances.length;
+        for (uint256 i = 0; i < added; i++) {
+            bytes32 instance = instances[i];
+            uint256 len = set.length;
+            for (uint256 j = 0; j < len; j++) {
+                if (set[j] == instance) {
+                    revert IBalances.DuplicateMetaInstance();
+                }
+            }
+            set.push(instance);
         }
     }
 }

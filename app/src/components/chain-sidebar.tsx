@@ -64,7 +64,10 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
           const { Icon } = meta
           const isSelected = selectedChainId === chainId
           const isEmpty = !chainLoading && (nav?.value ?? 0n) === 0n
-          const pct = totalNav > 0n && nav?.value ? Math.round(Number(nav.value) / Number(totalNav) * 100) : 0
+          // Keep the ratio in bigint (basis points) so large NAVs can't overflow/lose
+          // precision in Number(); only the bounded 0–10000 result is converted.
+          const pct =
+            totalNav > 0n && nav?.value ? Math.round(Number((nav.value * 10_000n) / totalNav) / 100) : 0
 
           const button = (
             <button

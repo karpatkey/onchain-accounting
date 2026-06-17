@@ -1,19 +1,30 @@
 import { formatUnits } from 'viem'
 
+// Converting a fixed-point bigint via Number(formatUnits(...)) is exact for realistic
+// NAVs/amounts, but loses integer precision above Number.MAX_SAFE_INTEGER and overflows
+// to Infinity for absurdly large values. The formatters below take the fast Number path
+// normally and fall back to the exact (string-based) fixed-point representation when the
+// conversion is not finite, so the UI never renders "Infinity"/"NaN".
+
 export function formatUsd(value: bigint, decimals = 8): string {
-  const num = Number(formatUnits(value < 0n ? -value : value, decimals))
-  const formatted = num.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  const abs = value < 0n ? -value : value
+  const num = Number(formatUnits(abs, decimals))
+  const formatted = Number.isFinite(num)
+    ? num.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : `$${formatUnits(abs, decimals)}`
   return value < 0n ? `-${formatted}` : formatted
 }
 
 export function formatAmount(amount: bigint, decimals: number, symbol: string): string {
+  const suffix = symbol ? ` ${symbol}` : ''
   const num = Number(formatUnits(amount, decimals))
-  if (num === 0) return `0 ${symbol}`
+  if (num === 0) return `0${suffix}`
+  if (!Number.isFinite(num)) return `${formatUnits(amount, decimals)}${suffix}`
 
   let formatted: string
   if (num >= 1_000_000) {
@@ -25,11 +36,12 @@ export function formatAmount(amount: bigint, decimals: number, symbol: string): 
   } else {
     formatted = num.toPrecision(4)
   }
-  return `${formatted} ${symbol}`
+  return `${formatted}${suffix}`
 }
 
 export function formatPrice(price: bigint, decimals: number): string {
   const num = Number(formatUnits(price, decimals))
+  if (!Number.isFinite(num)) return `$${formatUnits(price, decimals)}`
   // 2dp for ≥$1 (consistent column alignment), 4dp for sub-$1 to show minor depegs
   const maxFd = num >= 1 ? 2 : num >= 0.01 ? 4 : 6
   return num.toLocaleString('en-US', {

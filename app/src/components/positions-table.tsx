@@ -37,7 +37,9 @@ export function PositionsTable({ data }: PositionsTableProps) {
   const sorted = [...positions].sort((a, b) => {
     const aAbs = a.value < 0n ? -a.value : a.value
     const bAbs = b.value < 0n ? -b.value : b.value
-    return bAbs > aAbs ? 1 : -1
+    if (bAbs > aAbs) return 1
+    if (bAbs < aAbs) return -1
+    return 0
   })
 
   return (

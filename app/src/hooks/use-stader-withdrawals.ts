@@ -63,7 +63,10 @@ const managerAbi = [
 ] as const
 
 // Drill-down key includes the leg asset (chainId:oracle:asset) so it stays consistent with multi-asset
-// adapters like Kelp. Stader's leg is always denominated in WETH (the adapter's UNDERLYING_TOKEN on mainnet).
+// adapters like Kelp. Stader's withdrawal queue is mainnet-only and its adapter is immutable + single-asset
+// (UNDERLYING_TOKEN = WETH), so hardcoding WETH always matches the position's underlyingAsset here — no need
+// for an extra on-chain read. If Stader were ever deployed on another chain or token, derive this from the
+// adapter's on-chain UNDERLYING_TOKEN instead (as the multi-asset Kelp hook does for its supported-asset list).
 const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2' as const
 const keyOf = (chainId: number, oracle: string, asset: string) =>
   `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`

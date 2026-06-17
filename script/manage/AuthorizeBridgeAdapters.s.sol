@@ -76,8 +76,6 @@ contract AuthorizeBridgeAdapters is BaseDeployScript {
         view
         returns (address)
     {
-        string memory deployed = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(deployed).length == 0) return address(0);
-        return vm.parseAddress(deployed);
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 }

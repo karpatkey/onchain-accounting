@@ -118,12 +118,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
     ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
-    ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
-    ///         exists in code but not yet deployed to production); (2) override when a prod
-    ///         address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
-    ///         to IPriceFeedCustom). Key is the feed deploy name, not the token symbol — use
-    ///         _priceFeedNameForSymbol to convert. Fork-only; production registration via
-    ///         RegisterAssets.s.sol reads pricefeed from assets.json.
+    ///         _registerAssetIfPossible: (1) fallback when an asset's Custom feed has no deployed
+    ///         address (feed exists in code but not yet deployed to production); (2) override when a
+    ///         prod address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
+    ///         to IPriceFeedCustom). Key is the feed deploy name from assets.json's `priceFeeds[].feed`,
+    ///         resolved via ConfigReader.readAssetFeedName. Fork-only; production registration via
+    ///         RegisterAssets.s.sol reads feeds from assets.json.
     mapping(string => address) internal _ephemeralPriceFeeds;
 
     function _setupAndDeploy() internal {
@@ -237,20 +237,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address addr = deployer();
         _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
-    }
-
-    /// @notice Returns the price feed name (as used in _deployAllPriceFeeds) for a given token symbol.
-    function _priceFeedNameForSymbol(string memory symbol) internal view returns (string memory) {
-        if (_chainId == 1) {
-            return symbol;
-        }
-        if (_chainId == 100 && _equals(symbol, "sDAI")) {
-            return "sXDAI";
-        }
-        if (_chainId == 100 && _equals(symbol, "osGNO")) {
-            return "osGNO";
-        }
-        return string(abi.encodePacked(symbol, "_L2"));
     }
 
     function _deploySdai() internal returns (address) {
@@ -817,67 +803,58 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     // -----------------------------------------------------------------------
 
     function _registerAllAssets() internal {
-        string[] memory symbols = _symbolsForChain(_chainId);
+        string[] memory symbols = ConfigReader.getAssetSymbols(vm, _chainId);
         for (uint256 i = 0; i < symbols.length; i++) {
             _registerAssetIfPossible(symbols[i]);
         }
     }
 
+    /// @notice Registers an asset and wires ALL of its configured price feeds: the first via registerAsset, any
+    ///         additional via addPriceFeed (ADR 0009 redundancy). Custom feeds resolve to the in-test ephemeral
+    ///         deployment (`_ephemeralPriceFeeds[<feed name>]`), since this harness deploys feeds in-memory rather
+    ///         than from a deployments file. Chainlink/Redstone/API3 feeds use the static address from assets.json.
     function _registerAssetIfPossible(string memory symbol) internal {
-        string memory addrStr = ConfigReader.readTokenAddress(vm, _chainId, symbol);
+        string memory addrStr = ConfigReader.readAssetAddress(vm, _chainId, symbol);
         if (bytes(addrStr).length == 0) return;
         address asset = vm.parseAddress(addrStr);
         if (asset == address(0)) return;
 
-        string memory typeStr = ConfigReader.readTokenType(vm, _chainId, symbol);
-        if (_equals(typeStr, "None")) return;
+        uint256 feedCount = ConfigReader.assetFeedCount(vm, _chainId, symbol);
+        bool registered = nav.isAssetRegistered(asset);
 
-        // Resolve the adapter address. Prefer assets.json's hardcoded `pricefeed` (set by
-        // 03_DeployPriceFeeds at production deploy time). When that field is blank — i.e. the
-        // feed contract exists in code but hasn't been deployed to production yet, e.g. ETHx
-        // pre-mainnet-deploy — fall back to the ephemerally-deployed instance from
-        // _deployAllPriceFeeds. This makes the integration test exercise the feed end-to-end
-        // before the production deploy lands. Once the production deploy completes and
-        // assets.json.pricefeed is populated, this branch becomes inert for that symbol.
-        address adapter;
-        if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
-            adapter = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
-        } else if (_ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)] != address(0)) {
-            adapter = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            console2.log("[asset/ephemeral]", symbol, adapter);
-        } else {
-            return;
-        }
-        uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
+        for (uint256 i = 0; i < feedCount; i++) {
+            string memory t = ConfigReader.readAssetFeedType(vm, _chainId, symbol, i);
+            if (_equals(t, "None")) continue;
+            IPrices.PriceType pt = _equals(t, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
 
-        IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
-
-        // For Custom feeds: prefer the ephemerally-deployed feed over any prod address in assets.json.
-        // Reason: adding latestRoundData() to IPriceFeedCustom changed the ERC165 interface ID —
-        // old deployed addresses fail checkPriceOracleSupport(). The ephemeral feed (new code)
-        // passes the check and is functionally equivalent for fork tests.
-        if (pt == IPrices.PriceType.Custom) {
-            address fresh = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            if (fresh != address(0)) adapter = fresh;
-        }
-
-        // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
-        // pre-registered asset) add the first price feed via addPriceFeed.
-        if (nav.isAssetRegistered(asset)) {
-            try nav.addPriceFeed(asset, adapter, pt, heartbeat) {
-                console2.log("[asset/addFeed]", symbol, asset);
-            } catch (bytes memory err) {
-                console2.log("[asset/addFeed]", symbol, "FAILED");
-                console2.logBytes(err);
+            address adapter;
+            if (pt == IPrices.PriceType.Custom) {
+                // Ephemeral (new-code) feed deployed in this harness, keyed by the configured feed name. Preferred
+                // over any prod address because IPriceFeedCustom's ERC165 id changed (old deployments fail the check).
+                adapter = _ephemeralPriceFeeds[ConfigReader.readAssetFeedName(vm, _chainId, symbol, i)];
+            } else {
+                string memory fa = ConfigReader.readAssetFeedAddress(vm, _chainId, symbol, i);
+                if (bytes(fa).length > 0) adapter = vm.parseAddress(fa);
             }
-            return;
-        }
+            if (adapter == address(0)) continue;
 
-        try nav.registerAsset(asset, adapter, pt, heartbeat) {
-            console2.log("[asset]", symbol, asset);
-        } catch (bytes memory err) {
-            console2.log("[asset]", symbol, "REGISTER FAILED");
-            console2.logBytes(err);
+            uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, _chainId, symbol, i));
+            if (!registered) {
+                try nav.registerAsset(asset, adapter, pt, hb) {
+                    registered = true;
+                    console2.log("[asset]", symbol, asset);
+                } catch (bytes memory err) {
+                    console2.log("[asset]", symbol, "REGISTER FAILED");
+                    console2.logBytes(err);
+                }
+            } else {
+                try nav.addPriceFeed(asset, adapter, pt, hb) {
+                    console2.log("[asset/addFeed]", symbol, asset);
+                } catch (bytes memory err) {
+                    console2.log("[asset/addFeed]", symbol, "FAILED");
+                    console2.logBytes(err);
+                }
+            }
         }
     }
 
@@ -917,9 +894,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
             // Union address-keyed (`metaInstances`, widened) + raw bytes32 (`metaInstancesRaw`, e.g. marketIds).
             address[] memory addrs =
-                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "metaInstances");
+                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "instances");
             bytes32[] memory raw =
-                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "metaInstancesRaw");
+                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "instancesRaw");
             if (addrs.length + raw.length == 0) continue;
 
             bytes32[] memory instances = new bytes32[](addrs.length + raw.length);
@@ -1006,101 +983,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         console2.log("[merkl] proofs cached:", ok);
         if (failed != 0) console2.log("[merkl] proofs failed (treated as 0 in NAV):", failed);
-    }
-
-    /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
-    function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
-        if (chainId == 1) {
-            string[] memory s = new string[](35);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "eETH";
-            s[4] = "weETH";
-            s[5] = "rETH";
-            s[6] = "ETH+";
-            s[7] = "ezETH";
-            s[8] = "rsETH";
-            s[9] = "MORPHO";
-            s[10] = "USDC";
-            s[11] = "BAL";
-            s[12] = "AURA";
-            s[13] = "RPL";
-            s[14] = "GEAR";
-            s[15] = "stETH";
-            s[16] = "CRV";
-            s[17] = "CVX";
-            s[18] = "USDS";
-            s[19] = "USDT";
-            s[20] = "DAI";
-            s[21] = "GHO";
-            s[22] = "USDe";
-            s[23] = "sUSDe";
-            s[24] = "RLUSD";
-            s[25] = "crvUSD";
-            s[26] = "sUSDS";
-            s[27] = "syrupUSDC";
-            s[28] = "ETHx";
-            s[29] = "COMP";
-            s[30] = "EURC";
-            s[31] = "WBTC";
-            s[32] = "AAVE";
-            s[33] = "osETH";
-            s[34] = "EIGEN";
-            return s;
-        }
-        if (chainId == 42161) {
-            string[] memory s = new string[](12);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "ezETH";
-            s[5] = "rsETH";
-            s[6] = "MORPHO";
-            s[7] = "USDC";
-            s[8] = "USDT";
-            s[9] = "GHO";
-            s[10] = "syrupUSDC";
-            s[11] = "COMP";
-            return s;
-        }
-        if (chainId == 100) {
-            string[] memory s = new string[](8);
-            s[0] = "xDAI";
-            s[1] = "WXDAI";
-            s[2] = "WETH";
-            s[3] = "wstETH";
-            s[4] = "USDCe";
-            s[5] = "sDAI";
-            s[6] = "GHO";
-            s[7] = "osGNO";
-            return s;
-        }
-        if (chainId == 8453) {
-            string[] memory s = new string[](9);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "cbETH";
-            s[5] = "MORPHO";
-            s[6] = "USDC";
-            s[7] = "GHO";
-            s[8] = "COMP";
-            return s;
-        }
-        if (chainId == 10) {
-            string[] memory s = new string[](6);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "USDC";
-            s[4] = "USDT";
-            s[5] = "COMP";
-            return s;
-        }
-        return new string[](0);
     }
 
     // -----------------------------------------------------------------------

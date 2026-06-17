@@ -24,37 +24,30 @@ Use this path when a Chainlink USD feed for the asset already exists and is cano
 
 ### A.2 Add to `assets.json`
 
-Under `tokens.<chainId>.<SYMBOL>`:
+Under `<chainId>.assets.<SYMBOL>`:
 
 ```json
 "WBTC": {
   "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
-  "type": "Chainlink",
-  "pricefeed": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
-  "heartbeat": 3600
+  "priceFeeds": [
+    {
+      "type": "Chainlink",
+      "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
+      "heartbeat": 3600
+    }
+  ]
 }
 ```
 
 Rules:
-- `type` must be `"Chainlink"`.
-- `pricefeed` is the Chainlink **proxy** address (not the aggregator).
+- Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.
+- `address` is the feed's on-chain address — for Chainlink, the **proxy** (not the aggregator).
 - `heartbeat` is in seconds. Use the value from the feed page.
+- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-freshest-wins.md) and §C).
 
-### A.3 Add to both `_symbolsForChain` lists
+### A.3 No symbol list to edit
 
-There are two independent `_symbolsForChain(chainId)` functions that must both be updated:
-
-1. **`script/manage/RegisterAssets.s.sol`** — controls which assets get registered on-chain via the management TX.
-2. **`test/integration/IntegrationFromConfigBase.fork.sol`** — controls which assets the integration test registers on the fork. Missing a symbol here means the price feed is never deployed in the test and the asset is silently unpriced.
-
-In each, increase the array size by 1 and append the symbol:
-
-```solidity
-string[] memory s = new string[](30);
-// ... existing entries ...
-s[29] = "WBTC";
-return s;
-```
+There is no `_symbolsForChain` list to update anymore. Both `script/manage/RegisterAssets.s.sol` and the integration harness `test/integration/IntegrationFromConfigBase.fork.sol` read symbols directly from `assets.json` (via `getAssetSymbols`). Adding the asset under `<chainId>.assets` is sufficient.
 
 ### A.4 Add constant to `test/ChainlinkPriceFeeds.sol` (if not already present)
 
@@ -68,7 +61,7 @@ Check for an existing entry before adding. The constant is used in fork tests an
 
 ### A.5 Register via deploy script
 
-No new contract to deploy. The `RegisterAssets.s.sol` script reads `assets.json.tokens` and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for each symbol returned by `_symbolsForChain`. Run it as part of the next deployment cycle or management TX.
+No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `assets.json` (`getAssetSymbols`) and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for the first feed, then `NAVCalculator.addPriceFeed(...)` for the rest. Run it as part of the next deployment cycle or management TX.
 
 To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
 
@@ -226,12 +219,12 @@ Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fo
 
 ## B.4 Wire chain config
 
-File: `script/config/assets.json`. Add an entry under `priceFeeds.<assetSymbol>.<chainId>` (for the custom price oracle constructor args):
+File: `script/config/assets.json`. Add the custom-feed constructor args under `<chainId>.customPriceFeeds.<name>`:
 
 ```json
-"priceFeeds": {
-  "myAsset": {
-    "1": {
+"1": {
+  "customPriceFeeds": {
+    "myAsset": {
       "enabled": true,
       "constructor": {
         "myAsset": "0x...",
@@ -244,30 +237,34 @@ File: `script/config/assets.json`. Add an entry under `priceFeeds.<assetSymbol>.
 }
 ```
 
-And add the token entry under `tokens.<chainId>.<symbol>`:
+And add the asset entry under `<chainId>.assets.<SYM>` with a `Custom` feed that references the custom feed by name:
 
 ```json
-"tokens": {
-  "1": {
+"1": {
+  "assets": {
     "MYASSET": {
       "address": "0x...",
-      "type": "Custom",
-      "pricefeed": "0x...(deployed-feed-address)",
-      "heartbeat": 3600
+      "priceFeeds": [
+        {
+          "type": "Custom",
+          "feed": "myAsset",
+          "heartbeat": 3600
+        }
+      ]
     }
   }
 }
 ```
 
-Note: the field is `pricefeed` (lowercase), not `oracle`. For Chainlink-only assets (path A), `type` is `"Chainlink"` and `pricefeed` is the Chainlink proxy address — no `priceFeeds` constructor entry needed at all.
+Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `customPriceFeeds` entry needed at all.
 
-Add the symbol to `_symbolsForChain(chainId)` in **both** `script/manage/RegisterAssets.s.sol` (production registration) and `test/integration/IntegrationFromConfigBase.fork.sol` (integration test). Also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()` in the integration test, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
+There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `assets.json`, so adding the asset under `<chainId>.assets` is enough. In the integration test, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()`, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
 
 ---
 
 ## B.5 Deploy and register
 
-Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `assets.json.priceFeeds` and calls `_deployIfEnabled` per entry — your new entry from §4 above will get picked up automatically. The deployed feed address is written back into `chains/<chainId>.json.priceFeeds.<adapterName>.deployed` and (on a Safe-TX-only flow) you copy it into `assets.json.tokens.<chainId>.<symbol>.pricefeed`.
+Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `assets.json` `<chainId>.customPriceFeeds` and calls `_deployIfEnabled` per entry — your new entry from §B.4 above will get picked up automatically. The deployed feed address is written into `deployments/<chainId>.json .customPriceFeeds.<name>`; the asset's `Custom` entry references it by `feed: "<name>"`, and `06_Configure` resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
 After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
 
@@ -294,9 +291,8 @@ PR checklist:
 - [ ] `forge build` clean
 - [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
 - [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
-- [ ] `assets.json` updated for every chain where the feed applies (`tokens` + `priceFeeds` constructor sections)
-- [ ] `_symbolsForChain` updated in **both** `script/manage/RegisterAssets.s.sol` and `test/integration/IntegrationFromConfigBase.fork.sol`
-- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `IntegrationFromConfigBase.fork.sol`
+- [ ] `assets.json` updated for every chain where the feed applies (`<chainId>.assets` with `priceFeeds` arrays + `<chainId>.customPriceFeeds` constructor sections)
+- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `test/integration/IntegrationFromConfigBase.fork.sol`
 - [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
 - [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations
 

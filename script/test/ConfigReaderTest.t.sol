@@ -227,41 +227,29 @@ contract ConfigReaderTest is TestEnvConfigurator {
         }
     }
 
-    /// @notice Verify NAV and Bridge proxy addresses are the same across all chains (CREATE2)
-    function test_DeployedProxyAddressesConsistentAcrossChains() public view {
+    /// @notice CREATE2 determinism: among chains that HAVE a recorded address (deployments are state, in
+    ///         `deployments/<id>.json`, and empty for a from-scratch redeploy), the proxy/impl addresses must match.
+    ///         Empty state passes — there is nothing to compare. (No "must be set" assertion: that is deploy state.)
+    function test_DeployedProxyAddressesConsistentWhenPresent() public view {
         uint256[] memory chainIds = _supportedChainIds();
-        require(chainIds.length > 0, "no chains");
-
-        address refNavProxy = ConfigReader.readDeployedAddress(vm, chainIds[0], "NAVCalculatorProxy");
-        address refBridgeProxy = ConfigReader.readDeployedAddress(vm, chainIds[0], "BridgeEscrowProxy");
-        assertTrue(refNavProxy != address(0), "NAV proxy should be set on first chain");
-        assertTrue(refBridgeProxy != address(0), "Bridge proxy should be set on first chain");
-
-        for (uint256 i = 1; i < chainIds.length; i++) {
-            address navProxy = ConfigReader.readDeployedAddress(vm, chainIds[i], "NAVCalculatorProxy");
-            address bridgeProxy = ConfigReader.readDeployedAddress(vm, chainIds[i], "BridgeEscrowProxy");
-            assertEq(navProxy, refNavProxy, "NAVCalculatorProxy should be same on all chains");
-            assertEq(bridgeProxy, refBridgeProxy, "BridgeEscrowProxy should be same on all chains");
-        }
+        _assertConsistentWhenPresent(chainIds, "NAVCalculatorProxy");
+        _assertConsistentWhenPresent(chainIds, "BridgeEscrowProxy");
     }
 
-    /// @notice Verify all chains have the four core deployed addresses set (non-zero)
-    function test_DeployedAddressesSetOnAllChains() public view {
+    function test_DeployedImplAddressesConsistentWhenPresent() public view {
         uint256[] memory chainIds = _supportedChainIds();
-        string[] memory names = new string[](4);
-        names[0] = "NAVCalculatorImplementation";
-        names[1] = "NAVCalculatorProxy";
-        names[2] = "BridgeEscrowImplementation";
-        names[3] = "BridgeEscrowProxy";
+        _assertConsistentWhenPresent(chainIds, "NAVCalculatorImplementation");
+        _assertConsistentWhenPresent(chainIds, "BridgeEscrowImplementation");
+    }
 
+    /// @dev Asserts every non-zero recorded address for `name` is identical across chains.
+    function _assertConsistentWhenPresent(uint256[] memory chainIds, string memory name) internal view {
+        address ref;
         for (uint256 i = 0; i < chainIds.length; i++) {
-            uint256 chainId = chainIds[i];
-            for (uint256 j = 0; j < names.length; j++) {
-                address a = ConfigReader.readDeployedAddress(vm, chainId, names[j]);
-                assertTrue(
-                    a != address(0), string(abi.encodePacked(names[j], " must be set for chain ", vm.toString(chainId)))
-                );
-            }
+            address a = ConfigReader.readDeployedAddress(vm, chainIds[i], name);
+            if (a == address(0)) continue;
+            if (ref == address(0)) ref = a;
+            else assertEq(a, ref, string(abi.encodePacked(name, " must be the same CREATE2 address on all chains")));
         }
     }
 

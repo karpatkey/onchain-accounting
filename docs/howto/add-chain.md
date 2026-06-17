@@ -45,48 +45,40 @@ Edit the new file:
     "securityCouncil": "0x..."
   },
 
-  "deployed": {
-    "NAVCalculatorImplementation": "",
-    "NAVCalculatorProxy": "",
-    "BridgeEscrowImplementation": "",
-    "BridgeEscrowProxy": ""
-  },
-
-  "balanceAdapters": {
-    "ERC20Default": { "enabled": true, "constructor": { "navCalculator": "" } }
-  },
-
   "bridgeAdapters": {}
 }
 ```
+
+> Deploy scripts write deployed addresses to `script/config/deployments/<newChainId>.json`, not into this file.
 
 Notes:
 
 - **`chainlinkSequencerFeed`** is critical for L2s. Without it, the sequencer-uptime check is a no-op and you lose downtime protection. L1s leave it as zero. The default grace period is 1 hour (Chainlink's recommended minimum); `setChainlinkL2SequencerGracePeriod` enforces a floor of `>= 1 hours` — you cannot set it lower.
 - **Roles (EOA deploy flow):** `admin` (DEFAULT_ADMIN_ROLE) and `manager` (MANAGER) must be the **deployer EOA** — it holds both through deploy/config so it can run 03–06. `securityCouncil` is the end-state admin (the council Safe); step `07_TransferAdminToSecurityCouncil.s.sol` grants it both roles on the NAV + Bridge proxies and renounces the deployer's. No Safe executes any deploy/config transaction.
-- **`deployed`** starts empty; deploy scripts write into it.
-- **`balanceAdapters`** starts with just `ERC20Default`; add per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)).
+- **Deployed addresses are not stored here;** deploy scripts write them to `script/config/deployments/<newChainId>.json`.
+- **Balance adapters** are configured in `script/config/balance-adapters.json` under `"<newChainId>"` — add the `ERC20Default` entry plus per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)).
 
 ---
 
 ## 3. Configure assets and price feeds
 
-Edit `script/config/assets.json` (single file, all chains):
+Edit `script/config/assets.json` (single file, keyed by chainId):
 
-1. Add tokens under `tokens.<newChainId>` for every asset you want priced on this chain. Each needs `address`, `type` (`Chainlink` / `Custom` / `Redstone` / `API3` / `None`), `pricefeed` (Chainlink aggregator, Redstone/API3 push feed, or custom feed deployed on this chain), and optionally `heartbeat`.
+1. Add an `assets` block under `"<newChainId>"` for every asset you want priced on this chain. Each asset has an `address` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
 
 ```json
-"tokens": {
-  "<newChainId>": {
-    "ETH": { "address": "0xEee...EEeE", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 3600 },
-    "USDC": { "address": "0x...", "type": "Chainlink", "pricefeed": "0x...", "heartbeat": 86400 }
-  }
+"<newChainId>": {
+  "assets": {
+    "ETH":  { "address": "0xEee...EEeE", "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 3600 } ] },
+    "USDC": { "address": "0x...",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 86400 } ] }
+  },
+  "customPriceFeeds": {}
 }
 ```
 
-2. For any custom price feed on this chain (sDAI, wstETH, etc.), add a `priceFeeds.<symbol>.<newChainId>` entry. Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
+2. For any custom price feed on this chain (sDAI, wstETH, etc.), add an entry under `"<newChainId>".customPriceFeeds.<name>` with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
 
-3. Update `_symbolsForChain(<newChainId>)` in `script/manage/RegisterAssets.s.sol` to list the symbols this chain registers.
+3. No symbol list to edit: `RegisterAssets.s.sol` reads the symbols from the `assets.json` keys via `getAssetSymbols`. Adding the asset under `"<newChainId>".assets` is enough.
 
 ---
 
@@ -102,16 +94,17 @@ forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID -
 # 02 — proxies + initializers (atomic; placeholder + proxy + upgrade in one tx)
 forge script script/deploy/02_DeployProxies.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 03 — deploy custom price feed adapters from assets.json.priceFeeds
+# 03 — deploy custom price feed adapters from assets.json <chainId>.customPriceFeeds
 forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 04 — deploy enabled balance adapters from chain config
+# 04 — deploy enabled balance adapters from balance-adapters.json
 forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
 # 05 — deploy bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis)
 forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
 # 06 — register balance adapters + meta-instances + authorize bridge adapters (EOA broadcast; idempotent)
+#      meta vs. plain is detected via ERC165 (no meta flag in config); meta adapters get their instances wired with addMetaInstances
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles
@@ -119,7 +112,7 @@ DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from and writes back to `script/config/chains/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json`, `script/config/assets.json`, and `script/config/balance-adapters.json`, and writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 
@@ -151,9 +144,10 @@ script/verify/verify-all-v2.sh
 
 PR checklist:
 
-- [ ] `script/config/chains/<newChainId>.json` exists, fully populated, and `deployed` block is filled in
-- [ ] `script/config/assets.json` has tokens and price feeds for the new chain
-- [ ] `script/manage/RegisterAssets.s.sol` `_symbolsForChain(<newChainId>)` lists the new chain's symbols
+- [ ] `script/config/chains/<newChainId>.json` populated (chain meta, `addresses`, bridge intent)
+- [ ] `script/config/deployments/<newChainId>.json` populated (deployed addresses written by the deploy scripts)
+- [ ] `script/config/assets.json` has a `"<newChainId>"` block (assets with `priceFeeds` + `customPriceFeeds`)
+- [ ] `script/config/balance-adapters.json` has a `"<newChainId>"` block (enabled adapters + `instances`/`instancesRaw`)
 - [ ] `foundry.toml` has the new chain's RPC and Etherscan entries (the `[rpc_endpoints]` and `[etherscan]` sections)
 - [ ] Verification done on the block explorer
 - [ ] `forge build` clean

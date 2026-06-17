@@ -11,104 +11,6 @@
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
-  "deployed": {
-    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
-    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
-    "BridgeEscrowImplementation": "0xB9330561EA35a7643A95b68D8A70fA6D6c004773",
-    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
-  },
-  "balanceAdapters": {
-    "ERC20Default": {
-      "enabled": true,
-      "constructor": {
-        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
-      },
-      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
-    },
-    "AaveV3InstancesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Instance set on NAVCalculator via setMetaInstances (each entry = ProtocolDataProvider address). Supersedes per-instance AaveV3_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "protocol": "Aave V3"
-      },
-      "metaInstances": [
-        "0x7F23D86Ee20D869112572136221e173428DD740B"
-      ],
-      "deployed": ""
-    },
-    "CompoundV3CometsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes per-instance CompoundV3_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
-        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
-        "protocol": "Compound V3"
-      },
-      "metaInstances": [
-        "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
-        "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214",
-        "0xE36A30D249f7761327fd973001A32010b521b6Fd"
-      ],
-      "deployed": ""
-    },
-    "AaveV3_Optimism": {
-      "enabled": false,
-      "constructor": {
-        "dataProvider": "0x7F23D86Ee20D869112572136221e173428DD740B",
-        "protocol": "Aave V3",
-        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Optimism Market\"",
-        "positionId": "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
-      },
-      "deployed": "0xa6AA9bFC2257347C7c7041Ac1037410C55f4C806"
-    },
-    "CompoundV3_USDC": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
-        "comet": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
-        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
-        "positionId": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_USDT": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
-        "comet": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214",
-        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
-        "positionId": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_WETH": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x443EA0340cb75a160F31A440722dec7b5bc3C2E9",
-        "comet": "0xE36A30D249f7761327fd973001A32010b521b6Fd",
-        "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
-        "positionId": "0xE36A30D249f7761327fd973001A32010b521b6Fd"
-      },
-      "deployed": ""
-    },
-    "MerklRewards": {
-      "enabled": false,
-      "constructor": {
-        "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
-        "protocol": "Merkl",
-        "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-        "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-      },
-      "deployed": "",
-      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
-    }
-  },
   "bridgeAdapters": {
     "Superchain": {
       "enabled": true,
@@ -121,8 +23,7 @@
         "l2Messenger": "0x4200000000000000000000000000000000000007",
         "optimismPortal": "0xbEb5Fc579115071764c7423A4f12eDde41f106EdC",
         "version": "1.0.0"
-      },
-      "deployed": ""
+      }
     },
     "CCTP": {
       "enabled": true,
@@ -133,9 +34,7 @@
         "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
         "version": "1.0.0",
         "cctpDomain": 2
-      },
-      "deployed": ""
+      }
     }
-  },
-  "priceFeeds": {}
+  }
 }

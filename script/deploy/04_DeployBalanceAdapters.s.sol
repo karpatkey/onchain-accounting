@@ -729,12 +729,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         view
         returns (address)
     {
-        string memory deployed = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(deployed).length == 0) {
-            return address(0);
-        }
-        address addr = vm.parseAddress(deployed);
-        return addr == address(0) ? address(0) : addr;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     // Helper functions

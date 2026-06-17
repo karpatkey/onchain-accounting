@@ -41,9 +41,9 @@ contract RegisterBridgeEscrow is BaseDeployScript {
         if (txCount == 0) {
             console2.log("Nothing to register: CCTP (enabled+deployed) or USDC address missing for this chain.");
             console2.log(
-                "  - Add bridgeAdapters.CCTP with deployed address, or deploy CCTP via 05_DeployBridgeAdapters."
+                "  - Enable bridgeAdapters.CCTP in the chain config (its deployed address lives in deployments/<chainId>.json), or deploy CCTP via 05_DeployBridgeAdapters."
             );
-            console2.log("  - Add USDC to assets.json tokens for this chain.");
+            console2.log("  - Add USDC to assets.json assets for this chain.");
             return;
         }
 
@@ -90,11 +90,7 @@ contract RegisterBridgeEscrow is BaseDeployScript {
     }
 
     function _readCctpDeployed() internal view returns (address) {
-        string memory deployedStr =
-            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCTP", "deployed");
-        if (bytes(deployedStr).length == 0) return address(0);
-        address a = vm.parseAddress(deployedStr);
-        return a;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, "bridgeAdapters", "CCTP");
     }
 
     function _shouldAddUsdcRegistration() internal view returns (bool) {
@@ -102,7 +98,7 @@ contract RegisterBridgeEscrow is BaseDeployScript {
     }
 
     function _readUsdcAddress() internal view returns (address) {
-        string memory addrStr = ConfigReader.readTokenAddress(vm, currentChainId, "USDC");
+        string memory addrStr = ConfigReader.readAssetAddress(vm, currentChainId, "USDC");
         if (bytes(addrStr).length == 0) return address(0);
         return vm.parseAddress(addrStr);
     }

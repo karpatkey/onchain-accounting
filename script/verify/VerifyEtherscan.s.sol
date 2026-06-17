@@ -171,10 +171,7 @@ contract VerifyEtherscan is BaseDeployScript {
         view
         returns (address)
     {
-        string memory s = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(s).length == 0) return address(0);
-        address a = vm.parseAddress(s);
-        return a;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     function _parseAddr(

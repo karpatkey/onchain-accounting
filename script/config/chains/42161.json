@@ -11,298 +11,6 @@
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
   },
-  "deployed": {
-    "NAVCalculatorImplementation": "0xc572dd1F36E50E9b9551838df8916Ac81200af62",
-    "NAVCalculatorProxy": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19",
-    "BridgeEscrowImplementation": "0x50FE322E01eB7e537418D6C90ea586063260454D",
-    "BridgeEscrowProxy": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19"
-  },
-  "balanceAdapters": {
-    "ERC20Default": {
-      "enabled": true,
-      "constructor": {
-        "navCalculator": "0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19"
-      },
-      "deployed": "0x081DDcf1b94c7a037DAaA690f3b8687ADa64dC39"
-    },
-    "AaveV3InstancesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Arbitrum, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "protocol": "Aave V3"
-      },
-      "metaInstances": [
-        "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5"
-      ],
-      "deployed": ""
-    },
-    "MorphoVaultsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. Supersedes MorphoVault_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "protocol": "Morpho"
-      },
-      "metaInstances": [
-        "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
-        "0x5837e4189819637853a357aF36650902347F5e73"
-      ],
-      "deployed": ""
-    },
-    "MorphoMarketsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-        "protocol": "Morpho"
-      },
-      "metaInstancesRaw": [
-        "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
-        "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40"
-      ],
-      "deployed": ""
-    },
-    "BalancerV3PoolsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC_USDT pool legs, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "protocol": "Balancer V3"
-      },
-      "metaInstances": [
-        "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
-      ],
-      "deployed": ""
-    },
-    "BalancerV3GaugesMeta": {
-      "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC_USDT gauge legs, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
-        "protocol": "Balancer V3"
-      },
-      "metaInstances": [
-        "0x915475b32983b7EB1235c1b6752149b454f81ad8"
-      ],
-      "deployed": ""
-    },
-    "FluidFTokensMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "protocol": "Fluid"
-      },
-      "metaInstances": [
-        "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
-        "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
-        "0x45Df0656F8aDf017590009d2f1898eeca4F0a205",
-        "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9",
-        "0x037dFf1C12805707d7c29F163E0F09fC9102657A"
-      ],
-      "deployed": ""
-    },
-    "CompoundV3CometsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound V3"
-      },
-      "metaInstances": [
-        "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
-        "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
-        "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
-        "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
-      ],
-      "deployed": ""
-    },
-    "AaveV3_Arbitrum": {
-      "enabled": false,
-      "constructor": {
-        "dataProvider": "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5",
-        "protocol": "Aave V3",
-        "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Arbitrum Market\"",
-        "positionId": "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
-      },
-      "deployed": "0x503514123e25696304E82beb393DEEb72729a550"
-    },
-    "MorphoVault_kpkUSDCYieldV1": {
-      "enabled": false,
-      "constructor": {
-        "vault": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
-        "protocol": "Morpho",
-        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Vault\",\"name\":\"kpk USDC Yield V1\"",
-        "positionId": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d"
-      },
-      "deployed": "0x77f1E73A81189C8e67C997aBF908E8f7aB20447F"
-    },
-    "MorphoMarket_sUSDS_USDC": {
-      "enabled": false,
-      "constructor": {
-        "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-        "marketId": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
-        "protocol": "Morpho",
-        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"sUSDS/USDC\""
-      },
-      "deployed": "0xd6dFb63356C38d14ee4e48dCF31D2eA98b15990d"
-    },
-    "MorphoMarket_syrupUSDC_USDC": {
-      "enabled": false,
-      "constructor": {
-        "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-        "marketId": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40",
-        "protocol": "Morpho",
-        "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"syrupUSDC/USDC\""
-      },
-      "deployed": "0xE4785f2A6590C589Ea36ba59A1Eb57A1FdC0e74e"
-    },
-    "AuraRewardsMeta": {
-      "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
-      "enabled": true,
-      "constructor": {
-        "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-        "balancerV2Vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-        "protocol": "Aura"
-      },
-      "metaInstances": [
-        "0x627305fF273640e0468D3c5DFE4FC2Adb1D013e8"
-      ],
-      "deployed": ""
-    },
-    "Aura_GHO_USDC_USDT": {
-      "enabled": false,
-      "constructor": {
-        "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
-        "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
-        "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-        "pid": "99",
-        "protocol": "Aura",
-        "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC/USDT\"",
-        "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
-      },
-      "deployed": "0xF0163C3CabFA53c613B94fb2b95313Ecc1964892"
-    },
-    "BalancerV3_GHO_USDC_USDT": {
-      "enabled": false,
-      "constructor": {
-        "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
-        "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
-        "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
-        "protocol": "Balancer V3",
-        "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC/USDT\"",
-        "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
-      },
-      "deployed": "0x70AC1F4ddbD431Dd022f70f759F06a470663DeeB"
-    },
-    "Fluid_fToken_USDC": {
-      "enabled": false,
-      "constructor": {
-        "fToken": "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
-        "protocol": "Fluid",
-        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
-        "positionId": "0x1A996cb54bb95462040408C06122D45D6Cdb6096"
-      },
-      "deployed": ""
-    },
-    "Fluid_fToken_USDT": {
-      "enabled": false,
-      "constructor": {
-        "fToken": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
-        "protocol": "Fluid",
-        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDT\"",
-        "positionId": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03"
-      },
-      "deployed": ""
-    },
-    "Fluid_fToken_WETH": {
-      "enabled": false,
-      "constructor": {
-        "fToken": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205",
-        "protocol": "Fluid",
-        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fWETH\"",
-        "positionId": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205"
-      },
-      "deployed": ""
-    },
-    "Fluid_fToken_wstETH": {
-      "enabled": false,
-      "constructor": {
-        "fToken": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9",
-        "protocol": "Fluid",
-        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fwstETH\"",
-        "positionId": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9"
-      },
-      "deployed": ""
-    },
-    "Fluid_fToken_GHO": {
-      "enabled": false,
-      "constructor": {
-        "fToken": "0x037dFf1C12805707d7c29F163E0F09fC9102657A",
-        "protocol": "Fluid",
-        "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fGHO\"",
-        "positionId": "0x037dFf1C12805707d7c29F163E0F09fC9102657A"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_USDCe": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "comet": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
-        "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC.e\"",
-        "positionId": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_USDC": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
-        "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
-        "positionId": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_USDT": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "comet": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
-        "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
-        "positionId": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07"
-      },
-      "deployed": ""
-    },
-    "CompoundV3_WETH": {
-      "enabled": false,
-      "constructor": {
-        "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-        "comet": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486",
-        "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-        "protocol": "Compound v3",
-        "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
-        "positionId": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
-      },
-      "deployed": ""
-    },
-    "MerklRewards": {
-      "enabled": false,
-      "constructor": {
-        "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
-        "protocol": "Merkl",
-        "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-        "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-      },
-      "deployed": "",
-      "comment": "Proof-cached unclaimed-rewards adapter (ADR 0007). Owner = chainConfig.admin (set at deploy time). Disabled by default \u2014 enable per chain when the off-chain proof-submission bot is in place. Distributor address is canonical across every supported EVM chain."
-    }
-  },
   "bridgeAdapters": {
     "CCIP": {
       "enabled": true,
@@ -313,7 +21,6 @@
         "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
         "version": "1.0.0"
       },
-      "deployed": "0x57DD601d0474dcC95c8C9748f6d41D967086ed9F",
       "callbackSelector": "0x85572ffb"
     },
     "Across": {
@@ -325,7 +32,6 @@
         "defaultRelayerFeePct": "5000",
         "version": "1.0.0"
       },
-      "deployed": "0x086e289d5Ab4B63Daa75002E034919d7dd43d611",
       "callbackSelector": "0x0ea1f938"
     },
     "Stargate": {
@@ -337,7 +43,6 @@
         "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
         "version": "1.0.0"
       },
-      "deployed": "0x3F7DE433E2AC424921C38177CCbb586F7ab2a101",
       "callbackSelector": "0x001d3567"
     },
     "CCTP": {
@@ -349,25 +54,7 @@
         "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
         "version": "1.0.0",
         "cctpDomain": 3
-      },
-      "deployed": "0xEFa5a2E15b0247Aab160511dc862C6c098DEe16b"
-    }
-  },
-  "priceFeeds": {
-    "wstETH_L2": {
-      "deployed": "0xDdBb3444421a4c4F142fE9544bf7Cd404663745e"
-    },
-    "weETH_L2": {
-      "deployed": "0xD38f98F51778C4E7eaD36ade9E2594fF91d49c2f"
-    },
-    "rsETH_L2": {
-      "deployed": "0x8d5Cb8F0C1DAa3fd45Aeb8Af220AF74F621fe8c0"
-    },
-    "ezETH_L2": {
-      "deployed": "0x286Ae1f0Ee0BE577acE2F087ad98c2F3C71ddDb0"
-    },
-    "syrupUSDC_L2": {
-      "deployed": "0xE35e9caF8d91d45372f3FA40bda073bD81FeDA09"
+      }
     }
   }
 }

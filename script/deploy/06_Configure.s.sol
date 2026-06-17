@@ -204,67 +204,11 @@ contract Configure is BaseDeployScript {
         console2.log("--- Bridge adapters authorized:", authorized);
     }
 
-    /// @notice Shared adapter name list — every name `04_DeployBalanceAdapters.s.sol.run()` deploys must
-    /// appear here, or the adapter deploys but never registers on NAVCalculator. Each chain's config enables
-    /// the subset that applies; entries not in a chain's config just return false from isAdapterEnabled and
-    /// are skipped. ERC20Default is created by NAVCalculator.initialize() so it's already registered; it is
-    /// not added here. A few entries are intentionally **list-only** — their adapter contract + 04 dispatch
-    /// branch exist but `04.run()` has no `_deployIfEnabled` for them yet (currently `UniswapV2PoolsMeta`).
-    /// They sit here registration-ready; when you wire the first such instance, add the `_deployIfEnabled`
-    /// call to `04.run()` so deploy and registration land together.
-    function _balanceAdapterNames() internal pure returns (string[] memory names) {
-        names = new string[](31);
-        uint256 i = 0;
-        // Aave V2 instances meta-adapter (ADR 0010): DataProvider set configured via addMetaInstances/removeMetaInstances
-        names[i++] = "AaveV2InstancesMeta";
-        // Aave V3 instances meta-adapter (ADR 0010): DataProvider set configured via addMetaInstances/removeMetaInstances.
-        // The legacy per-market AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis are superseded by
-        // this meta (disabled in chain config, no deploy path in 04) — full-meta, do not re-add.
-        names[i++] = "AaveV3InstancesMeta";
-        // Spark, stkGHO, Umbrella, Cap (Mainnet)
-        names[i++] = "SparkLend";
-        names[i++] = "AaveV3SafetyModule";
-        names[i++] = "AaveUmbrella";
-        names[i++] = "Cap";
-        // Compound V3 meta-adapter (ADR 0010): comet set configured via addMetaInstances/removeMetaInstances
-        names[i++] = "CompoundV3CometsMeta";
-        // Fluid meta-adapters (ADR 0010): fToken / T1-vault sets configured via addMetaInstances/removeMetaInstances
-        names[i++] = "FluidFTokensMeta";
-        names[i++] = "FluidVaultsMeta";
-        // Morpho Vaults meta-adapter (ADR 0010): instance set configured via addMetaInstances/removeMetaInstances
-        names[i++] = "MorphoVaultsMeta";
-        // Morpho Markets meta-adapter (ADR 0010): marketId set configured via addMetaInstances/removeMetaInstances (metaInstancesRaw)
-        names[i++] = "MorphoMarketsMeta";
-        // ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter)
-        names[i++] = "ERC4626Wrap_waEthLidoGHO";
-        names[i++] = "ERC4626Wrap_sGHO";
-        // Gearbox meta-adapter (ADR 0010): market set configured via addMetaInstances/removeMetaInstances
-        names[i++] = "GearboxMarketsMeta";
-        // Balancer V2/V3 meta-adapters (ADR 0010): pool / gauge sets configured via addMetaInstances/removeMetaInstances
-        names[i++] = "BalancerV3PoolsMeta";
-        names[i++] = "BalancerV3GaugesMeta";
-        names[i++] = "BalancerV2PoolsMeta";
-        names[i++] = "BalancerV2GaugesMeta";
-        // Aura / Curve / Convex meta-adapters (ADR 0010): pool / gauge / rewarder sets configured via addMetaInstances/removeMetaInstances
-        names[i++] = "AuraRewardsMeta";
-        names[i++] = "CurvePoolsMeta";
-        names[i++] = "CurveGaugesMeta";
-        names[i++] = "ConvexRewardsMeta";
-        // Merkl rewards (ADR 0007: trust-minimized proof-verified per-(user,token) cache)
-        names[i++] = "MerklRewards";
-        // Stader (Mainnet)
-        names[i++] = "StaderWithdrawalQueue";
-        // Kelp DAO (Mainnet)
-        names[i++] = "KelpWithdrawalQueue";
-        // Lido (Mainnet)
-        names[i++] = "LidoWithdrawalQueue";
-        // StakeWise V3 (Mainnet) — osETH itself is a Custom-priced ERC20 (osToken_PriceOracle), not a balance adapter
-        names[i++] = "StakeWiseV3VaultsMeta"; // Meta-adapter (ADR 0010): vault set configured via addMetaInstances/removeMetaInstances
-        // Uniswap / PancakeSwap meta-adapters (ADR 0010): pool/pair sets configured via addMetaInstances/removeMetaInstances
-        names[i++] = "UniswapV3PoolsMeta"; // Mainnet
-        names[i++] = "UniswapV2PoolsMeta"; // list-only: contract + 04 dispatch exist, but no _deployIfEnabled in 04.run() yet (see docstring)
-        names[i++] = "PancakeSwapV3PoolsMeta"; // Base
-        names[i++] = "PancakeSwapV2PoolsMeta"; // BSC
+    /// @notice Balance-adapter names for this chain — the keys of `balance-adapters.json`'s `<chainId>` section.
+    ///         Each is still gated by `isAdapterEnabled`. ERC20Default is auto-registered by
+    ///         NAVCalculator.initialize(), so it is intentionally absent from the config.
+    function _balanceAdapterNames() internal view returns (string[] memory names) {
+        return ConfigReader.getEnabledAdapters(vm, currentChainId, "balanceAdapters");
     }
 
     /// @notice Bridge adapter name list — kept in sync with `05_DeployBridgeAdapters.s.sol`.
@@ -284,10 +228,9 @@ contract Configure is BaseDeployScript {
     /// @return instances The instance coordinates (empty for non-meta adapters or when unset).
     function _readMetaInstances(string memory adapterName) internal view returns (bytes32[] memory instances) {
         address[] memory addrs =
-            ConfigReader.readAdapterAddressArray(vm, currentChainId, "balanceAdapters", adapterName, "metaInstances");
-        bytes32[] memory raw = ConfigReader.readAdapterBytes32Array(
-            vm, currentChainId, "balanceAdapters", adapterName, "metaInstancesRaw"
-        );
+            ConfigReader.readAdapterAddressArray(vm, currentChainId, "balanceAdapters", adapterName, "instances");
+        bytes32[] memory raw =
+            ConfigReader.readAdapterBytes32Array(vm, currentChainId, "balanceAdapters", adapterName, "instancesRaw");
 
         // The configured coordinates must be unique across `metaInstances` (addresses, widened) ∪ `metaInstancesRaw`
         // (raw bytes32). addMetaInstances is all-or-nothing and reverts DuplicateMetaInstance, so a duplicated
@@ -305,18 +248,13 @@ contract Configure is BaseDeployScript {
         }
     }
 
-    /// @notice Helper to read deployed adapter address
+    /// @notice Helper to read a deployed adapter address (from the deployments state file).
     function _readAdapterDeployed(string memory adapterType, string memory adapterName)
         internal
         view
         returns (address)
     {
-        string memory deployed = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(deployed).length == 0) {
-            return address(0);
-        }
-        address addr = vm.parseAddress(deployed);
-        return addr == address(0) ? address(0) : addr;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     /// @notice Decodes a standard Error(string) revert payload for readable failure messages.

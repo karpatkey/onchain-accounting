@@ -10,250 +10,155 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterAssets
-/// @notice Reads assets from script/config/assets.json, checks which are not yet registered
-///         on NAVCalculator, and either reports status or generates a Safe tx batch to register them.
+/// @notice Registers each asset from `script/config/assets.json` on NAVCalculator, wiring ALL of the asset's
+///         configured price feeds: the first via `registerAsset`, any additional via `addPriceFeed` (ADR 0009
+///         multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
 /// @dev
-///   - Token list per chain is defined in this script (_symbolsForChain). Add new tokens to assets.json
-///     and to the corresponding array here.
-///   - Only tokens with a usable oracle (type Chainlink or Custom, non-empty pricefeed) are considered.
-///   - Tokens without an oracle are reported as "SKIP (no oracle)" with optional note from config.
-///   - Safe tx batch is only generated when run with --rpc-url so the script can verify on-chain
-///     that each asset is not already registered (isAssetRegistered). Without RPC, the script
-///     reports status but refuses to write the Safe tx file.
-///   - Pre-registered assets (notably the NATIVE_ADDRESS sentinel inserted by NAVCalculator.initialize)
-///     are wired up with addPriceFeed instead of registerAsset, so the configured oracle is applied
-///     without reverting on duplicate registration.
-///   - Output: safe-transactions/{chainId}-register-assets.json
-///   - With --broadcast, tx(s) are sent from the keystore signer (--account $DEPLOYER_NAME). registerAsset checks MANAGER on-chain (msg.sender).
+///   - Asset list per chain comes from `assets.json` keys (no hardcoded list).
+///   - Each asset's `priceFeeds[]` drives the feeds. `Custom` feeds resolve their on-chain address from the
+///     deployments file (`deployments/<id>.json .customPriceFeeds.<name>`), so 03_DeployPriceFeeds must run first.
+///   - Idempotent: an asset already registered with ≥1 feed is skipped; a pre-registered asset with no feed
+///     (the NATIVE_ADDRESS sentinel from initialize) is wired via addPriceFeed.
+///   - Requires --rpc-url so the script can check on-chain registration state.
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;
 
-    /// @dev ERC-7528 native token sentinel; has no code but NAVCalculator handles it in init.
     address private constant NATIVE_SENTINEL = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     function run() public override {
         setUp();
 
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
-        string[] memory symbols = _symbolsForChain(currentChainId);
+        string[] memory symbols = ConfigReader.getAssetSymbols(vm, currentChainId);
 
         console2.log("\n=== Register Assets (from assets.json) ===");
         console2.log("Chain:", chainConfig.name);
-        console2.log("Chain ID:", currentChainId);
+        console2.log("Assets in config:", symbols.length);
         console2.log("NAVCalculator proxy:", navProxy);
-        console2.log("Tokens in config:", symbols.length);
-        console2.log("");
 
         if (symbols.length == 0) {
-            console2.log("No tokens defined for this chain. Add symbols in RegisterAssets.s.sol _symbolsForChain().");
+            console2.log("No assets configured for this chain.");
             return;
         }
-
-        uint256 toSetPriceFeed; // pre-registered (e.g. native sentinel from initialize) — needs addPriceFeed
-        uint256 skipNoOracle;
-        uint256 skipMissingAddress;
-        uint256 skipNoContract;
-        uint256 skipAlreadyWired; // registered + feed already present — idempotent re-run skip
-        uint256 toRegisterCount;
-
-        // First pass: report each token and count how many need registration / price-feed set
-        for (uint256 i = 0; i < symbols.length; i++) {
-            string memory symbol = symbols[i];
-            string memory addrStr = ConfigReader.readTokenAddress(vm, currentChainId, symbol);
-            if (bytes(addrStr).length == 0) {
-                console2.log("  SKIP (missing address):", symbol);
-                skipMissingAddress++;
-                continue;
-            }
-            address asset = vm.parseAddress(addrStr);
-            if (asset == address(0)) {
-                console2.log("  SKIP (invalid address):", symbol);
-                skipMissingAddress++;
-                continue;
-            }
-            if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) {
-                string memory note = ConfigReader.readTokenNote(vm, currentChainId, symbol);
-                if (bytes(note).length > 0) {
-                    console2.log("  SKIP (no oracle):", symbol);
-                    console2.log("    ->", note);
-                } else {
-                    console2.log("  SKIP (no oracle):", symbol);
-                }
-                skipNoOracle++;
-                continue;
-            }
-            if (navProxy == address(0)) {
-                console2.log("  WOULD REGISTER (NAV not deployed):", symbol);
-                toRegisterCount++;
-                continue;
-            }
-            if (navProxy.code.length == 0) {
-                console2.log("  TO REGISTER (NAV not deployed or no RPC):", symbol);
-                toRegisterCount++;
-                continue;
-            }
-            (bool ok, bytes memory data) =
-                navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
-            if (!ok || data.length == 0) {
-                if (_hasNoCode(asset)) {
-                    console2.log("  SKIP (no contract at address):", symbol);
-                    skipNoContract++;
-                    continue;
-                }
-                console2.log("  TO REGISTER:", symbol);
-                toRegisterCount++;
-            } else if (abi.decode(data, (bool))) {
-                // Asset is registered. Check whether it already has a price feed wired.
-                (bool okCount, bytes memory countData) =
-                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
-                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) {
-                    console2.log("  SKIP (already wired):", symbol);
-                    skipAlreadyWired++;
-                    continue;
-                }
-                // Pre-registered (e.g. NATIVE_ADDRESS by NAVCalculator.initialize) — need addPriceFeed
-                // to wire the configured oracle.
-                console2.log("  TO SET PRICE FEED (pre-registered):", symbol);
-                toSetPriceFeed++;
-            } else {
-                if (_hasNoCode(asset)) {
-                    console2.log("  SKIP (no contract at address):", symbol);
-                    skipNoContract++;
-                    continue;
-                }
-                console2.log("  TO REGISTER:", symbol);
-                toRegisterCount++;
-            }
-        }
-
-        // Summary
-        uint256 totalActions = toRegisterCount + toSetPriceFeed;
-        console2.log("");
-        console2.log("--- Summary ---");
-        console2.log("  To set price feed (pre-registered):", toSetPriceFeed);
-        console2.log("  Skipped (no oracle):", skipNoOracle);
-        console2.log("  Skipped (missing/invalid address):", skipMissingAddress);
-        console2.log("  Skipped (no contract at address):", skipNoContract);
-        console2.log("  Skipped (already wired):", skipAlreadyWired);
-        console2.log("  To register:", toRegisterCount);
-        console2.log("  Total actions:", totalActions);
-
-        if (totalActions == 0) {
-            console2.log("");
-            console2.log("Nothing to register or update. Exiting.");
-            return;
-        }
-
         if (navProxy == address(0)) {
-            console2.log("");
-            console2.log("NAVCalculator not deployed for this chain. Deploy it first, then re-run to generate Safe tx.");
+            console2.log("NAVCalculator not deployed for this chain. Deploy it first, then re-run.");
             return;
         }
-
-        // Require RPC so we only include assets that are confirmed not already registered on-chain
         if (navProxy.code.length == 0) {
-            console2.log("");
-            console2.log(
-                "Run with --rpc-url so the script can verify which assets are not yet registered. Refusing to generate Safe tx without this check."
-            );
+            console2.log("Run with --rpc-url so the script can verify on-chain registration state.");
             return;
         }
 
-        // Second pass: build Safe tx batch — registerAsset for new ones, addPriceFeed for pre-registered ones
-        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](totalActions);
-        uint256 j = 0;
+        // Pass 1: count actions (registerAsset + addPriceFeed) across all assets.
+        uint256 total;
         for (uint256 i = 0; i < symbols.length; i++) {
-            string memory symbol = symbols[i];
-            string memory addrStr = ConfigReader.readTokenAddress(vm, currentChainId, symbol);
-            if (bytes(addrStr).length == 0) continue;
-            address asset = vm.parseAddress(addrStr);
-            if (asset == address(0)) continue;
-            if (!ConfigReader.hasTokenOracle(vm, currentChainId, symbol)) continue;
-            (bool ok, bytes memory data) =
-                navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
-            bool preRegistered = ok && data.length > 0 && abi.decode(data, (bool));
-            if (!preRegistered && _hasNoCode(asset)) continue;
-
-            // Skip assets that already have at least one feed wired — they are fully registered.
-            if (preRegistered) {
-                (bool okCount, bytes memory countData) =
-                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
-                if (okCount && countData.length > 0 && abi.decode(countData, (uint256)) > 0) continue;
-            }
-
-            string memory priceTypeStr = ConfigReader.readTokenType(vm, currentChainId, symbol);
-            IPrices.PriceType priceType;
-            if (_equals(priceTypeStr, "Chainlink")) priceType = IPrices.PriceType.Chainlink;
-            else if (_equals(priceTypeStr, "Custom")) priceType = IPrices.PriceType.Custom;
-            else if (_equals(priceTypeStr, "Redstone")) priceType = IPrices.PriceType.Redstone;
-            else if (_equals(priceTypeStr, "API3")) priceType = IPrices.PriceType.API3;
-            else continue;
-            string memory oracleStr = ConfigReader.readTokenOracle(vm, currentChainId, symbol);
-            if (bytes(oracleStr).length == 0) continue;
-            address oracle = vm.parseAddress(oracleStr);
-            if (oracle == address(0)) continue;
-
-            uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, currentChainId, symbol));
-
-            // Pre-registered assets (e.g. NATIVE_ADDRESS via NAVCalculator.initialize) need addPriceFeed,
-            // not registerAsset (which would revert with InvalidArguments — already registered).
-            bytes memory callData = preRegistered
-                ? abi.encodeCall(NAVCalculator.addPriceFeed, (asset, oracle, priceType, heartbeat))
-                : abi.encodeCall(NAVCalculator.registerAsset, (asset, oracle, priceType, heartbeat));
-            transactions[j] = SafeTxBuilder.call(navProxy, 0, callData);
-            j++;
+            total += _planAsset(symbols[i], navProxy).length;
         }
-
-        if (j == 0) {
-            console2.log("");
-            console2.log("No assets to register after re-check (already registered or invalid). Nothing written.");
+        console2.log("Planned actions:", total);
+        if (total == 0) {
+            console2.log("Nothing to register or wire. Exiting.");
             return;
         }
 
-        // Copy to exact-sized array (in case any defensive skips happened in second pass)
-        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](j);
-        for (uint256 k = 0; k < j; k++) {
-            batch[k] = transactions[k];
+        // Pass 2: build the Safe tx batch.
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](total);
+        uint256 j;
+        for (uint256 i = 0; i < symbols.length; i++) {
+            bytes[] memory acts = _planAsset(symbols[i], navProxy);
+            if (acts.length > 0) console2.log("  wiring", symbols[i], acts.length);
+            for (uint256 k = 0; k < acts.length; k++) {
+                batch[j++] = SafeTxBuilder.call(navProxy, 0, acts[k]);
+            }
         }
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-register-assets.json"));
         writeSafeTx(
             filename,
             "Register assets in NAVCalculator",
-            string(abi.encodePacked("Register ", vm.toString(j), " assets from assets.json")),
+            string(abi.encodePacked("Register/wire ", vm.toString(j), " feed(s) from assets.json")),
             batch
         );
 
-        // Additionally, build MultiSend-compatible calldata that a MANAGER can execute directly
-        // via a MultiSend contract (e.g. Gnosis Safe MultiSend) to register all assets in one
-        // multicall-style transaction.
-        bytes memory multiSendData = _buildMultiSendCallData(batch);
-        console2.log("");
-        console2.log("MultiSend calldata to register all assets (for a MANAGER caller):");
-        console2.log(vm.toString(multiSendData));
+        console2.log("MultiSend calldata (for a MANAGER caller):");
+        console2.log(vm.toString(_buildMultiSendCallData(batch)));
 
-        // If the broadcast sender (--account $DEPLOYER_NAME) is the configured manager, broadcast registerAsset tx(s) directly.
         _broadcastManagerMultiSend(batch);
-
-        console2.log("");
         console2.log(string(abi.encodePacked("Safe transaction written to safe-transactions/", filename)));
     }
 
-    /// @notice Broadcast one tx per asset from the default signer (msg.sender when txs run). registerAsset reverts if not MANAGER.
+    /// @notice Returns the ordered calldata actions to fully wire one asset's feeds, or an empty array to skip it.
+    function _planAsset(string memory symbol, address navProxy) internal view returns (bytes[] memory acts) {
+        acts = new bytes[](0);
+
+        string memory addrStr = ConfigReader.readAssetAddress(vm, currentChainId, symbol);
+        if (bytes(addrStr).length == 0) return acts;
+        address asset = vm.parseAddress(addrStr);
+        if (asset == address(0)) return acts;
+
+        uint256 feedCount = ConfigReader.assetFeedCount(vm, currentChainId, symbol);
+        if (feedCount == 0) return acts; // no configured feed → nothing to register
+
+        // On-chain state.
+        (bool ok, bytes memory data) =
+            navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
+        bool registered = ok && data.length > 0 && abi.decode(data, (bool));
+        if (!registered && _hasNoCode(asset)) return acts; // not a contract and not pre-registered
+        if (registered) {
+            (bool okc, bytes memory cd) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
+            if (okc && cd.length > 0 && abi.decode(cd, (uint256)) > 0) return acts; // already wired
+        }
+
+        bytes[] memory tmp = new bytes[](feedCount);
+        uint256 n;
+        for (uint256 i = 0; i < feedCount; i++) {
+            (IPrices.PriceType pt, bool validType) = _feedType(symbol, i);
+            if (!validType) continue;
+            string memory faddr = ConfigReader.readAssetFeedAddress(vm, currentChainId, symbol, i);
+            if (bytes(faddr).length == 0) continue; // unresolved (e.g. Custom feed not deployed yet)
+            address feed = vm.parseAddress(faddr);
+            if (feed == address(0)) continue;
+            uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
+
+            // First resolvable feed of an unregistered asset → registerAsset; everything else → addPriceFeed.
+            if (!registered && n == 0) {
+                tmp[n++] = abi.encodeCall(NAVCalculator.registerAsset, (asset, feed, pt, hb));
+            } else {
+                tmp[n++] = abi.encodeCall(NAVCalculator.addPriceFeed, (asset, feed, pt, hb));
+            }
+        }
+
+        acts = new bytes[](n);
+        for (uint256 i = 0; i < n; i++) {
+            acts[i] = tmp[i];
+        }
+    }
+
+    /// @dev Maps a feed `type` string to the on-chain PriceType enum. validType=false → skip the feed.
+    function _feedType(string memory symbol, uint256 i) private view returns (IPrices.PriceType pt, bool validType) {
+        string memory t = ConfigReader.readAssetFeedType(vm, currentChainId, symbol, i);
+        if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
+        if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
+        if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
+        if (_equals(t, "API3")) return (IPrices.PriceType.API3, true);
+        return (IPrices.PriceType.Chainlink, false);
+    }
+
     function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {
         vm.startBroadcast();
         for (uint256 i = 0; i < batch.length; i++) {
             (bool success, bytes memory data) = batch[i].to.call(batch[i].data);
             if (!success) {
-                string memory msg_ = _revertMsg(data);
-                require(false, string(abi.encodePacked("registerAsset failed at index ", vm.toString(i), ": ", msg_)));
+                require(
+                    false,
+                    string(abi.encodePacked("registerAsset failed at index ", vm.toString(i), ": ", _revertMsg(data)))
+                );
             }
         }
         vm.stopBroadcast();
-        console2.log("[OK] Broadcast", batch.length, "tx(s); all assets registered.");
+        console2.log("[OK] Broadcast", batch.length, "tx(s); all feeds wired.");
     }
 
-    /// @dev Decode Error(string) from revert data (selector 0x08c379a0 + offset + length + data).
     function _revertMsg(bytes memory data) internal pure returns (string memory) {
         if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
             uint256 len;
@@ -268,21 +173,9 @@ contract RegisterAssets is BaseDeployScript {
                 return string(msgBytes);
             }
         }
-        if (data.length > 0) return string(abi.encodePacked("0x", _toHex(data.length > 64 ? 64 : data.length, data)));
         return "unknown";
     }
 
-    function _toHex(uint256 len, bytes memory data) private pure returns (string memory) {
-        bytes memory hexChars = "0123456789abcdef";
-        bytes memory out = new bytes(len * 2);
-        for (uint256 i = 0; i < len; i++) {
-            out[i * 2] = hexChars[uint8(data[i]) >> 4];
-            out[i * 2 + 1] = hexChars[uint8(data[i]) & 0x0f];
-        }
-        return string(out);
-    }
-
-    /// @dev True if asset has no code (not a contract). Native sentinel is allowed (handled in NAVCalculator init).
     function _hasNoCode(address asset) private view returns (bool) {
         if (asset == NATIVE_SENTINEL) return false;
         return asset.code.length == 0;
@@ -292,8 +185,6 @@ contract RegisterAssets is BaseDeployScript {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
-    /// @notice Encodes an array of Safe transactions into MultiSend format
-    /// @dev Format per tx: operation (1 byte) | to (20 bytes) | value (32 bytes) | dataLength (32 bytes) | data (N bytes)
     function _encodeMultiSend(SafeTxBuilder.Transaction[] memory txs) private pure returns (bytes memory encoded) {
         for (uint256 i = 0; i < txs.length; i++) {
             encoded = abi.encodePacked(
@@ -302,132 +193,7 @@ contract RegisterAssets is BaseDeployScript {
         }
     }
 
-    /// @notice Builds calldata for a MultiSend-style multicall to execute all registerAsset calls
-    /// @dev Caller (sender) must have MANAGER role on NAVCalculator for these calls to succeed.
     function _buildMultiSendCallData(SafeTxBuilder.Transaction[] memory txs) private pure returns (bytes memory) {
         return abi.encodeWithSignature("multiSend(bytes)", _encodeMultiSend(txs));
-    }
-
-    /// @notice Token symbols to process per chain. Must match keys in assets.json tokens.{chainId}.
-    ///         Add new tokens to assets.json and append the symbol here for the right chain.
-    function _symbolsForChain(uint256 chainId) private pure returns (string[] memory) {
-        if (chainId == 1) {
-            string[] memory s = new string[](35);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "eETH";
-            s[4] = "weETH";
-            s[5] = "rETH";
-            s[6] = "ETH+";
-            s[7] = "ezETH";
-            s[8] = "rsETH";
-            s[9] = "MORPHO";
-            s[10] = "USDC";
-            s[11] = "BAL";
-            s[12] = "AURA";
-            s[13] = "RPL";
-            s[14] = "GEAR";
-            s[15] = "stETH";
-            s[16] = "CRV";
-            s[17] = "CVX";
-            s[18] = "USDS";
-            s[19] = "USDT";
-            s[20] = "DAI";
-            s[21] = "GHO";
-            s[22] = "USDe";
-            s[23] = "sUSDe";
-            s[24] = "RLUSD";
-            s[25] = "crvUSD";
-            s[26] = "sUSDS";
-            s[27] = "syrupUSDC";
-            s[28] = "COMP";
-            s[29] = "WBTC";
-            s[30] = "AAVE";
-            s[31] = "osETH"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * ETH/USD
-            s[32] = "EIGEN";
-            s[33] = "ETHx"; // Custom-priced (ETHx_PriceOracle); skipped until assets.json .tokens.1.ETHx.pricefeed is set (03_DeployPriceFeeds deploys the feed into chains/1.json .priceFeeds.deployed, NOT the assets.json field hasTokenOracle reads)
-            s[34] = "EURC";
-            return s;
-        }
-        if (chainId == 42161) {
-            string[] memory s = new string[](12);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "ezETH";
-            s[5] = "rsETH";
-            s[6] = "MORPHO";
-            s[7] = "USDC";
-            s[8] = "USDT";
-            s[9] = "GHO";
-            s[10] = "syrupUSDC";
-            s[11] = "COMP";
-            return s;
-        }
-        if (chainId == 100) {
-            // Include all tokens defined for chain 100 in assets.json
-            string[] memory s = new string[](8);
-            s[0] = "xDAI";
-            s[1] = "WXDAI";
-            s[2] = "WETH";
-            s[3] = "wstETH";
-            s[4] = "USDCe";
-            s[5] = "sDAI";
-            s[6] = "GHO";
-            s[7] = "osGNO"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * GNO/USD
-            return s;
-        }
-        if (chainId == 8453) {
-            string[] memory s = new string[](9);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "cbETH";
-            s[5] = "MORPHO";
-            s[6] = "USDC";
-            s[7] = "GHO";
-            s[8] = "COMP";
-            return s;
-        }
-        if (chainId == 10) {
-            // Include all tokens defined for chain 10 in assets.json
-            string[] memory s = new string[](6);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "USDC";
-            s[4] = "USDT";
-            s[5] = "COMP";
-            return s;
-        }
-        if (chainId == 56) {
-            // BSC. COW has no Chainlink feed and is intentionally omitted (the V2 PCS adapter
-            // still emits it as a position; NAVCalculator drops unregistered assets).
-            string[] memory s = new string[](6);
-            s[0] = "BNB";
-            s[1] = "WBNB";
-            s[2] = "USDC";
-            s[3] = "USDT";
-            s[4] = "ETH";
-            s[5] = "CAKE";
-            return s;
-        }
-        if (chainId == 137) {
-            // Polygon: native is POL (formerly MATIC). Symbols listed must exist as keys under
-            // assets.json `tokens.137`. wstETH/sUSDe/etc. are intentionally not registered yet
-            // — they require chain-specific custom price-feed contracts that aren't deployed
-            // on Polygon. Add them in a follow-up alongside their feed adapter.
-            string[] memory s = new string[](5);
-            s[0] = "POL";
-            s[1] = "WPOL";
-            s[2] = "WETH";
-            s[3] = "USDC";
-            s[4] = "USDT";
-            return s;
-        }
-        return new string[](0);
     }
 }

@@ -59,7 +59,7 @@ flowchart LR
 
 **Steps in code:**
 
-1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapter`).
+1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapters`).
 2. **For each adapter** — `adapter.getAdapterPositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind). Unsupported adapters are skipped (try/catch).
 3. **Filter** — Skip positions whose `balanceAsset.asset` is not in the asset registry; for range-based APIs, keep only assets in the requested range.
 4. **Enrich** — For each position: look up price (from Prices), compute USD value = amount × price (sign by `isDebt`: subtract for debt), then convert to quote asset if `quoteAsset != address(0)`.
@@ -135,8 +135,8 @@ For building adapters, the only required output is **PositionBalance**; Position
 
 **Internal API (used by NAVCalculator):**
 
-- `_addBalanceAdapters(adapters)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates.
-- `_removeBalanceAdapter(adapter)` — Removes from global list (if present).
+- `_addBalanceAdapter(adapter)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates. The external `addBalanceAdapters(address[])` (MANAGER) loops over this per address; the storage mutation is delegated to `NavRegistryLib.addBalanceAdapter`.
+- `_removeBalanceAdapter(adapter)` — Removes from global list (if present); wrapped by the external `removeBalanceAdapters(address[])`.
 - `_registerAsset(asset, decimals)` — Adds to asset registry (decimals; symbol is set separately).
 - `_setErc20DefaultAdapter(defaultAdapter)` — Sets and registers the default wallet adapter.
 

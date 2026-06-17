@@ -105,7 +105,7 @@ The adapter does not care which model is used — `onlyOwner` is the only constr
 | `submitProof` reverts with `AmountRegression` | API returned a value lower than what's cached. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The owner can call `clearAllocation` manually after investigating. |
 | `submitProof` reverts with `OwnableUnauthorizedAccount` | Bot's signer is not the adapter's owner | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
 | Cache reads as 0 even though API shows non-zero `amount` | Cached `root` does not match current `Distributor.getMerkleRoot()`. Bot has not yet run since the last root rotation. | Wait for next bot cycle. If persistent, the bot is stopped — investigate. |
-| Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapter` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
+| Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapters` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
 
 ## Operator-side bookkeeping
 

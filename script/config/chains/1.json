@@ -101,7 +101,7 @@
       },
       "deployed": "",
       "legacy_deployed": "0x191d6b8EdD19167e90419347d586081E2B01D8dD",
-      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceAdapter(legacy_deployed) and addBalanceAdapter(deployed) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source \u2014 adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
+      "comment_legacy": "Address of the previous single-token (stkGHO-only) adapter. The new multi-token adapter replaces it; once 04_DeployBalanceAdapters runs, the OIV Safe must call NAVCalculator.removeBalanceAdapters([legacy_deployed]) and addBalanceAdapters([deployed]) to swap them in. The set of stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO) is hardcoded in the adapter's source \u2014 adding a new SM stake token in the future is a code change, not a config edit. See docs/decisions/0002-aave-safety-module-multi-token.md."
     },
     "AaveUmbrella": {
       "enabled": true,

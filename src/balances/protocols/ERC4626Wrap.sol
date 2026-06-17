@@ -65,7 +65,7 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     ///         no-op (positions would always be dropped), so we fail loudly instead. The harness
     ///         and production deploy flows must register the underlying asset before deploying
     ///         the adapter — production: Safe-TX bundles place `registerAsset(...)` before
-    ///         `addBalanceAdapter(...)`; harness: `_registerAllAssets()` runs before
+    ///         `addBalanceAdapters(...)`; harness: `_registerAllAssets()` runs before
     ///         `_deployAllBalanceAdapters()`.
     constructor(address wrapper_, address navCalculator_) {
         if (wrapper_ == address(0)) revert InvalidArguments();

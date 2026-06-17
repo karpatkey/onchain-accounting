@@ -297,7 +297,7 @@ You should see the `deployed` field filled in!
 |-------|------|-------------|
 | `securityCouncil` | address | Security-council Safe — the end-state admin (receives DEFAULT_ADMIN_ROLE in step 07). Does **not** execute deploy/config txs. |
 | `admin` | address | DEFAULT_ADMIN_ROLE holder. In the EOA deploy flow set to the **deployer EOA** (upgrade, authorize adapters) until step 07 hands it to the council. |
-| `manager` | address | MANAGER role (register assets, add oracles, addMetaInstances/removeMetaInstances). In the EOA flow, the **deployer EOA**. |
+| `manager` | address | MANAGER role (register assets, addBalanceAdapters/removeBalanceAdapters, addMetaInstances/removeMetaInstances). In the EOA flow, the **deployer EOA**. |
 
 ### Adapter Configuration
 | Field | Type | Description |
@@ -334,7 +334,7 @@ Example — bytes32-keyed meta-adapter (`MorphoMarketsMeta`):
 }
 ```
 
-`06_Configure.s.sol` reads both fields and calls `NAVCalculator.addMetaInstances(adapter, instances)` for each meta-adapter that has a non-empty list.
+`06_Configure.s.sol` reads both fields and reconciles each meta-adapter's on-chain set to config: it calls `NAVCalculator.removeMetaInstances(adapter, ...)` for coordinates no longer listed and `NAVCalculator.addMetaInstances(adapter, ...)` for newly-listed ones (diffed against `getMetaInstances`).
 
 ## Adding a New Chain
 

@@ -43,7 +43,7 @@ Rules:
 - Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.
 - `address` is the feed's on-chain address — for Chainlink, the **proxy** (not the aggregator).
 - `heartbeat` is in seconds. Use the value from the feed page.
-- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-freshest-wins.md) and §C).
+- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-price-redundancy.md) and §C).
 
 ### A.3 No symbol list to edit
 

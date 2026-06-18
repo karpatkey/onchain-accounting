@@ -29,7 +29,7 @@ Two concerns are separated:
 - **`nav-config/`** — *what to register/add on the NAVCalculator*. Read by `script/manage/RegisterAssets.s.sol` / `06_Configure.s.sol`.
 
 ```
-config/
+script/config/
 ├── chains/
 │   ├── 1.json                                     # Mainnet: RPC, explorer, metadata, role addresses (metadata + addresses only)
 │   ├── 42161.json                                 # Arbitrum
@@ -45,14 +45,17 @@ config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
 │   └── meta-balance-adapters/<chainId>.json       # META adapters to add on NAV: { "<AdapterName>": { enabled, instances[] | instancesRaw[] } }
+├── deployments/
+│   ├── 1.json                                     # Deployed contract addresses (Mainnet) — the ONLY place addresses are written
+│   ├── 42161.json                                 # Arbitrum
+│   └── ...                                         # One file per chain
 ├── salt-config.json                               # CREATE2 salts (auto-generated, version controlled)
 └── README.md                                      # This file
+```
 
-deployments/
-├── 1.json                     # Deployed contract addresses (Mainnet) — the ONLY place addresses are written
-├── 42161.json                 # Arbitrum
-└── ...                        # One file per chain
+Safe-transaction batches are written by the manage scripts to a `safe-transactions/` directory at the **repository root** (not under `script/config/`):
 
+```
 safe-transactions/
 ├── 1-deploy-implementations.json
 ├── 1-deploy-proxies-and-initialize.json   # Safe transaction JSONs for multisig execution
@@ -230,7 +233,7 @@ A meta-adapter is a single deployed contract, so it appears here just like a pla
 
 ## nav-config/assets-and-price-feeds/{chainId}.json
 
-**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address` and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-assets.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
+**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address` and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-price-redundancy.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
 
 ### Template
 

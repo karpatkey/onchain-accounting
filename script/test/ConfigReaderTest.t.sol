@@ -279,12 +279,15 @@ contract ConfigReaderTest is TestEnvConfigurator {
     ///         Empty state passes — there is nothing to compare. (No "must be set" assertion: that is deploy state.)
     function test_DeployedProxyAddressesConsistentWhenPresent() public view {
         uint256[] memory chainIds = _supportedChainIds();
+        // Guard against a future empty _supportedChainIds() silently turning this into a no-op assertion.
+        assertGt(chainIds.length, 0, "no supported chains configured");
         _assertConsistentWhenPresent(chainIds, "NAVCalculatorProxy");
         _assertConsistentWhenPresent(chainIds, "BridgeEscrowProxy");
     }
 
     function test_DeployedImplAddressesConsistentWhenPresent() public view {
         uint256[] memory chainIds = _supportedChainIds();
+        assertGt(chainIds.length, 0, "no supported chains configured");
         _assertConsistentWhenPresent(chainIds, "NAVCalculatorImplementation");
         _assertConsistentWhenPresent(chainIds, "BridgeEscrowImplementation");
     }

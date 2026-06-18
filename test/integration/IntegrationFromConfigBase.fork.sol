@@ -812,7 +812,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Registers an asset and wires ALL of its configured price feeds: the first via registerAsset, any
     ///         additional via addPriceFeed (ADR 0009 redundancy). Custom feeds resolve to the in-test ephemeral
     ///         deployment (`_ephemeralPriceFeeds[<feed name>]`), since this harness deploys feeds in-memory rather
-    ///         than from a deployments file. Chainlink/Redstone/API3 feeds use the static address from assets.json.
+    ///         than from a deployments file. Chainlink/Redstone/API3 feeds use the static address from
+    ///         `nav-config/assets-and-price-feeds/<chainId>.json`.
     function _registerAssetIfPossible(string memory symbol) internal {
         string memory addrStr = ConfigReader.readAssetAddress(vm, _chainId, symbol);
         if (bytes(addrStr).length == 0) return;
@@ -825,7 +826,21 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         for (uint256 i = 0; i < feedCount; i++) {
             string memory t = ConfigReader.readAssetFeedType(vm, _chainId, symbol, i);
             if (_equals(t, "None")) continue;
-            IPrices.PriceType pt = _equals(t, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
+            // Map the config type string to the PriceType enum explicitly so the fork harness exercises the same
+            // registration semantics as production RegisterAssets (which distinguishes Chainlink/Redstone/API3).
+            // Fail fast on an unrecognized type rather than silently treating it as Chainlink.
+            IPrices.PriceType pt;
+            if (_equals(t, "Custom")) {
+                pt = IPrices.PriceType.Custom;
+            } else if (_equals(t, "Chainlink")) {
+                pt = IPrices.PriceType.Chainlink;
+            } else if (_equals(t, "Redstone")) {
+                pt = IPrices.PriceType.Redstone;
+            } else if (_equals(t, "API3")) {
+                pt = IPrices.PriceType.API3;
+            } else {
+                revert(string(abi.encodePacked("unknown price feed type '", t, "' for ", symbol)));
+            }
 
             address adapter;
             if (pt == IPrices.PriceType.Custom) {

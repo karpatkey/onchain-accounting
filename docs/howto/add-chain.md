@@ -134,7 +134,9 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID -
 forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
 # 06 — register balance adapters + meta-instances + authorize bridge adapters (EOA broadcast; idempotent)
-#      meta vs. plain is detected via ERC165 (no meta flag in config); meta adapters get their instances wired with addMetaInstances
+#      meta vs. plain is config-driven: plain adapters come from nav-config/balance-adapters/<id>.json (addBalanceAdapters),
+#      meta from nav-config/meta-balance-adapters/<id>.json (addMetaBalanceAdapter + addMetaInstances). The contracts
+#      still enforce the split on-chain (addBalanceAdapters reverts for a meta-adapter, and vice-versa).
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles

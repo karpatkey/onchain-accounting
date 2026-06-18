@@ -2,7 +2,7 @@
 
 > **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
 
-> **⚠️ NAV v2 full redeploy in progress.** All prior deployment evidence has been wiped — NAVCalculator impl/proxy, BridgeEscrow impl/proxy, the UUPS placeholder, ERC20Default, every balance/meta adapter, every custom price-feed adapter, and every bridge adapter are being **redeployed from scratch (new bytecode)**. Treat every deployed address as **TBD**. Addresses are written to `deployments/{chainId}.json` as each contract lands (the only place addresses live; broadcast logs are not committed). The `PriceFeedLib` / `NavRegistryLib` library pins are build config and are unchanged.
+> **⚠️ NAV v2 full redeploy in progress.** All prior deployment evidence has been wiped — NAVCalculator impl/proxy, BridgeEscrow impl/proxy, the UUPS placeholder, ERC20Default, every balance/meta adapter, every custom price-feed adapter, and every bridge adapter are being **redeployed from scratch (new bytecode)**. Treat every deployed address as **TBD**. Addresses are written to `script/config/deployments/{chainId}.json` as each contract lands (the only place addresses live; broadcast logs are not committed). The `PriceFeedLib` / `NavRegistryLib` library pins are build config and are unchanged.
 
 ## ✅ What Has Been Implemented
 
@@ -64,7 +64,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `contracts-deployment-config/price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
 | `contracts-deployment-config/balance-adapters/{chainId}.json` | Balance + meta adapters to deploy (`enabled` + `constructor`) |
 | `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
-| `deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land. Broadcast logs are no longer committed. For the NAV v2 from-scratch redeploy every field here starts **TBD** (empty). |
+| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land. Broadcast logs are no longer committed. For the NAV v2 from-scratch redeploy every field here starts **TBD** (empty). |
 | (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (`addresses` + adapter flags) plus the per-concern `contracts-deployment-config/` and `nav-config/` files above |
 
 ## Deployment Workflow
@@ -379,12 +379,12 @@ forge script script/verify/VerifyEtherscan.s.sol \
 
 ## Files Generated During Deployment
 
-### Deployment Records (`deployments/`)
+### Deployment Records (`script/config/deployments/`)
 
-The per-chain `deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. For the NAV v2 full redeploy, every address in these files starts **TBD** (empty) and is written back as each contract is redeployed from scratch.
+The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. For the NAV v2 full redeploy, every address in these files starts **TBD** (empty) and is written back as each contract is redeployed from scratch.
 
 ```
-deployments/
+script/config/deployments/
 ├── 1.json          # Mainnet
 ├── 42161.json      # Arbitrum
 ├── 10.json         # Optimism

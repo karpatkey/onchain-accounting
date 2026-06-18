@@ -1,0 +1,64 @@
+{
+  "protocol": "Lido stETH Withdrawal Queue",
+  "adapter": "src/balances/protocols/LidoWithdrawalQueue.sol",
+  "adapter_test": "test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol",
+  "test_contract": "LidoWithdrawalQueueBalanceOracleForkTest_Fresh",
+  "chain": { "id": 1, "name": "mainnet" },
+  "block": {
+    "number": 25294574,
+    "timestamp": 1781185211,
+    "timestamp_hex": "0x6a2ababb",
+    "timestamp_utc": "2026-06-11 13:40:11 UTC",
+    "rationale": "Fresh verification block. Lido WQ state at capture: lastRequestId=127194, lastFinalizedRequestId=127171, lastCheckpointIndex=1123. The two holders below together exercise both math branches (amountOfStETH for un-finalized, getClaimableEther for finalized) plus multi-request summing. amountOfStETH is fixed at request time, so the PRIMARY value is stable; the SECONDARY finalized request could be claimed by its owner at any time, which would zero its position (fine for a pinned fork block; re-verify before any live cross-check)."
+  },
+  "instance": {
+    "withdrawalQueue": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1",
+    "underlying": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE (native ETH, ERC-7528 sentinel)",
+    "note": "Mainnet-only — Lido's WithdrawalQueueERC721 exists only on Ethereum. Standalone (non-meta) adapter. Denominated in native ETH (the asset Lido pays on claim; priced via ETH/USD, not stETH/USD, so a stETH depeg can't mis-value a claim that settles in full ETH). positionId = \"\" (account-global); protocolId = keccak256('lido-withdrawal'); positionKind = Supplied."
+  },
+  "protocolId": "keccak256('lido-withdrawal') = 0x8d56d2c45ee0363b86b8d3481909e3925ab9c4c6f7b28a284d0757b094fefc21",
+  "holders": [
+    {
+      "label": "PRIMARY",
+      "address": "0x9074212F22F75789cA3fa21A4B46d3A1489CC0a9",
+      "notes": [
+        "Two PENDING (un-finalized, un-claimed) requests → valued via amountOfStETH (the redemption rate isn't fixed until finalization).",
+        "Exercises multi-request summing across an account.",
+        "request 127178 = 1000.000000000000000000 stETH; request 127179 = 995.928786744414475126 stETH."
+      ],
+      "legs_at_fork_block": [
+        {
+          "asset": "ETH",
+          "kind": "Supplied",
+          "isDebt": false,
+          "amount_raw": "1995928786744414475126",
+          "amount_humanised": "1995.928786744414475126 ETH",
+          "ground_truth": "sum of amountOfStETH across the account's open un-claimed un-finalized requests (getWithdrawalStatus)"
+        }
+      ]
+    },
+    {
+      "label": "SECONDARY",
+      "address": "0x2DE923BEE124514939ACa4f8f057e11Ff8d44F2b",
+      "notes": [
+        "One FINALIZED, un-claimed request (id 127164) → valued via getClaimableEther (the exact claimable ETH, which after a negative rebase can be < amountOfStETH).",
+        "Here getClaimableEther == amountOfStETH == 54.619912948304940018 (normal case, no negative rebase) — the equality proves the finalized path resolves the checkpoint hint and reads the live claimable value correctly.",
+        "checkpoint hint for id 127164 = 1123 (lastCheckpointIndex)."
+      ],
+      "legs_at_fork_block": [
+        {
+          "asset": "ETH",
+          "kind": "Supplied",
+          "isDebt": false,
+          "amount_raw": "54619912948304940018",
+          "amount_humanised": "54.619912948304940018 ETH",
+          "ground_truth": "WithdrawalQueue.getClaimableEther([127164], findCheckpointHints([127164],1,1123))"
+        }
+      ]
+    }
+  ],
+  "ground_truth": {
+    "method": "live WithdrawalQueueERC721 reads (NOT a Python re-derivation)",
+    "detail": "Both branches are pinned against the real Lido WithdrawalQueue at the fork block. PRIMARY: oracle == sum of amountOfStETH over the open un-finalized requests. SECONDARY: oracle == getClaimableEther of the finalized request given its checkpoint hint. Plus protocolId == keccak256('lido-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this), and the leg denominated in the native-ETH sentinel. The amountOfStETH-vs-getClaimableEther divergence (negative-rebase haircut) is covered with mocks in the unit test (test/balances/protocols/LidoWithdrawalQueue.t.sol)."
+  }
+}

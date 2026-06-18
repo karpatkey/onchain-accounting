@@ -1,0 +1,59 @@
+{
+  "protocol": "Kelp DAO rsETH Withdrawal Queue",
+  "adapter": "src/balances/protocols/KelpWithdrawalQueue.sol",
+  "adapter_test": "test/balances/protocols/fork/KelpWithdrawalQueue.fork.t.sol",
+  "test_contract": "KelpWithdrawalQueueBalanceOracleForkTest_Fresh",
+  "chain": { "id": 1, "name": "mainnet" },
+  "block": {
+    "number": 25331379,
+    "timestamp": 1781628491,
+    "timestamp_hex": "0x6a317e4b",
+    "timestamp_utc": "2026-06-16 16:48:11 UTC",
+    "rationale": "Fresh verification block. The single holder below exercises every gap the original (stETH-only, single-request) suite left: multi-asset emission (a stETH leg AND a native-ETH leg from one oracle), multi-request summing on a real fork (two stETH requests), and the native-ETH payout branch. All three requests are pending at this block (each userNonce is above its asset's nextLockedNonce). Requests can be claimed by the owner at any time; the pin keeps them reproducible."
+  },
+  "instance": {
+    "withdrawalManager": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
+    "lrtConfig": "0x947Cb49334e6571ccBFEF1f1f1178d8469D65ec7",
+    "supportedAssets": [
+      "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84 (stETH)",
+      "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b (ETHx)",
+      "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE (native ETH, ERC-7528 sentinel)"
+    ],
+    "note": "Mainnet-only — Kelp's LRTWithdrawalManager exists only on Ethereum. Standalone (non-meta) adapter. Multi-asset: discovers payout assets at runtime via lrtConfig().getSupportedAssetList() and emits one credit leg per asset with non-zero owed that is also registered in NAV. stETH and native ETH are registered on the dev NAV; ETHx uses a custom feed the dev deploy.sh skips, so an ETHx request would be dropped from getOraclePositions (still readable via getOracleBalanceForAsset). positionId = \"\" (account-global); protocolId = keccak256('kelp-withdrawal'); positionKind = Supplied."
+  },
+  "protocolId": "keccak256('kelp-withdrawal') = 0x37f335fba67b274100fce4046bdab23672d916e3bd4d334be9f45c789f9e2c33",
+  "holders": [
+    {
+      "label": "MULTI_ASSET",
+      "address": "0x13833b44341288dF27cc85e3eFDA8CD3830a4d35",
+      "notes": [
+        "Two open stETH requests (nonces 7177 + 7203) summed into one stETH leg, plus one open native-ETH request (nonce 5937) as a second leg → getOraclePositions emits TWO legs from one oracle (the multi-asset path).",
+        "All three requests are pending at the fork block: each userNonce exceeds its asset's nextLockedNonce (stETH 7098, native ETH 5831), so none is claimable yet.",
+        "stETH request 7177 = 322.038966142406605154; stETH request 7203 = 332.890371974143452160; native-ETH request 5937 = 0.010734990037748145.",
+        "No ETHx request — and ETHx is not registered on the dev NAV (custom feed) — so no ETHx leg; the registered-vs-unregistered drop is covered in the unit test."
+      ],
+      "legs_at_fork_block": [
+        {
+          "asset": "stETH",
+          "kind": "Supplied",
+          "isDebt": false,
+          "amount_raw": "654929338116550057314",
+          "amount_humanised": "654.929338116550057314 stETH (7177 + 7203)",
+          "ground_truth": "userAssociatedNonces(stETH, holder) => (1,3); sum of getUserWithdrawalRequest(stETH, holder, i).expectedAssetAmount for i in {0,1}"
+        },
+        {
+          "asset": "native ETH",
+          "kind": "Supplied",
+          "isDebt": false,
+          "amount_raw": "10734990037748145",
+          "amount_humanised": "0.010734990037748145 ETH (nonce 5937)",
+          "ground_truth": "getUserWithdrawalRequest(ETH, holder, 0).expectedAssetAmount"
+        }
+      ]
+    }
+  ],
+  "ground_truth": {
+    "method": "live LRTWithdrawalManager reads (NOT a Python re-derivation)",
+    "detail": "Both legs are pinned against the real Kelp LRTWithdrawalManager at the fork block. stETH leg == sum of expectedAssetAmount over the holder's two open stETH requests; native-ETH leg == the single open native-ETH request's expectedAssetAmount. getOraclePositions emits exactly these two legs (ETHx skipped: no request + unregistered), each with protocolId == keccak256('kelp-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this). Multi-request summing within an asset, multi-asset emission, the claimed-front-skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also covered with mocks in the unit test (test/balances/protocols/KelpWithdrawalQueue.t.sol)."
+  }
+}

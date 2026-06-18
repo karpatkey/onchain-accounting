@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -12,22 +12,24 @@ import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.
 /// @author kpk
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
 ///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
-///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`).
+///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`setMetaInstances`).
 ///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
 /// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
 ///      leg-for-leg. Works with canonical Uniswap V2
 ///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
-contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @notice Protocol identifier constant.
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.UNISWAP_V2;
+contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceOracle {
+    /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
+    ///         (PancakeSwap V2, SushiSwap) report their own slug while sharing the `(address pair)` positionId
+    ///         schema. Defaults to `uniswap-v2`.
+    function _protocolId() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP_V2;
+    }
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Uniswap V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the pair address. Emits up to 2 `Supply` legs, dropping zeros and unregistered assets,
     ///      respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
@@ -56,7 +58,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @inheritdoc MetaBalanceOracle
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(_toAddress(instance), address(0));
         assets = new address[](2);
@@ -80,16 +82,16 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceAdapter: address(this),
+            balanceOracle: address(this),
             amount: amount,
             isDebt: false,
-            protocolId: PROTOCOL_ID,
+            protocolId: _protocolId(),
             positionId: positionId,
             positionKind: PositionKind.Supplied
         });
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @inheritdoc MetaBalanceOracle
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address pair = abi.decode(pid, (address));

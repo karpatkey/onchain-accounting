@@ -70,7 +70,7 @@ The legacy SM's `aave2` carve-out (per ADR 0005) is independent of this and rema
 
 ## Test holders
 
-Fork tests cover the four currently-deployed stake tokens against real holders sourced from Etherscan top-holder views, verified to have non-zero stake balances **and** non-zero accrued rewards at `FORK_BLOCK = 25_000_000`:
+Fork tests cover the four currently-deployed stake tokens against real holders sourced from Etherscan top-holder views, verified to have non-zero stake balances **and** non-zero accrued rewards at `FORK_BLOCK = 25_287_877` (the verification block; see the fork test for the canonical value):
 
 | Stake token | Holder |
 |---|---|

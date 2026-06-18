@@ -10,10 +10,10 @@
   },
 
   "AaveV2InstancesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V2 instances. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool() instead of getPool()). Constructor takes (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV2InstancesMeta.instances — instance ProtocolDataProvider addresses). Identity derived on-chain: positionId = LendingPool; name = getMarketId(). Supersedes the per-instance AaveV2Instance adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V2 instances. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool() instead of getPool()). Constructor takes (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV2InstancesMeta.instances — instance ProtocolDataProvider addresses). Identity derived on-chain: positionId = abi.encode(LendingPool, reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave genesis market)\"); market id via LendingPool.getAddressesProvider().getMarketId(). Supersedes the per-instance AaveV2Instance adapter.",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — variable debt only, stable debt not reported)",
     "protocol": "Aave V2",
-    "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<derived: getMarketId()>" }
+    "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<derived: \"<reserve symbol> position (<market id>)\">" }
   },
 
   "AaveV2Instance": {
@@ -35,10 +35,10 @@
   },
 
   "AaveV3InstancesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V3 instances. Constructor takes only (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV3InstancesMeta.instances — each entry is the instance's ProtocolDataProvider address). Reserves within an instance are enumerated trustlessly via getAllReservesTokens(); reserve tokens are NOT separate coordinates. Identity derived on-chain: positionId = the instance Pool (ADDRESSES_PROVIDER.getPool()); name = ADDRESSES_PROVIDER.getMarketId().",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V3 instances. Constructor takes only (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV3InstancesMeta.instances — each entry is the instance's ProtocolDataProvider address). Reserves within an instance are enumerated trustlessly via getAllReservesTokens(); reserve tokens are NOT separate coordinates. Identity derived on-chain: positionId = abi.encode(instance Pool via ADDRESSES_PROVIDER.getPool(), reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave V3 Lido Ethereum)\"); market id via Pool.ADDRESSES_PROVIDER().getMarketId().",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — same shape as AaveV3Instance).",
     "protocol": "Aave V3",
-    "positionDetail": { "protocol": "Aave V3", "product": "Lending", "name": "<derived: getMarketId()>" }
+    "positionDetail": { "protocol": "Aave V3", "product": "Lending", "name": "<derived: \"<reserve symbol> position (<market id>)\">" }
   },
 
   "AaveV3SafetyModule": {

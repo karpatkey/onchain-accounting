@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
+import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -26,16 +26,14 @@ interface IAavePoolAddressesProvider {
 ///         to bytes32). Within an instance, reserves are enumerated trustlessly via `getAllReservesTokens()`, so
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
 ///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
-contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
+contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceOracle {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_LENDING;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @inheritdoc MetaBalanceOracle
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
     ///      Supply/Collateral (aToken balance) and Borrow (variable debt). Stable debt is ignored (Aave V3
     ///      deprecated it). Skips unregistered reserves and respects assetFilter.
@@ -81,7 +79,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @inheritdoc MetaBalanceOracle
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         IProtocolDataProvider.TokenData[] memory reserves =
             IProtocolDataProvider(_toAddress(instance)).getAllReservesTokens();
@@ -91,13 +89,35 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @inheritdoc MetaBalanceAdapter
-    /// @dev `virtual` so the Aave V2 subclass can override.
+    /// @inheritdoc MetaBalanceOracle
+    /// @dev Label is "<reserve symbol> position (<market id>)" — the market id (e.g. "Aave Ethereum Market" vs
+    ///      "Aave V3 Lido Ethereum") distinguishes instances that share a reserve symbol, since protocolId is the
+    ///      same across all instances and positionId carries the market only as the pool address. Falls back to
+    ///      "<reserve symbol> position" when the market id is unavailable. `virtual` so the V2 subclass can override.
     function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
         if (pid.length < 64) return "";
-        (, address reserve) = abi.decode(pid, (address, address));
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            return string.concat(sym, " position");
+        (address pool, address reserve) = abi.decode(pid, (address, address));
+        string memory sym;
+        try IERC20Metadata(reserve).symbol() returns (string memory s) {
+            sym = s;
+        } catch {
+            return "";
+        }
+        string memory market = _marketId(pool);
+        return
+            bytes(market).length == 0 ? string.concat(sym, " position") : string.concat(sym, " position (", market, ")");
+    }
+
+    /// @notice Resolves the instance's market id (for the display label) from its pool.
+    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`; the V2 subclass overrides to use `getAddressesProvider()`.
+    ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
+    function _marketId(address pool) internal view virtual returns (string memory) {
+        try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
+            try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
+                return m;
+            } catch {
+                return "";
+            }
         } catch {
             return "";
         }
@@ -123,7 +143,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceAdapter: address(this),
+            balanceOracle: address(this),
             amount: amount,
             isDebt: isDebt,
             protocolId: _getProtocolId(),

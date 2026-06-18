@@ -233,3 +233,76 @@ contract ERC4626WrapBalanceAdapterForkTest_sGHO_RealHolder is BalanceAdapterTest
         assertFalse(isDebt[0]);
     }
 }
+
+/// @title ERC4626WrapBalanceOracle fork tests — real sGHO holder at the verification block (2nd pinned point)
+/// @notice Same holder as ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder, pinned at the verification block
+///         25_287_877 (the block captured in the sGHO evidence-pack README). Augments — does not replace — the
+///         original pin: the holder hasn't moved (share count is identical) so this is a pure yield-accrual
+///         delta, giving a second regression point. The dev-anvil dashboard forks at latest (not this block),
+///         so it is a live sanity check that drifts from this pinned value by design.
+///         Values captured on-chain at block 25_287_877: balanceOf = 4_575_878_017_851_927_061_694_571 sGHO
+///         shares; convertToAssets(shares) = 4_589_154_643_764_641_667_853_774 GHO (exact at the block's
+///         timestamp — a live dev anvil reads marginally higher as it advances block.timestamp while mining).
+contract ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh is BalanceAdapterTestBase {
+    IERC4626 public constant SGHO = IERC4626(0xE1753F2e00940cC31213dd92013cF019DFE4ca1d);
+    IERC20 public constant GHO = IERC20(0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f);
+
+    uint256 public constant FORK_BLOCK = 25_287_877;
+    address public constant HOLDER = 0x5eF87DeC00a19d2b47EE0073d869F7d7feFF26ef;
+    uint256 public constant EXPECTED_SHARES = 4_575_878_017_851_927_061_694_571;
+    uint256 public constant EXPECTED_GHO = 4_589_154_643_764_641_667_853_774;
+
+    ERC4626WrapBalanceOracle public oracle;
+
+    function setUp() public override {
+        super.setUp(); // dispatches to this contract's _setupFork() override
+        _setupOracle();
+    }
+
+    function _setupFork() internal override {
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
+    }
+
+    function _setupOracle() internal {
+        balances = _deployBalancesForOracle(address(GHO));
+        oracle = new ERC4626WrapBalanceOracle(address(SGHO), address(balances));
+    }
+
+    /// @notice Share count is unchanged from the original pin — only the redeemable value accrued.
+    function test_realHolder_sharesAtBlock() public view {
+        assertEq(SGHO.balanceOf(HOLDER), EXPECTED_SHARES, "holder sGHO shares at verification block");
+    }
+
+    function test_realHolder_convertToAssets() public view {
+        assertEq(SGHO.convertToAssets(EXPECTED_SHARES), EXPECTED_GHO, "convertToAssets at verification block");
+    }
+
+    function test_realHolder_oracleReportsExactGho() public view {
+        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(HOLDER, address(GHO));
+        assertEq(amount, EXPECTED_GHO, "oracle must report the holder's exact GHO value");
+        assertFalse(isDebt, "savings position is always credit");
+    }
+
+    function test_realHolder_positions() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(HOLDER, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].balanceAsset.asset, address(GHO));
+        assertEq(positions[0].amount, EXPECTED_GHO);
+        assertFalse(positions[0].isDebt);
+        assertEq(positions[0].protocolId, ProtocolIds.ERC4626);
+        assertEq(positions[0].positionId, abi.encode(address(SGHO)));
+        assertTrue(positions[0].positionKind == PositionKind.Supplied);
+    }
+
+    /// @notice getOracleBalances must agree with getOracleBalanceForAsset / getOraclePositions at this pin —
+    ///         exercises the evidence-pack claim that all three views return the same GHO value.
+    function test_realHolder_balances() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(HOLDER);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], address(GHO));
+        assertEq(amounts[0], EXPECTED_GHO);
+        assertFalse(isDebt[0]);
+    }
+}

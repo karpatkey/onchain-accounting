@@ -2,7 +2,7 @@
 
 End-to-end walkthrough for bringing the full stack up on a new EVM chain. The reference deploy doc is [`../../script/deploy/README.md`](../../script/deploy/README.md); this is the recipe.
 
-Five chains are configured today: `1` (Mainnet), `10` (Optimism), `100` (Gnosis), `42161` (Arbitrum), `8453` (Base). The pattern below assumes you're adding a similar EVM L2/L1.
+Seven chains are configured today: `1` (Mainnet), `10` (Optimism), `56` (BSC), `100` (Gnosis), `137` (Polygon), `42161` (Arbitrum), `8453` (Base). The pattern below assumes you're adding a similar EVM L2/L1.
 
 ---
 
@@ -10,7 +10,7 @@ Five chains are configured today: `1` (Mainnet), `10` (Optimism), `100` (Gnosis)
 
 Before you write a line of config:
 
-- [ ] An RPC endpoint for the chain (Alchemy, Infura, or a self-hosted node). Set `ALCHEMY_API_KEY` (or your provider's equivalent) in your environment.
+- [ ] An RPC endpoint for the chain (Alchemy, Infura, or a self-hosted node). Set `ALCHEMY_API_KEY` (or your provider's equivalent) in your environment. To keep `"rpc": "$ALCHEMY"` in the chain config, the new chainId must also be added to the `_alchemyNetworkForChainId` map in `script/utils/ConfigReader.sol` (it currently maps only `1`, `10`, `56`, `100`, `42161`, `8453` to an Alchemy network slug); otherwise point `rpc` at a plain `$YOUR_ENV_VAR` holding the full URL — `ConfigReader` expands any `$NAME` token from the environment.
 - [ ] A funded deployer key (`$DEPLOYER_NAME` in Foundry's keystore).
 - [ ] The block explorer's verifier endpoint and an API key (`ETHERSCAN_API_KEY` or chain-specific).
 - [ ] The OIV Safe address on this chain (must already exist).
@@ -82,13 +82,13 @@ Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a 
 }
 ```
 
-For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
+For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §8 for the right contract.
 
 No symbol list to edit: `RegisterAssets.s.sol` reads the symbols from the keys of `nav-config/assets-and-price-feeds/<newChainId>.json` via `getAssetSymbols`. Adding the asset there is enough.
 
 ### 3.2 Balance adapters
 
-Add the `ERC20Default` coverage plus per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)):
+The `ERC20Default` adapter (wallet/native coverage) is deployed and registered automatically inside `NAVCalculator.initialize()` during step 02 — you do **not** add it to any config file here. Add only the per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)):
 
 - Deploy config (constructor args) → `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` (plain adapters) or `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` (meta adapters).
 - Registration on NAV → `script/config/nav-config/balance-adapters/<newChainId>.json` (plain adapters) or `script/config/nav-config/meta-balance-adapters/<newChainId>.json` (meta adapters, with `instances`/`instancesRaw`).
@@ -115,9 +115,12 @@ For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate,
 
 ## 4. Run the deploy scripts in order
 
+Without `PERSIST_DEPLOYMENTS=1`, the scripts dry-run their config side effects: deployed addresses are only logged, not written to `script/config/deployments/<chainId>.json`. Set `PERSIST_DEPLOYMENTS=1` on each command below once you're ready to record the real addresses.
+
 ```bash
 export CHAIN_ID=<newChainId>
 export DEPLOYER_NAME=...
+export PERSIST_DEPLOYMENTS=1   # write deployed addresses to deployments/<chainId>.json (omit for a dry run)
 
 # 01 — implementations (deterministic; same address on every chain after this completes)
 forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
@@ -127,6 +130,10 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id $CHAIN_ID --account
 
 # 03 — deploy custom price feed adapters from contracts-deployment-config/custom-price-feeds/<chainId>.json
 forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
+
+# 03b — register assets + price feeds on NAVCalculator from nav-config/assets-and-price-feeds/<chainId>.json
+#       (separate script; deployer-as-MANAGER broadcasts registerAsset/addPriceFeed directly)
+forge script script/manage/RegisterAssets.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 04 — deploy enabled balance adapters from contracts-deployment-config/balance-adapters/<chainId>.json + meta-balance-adapters/<chainId>.json
 forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
@@ -145,7 +152,7 @@ DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and (when `PERSIST_DEPLOYMENTS=1`) writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 
@@ -154,21 +161,22 @@ For chains where some scripts are no-ops (e.g., a chain with no bridge adapters)
 ## 5. Verify the deployment
 
 ```bash
-# Verify that assets are registered with prices
-cast call $NAVCalculator "getRegisteredAssets()(address[])" --rpc-url $RPC
+# Verify that assets are registered with prices (returns an array of Asset{address,symbol,decimals})
+cast call $NAVCalculator "getRegisteredAssets()((address,string,uint8)[])" --rpc-url $RPC
 
 # Pull a price for a known asset (expect non-zero, not stale)
 cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool)" $WETH --rpc-url $RPC
 
 # Pull NAV for the OIV Safe (sanity check; expect a number > 0 if the Safe holds anything)
-cast call $NAVCalculator "getAccountNav(address,address)((int256,address,uint64,address[],bool))" \
+# NAV{value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale}
+cast call $NAVCalculator "getAccountNav(address,address)((int256,(address,string,uint8),uint64,(address,string,uint8)[],bool,bool))" \
   $SAFE 0x0000000000000000000000000000000000000000 --rpc-url $RPC
 ```
 
 Then run the source-verify script to push contract verification to the block explorer:
 
 ```bash
-script/verify/verify-all-v2.sh
+script/verify/verify-all.sh
 ```
 
 ---
@@ -186,7 +194,7 @@ PR checklist:
 - [ ] `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` populated (assets with `priceFeeds`)
 - [ ] `script/config/nav-config/balance-adapters/<newChainId>.json` populated (plain adapters to register)
 - [ ] `script/config/nav-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters + `instances`/`instancesRaw`)
-- [ ] `foundry.toml` has the new chain's RPC and Etherscan entries (the `[rpc_endpoints]` and `[etherscan]` sections)
+- [ ] RPC resolves for the new chain — the chain config's `"rpc": "$ALCHEMY"` is expanded by `ConfigReader` from `ALCHEMY_API_KEY`, but only for chainIds in `_alchemyNetworkForChainId` (`ConfigReader.sol`); add the new chainId there, or point `rpc` at a plain `$YOUR_ENV_VAR` with the full URL. Either way no `foundry.toml` `[rpc_endpoints]` entry is needed; just set the env var (or pass `--rpc-url`)
 - [ ] Verification done on the block explorer
 - [ ] `forge build` clean
 - [ ] PR description includes: chain name, chain ID, sequencer feed address (or "L1"), Safe address, list of assets and adapters enabled

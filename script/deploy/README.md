@@ -4,7 +4,7 @@ Everything is deployed and configured by a single **deployer EOA** (private key 
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds + asset registration) → **04** (balance adapters) → **05** (bridge adapters) → **06** (configure: register adapters + meta-instances + authorize bridge adapters) → **07** (transfer admin to the security council, last).
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds + asset registration) → **04** (balance adapters) → **05** (bridge adapters) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters) → **07** (transfer admin to the security council, last).
 
 ## Role model
 
@@ -13,7 +13,7 @@ Deployment order (per chain unless noted):
 
 ## RPC and environment
 
-- Chain config uses `"rpc": "$ALCHEMY"` in `script/config/chains/{chainId}.json`, resolved by **ConfigReader** from **ALCHEMY_API_KEY** (or **ALCHEMY_APİ_KEY**). Run without `--rpc-url` if one of those is set; otherwise pass `--rpc-url` explicitly.
+- Chain config uses `"rpc": "$ALCHEMY"` in `script/config/chains/{chainId}.json`, resolved by **ConfigReader** from **ALCHEMY_API_KEY**. Run without `--rpc-url` if it is set; otherwise pass `--rpc-url` explicitly.
 - All commands broadcast from the deployer key: `--account $DEPLOYER_NAME` (a `cast wallet` account) or `--private-key $PK`.
 
 ```bash
@@ -47,15 +47,19 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 ## 03_DeployPriceFeeds.s.sol + asset registration
 
-Deploys custom price feeds and registers assets/feeds on `NAVCalculator` (asset registration via `script/manage/RegisterAssets.s.sol`, EOA path — run by the deployer-as-MANAGER).
+Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `nav-config/...`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through `registerAsset`, any additional feeds through `addPriceFeed`).
 
 ## 04_DeployBalanceAdapters.s.sol / 05_DeployBridgeAdapters.s.sol
 
-Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge adapters via CREATE2, writing their addresses to chain config.
+Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge adapters via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to chain config only when `PERSIST_DEPLOYMENTS=1`; see the note below). (Addresses are therefore chain- and run-specific — only the impl/library layer in `01`/`02` uses CREATE2.)
 
 ## 06_Configure.s.sol  (EOA broadcast)
 
-Run by the deployer EOA (holds admin + MANAGER). For every enabled + deployed balance adapter it calls `addBalanceAdapters([adapter])` (idempotent — skips already-registered) and, for meta-adapters (ADR 0010), `addMetaInstances`/`removeMetaInstances` with the configured instance set (`instances` addresses and/or `instancesRaw` bytes32, read from `nav-config/meta-balance-adapters/<chainId>.json`). For every enabled + deployed bridge adapter it authorizes it on `BridgeEscrow` (idempotent via `isAuthorizedAdapter`). Re-runnable.
+Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempotent (skips already-registered/authorized via `isAdapterRegistered` / `isAuthorizedAdapter`), so it can be re-run safely:
+
+- **Plain balance adapters** (from `nav-config/balance-adapters/<chainId>.json`): registered with `addBalanceAdapters([adapter])`.
+- **Meta-adapters** (ADR 0010, from `nav-config/meta-balance-adapters/<chainId>.json`): registered atomically with `addMetaBalanceAdapter(adapter, instances)` (register + seed the configured instance set in one call), then the on-chain instance set is reconciled against config via `addMetaInstances`/`removeMetaInstances` (diff-only, so a just-seeded adapter is a no-op). The instance set is `instances` addresses (widened to `bytes32`) and/or `instancesRaw` bytes32 coordinates.
+- **Bridge adapters:** each enabled + deployed adapter is authorized on `BridgeEscrow` (`authorizeAdapter`, or `authorizeAdapterWithCallback` when a callback selector is configured).
 
 ```bash
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME

@@ -11,7 +11,7 @@
   - `_getProtocolId()` — returns `ProtocolIds.AAVE_V2_LENDING` (`keccak256("aave-v2-lending")`) instead of the parent's `aave-v3-lending`.
   - `_marketId(pool)` — resolves the display market id via the V2 `LendingPool.getAddressesProvider().getMarketId()` (V3 uses the pool's `ADDRESSES_PROVIDER()`). Returns "Aave genesis market".
   All other behaviour — reserve enumeration, the aToken/variable-debt math, `Collateral`/`Supplied`/`Borrowed` kind selection, NAV filtering — is the byte-for-byte same code path the Aave V3 instances meta exercises, **verified by inheritance**.
-- **Per-chain scope:** Aave V2 (the "genesis market") is configured **only on Ethereum mainnet** — a single instance, ProtocolDataProvider `0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d`, LendingPool `0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9`. `chains/1.json` is the only chain config with `AaveV2InstancesMeta`. No per-chain code branches; a single mainnet fork test is sufficient.
+- **Per-chain scope:** Aave V2 (the "genesis market") is configured **only on Ethereum mainnet** — a single instance, ProtocolDataProvider `0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d`, LendingPool `0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9`. `script/config/nav-config/meta-balance-adapters/1.json` is the only chain config with `AaveV2InstancesMeta`. No per-chain code branches; a single mainnet fork test is sufficient.
 - **Math branches:** per reserve, `getUserReserveData` yields `(aTokenBalance, _, variableDebt, …, usageAsCollateral)`. The adapter emits up to two legs:
   - `aTokenBalance > 0` → `Collateral` if `usageAsCollateral` else `Supplied` (credit, `isDebt = false`).
   - `variableDebt > 0` → `Borrowed` (`isDebt = true`).
@@ -31,7 +31,7 @@ All kept as regression nets.
 - Assertion that `protocolId == aave-v2-lending` (the `_getProtocolId` override).
 - Assertion of the correct `PositionKind` per leg (`Collateral` / `Borrowed`) cross-checked against the reserve's `usageAsCollateral` / debt.
 - A **multi-leg holder** (stETH collateral + USDC variable debt) exercising `Collateral` + `Borrowed` across two reserves in one account.
-- The `describePosition` label `"USDC position (Aave genesis market)"` (the `_marketId` override; see §below and the naming note).
+- The `describePosition` label `"USDC position (Aave genesis market)"` (the `_marketId` override; see the naming note in §9).
 
 ## 4. Adapter formula recap
 
@@ -93,7 +93,7 @@ Captured at the fork block in §5. The test does **not** hardcode `EXPECTED_*` c
 | STETH_SUPPLY_USDC_BORROW | USDC | Borrowed | USDC | `7319144` | 7.319144 USDC |
 | STETH_SUPPLY_USDC_BORROW | USDC | Collateral | USDC | `1` | 0.000001 USDC (dust) |
 
-### 7b. Per-asset summary (what `getAdapterBalanceForAsset` returns)
+### 7b. Per-asset summary (legs aggregated per token)
 
 | Holder | Token | Total credit (raw) | Total debt (raw) | isDebt |
 |---|---|---|---|---|

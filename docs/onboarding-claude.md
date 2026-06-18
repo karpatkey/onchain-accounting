@@ -17,7 +17,7 @@ NAVCalculator (UUPS upgradeable, AccessControl)
 ├── inherits Prices  ─┐
 └── inherits Balances ─┴── per-asset feeds + per-account adapters
                           │
-BridgeEscrow + adapters ───┘  (independent — uses NAV/balances? no, separate concern)
+BridgeEscrow + adapters ───┘  (independent — does not touch NAV/balances; separate concern)
 ```
 
 | Module | Lives in | One-line job |
@@ -48,7 +48,7 @@ filter: keep positions whose asset is in the asset registry
 for each position: lookup price, value = amount × price (sign by isDebt)
         │
         ▼
-sum → NAV { value, quoteAsset, timestamp, stalePriceAssets, sequencerDown }
+sum → NAV { value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale }
 ```
 
 Authoritative reference: [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2.
@@ -70,7 +70,7 @@ function underlyingAssetsSupported() external view returns (address[]);
 function supportsInterface(bytes4) external view returns (bool);  // ERC165
 ```
 
-Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the underlying token), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
+Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
 Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters may sit directly under `protocols/`). A folder typically contains:
 
@@ -80,7 +80,7 @@ Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters m
 How adapters reach NAV today:
 - **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol` (constructor args from `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` for plain adapters and `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` for meta adapters; `04` reads both), so each adapter's address is chain- and run-specific. Read deployed addresses from `script/config/deployments/<chainId>.json` (`.balanceAdapters.<name>`); do not assume they match across chains.
 - **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceAdapters(adapters)` for plain adapters and `addMetaBalanceAdapter(adapter, instances)` for meta-adapters, plus `addMetaInstances(adapter, …)/removeMetaInstances` for meta instance set changes (all idempotent).
-- **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactory` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
+- **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactoryBase` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
 
 Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) for the contract-level details and [`./howto/add-balance-adapter.md`](./howto/add-balance-adapter.md) for the end-to-end walkthrough.
 
@@ -88,9 +88,9 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 
 Two flavors:
 - **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
-- **Custom** — a contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI_Price` reads `sDAI.previewRedeem(1e18)` × DAI/USD; `wstETH_Price` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
+- **Custom** — a contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI_Price` combines DAI/USD with Maker's DSR `chi` ratio (sDAI/DAI); `wstETH_Price` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
 
-L2 deployments check `chainlinkSequencerFeed`; if down or in grace period, prices are flagged stale.
+L2 deployments check `chainlinkL2SequencerUptimeFeed`; if down or in grace period, prices are flagged stale.
 
 Read [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) for the full list of custom feeds and [`./howto/add-price-feed.md`](./howto/add-price-feed.md) when adding one.
 
@@ -116,7 +116,7 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 
 For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
 
-Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{price-feeds,balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Five chains today: `1` (Mainnet), `10` (Optimism), `100` (Gnosis), `42161` (Arbitrum), `8453` (Base).
+Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Seven chains today: `1` (Mainnet), `10` (Optimism), `56` (BNB Chain), `100` (Gnosis), `137` (Polygon), `42161` (Arbitrum), `8453` (Base).
 
 Adding a new chain or new adapter is a config edit + a single deploy script run; see the `./howto/` guides.
 
@@ -135,7 +135,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 | What does this protocol's adapter actually return? | The adapter source under `src/balances/protocols/<protocol>/` and its fork test. |
 | What is registered on chain X today? | Deployed addresses: `script/config/deployments/<X>.json`. Registered assets: `script/config/nav-config/assets-and-price-feeds/<X>.json`. Balance adapters on NAV: `script/config/nav-config/{balance-adapters,meta-balance-adapters}/<X>.json` (deploy config under `contracts-deployment-config/`). |
 | Why is the framework structured this way? | [`./decisions/`](./decisions/) ADRs. |
-| How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + `NAVCalculator._readPositionsRangeWithQuote`. |
+| How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + `NAVCalculator._readPositionsWithQuote`. |
 | Why is the Merkl rewards adapter mutable while every other adapter is immutable? | [`./decisions/0007-merkl-trust-minimized-cache.md`](./decisions/0007-merkl-trust-minimized-cache.md). The Aave Safety Module was previously the documented exception (ADR 0002) but is now fully immutable per ADR 0005. |
 | Bridge invoice lifecycle? | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). |
 | How are integration-test fork blocks and expected NAVs kept current? | [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). |

@@ -33,8 +33,9 @@ else:         return (winner.price, winner.decimals, false)
 
 | `PriceType` | Read path |
 |---|---|
-| `Chainlink`, `Redstone`, `API3` | `AggregatorV3Interface.latestRoundData()` — `answer` is price, `updatedAt` is freshness timestamp |
-| `Custom` | `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` gate; then `latestRoundData()` for `updatedAt`. `updatedAt == 0` means "no trackable oracle" → treated as `block.timestamp - 1` |
+| `Chainlink`, `Redstone` | `AggregatorV3Interface.latestRoundData()` — `answer` is price, `updatedAt` is freshness timestamp |
+| `API3` | `AggregatorV3Interface.latestRoundData()` — `answer` is an 18-decimal dAPI value, divided by `1e10` to the canonical 8 decimals at read; `updatedAt` is freshness timestamp |
+| `Custom` | `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` gate; then `latestRoundData()` for `updatedAt` (a revert is caught and treated as no-timestamp). `updatedAt == 0` means "no trackable oracle" → treated as `block.timestamp - 1` |
 
 ### Invariant: cannot remove last feed
 
@@ -46,7 +47,7 @@ else:         return (winner.price, winner.decimals, false)
 Chainlink, Redstone, API3, Custom
 ```
 
-Redstone and API3 both implement `AggregatorV3Interface` and share the same read path as Chainlink. The enum values exist for observability and admin-time validation.
+Redstone and API3 both implement `AggregatorV3Interface`; Redstone shares Chainlink's read path verbatim, while API3 adds an 18→8 decimal rescale (see the per-type table above). The enum values exist for observability and admin-time validation.
 
 ### Storage change
 
@@ -66,7 +67,7 @@ Freshest-wins is the simplest rule that achieves the main goal (any single feed 
 
 ### Accepted failure mode: timestamp fabrication
 
-A malicious or misconfigured feed could report a `updatedAt` equal to `block.timestamp` on every call, systematically winning the freshest-wins race regardless of actual data freshness. In practice, adding such a feed requires the MANAGER role to be compromised — the same attacker could call `registerAsset` with an arbitrary oracle, so this is not a new attack surface. A deviation-cap sanity layer (reject any feed whose price deviates from the median by > X%) would close this, and is flagged for v2 if/when enough feeds are deployed per asset to make it tractable.
+A malicious or misconfigured feed could report an `updatedAt` equal to `block.timestamp` on every call, systematically winning the freshest-wins race regardless of actual data freshness. In practice, adding such a feed requires the MANAGER role to be compromised — the same attacker could call `registerAsset` with an arbitrary oracle, so this is not a new attack surface. A deviation-cap sanity layer (reject any feed whose price deviates from the median by > X%) would close this, and is flagged for v2 if/when enough feeds are deployed per asset to make it tractable.
 
 ### Why `updatedAt == 0 → block.timestamp - 1` for Custom feeds?
 

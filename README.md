@@ -38,6 +38,7 @@ src/
 ├── nav/                         # NAV calculator
 │   ├── NAVCalculator.sol        # UUPS upgradeable; inherits Prices + Balances
 │   ├── INAVCalculator.sol
+│   ├── NavLens.sol              # Stateless read helper; verbose (labeled) position APIs
 │   └── NavRegistryLib.sol       # External library for registry mutations (EIP-170)
 ├── bridge/                      # Cross-chain escrow and adapters
 │   ├── BridgeEscrow.sol
@@ -63,7 +64,8 @@ test/
 - **`Balances`** (abstract): Holds a **global list of balance adapters** and an **asset registry** (decimals, symbols). Each asset can have multiple adapters (e.g. ERC20 default + protocol-specific). It does not implement NAV or pricing.
 - **`IBalanceAdapter`**: Implemented by every balance adapter. Key methods:
   - `getAdapterPositions(account, assetFilter)` → list of **PositionBalance** entries with typed identity (`protocolId` bytes32 keccak256 hash of the canonical slug, `positionId` abi-encoded key, `positionKind` enum)
-  - `getAdapterBalance(account)` → assets and net balances (signed)
+  - `getAdapterBalances(account)` → parallel arrays of assets, amounts (non-negative magnitude), and `isDebt` flags
+  - `getAdapterBalanceForAsset(account, asset)` → `(amount, isDebt)` for a single asset (gas-optimized)
   - `underlyingAssetsSupported()` → which assets this adapter reports on
 - **Protocol adapters** in `src/balances/protocols/`:
   - **ERC20DefaultAdapter**: Plain ERC20 and native token balances.
@@ -83,7 +85,7 @@ Balance adapters return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`,
   - `API3` — `Api3ReaderProxyV1` (implements `AggregatorV2V3Interface`); deterministic cross-chain address; proxy returns 18 dec, normalised to 8 dec internally.
   - `Custom` — Implements `IPriceFeedCustom` (`getLatestPrice() → (price, stale)` + `latestRoundData()` for freshness ranking). Used for derived prices where the staleness condition spans multiple constituent Chainlink feeds (the `getLatestPrice` stale bool is the primary gate; `latestRoundData().updatedAt` is used for heartbeat + freshness ranking). `updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp.
 - **Existing custom feeds** in `src/prices/protocols/`: yield-bearing stable wrappers (`sDAI`, `sUSDS`, `sUSDe`, `sXDAI`, `syrupUSDC`), liquid (re)staking tokens (`wstETH`, `rETH`, `cbETH`, `rsETH`, `eETH`, `weETH`, `ezETH`, `ETHx`, `osToken`), and derived feeds (`LDO`, `ETH+`, `CrossRate`). L2 variants (`*_L2_*`) read Chainlink-secured rate feeds on L2 rather than L1 rate providers.
-- **`PriceFeedLib`**: external Solidity library (`DELEGATECALL`) holding the `_selectFeed` loop and feed-management functions — extracted to stay under EIP-170's 24 576-byte bytecode limit. Deployed at a deterministic CREATE2 address (linked in `foundry.toml`).
+- **`PriceFeedLib`**: external Solidity library (`DELEGATECALL`) holding the `selectFeed` loop and feed-management functions — extracted to stay under EIP-170's 24 576-byte bytecode limit. Deployed at a deterministic CREATE2 address (linked in `foundry.toml`).
 - Full architecture, staleness design, and how to add a custom feed: [`src/prices/PRICE_ADAPTERS.md`](src/prices/PRICE_ADAPTERS.md).
 
 ---
@@ -95,8 +97,8 @@ Balance adapters return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`,
   - **MANAGER** role: `registerAsset(asset, feed, priceType, heartbeat)`, `addPriceFeed` / `removePriceFeed`, `addBalanceAdapters` / `removeBalanceAdapters`, `addMetaInstances/removeMetaInstances`.
   - **Assets**: Registered via `registerAsset` (sets price feed + adds to asset registry). Additional feeds per asset via `addPriceFeed`; removal via `removePriceFeed` (cannot remove the last feed).
   - **Balance adapters**: Added with `addBalanceAdapters`; ERC165-checked for `IBalanceAdapter`. For meta-adapters, also call `addMetaInstances`/`removeMetaInstances` to configure the instance set (vault/pool/market addresses or raw bytes32 IDs).
-- **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered adapters, calls `getAdapterPositions` on each (with per-adapter try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`). Range-based variants (`getAccountNavForRange`) restrict to an asset index range for gas control.
-- **Verbose APIs**: `getAccountPositionsVerbose` / `getAccountNavVerbose` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
+- **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered adapters, calls `getAdapterPositions` on each (with per-adapter try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`, `quoteAssetStale`). `getAccountPositions(account, quoteAsset)` returns the per-leg `Position[]` breakdown.
+- **Verbose APIs**: live on the separate stateless **`NavLens`** contract (`src/nav/NavLens.sol`), deployed alongside the NAVCalculator proxy. `getAccountPositionsVerbose` / `getAccountNavVerbose` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
 - **External libraries** (EIP-170): `PriceFeedLib` (price selection and feed management) and `NavRegistryLib` (asset + adapter registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses. Deployed by scripts `01` before `NAVCalculator`.
 
 NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_ROLE, MANAGER).
@@ -105,9 +107,9 @@ NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_
 
 ## Bridge
 
-- **BridgeEscrow**: Holds assets on each chain; authorized **accounts** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, release is via `releaseByInvoiceId(messagePayload)` (checksum-validated); only authorized adapters or OPERATOR can call it. Escrow has a **fallback** that forwards protocol callbacks (e.g. `ccipReceive`) to the adapter registered for that selector; the adapter then calls `releaseByInvoiceId`.
-- **Adapters**: Each implements `_bridge` (initiate transfer, recipient = BridgeEscrow) and `_completeBridge` (operator path); callback-based adapters also implement the protocol’s receive function and call `releaseByInvoiceId` when the escrow forwards to them.
-- **Invoice lifecycle**: Created on source as BRIDGING; on destination, `releaseByInvoiceId` marks completion there. On source, an operator calls **`markInvoiceCompleted(invoiceHashes)`** to set status to COMPLETED and update in-transit balances and active-invoice list.
+- **BridgeEscrow**: Holds assets on each chain; authorized **accounts** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, release is via `releaseByInvoiceId(messagePayload)` (checksum-validated); only authorized adapters or the MANAGER role can call it. Escrow has a **fallback** that forwards protocol callbacks (e.g. `ccipReceive`) to the adapter registered for that selector; the adapter then calls `releaseByInvoiceId`.
+- **Adapters**: Each implements `_bridge` (initiate transfer, recipient = BridgeEscrow) and `_completeBridge` (invoked by `completeBridge`, gated by the MANAGER role); callback-based adapters also implement the protocol’s receive function and call `releaseByInvoiceId` when the escrow forwards to them.
+- **Invoice lifecycle**: Created on source as BRIDGING; on destination, `releaseByInvoiceId` marks completion there. On source, the MANAGER role calls **`markInvoiceCompleted(invoiceHashes)`** to set status to COMPLETED and update in-transit balances and active-invoice list.
 
 Full flow, invoice system, and how to implement/configure new adapters: see **`src/bridge/BRIDGE_ADAPTERS.md`**.
 
@@ -120,7 +122,7 @@ Full flow, invoice system, and how to implement/configure new adapters: see **`s
 | Add or understand a **balance** source (e.g. new DeFi protocol) | `src/balances/IBalanceAdapter.sol`, then an adapter in `src/balances/protocols/`. Register via `addBalanceAdapters`; for meta-adapters also call `addMetaInstances`/`removeMetaInstances`. Full how-to: `src/balances/BALANCE_ADAPTERS.md`. |
 | Add or understand a **price** source | `src/prices/IPriceFeedCustom.sol`; adapters in `src/prices/protocols/`. Register asset + first feed via `registerAsset`; additional redundant feeds via `addPriceFeed`. Full how-to: `src/prices/PRICE_ADAPTERS.md`. |
 | **Position identity** (protocolId / positionId / PositionKind) | `docs/howto/position-identity-schema.md` — slugs, decode tables, reconciliation key, TypeScript examples. Constants in `src/utils/ProtocolIds.sol` and `src/utils/PositionKind.sol`. |
-| How **NAV** is computed | `src/nav/NAVCalculator.sol`: `getAccountNav` → `_readPositionsRangeWithQuote` fans out over all adapters, prices each position, sums to NAV. |
+| How **NAV** is computed | `src/nav/NAVCalculator.sol`: `getAccountNav` → `_readPositionsWithQuote` fans out over all adapters, prices each position, sums to NAV. |
 | Bridge flow and adapter list | `src/bridge/BRIDGE_ADAPTERS.md`. |
 | Add a new **bridge** adapter | `src/bridge/BridgeAdapter.sol` (base), existing adapter in `src/bridge/adapters/`, and “How to Create a New Adapter” in `BRIDGE_ADAPTERS.md`. |
 | Shared types and errors | `src/constants.sol`, `src/errors.sol`, `src/utils/`. |
@@ -184,9 +186,9 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 
 ## Summary
 
-- **Balances**: 21 meta-adapters + 12 per-instance singletons covering Aave, Morpho, Balancer, Uniswap, Compound, Curve, Convex, Aura, Fluid, Gearbox, StakeWise, Lido, Kelp, Stader, Sky, Cap, and more — all returning typed `PositionBalance` structs.
+- **Balances**: 21 meta-adapters + 11 per-instance singletons (plus the ERC20 default adapter) covering Aave, Morpho, Balancer, Uniswap, Compound, Curve, Convex, Aura, Fluid, Gearbox, StakeWise, Lido, Kelp, Stader, Sky, Cap, and more — all returning typed `PositionBalance` structs.
 - **Prices**: N feeds per asset (Chainlink / Redstone / API3 / Custom); freshest-wins selector; custom adapters cover LSTs, yield-bearing stables, RTokens, and cross-rates.
-- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency. Verbose APIs expose human-readable position labels via `IPositionDescribable`.
+- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency. The companion `NavLens` contract exposes human-readable position labels via `IPositionDescribable`.
 - **Bridge**: Escrow + invoice system + adapters (Across, CCIP, CCTP, Stargate, Gnosis, Superchain); destination release via `releaseByInvoiceId`; source closure via `markInvoiceCompleted`.
 
 For bridge design, flows, and adding adapters, use **`src/bridge/BRIDGE_ADAPTERS.md`**.

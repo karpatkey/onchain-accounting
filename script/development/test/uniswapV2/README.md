@@ -104,7 +104,7 @@ Token0/token1 ordering is the pair's `token0()` / `token1()` (sorted by address 
 |---|---|
 | `case-multi-pool-mainnet.json` | Per-pair machine-readable evidence pack with state, dilution intermediates, and expected amounts |
 | `compute-expected.py` | Python derivation of the dilution-adjusted expected amounts (the independent ground truth referenced in §8) |
-| `deploy-uniV2-adapters-mainnet.sh` | Deploy + register the 6 mainnet V2 adapters on the dev mainnet anvil |
+| `deploy-uniV2-adapters-mainnet.sh` | _Removed in the meta reconciliation (see the note at the top of this file)._ Previously deployed + registered the 6 mainnet V2 adapters on the dev mainnet anvil. |
 
 ## 7. Expected balances
 
@@ -161,7 +161,9 @@ Bit-exact equivalence with the protocol settlement path: `pair.burn(holder)` sim
 
 ## 9. Wiring the live dev-anvil dashboard
 
-`deploy-uniV2-adapters-mainnet.sh` deploys + registers all 6 mainnet V2 adapters on the local mainnet anvil so the dashboard renders the holder's positions for a side-channel cross-check. Run after the dev anvil is up and the NAV proxy is deployed:
+> **Stale (pre-meta).** `deploy-uniV2-adapters-mainnet.sh` was removed in the meta reconciliation, so the steps below no longer run as written. They are kept as a record of the original per-pool flow and will be re-done with a meta-based deploy helper when V2 is re-verified against `UniswapV2PoolsMeta` (see the note at the top of this file).
+
+`deploy-uniV2-adapters-mainnet.sh` deployed + registered all 6 mainnet V2 adapters on the local mainnet anvil so the dashboard rendered the holder's positions for a side-channel cross-check. It was run after the dev anvil was up and the NAV proxy was deployed:
 
 ```bash
 bash script/development/anvil/start-forks.sh
@@ -171,7 +173,7 @@ bash script/development/app/sync-app-env.sh
 # then start the Next.js dev server in app/
 ```
 
-Deployed adapter addresses go to `script/development/state/1-uniV2-adapters.json`. This step is separate from the fork test (which deploys its own adapter instances in `setUp()`) — it is purely the dashboard surface.
+Deployed adapter addresses went to `script/development/state/1-uniV2-adapters.json`. This step was separate from the fork test (which deploys its own adapter instances in `setUp()`) — it was purely the dashboard surface.
 
 ## 10. Test verdict (2026-05-21)
 
@@ -188,6 +190,6 @@ Deployed adapter addresses go to `script/development/state/1-uniV2-adapters.json
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-contract UniswapV2BalanceOracleForkTest_MultiPool_FeeReceiver -vv
 ```

@@ -43,9 +43,9 @@ All kept as regression nets.
 count = WITHDRAWAL_QUEUE.balanceOf(account)          # O(1); skip (return 0) if count == 0 or count > 256
 ids   = WITHDRAWAL_QUEUE.getWithdrawalRequests(account)
 for each request:
-    if isClaimed:                 skip
-    elif isFinalized:             total += getClaimableEther([id], findCheckpointHints([id],1,lastCheckpoint))
-    else (not finalized):         total += amountOfStETH
+    if isClaimed:                          skip
+    elif isFinalized and lastCheckpoint!=0: total += getClaimableEther([id], findCheckpointHints([id],1,lastCheckpoint))
+    else (not finalized):                  total += amountOfStETH
 emit PositionBalance(ETH, total, isDebt=false, Supplied, positionId="")   if total > 0
 ```
 

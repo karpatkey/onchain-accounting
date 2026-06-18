@@ -597,9 +597,9 @@ Scenario: account holds USDC, WETH, and DAI.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| USDC  | 1 500  | +1 500      | `Wallet`     | `"Wallet"`   | `""`          |
-| WETH  | 1.0    | +2 500      | `Wallet`     | `"Wallet"`   | `""`          |
-| DAI   | 3 000  | +3 000      | `Wallet`     | `"Wallet"`   | `""`          |
+| USDC  | 1 500  | +1 500      | `Wallet`     | `"Wallet"`   | `"USDC"`      |
+| WETH  | 1.0    | +2 500      | `Wallet`     | `"Wallet"`   | `"WETH"`      |
+| DAI   | 3 000  | +3 000      | `Wallet`     | `"Wallet"`   | `"DAI"`       |
 | **NAV** | | **+7 000** | | | |
 
 #### `SparkLend` — lending
@@ -655,7 +655,7 @@ Scenario: waEthLidoGHO wrapper holding 1 000 GHO equivalent.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `""`          |
+| GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `"vault supply"` |
 
 #### `KelpWithdrawalQueue` — pending unstake
 
@@ -663,7 +663,7 @@ Scenario: 2 stETH pending claim in Kelp queue.
 
 | asset  | amount | value (USD) | positionKind | protocolName | positionLabel |
 |--------|--------|-------------|--------------|--------------|---------------|
-| stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp"`     | `""`          |
+| stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp DAO"` | `"rsETH withdrawal queue"` |
 
 #### `LidoWithdrawalQueue` — pending unstake
 
@@ -671,7 +671,7 @@ Scenario: 1 ETH finalized and waiting to be claimed.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `""`          |
+| ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `"stETH withdrawal queue"` |
 
 #### `MerklRewards` — unclaimed rewards
 
@@ -679,7 +679,7 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `""`          |
+| CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `"claimable rewards"` |
 
 #### `SkySavingsUsds` — sUSDS
 
@@ -687,7 +687,7 @@ Scenario: 5 000 USDS earning yield in sUSDS.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `""`          |
+| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `"USDS savings"` |
 
 #### `StaderWithdrawalQueue` — pending unstake
 
@@ -695,7 +695,7 @@ Scenario: 0.5 WETH pending from ETHx unstake.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `""`          |
+| WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `"ETHx withdrawal queue"` |
 
 ---
 
@@ -1347,7 +1347,7 @@ struct VerbosePosition {
     string   positionLabel; // e.g. "USDC/crvUSD gauge", "kpk ETH Prime V1 vault"
 }
 
-// Deployment: same address on every chain
+// Deployed alongside the NAVCalculator proxy (one NavLens per chain).
 navLens.getAccountPositionsVerbose(account, quoteAsset)
 navLens.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
 ```

@@ -50,16 +50,20 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | ERC20Default balance adapter | `TBD` |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://etherscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
-**Custom price-feed adapters** (9)
+**Custom price-feed adapters** (13)
 
 | Adapter | Address |
 |---|---|
+| `ETHPlus` | `TBD` |
+| `ETHx` | `TBD` |
 | `eETH` | `TBD` |
 | `ezETH` | `TBD` |
+| `osETH` | `TBD` |
 | `rETH` | `TBD` |
 | `rsETH` | `TBD` |
 | `sUSDS` | `TBD` |
 | `sUSDe` | `TBD` |
+| `stETH` | `TBD` |
 | `syrupUSDC` | `TBD` |
 | `weETH` | `TBD` |
 | `wstETH` | `TBD` |
@@ -207,10 +211,11 @@ None — this chain uses Chainlink price feeds exclusively for Alpha-fund assets
 | ERC20Default balance adapter | `TBD` |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://gnosisscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
-**Custom price-feed adapters** (2)
+**Custom price-feed adapters** (3)
 
 | Adapter | Address |
 |---|---|
+| `osGNO` | `TBD` |
 | `sXDAI` | `TBD` |
 | `wstETH_L2` | `TBD` |
 

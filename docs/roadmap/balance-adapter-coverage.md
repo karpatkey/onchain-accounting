@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. One meta-adapter now covers every instance of 16 protocol families (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura — 21 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
@@ -23,7 +23,7 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 | **Renzo (ezETH)** | `WithdrawQueue` at `0xf2F305D14DCD8aaef887E0428B3c9534795D0d60` | ERC721 with explicit `withdrawRequests` mapping; sequential IDs per holder. | Newer queue; finalization tied to Renzo restaking unwinds. |
 | **Kelp (rsETH)** ✅ | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16` | Per-supported-asset deques: `userAssociatedNonces(asset, user) → (begin, end)` and `getUserWithdrawalRequest(asset, user, i) → (rsETHAmount, expectedAssetAmount, withdrawalStartBlock, userNonce)`. Payout-asset set discovered via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH at time of writing). | Implemented in this repo (`KelpWithdrawalQueue.sol`): single multi-asset adapter, one credit position per NAV-registered payout asset. |
 | **Mantle (mETH)** | `Staking` contract; `unstakeRequest`/`claimUnstakeRequest` | Sequential `unstakeRequestId` per user; struct includes `mETHLocked`, `ethRequested`, `cumulativeETHRequested`, `blockNumber`. | Similar shape to Stader. |
-| **StakeWise V3 exit queue** | per-Vault `enterExitQueue(shares)` returning a position id | Already partially addressed by `StakeWiseV3Vault.sol` for queued shares. **Verify** whether the exit-queue position is tracked end-to-end before adding a separate adapter. | Possibly already covered. |
+| **StakeWise V3 exit queue** | per-Vault `enterExitQueue(shares)` returning a position id | `StakeWiseV3VaultsMeta.sol` covers active vault positions only (`Staking` shares + `Borrowed` osToken legs); it does **not** read the exit queue. Shares that have entered the exit queue are not yet tracked end-to-end. | Not covered — needs a dedicated adapter or an added leg. |
 | **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
 | **Coinbase (cbETH)** | n/a (centralised) | Off-chain wrap/unwrap. | No on-chain queue position. |
 
@@ -94,7 +94,7 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Perps / derivatives
 
-- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 adapter migration (see `docs/historical/adapter-migration-plan.md`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
+- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 oracle migration (see `docs/historical/oracle-migration-plan.md`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
 - **Hyperliquid (EVM bridge side)**: bridged collateral on `HyperEVM` if used.
 - **Synthetix V3**: collateral and debt positions per pool.
 
@@ -109,7 +109,7 @@ These are not queues but represent value that lives outside the wallet and is no
 1. Pick a row whose protocol kpk **actually uses or imminently will**.
 2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
 3. Mirror `StaderWithdrawalQueue.sol` (queue family) or whichever existing adapter is closest in shape.
-4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + chain-config entry + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + entry in `06_Configure.s.sol`'s `_balanceAdapterNames()`.
+4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + deploy-config entry (`script/config/chains/<chainId>.json` under `balanceAdapters`) + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + a NAV-registration entry in the chain's `script/config/nav-config/balance-adapters/<chainId>.json` (plain) or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta), which `06_Configure.s.sol` reads to register the adapter.
 5. Update this file: cross off the row or add caveats discovered during implementation.
 
 When a row turns out to be irrelevant (e.g. RPL queue, Coinbase off-chain unwrap), strike it through with a one-line reason rather than deleting — future contributors should see it was considered.

@@ -64,6 +64,7 @@ Slug rules: lowercase ASCII, kebab-case, include the major version. Document the
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -111,7 +112,7 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     function describePosition(bytes calldata positionId) external view returns (string memory) {
         // Decode and return a human-readable label, e.g. from an ERC20 symbol call.
         // Return "" if it cannot be derived.
-        if (positionId.length < 32) return "";
+        if (positionId.length < 64) return "";
         (, address asset) = abi.decode(positionId, (address, address));
         try IERC20Metadata(asset).symbol() returns (string memory s) {
             return string.concat(s, " supply");
@@ -190,14 +191,14 @@ File: `test/balances/protocols/<MyProtocol>.t.sol`.
 Cover:
 
 - Constructor: zero-address guards, non-contract guards.
-- `supportsInterface` returns true for `IBalanceAdapter` and `IERC165`, false otherwise.
+- `supportsInterface` returns true for `IBalanceAdapter`, `IPositionDescribable`, and `IERC165`, false otherwise.
 - `getAdapterBalanceForAsset` returns `(0, false)` for zero account, zero asset, unsupported asset.
 - `getAdapterBalances` returns empty arrays for zero account.
 - `getAdapterPositions` returns empty for zero account; respects `assetFilter`.
 - Non-registered assets (per `NAV_CALCULATOR.getRegisteredAssets()`) are dropped from `getAdapterPositions`.
 - `PositionBalance` fields: assert `protocolId == ProtocolIds.MY_PROTOCOL`, `positionKind == PositionKind.Supplied` (or appropriate), and `positionId == abi.encode(...)` with the expected bytes.
 
-Use `MockNAVCalculator` (grep for `MockNAVCalculator` in the test tree) and a thin mock of the protocol contract.
+Use `Mock_NAVCalculator` (in `test/mocks/nav_calculator.sol`) and a thin mock of the protocol contract.
 
 ### 2.2 Fork test (real protocol)
 
@@ -210,12 +211,19 @@ Cover:
 - Reward accrual: time-warp with `vm.warp(block.timestamp + 1 days)` and confirm rewards increase (where applicable).
 - Asset registry filtering: confirm positions for assets *not* registered with NAVCalculator are dropped.
 
-Pin the block in the test:
+Extend `BalanceAdapterTestBase` (in `test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol`) and pin the block via the shared `getAlchemyUrl` / `createForkWithCadence` helpers from `test/TestEnvConfigurator.sol`:
 
 ```solidity
-function setUp() public {
-    vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 21_395_285);
-    // ...
+contract MyProtocolBalanceAdapterForkTest is BalanceAdapterTestBase {
+    uint256 public constant FORK_BLOCK = 21_395_285;
+
+    function setUp() public override {
+        super.setUp();
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(FORK_BLOCK);
+        // ...
+    }
 }
 ```
 
@@ -335,7 +343,7 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --broadcast
 ```
 
-`04` writes the deployed address into `deployments/<chainId>.json` under `balanceAdapters.MyProtocol`. Verify it's there before opening the PR.
+`04` writes the deployed address into `script/config/deployments/<chainId>.json` under `balanceAdapters.MyProtocol`. Verify it's there before opening the PR.
 
 Registration: `06_Configure.s.sol` registers each adapter on NAVCalculator. Plain adapters listed in `nav-config/balance-adapters/<chainId>.json` are added via `addBalanceAdapters(adapters)`; meta adapters listed in `nav-config/meta-balance-adapters/<chainId>.json` are registered via `addMetaBalanceAdapter(adapter, instances[])` (or the `instancesRaw` variant) and have their active instance set reconciled with `addMetaInstances`/`removeMetaInstances`. Meta-vs-plain is also confirmed on-chain via ERC165.
 

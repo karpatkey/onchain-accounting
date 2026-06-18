@@ -1,6 +1,6 @@
 # Balance Adapters: Architecture and Integration
 
-This document describes the balance adapter and adapter architecture: how NAV is computed from multiple balance sources, the data structures involved, existing adapters, and how to implement and register a new balance adapter.
+This document describes the balance adapter architecture: how NAV is computed from multiple balance adapters, the data structures involved, existing adapters, and how to implement and register a new balance adapter.
 
 ---
 
@@ -9,8 +9,8 @@ This document describes the balance adapter and adapter architecture: how NAV is
 The balance system powers **Net Asset Value (NAV)** calculation by aggregating positions from multiple **balance adapters**:
 
 - **Balances (via NAVCalculator):** Holds a **global registry** of balance adapters and an **asset registry** (decimals, symbols). Assets are registered with a price feed so positions can be valued. Only registered assets contribute to NAV.
-- **Balance adapters (adapters):** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
-- **NAVCalculator:** Extends Prices and Balances. It iterates over all registered adapters, calls `getAdapterPositions(account, assetFilter)` on each, filters positions by registered assets (and optional asset range), enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
+- **Balance adapters:** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
+- **NAVCalculator:** Extends Prices and Balances. It iterates over all registered adapters, calls `getAdapterPositions(account, assetFilter)` on each, filters positions by registered assets, enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
 
 So: **adapters only report balances; NAVCalculator adds prices and sums values.**
 
@@ -18,7 +18,7 @@ So: **adapters only report balances; NAVCalculator adds prices and sums values.*
 
 ## 2. NAV flow: from account and quote asset to NAV
 
-The diagram below shows how a call to `getAccountNav(account, quoteAsset)` (or the range-based variant) flows through adapters, filtering, and pricing to produce a single NAV value.
+The diagram below shows how a call to `getAccountNav(account, quoteAsset)` flows through adapters, filtering, and pricing to produce a single NAV value.
 
 ```mermaid
 flowchart LR
@@ -30,8 +30,8 @@ flowchart LR
     subgraph NAV["NAVCalculator"]
         G[getAllAdapters]
         L[Loop adapters]
-        P[getAdapterPositions(account, 0)]
-        F[Filter: registered assets + range]
+        P["getAdapterPositions(account, 0)"]
+        F[Filter: registered assets]
         E[Enrich: price × amount, isDebt sign]
         S[Sum → totalValue]
     end
@@ -59,9 +59,9 @@ flowchart LR
 
 **Steps in code:**
 
-1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapters`).
+1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapters`, and any meta-adapters added via `addMetaBalanceAdapter`).
 2. **For each adapter** — `adapter.getAdapterPositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind). Unsupported adapters are skipped (try/catch).
-3. **Filter** — Skip positions whose `balanceAsset.asset` is not in the asset registry; for range-based APIs, keep only assets in the requested range.
+3. **Filter** — Skip positions whose `balanceAsset.asset` is not in the asset registry.
 4. **Enrich** — For each position: look up price (from Prices), compute USD value = amount × price (sign by `isDebt`: subtract for debt), then convert to quote asset if `quoteAsset != address(0)`.
 5. **Aggregate** — Sum all position values → `totalValue`; build `NAV` (value, quoteAsset, timestamp, stale assets, sequencer down).
 
@@ -83,7 +83,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `isDebt`        | `bool`        | `true` = debt (subtract from NAV), `false` = credit (add to NAV). Canonical NAV-sign signal. |
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
 | `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool, address reserve)`. Empty bytes for account-global positions (DAI DSR, Lido withdrawal queue, etc.). Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
-| `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees`. See `src/utils/PositionKind.sol`. |
+| `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet` / `Supplied` / `Borrowed` / `Collateral` / `Staking` / `Rewards` / `Fees`. See `src/utils/PositionKind.sol`. |
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
@@ -127,20 +127,23 @@ For building adapters, the only required output is **PositionBalance**; Position
 
 ## 4. Balances contract (adapter and asset registry)
 
-`Balances` is an abstract contract used by NAVCalculator. It maintains:
+`Balances` is an abstract contract used by NAVCalculator. It maintains the **adapter registry** (the asset registry lives in NAVCalculator, not here):
 
 - **Global adapter registry:** `_globalAdapters[]`, `_adapterTypes[adapter]`, `_isAdapterRegistered[adapter]`. All adapters are in one flat list (no per-asset mapping for registration).
-- **Asset registry:** `_assetDecimals`, `_assetSymbols` (and enumeration). Set via `_registerAsset`; NAVCalculator exposes `registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)` (MANAGER) which registers the asset and sets the price feed.
+- **Meta-adapter instance registry:** `_metaInstances[adapter]` — the per-adapter `bytes32[]` of instance coordinates a meta-adapter queries, plus the running total `_metaInstanceTotal`. See §6.1.
 - **ERC20DefaultAdapter:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultAdapter(address)`. It is pushed into `_globalAdapters` and marked `AdapterType.Default`.
+
+The **asset registry** (decimals, symbols) lives on **NAVCalculator** (`_registeredAssets`, `_assetIndex`), not on `Balances`. NAVCalculator exposes `registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)` (MANAGER), which registers the asset and sets its price feed.
 
 **Internal API (used by NAVCalculator):**
 
-- `_addBalanceAdapter(adapter)` — Checks `IBalanceAdapter` via ERC165, pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates. The external `addBalanceAdapters(address[])` (MANAGER) loops over this per address; the storage mutation is delegated to `NavRegistryLib.addBalanceAdapter`.
-- `_removeBalanceAdapter(adapter)` — Removes from global list (if present); wrapped by the external `removeBalanceAdapters(address[])`.
-- `_registerAsset(asset, decimals)` — Adds to asset registry (decimals; symbol is set separately).
+- `_addBalanceAdapters(adapters)` — Batch-registers non-meta adapters: checks `IBalanceAdapter` via ERC165, rejects meta-adapters (`MetaAdapterNotAllowed`), pushes to `_globalAdapters`, sets type `Custom`, prevents duplicates. The storage mutation is delegated to `NavRegistryLib.addBalanceAdapters`. Wrapped by the external `addBalanceAdapters(address[])` (MANAGER). (`_addBalanceAdapter(adapter)` is a single-adapter variant retained for the test harness.)
+- `_addMetaBalanceAdapter(adapter, instances)` — Registers a meta-adapter and seeds its instance set atomically; wrapped by the external `addMetaBalanceAdapter(address, bytes32[])`.
+- `_removeBalanceAdapters(adapters)` — Removes from the global list; wrapped by the external `removeBalanceAdapters(address[])`.
+- `_addMetaInstances(adapter, instances)` / `_removeMetaInstances(adapter, instances)` — Mutate a meta-adapter's instance set; wrapped by the external `addMetaInstances` / `removeMetaInstances`.
 - `_setErc20DefaultAdapter(defaultAdapter)` — Sets and registers the default wallet adapter.
 
-**Public / IBalances:** `getAllAdapters()`, `getAdapterCount()`, `isAdapterRegistered()`, `getAdapterType()`, `getAdaptersForAsset(asset)` (adapters whose `underlyingAssetsSupported()` contains the asset), plus asset registry views: `isAssetRegistered`, `getAssets`, `getAssetCount`, `getAssetDecimals`, `getAssetSymbol`.
+**Public / IBalances:** `getAllAdapters()`, `getAdapterCount()`, `isAdapterRegistered()`, `getAdapterType()`, `getAdaptersForAsset(asset)` (adapters whose `underlyingAssetsSupported()` contains the asset), and `getMetaInstances(adapter)`. Asset registry views (`isAssetRegistered`, `getRegisteredAssets`, `getAssetCount`) live on NAVCalculator / `INAVCalculator`.
 
 ---
 
@@ -166,16 +169,15 @@ Every balance adapter must implement this interface and ERC165.
 
 ## 6. How NAVCalculator uses adapters
 
-- **getAccountNav(account, quoteAsset):** Resolves the full asset range, then calls `_readPositionsRangeWithQuote(account, 0, length-1, quoteAsset)`.
-- **_readPositionsRangeWithQuote:**
-  - Builds the requested asset range from `getAssets()`.
+- **getAccountNav(account, quoteAsset):** Validates the quote asset, then (if any assets are registered) calls `_readPositionsWithQuote(account, quoteAsset)`.
+- **_readPositionsWithQuote:**
   - Calls `getAllAdapters()`, then for each adapter: `getAdapterPositions(account, address(0))` (with try/catch).
-  - Filters: keep only positions with `isAssetRegistered(asset)` and asset in the range.
+  - Filters: keep only positions with `isAssetRegistered(asset)`.
   - Fetches prices for all assets that appear in the filtered positions; marks stale.
   - For each position: value = amount × price, sign by `isDebt`; sum to total USD then convert to quote asset if needed.
   - Returns `(totalValue, stalePriceAssets, sequencerDown)` and NAV is built from that.
 
-Other APIs (e.g. range NAV, positions for one asset) follow the same pattern: same adapter list, same `getAdapterPositions`, with additional filtering (range or single asset).
+Other APIs (e.g. `getAccountPositions`, `getAccountPositionsForAsset`) follow the same pattern: same adapter list, same `getAdapterPositions`, with additional filtering (single asset for the per-asset variant).
 
 ### 6.1 Meta-adapters (multi-instance) — `IMetaBalanceAdapter`
 
@@ -214,7 +216,7 @@ interface IPositionDescribable {
 }
 ```
 
-NAVCalculator's verbose read methods (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these via try/catch and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
+The verbose read methods on `NavLens` (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these via try/catch and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
 
 Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names, pool composition). Per-instance adapters return static strings.
 
@@ -424,14 +426,15 @@ See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.
 ### 9.3 Adding custom adapters
 
 1. Deploy your adapter, passing constructor args (protocol addresses, `navCalculator`).
-2. As an account with **MANAGER** on NAVCalculator, call **`NAVCalculator.addBalanceAdapters(adapters)`**. This runs `checkBalanceAdapterSupport(adapter)` (ERC165 for `IBalanceAdapter`) and adds the adapter to the global adapter list.
-3. For meta-adapters: call **`NAVCalculator.addMetaInstances(adapter, instances)`** to configure the instance set (vault addresses, pool addresses, or raw marketIds widened to bytes32).
-4. Ensure every asset your adapter reports is already registered via `registerAsset` (with a price feed); otherwise those positions will be filtered out when computing NAV.
+2. As an account with **MANAGER** on NAVCalculator:
+   - **Non-meta adapter:** call **`NAVCalculator.addBalanceAdapters(adapters)`**. This validates ERC165 support for `IBalanceAdapter`, rejects any meta-adapter (`MetaAdapterNotAllowed`), and adds the adapter to the global adapter list.
+   - **Meta-adapter:** call **`NAVCalculator.addMetaBalanceAdapter(adapter, instances)`**, which registers the adapter **and** seeds its instance set (vault addresses, pool addresses, or raw marketIds — all `bytes32`) atomically. The instance list may be empty. Afterwards, update the set incrementally with `addMetaInstances(adapter, instances)` / `removeMetaInstances(adapter, instances)`.
+3. Ensure every asset your adapter reports is already registered via `registerAsset` (with a price feed); otherwise those positions will be filtered out when computing NAV.
 
 ### 9.4 Computing NAV
 
 - Call **`NAVCalculator.getAccountNav(account, quoteAsset)`** to get the full NAV for the account in the given quote asset (`address(0)` for USD).
-- Range-based APIs (e.g. `getAccountNavForRange`) use the same adapters and the same flow, restricted to an asset index range for gas control.
+- For per-position views, use `getAccountPositions(account, quoteAsset)` or `getAccountPositionsForAsset(account, asset, quoteAsset)` — same adapters, same flow.
 - For human-readable output, call verbose methods via `NavLens` (a stateless read-only wrapper that bundles `IPositionDescribable` labels).
 
-No per-adapter "enable for this asset" step is required: all registered adapters are queried for every NAV call; filtering is by **registered assets** (and optional range) on the NAVCalculator side.
+No per-adapter "enable for this asset" step is required: all registered adapters are queried for every NAV call; filtering is by **registered assets** on the NAVCalculator side.

@@ -3,7 +3,7 @@
 > **Status: Completed — archival record as of 2026-04-17.**
 > All three PRs (#10, #11, #12) merged to `main`. Oracle migration scope is closed. This document is preserved as the authoritative history of *what* was ported, *why* specific divergences were accepted, and *which* follow-ups remain open.
 >
-> **For ongoing operational work** (deploying oracles, adding new protocols, registering new assets), see [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](script/NAV_V2_DEPLOYMENT_RUNBOOK.md). The runbook is the living doc; this plan is the retrospective.
+> **For ongoing operational work** (deploying oracles, adding new protocols, registering new assets), see [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md). The runbook is the living doc; this plan is the retrospective.
 
 > **Branches**: stacked PRs — see PR strategy below
 > **Source repo**: `karpatkey-tokenized-fund/contracts` (NAV v1)
@@ -1006,7 +1006,7 @@ Notes worth carrying into future migrations or large refactors.
 
 Forward-looking guidance. The migration is closed — these are the workflows for additions.
 
-- **New Custom price oracle:** follow the ["How to add a new Custom price oracle"](script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-custom-price-oracle) section of the runbook.
-- **New balance adapter (protocol or instance):** follow the ["How to add a new balance adapter"](script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-balance-adapter) section of the runbook.
+- **New Custom price oracle:** follow the ["How to add a new Custom price oracle"](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-custom-price-oracle) section of the runbook.
+- **New balance adapter (protocol or instance):** follow the ["How to add a new balance adapter"](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-balance-adapter) section of the runbook.
 - **New fund on existing chains:** no code changes needed — just register assets on NAVCalculator (Phase 5 of the runbook) and ensure the relevant balance oracles are already registered. If the fund needs a protocol we don't yet support, add the adapter first.
-- **New chain:** see [`script/DEPLOYMENT_SUMMARY.md`](script/DEPLOYMENT_SUMMARY.md) for the CREATE2 + atomic-proxy flow. Add the chain config, run `01_DeployImplementations.s.sol`, `02_DeployProxies.s.sol`, then follow the runbook Phases 1–9.
+- **New chain:** see [`script/DEPLOYMENT_SUMMARY.md`](../../script/DEPLOYMENT_SUMMARY.md) for the CREATE2 + atomic-proxy flow. Add the chain config, run `01_DeployImplementations.s.sol`, `02_DeployProxies.s.sol`, then follow the runbook Phases 1–9.

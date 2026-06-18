@@ -1,4 +1,4 @@
-# 0006 — Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache
+# 0007 — Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache
 
 **Status:** accepted
 
@@ -70,6 +70,6 @@ Ship `MerklRewardsBalanceAdapter` (`src/balances/protocols/MerklRewards.sol`) as
 - Tests: `test/balances/protocols/MerklRewards.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/protocols/fork/MerklRewards.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
-- Deploy schema: `script/config/chains/<id>.json` `balanceAdapters.MerklRewards` (`distributor`); owner = `addresses.admin`.
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` (`distributor`); owner = `addresses.admin` from `script/config/chains/<id>.json`.
 - Operator's guide for the proof-submission bot: [`docs/operations/merkl-proof-submitter.md`](../operations/merkl-proof-submitter.md)
 - Operational follow-ups (NOT in this PR): bot implementation, optional permissionless mode (see Alternative 1), price feeds for new reward tokens.

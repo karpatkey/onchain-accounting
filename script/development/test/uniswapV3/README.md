@@ -93,11 +93,13 @@ All subtractions are intentionally `unchecked` — `fgInside*X128` and `fgOutsid
 
 ## 6. Case files in this folder
 
-| File | Purpose |
-|---|---|
-| `case-multi-holder-mainnet.json` | Per-holder, per-pool machine-readable evidence pack |
-| `deploy-uniV3-adapters-mainnet.sh` | Deploy + register the 3 enabled V3 adapters on the dev mainnet anvil |
-| `query-live-balances.s.sol` | Forge script that forks Ethereum at a given block and prints the principal/fees split — used for ad-hoc cross-checks against the live Uniswap UI |
+Only `case-multi-holder-mainnet.json` survives today; the two dev helpers below were removed in the meta reconciliation (see banner) and are listed here for the historical record.
+
+| File | Purpose | Status |
+|---|---|---|
+| `case-multi-holder-mainnet.json` | Per-holder, per-pool machine-readable evidence pack | present |
+| `deploy-uniV3-adapters-mainnet.sh` | Deploy + register the 3 enabled V3 adapters on the dev mainnet anvil | removed (pre-meta) |
+| `query-live-balances.s.sol` | Forge script that forks Ethereum at a given block and prints the principal/fees split — used for ad-hoc cross-checks against the live Uniswap UI | removed (pre-meta) |
 
 ## 7. Expected balances
 
@@ -105,7 +107,7 @@ Values are pinned at the fork block in §5 as `EXPECTED_*` constants in the test
 
 ### 7a. Per-leg detail (every emission the adapter makes)
 
-One row per `getOraclePositions` entry the adapter would emit, plus rows for closed/filtered NFTs marked italic so the filter behaviour is also visible.
+One row per `getOraclePositions` entry the adapter would emit, plus rows for closed/filtered NFTs marked in italics so the filter behaviour is also visible.
 
 | Holder | Pool | NFT | Leg | Token | Amount (raw) | Amount (humanised) |
 |---|---|---|---|---|---|---|
@@ -116,7 +118,7 @@ One row per `getOraclePositions` entry the adapter would emit, plus rows for clo
 | ACCOUNT_12 | WETH/USDT 0.3% | #1276763 | Fees | WETH | `476553808093438` | 0.000477 WETH |
 | ACCOUNT_12 | WETH/USDT 0.3% | #1276763 | Fees | USDT | `740253` | 0.740253 USDT |
 | HOLDER_B | USDC/WETH 0.05% | _various_ | _closed_ | — | — | — |
-| HOLDER_B | WETH/USDT 0.3% | _18 NFTs_ | _closed_ | — | — | — |
+| HOLDER_B | WETH/USDT 0.3% | _remaining closed_ | _closed_ | — | — | — |
 | HOLDER_B | WETH/USDT 0.3% | #1287303 | Supply | WETH | `14831585506412934519` | 14.831586 WETH |
 | HOLDER_B | WETH/USDT 0.3% | #1287303 | Supply | USDT | `778180966` | 778.180966 USDT |
 | HOLDER_B | WETH/USDT 0.3% | #1287303 | Fees | WETH | `63551228360345301` | 0.063551 WETH |
@@ -161,6 +163,8 @@ This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity + collect` si
 
 ## 9. Wiring the live dev-anvil dashboard
 
+> **Stale (pre-meta).** `deploy-uniV3-adapters-mainnet.sh` no longer exists; the steps below are the historical per-pool flow and will be re-done with a meta-based deploy helper when V3 is re-verified against `UniswapV3PoolsMeta` (see banner).
+
 `deploy-uniV3-adapters-mainnet.sh` deploys + registers all 3 enabled mainnet V3 adapters on the local mainnet anvil so the dashboard renders both holders' positions for a side-channel cross-check. Run after the dev anvil is up and the NAV proxy is deployed:
 
 ```bash
@@ -189,6 +193,6 @@ Deployed adapter addresses go to `script/development/state/1-uniV3-adapters.json
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-contract UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP -vv
 ```

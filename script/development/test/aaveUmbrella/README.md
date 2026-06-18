@@ -8,7 +8,7 @@
 
 - **Inheritance:** none — `AaveUmbrellaBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly (it is *not* a meta-adapter; the live set is discovered, not governed via `addMetaInstances`/`removeMetaInstances`).
 - **Dynamic discovery:** `RewardsController.getAllAssets()` enumerates every stake token. Aave governance can add a stake token (or reconfigure its reward token) and the adapter picks it up automatically, provided the bare reserve it resolves to is registered on NAVCalculator. Unregistered reserves are silently skipped (same convention as the Aave lending adapters).
-- **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `script/config/chains/1.json` is the only chain config with `AaveUmbrella` (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
+- **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `script/config/contracts-deployment-config/balance-adapters/1.json` is the only balance-adapter config with an `AaveUmbrella` entry (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
 - **Today's stake-token set** (`getAllAssets()` at the fork block):
 
   | Stake token | Address | Underlying chain | Bare reserve | Reward token |
@@ -130,7 +130,7 @@ Other holders (per-asset totals): `STK_WA_USDC_HOLDER` → USDC `208367191` (202
 | Staking | `stk.balanceOf` → `stk.convertToAssets` → (if `stk.asset()` is an ERC4626) `waToken.convertToAssets` |
 | Rewards | `RewardsController.calculateCurrentUserRewards`, each reward token mapped to its bare reserve via `UNDERLYING_ASSET_ADDRESS()` |
 
-This is an **in-EVM cross-check** at the forked block (same archive state, zero derivation drift). **Why no Python:** the value is a chained `convertToAssets` of live on-chain balances — there is no closed-form re-derivation to do (unlike the Uniswap V2 dilution math); the strongest available ground truth is the protocol's own conversion functions read along an independent path. The test also asserts `protocolId == aave-v3-umbrella`, `positionId == abi.encode(stakeToken)`, and the per-leg `PositionKind`.
+This is an **in-EVM cross-check** at the forked block (same archive state, zero derivation drift). **Why no Python:** the value is a chained `convertToAssets` of live on-chain balances — there is no closed-form re-derivation to do (unlike the Uniswap V2 dilution math); the strongest available ground truth is the protocol's own conversion functions read along an independent path. These cross-check tests assert only the summed `getAdapterBalanceForAsset`; the identity assertions (`protocolId == aave-v3-umbrella`, `positionId == abi.encode(stakeToken)`, and the per-leg `PositionKind`) live in the `getAdapterPositions` tests — the unit test `test_getAdapterPositions_emitsStakingAndRewardsLegsWithIdentity` covers all three, and the fork `getAdapterPositions` tests cover `PositionKind` + `balanceAdapter`.
 
 ## 9. Wiring the live dev-anvil dashboard
 

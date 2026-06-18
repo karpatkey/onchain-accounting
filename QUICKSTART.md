@@ -90,7 +90,7 @@ Proxy addresses are identical on all chains. 02 does deploy + init + role-grant 
 
 ## Step 5: Deploy on Other Chains
 
-Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain’s RPC and `--chain-id`).
+Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain's RPC and `--chain-id`).
 
 ## Step 6: Deploy Adapters (Optional)
 

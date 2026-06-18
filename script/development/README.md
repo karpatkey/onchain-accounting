@@ -37,9 +37,11 @@ script/development/
 ├── app/
 │   └── sync-app-env.sh     — write app/.env.local pointing at the local forks
 ├── deploy/
-│   ├── 01_DeployNAV.s.sol  — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
-│   ├── register-assets.sh  — Chainlink-asset registrar via cast (forge-script alternative hangs)
-│   └── deploy.sh           — orchestrator: 01_DeployNAV then register-assets per chain
+│   ├── 01_DeployNAV.s.sol       — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
+│   ├── register-assets.sh       — Chainlink-asset registrar via cast (forge-script alternative hangs)
+│   ├── register-custom-assets.sh— custom-feed asset registrar via cast
+│   ├── deploy.sh                — orchestrator: 01_DeployNAV then register-assets per chain
+│   └── deploy-*.sh / *.s.sol    — per-protocol ad-hoc adapter wiring helpers (forge create / forge script + cast send)
 ├── config/
 │   └── chains.json         — chainId → port + RPC env var + native symbol/feed/heartbeat + sequencer feed
 ├── state/                  — anvil state files, PIDs, logs, per-chain deployed addresses (gitignored)
@@ -98,9 +100,10 @@ positions for visual cross-check vs Debank, you also need the adapter deployed +
 local anvil:
 
 1. **Pre-verification (per-protocol ad-hoc):** small bash deploy script under
-   `script/development/test/<protocol>/deploy-*.sh` that does `forge create` + `cast send addBalanceAdapters`
-   (plain adapter) or `cast send addMetaBalanceAdapter` (meta adapter) per adapter instance. See
-   `script/development/test/uniswapV2/` for the canonical example.
+   `script/development/deploy/deploy-<protocol>.sh` that does `forge create` + `cast send addBalanceAdapters(address[])`
+   (plain adapter) or `cast send addMetaBalanceAdapter(address,bytes32[])` (meta adapter) per adapter instance. See
+   `script/development/deploy/deploy-lido-withdrawal-queue.sh` (plain) and
+   `script/development/deploy/deploy-aave-instances-meta.sh` (meta) for canonical examples.
 2. **Post-verification:** the adapter is appended to `script/deploy/04_DeployBalanceAdapters.s.sol`
    and its chain config goes into `script/config/chains/<id>.json`. The ad-hoc dev script is then
    deleted; dev anvil deploys go through the same prod script with `--rpc-url http://127.0.0.1:<port>`.
@@ -159,7 +162,7 @@ Every dev deploy uses anvil's prefunded account #0:
 
 The dev `01_DeployNAV.s.sol` grants this EOA `DEFAULT_ADMIN_ROLE` (via initialize) and `MANAGER`
 (via explicit `grantRole`), so one key can deploy + register assets + manage balance adapters. No Safe
-handoff in dev (that's prod's `07_HandoffRolesToSafe.s.sol`, which dev skips).
+handoff in dev (that's prod's `07_TransferAdminToSecurityCouncil.s.sol`, which dev skips).
 
 To call admin-only functions from `cast` use `--private-key` with the value above.
 

@@ -14,7 +14,7 @@ Reviewing that decision before implementation landed: the framework convention i
 
 ## Decision
 
-Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses, their staked / reward tokens, and their per-position labels are pinned as compile-time `address public constant` declarations and assembled in a `pure` `_records()` function. The constructor takes only `(navCalculator, protocol)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
+Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses, their staked / reward tokens, and their per-position labels are pinned as compile-time `address public constant` declarations and assembled in a `pure` `_records()` function. The constructor takes only `(navCalculator)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
 
 Concretely:
 
@@ -31,7 +31,7 @@ When Aave governance ships a new SM stake token, updating this adapter is a **so
 
 - One uniform rule for the framework: every balance adapter is immutable. No "but the SM is special" carve-out for reviewers, future contributors, or future Claude sessions to remember.
 - No admin role, no Ownable, no `addStakeToken` / `removeStakeToken`. Smaller surface area, smaller bytecode, simpler audit story.
-- Constructor takes two arguments instead of four. `04_DeployBalanceAdapters.s.sol` reads only `protocol` from chain config; chain config no longer needs `admin`/`stakeTokenAddresses`/`stakeTokenDetails` fields.
+- Constructor takes one argument (`navCalculator`) instead of four. `04_DeployBalanceAdapters.s.sol` reads only the `enabled` flag from the balance-adapter deploy config (`contracts-deployment-config/balance-adapters/<chainId>.json`); that config no longer needs `admin`/`stakeTokenAddresses`/`stakeTokenDetails` fields.
 - Compile-time verification: a wiring bug (wrong stkAAVE address, wrong reward token) would have to land via a code review of the constants table — caught at review time, not at runtime.
 
 **Negative / things to watch:**
@@ -63,6 +63,6 @@ When refreshing fork blocks (via the bump workflow described in `docs/howto/refr
 
 - Adapter: `src/balances/protocols/AaveV3SafetyModule.sol`
 - Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol` (fork)
-- Deploy schema: `script/config/chains/1.json` `balanceAdapters.AaveV3SafetyModule` (only `protocol` field)
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveV3SafetyModule` (deploy intent) and `script/config/nav-config/balance-adapters/1.json` `AaveV3SafetyModule` (NAV-registration intent) — both just carry the `enabled` flag, since the stake-token set is hardcoded in the adapter
 - Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceAdapters(legacy)` + `nav.addBalanceAdapters(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
 - Superseded: ADR [0002](0002-aave-safety-module-multi-token.md) (the admin-managed-list design)

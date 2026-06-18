@@ -1,10 +1,10 @@
 # 0002 — Aave V3 Safety Module: multi-token consolidation
 
-**Status:** **superseded by [0005](0005-aave-safety-module-hardcoded-immutable.md)** (2026-XX-XX). The multi-token adapter described below was reverted in favour of a single-instance-per-stake-token immutable adapter — see ADR 0005 for the rationale. This document is preserved as the historical context for the change.
+**Status:** **superseded by [0005](0005-aave-safety-module-hardcoded-immutable.md)** (2026-05-06). The multi-token adapter described below was reverted in favour of a single immutable adapter with a hardcoded stake-token list — see ADR 0005 for the rationale. This document is preserved as the historical context for the change.
 
 ## Context
 
-The first version of `AaveV3SafetyModuleBalanceAdapter` (`src/balances/protocols/aave/AaveV3SafetyModule.sol`) followed the same shape as every other balance adapter in the framework: **one immutable instance per stake token**. Constructor: `(stakeToken, navCalculator)`. The adapter reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract at construction and pins them as immutables.
+The first version of `AaveV3SafetyModuleBalanceAdapter` (`src/balances/protocols/AaveV3SafetyModule.sol`) followed the same shape as every other balance adapter in the framework: **one immutable instance per stake token**. Constructor: `(stakeToken, navCalculator)`. The adapter reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract at construction and pins them as immutables.
 
 This is **already token-agnostic at the bytecode level** — the same compiled contract handles stkAAVE, stkABPT, stkGHO. To support a new stake token you call the factory with a different `stakeToken` parameter and get a different deterministic address. With CREATE2, that's a single call.
 
@@ -32,14 +32,14 @@ Concretely:
 - The constructor accepts an initial list so the deploy + initial registration happens atomically.
 - `getAdapterPositions(account, assetFilter)` emits **one position per (stakeToken, role) pair** so attribution is preserved. A user with both stkGHO and stkAAVE balances sees three distinct positions: GHO as `Staking` (stkGHO principal), AAVE as `Rewards` (stkGHO rewards), and AAVE as `Staking`/`Rewards` (stkAAVE stake + rewards, merged into one entry because stkAAVE's staked and reward tokens are both AAVE). The stakeToken is encoded in each `positionId`.
 - `getAdapterBalanceForAsset(account, asset)` returns the **summed** balance across all registered stake tokens for that asset.
-- The factory deploys a single canonical instance per chain. `PROTOCOL_KEY` is unchanged: `keccak256("AaveV3SafetyModule")`. The new factory `deploy` signature takes the initial stake-token list, the admin address, the protocol name, and a salt.
-- Migration (Mainnet): the existing single-token stkGHO adapter is unregistered via `BalanceAdapterRegistry.unregister`, the new multi-token adapter is deployed (initial list = `[stkGHO]`), and the registry registers the new adapter on `NAVCalculator`. The old adapter stays on-chain but is no longer queried.
+- The factory deploys a single canonical instance per chain. The protocol id is unchanged: `ProtocolIds.AAVE_V3_SAFETY_MODULE` (`keccak256("aave-v3-safety-module")`). The new factory `deploy` signature takes the initial stake-token list, the admin address, the protocol name, and a salt.
+- Migration (Mainnet): the existing single-token stkGHO adapter is removed via `NAVCalculator.removeBalanceAdapters`, the new multi-token adapter is deployed (initial list = `[stkGHO]`), and it is registered via `NAVCalculator.addBalanceAdapters`. The old adapter stays on-chain but is no longer queried.
 
 ## Consequences
 
 **Positive:**
 
-- One adapter address per chain regardless of how many stake tokens are supported. Less ops surface (fewer `BalanceAdapterRegistry` registrations, fewer NAV adapter entries, fewer addresses for off-chain consumers to know about).
+- One adapter address per chain regardless of how many stake tokens are supported. Less ops surface (fewer `NAVCalculator` adapter registrations, fewer NAV adapter entries, fewer addresses for off-chain consumers to know about).
 - Adding a new Safety Module stake token (e.g., a future Umbrella token) is a single admin call rather than a factory deploy + register flow.
 - Per-token attribution is preserved via `positionId` (encoding the stakeToken address) on each `PositionBalance`.
 - `getAdapterBalanceForAsset` collapses cross-stake-token AAVE rewards into a single number, which is what NAV consumers actually want for "how much AAVE does this account have effective claim on."
@@ -47,7 +47,7 @@ Concretely:
 **Negative / things to watch:**
 
 - This is **the only mutable adapter in the framework.** Every other adapter is immutable post-deploy. Future contributors must read [`/CLAUDE.md`](../../CLAUDE.md) and this ADR before assuming all adapters are static.
-- Admin risk: a compromised owner can register a malicious "stake token" contract that satisfies the minimal interface and returns inflated balances. Mitigations: admin is the OIV Safe (multisig), the registry's protocol key remains `keccak256("AaveV3SafetyModule")` so off-chain consumers can detect unexpected adapter swaps, and the contract validates that registered stake tokens actually return non-zero `STAKED_TOKEN()` and `REWARD_TOKEN()` at registration time.
+- Admin risk: a compromised owner can register a malicious "stake token" contract that satisfies the minimal interface and returns inflated balances. Mitigations: admin is the OIV Safe (multisig), the protocol id remains `ProtocolIds.AAVE_V3_SAFETY_MODULE` (`keccak256("aave-v3-safety-module")`) so off-chain consumers can detect unexpected adapter swaps, and the contract validates that registered stake tokens actually return non-zero `STAKED_TOKEN()` and `REWARD_TOKEN()` at registration time.
 - Reasoning had to be captured here because the consolidation is *not* an obvious improvement — the per-token design was already token-agnostic. If a future contributor asks "why didn't we just deploy more instances?", point them here.
 - Any **future** mutable adapter requires its own ADR justifying the deviation. This is a one-off, not a precedent.
 
@@ -59,8 +59,9 @@ Concretely:
 
 ## Reference
 
-- Adapter: `src/balances/protocols/aave/AaveV3SafetyModule.sol`
-- Factory: `src/balances/protocols/aave/AaveV3SafetyModuleAdapterFactory.sol`
-- Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol`, `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol`
-- Migration script: `script/deploy/07_MigrateSafetyModule.s.sol`
-- Framework reference: ADR [0001](0001-balance-adapter-factory-pattern.md)
+The multi-token design described above was reverted before it shipped, so the factory and migration-script files it proposed never existed. The pointers here are to the code as it stands today (the hardcoded immutable adapter from ADR 0005):
+
+- Adapter: `src/balances/protocols/AaveV3SafetyModule.sol`
+- Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol` (fork)
+- Superseded by: ADR [0005](0005-aave-safety-module-hardcoded-immutable.md)
+- Framework reference: ADR [0001](0001-balance-adapter-factory-pattern.md) (the factory pattern is designed but not yet shipped)

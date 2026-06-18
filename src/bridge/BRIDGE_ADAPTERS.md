@@ -17,7 +17,7 @@ All adapters use a single **message payload** format (invoice data). Release is 
 
 ## 2. Token and data flow (depositAndBridge → completeBridge)
 
-The diagram below describes how tokens and the message payload move from a account on the source chain until completion on the destination chain. Two completion paths are shown: **callback-based** (protocol calls the escrow, escrow forwards to adapter, adapter calls `releaseByInvoiceId`) and **manager-only** (manager calls `adapter.completeBridge`, base calls `releaseByInvoiceId`).
+The diagram below describes how tokens and the message payload move from an account on the source chain until completion on the destination chain. Two completion paths are shown: **callback-based** (protocol calls the escrow, escrow forwards to adapter, adapter calls `releaseByInvoiceId`) and **manager-only** (manager calls `adapter.completeBridge`, base calls `releaseByInvoiceId`).
 
 ```mermaid
 flowchart TB
@@ -111,7 +111,7 @@ BridgeEscrow generates this payload in `depositAndBridge` and validates checksum
 
 ### 5.1 Roles and access
 
-- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, register assets, configure adapter callbacks, pause, emergency withdraw.
+- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, configure adapter callbacks, pause, emergency withdraw, authorize upgrades.
 - **MANAGER:** Call `releaseByInvoiceId` (and thus complete bridges when the adapter forwards to the escrow), cancel invoices, `markInvoiceCompleted`, register/unregister assets.
 
 ### 5.2 Core flows
@@ -230,7 +230,7 @@ Across, CCIP, Stargate, and Gnosis must be registered with the escrow callback c
 1. Create a new contract that inherits `BridgeAdapter` and (optionally) a protocol-specific interface.
 2. Add storage for protocol contracts and any mappings you need (e.g. message ID → invoice ID).
 3. Implement a custom `initialize(...)` that:
-   - Calls `super.initialize(admin_, bridgeEscrow_, providerName_, version_)` (or the parent’s initializer pattern),
+   - Calls `super._initializeBridgeAdapter(admin_, bridgeEscrow_, providerName_, version_)` (the base initializer, which grants `DEFAULT_ADMIN_ROLE` to `admin_` and pins the escrow, provider name, and version),
    - Sets protocol contracts and config,
    - Grants `MANAGER` role to the intended manager(s).
 
@@ -257,9 +257,9 @@ Across, CCIP, Stargate, and Gnosis must be registered with the escrow callback c
 
 8. Use the shared errors and constants from `src/errors.sol` and `src/constants.sol` where applicable.
 
-### 9.2 Upgradeability
+### 9.2 Initialization and upgradeability
 
-Adapters are intended to be deployed as UUPS proxies. Call `_disableInitializers()` in the constructor and use `initializer` on your `initialize` function.
+Adapters are **non-upgradeable**. They are deployed with plain `new ...` (see `05_DeployBridgeAdapters.s.sol`) and initialized once: `BridgeAdapter._initializeBridgeAdapter` uses a simple boolean guard (`_initialized`) rather than OpenZeppelin `Initializable`, so a second call reverts. Do not add a constructor, `_disableInitializers()`, or the `initializer` modifier — none are needed. (BridgeEscrow itself **is** UUPS-upgradeable, with `_authorizeUpgrade` gated by `DEFAULT_ADMIN_ROLE`; the adapters are not.)
 
 ---
 
@@ -267,7 +267,7 @@ Adapters are intended to be deployed as UUPS proxies. Call `_disableInitializers
 
 > **Where bridge-adapter deploy config lives.** Per-chain bridge-adapter config — `enabled`, the `initialize` args, and the optional `callbackSelector` — lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, keyed by adapter name. It is read by `05_DeployBridgeAdapters.s.sol`. (It is no longer carried in a `bridgeAdapters` block in `script/config/chains/<chainId>.json`.)
 
-1. **Deploy the adapter** (implementation + proxy) and run your adapter's `initialize(...)` with admin, escrow address, protocol contracts, and version (from `contracts-deployment-config/bridge-adapters/<chainId>.json`). Grant `MANAGER` role to the manager address(es) that will call `completeBridge` when needed.
+1. **Deploy the adapter** (plain `new ...`, no proxy — adapters are non-upgradeable) and run your adapter's `initialize(...)` with admin, escrow address, protocol contracts, and version (from `contracts-deployment-config/bridge-adapters/<chainId>.json`). Grant `MANAGER` role to the manager address(es) that will call `completeBridge` when needed.
 
 2. **Authorize the adapter on the escrow:**  
    As admin, call `BridgeEscrow.authorizeAdapter(adapter)` so the adapter can be used in `depositAndBridge` and can call `releaseByInvoiceId`.

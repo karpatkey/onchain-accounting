@@ -7,7 +7,7 @@
 ### Inheritance + per-chain scope (Phase 0)
 
 - **Inheritance:** none — `ERC4626WrapBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. sGHO needs **no bespoke contract**: it is the generic ERC-4626 wrapper adapter pointed at the sGHO vault.
-- **Per-chain scope:** the **sGHO savings vault is mainnet-only**. GHO the token exists on Gnosis / Arbitrum / Base too, but the sGHO vault (`0xE1753F2e…`) is not deployed there — so `chains/1.json` is the only chain config with `ERC4626Wrap_sGHO`. A single mainnet fork test is sufficient; no per-chain branches.
+- **Per-chain scope:** the **sGHO savings vault is mainnet-only**. GHO the token exists on Gnosis / Arbitrum / Base too, but the sGHO vault (`0xE1753F2e…`) is not deployed there — so `script/config/nav-config/balance-adapters/1.json` is the only chain config with `ERC4626Wrap_sGHO`. A single mainnet fork test is sufficient; no per-chain branches.
 - **Yield mechanics:** sGHO is a yield-bearing savings vault — the share price rises over time (`convertToAssets(1 share) > 1 GHO`), accruing **per second** (so the GHO value is `block.timestamp`-dependent, not just block-number). There is **no exit fee, cooldown, or withdrawal delay** — redemption is instant and 1:1 (proven in §8), so `convertToAssets` is the correct, non-over-reporting read of redeemable value.
 - **Math branch:** single leg. `amount = sGHO.convertToAssets(sGHO.balanceOf(account))`, denominated in GHO, `isDebt = false`, `PositionKind.Supplied`. Registration gating is asymmetric: `getAdapterPositions` drops the leg if GHO isn't registered on NAVCalculator (registered-asset intersection — the "discard if no price" policy), whereas the balance methods (`getAdapterBalanceForAsset` / `getAdapterBalances`) do **not** consult the registry and still return the value. All return zero when the share balance is zero. (The constructor still *requires* GHO registered at deploy time.)
 
@@ -110,6 +110,6 @@ bash script/development/app/sync-app-env.sh 1
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/ERC4626Wrap.fork.t.sol" -vv
 ```

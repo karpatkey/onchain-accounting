@@ -225,11 +225,11 @@ Run with `FOUNDRY_PROFILE=slow` to throttle RPC.
 
 ## 3. Wire chain config
 
-Config is split by concern. **Deploy config** (constructor args, read by `04_DeployBalanceAdapters.s.sol`) lives in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json`. **NAV registration** (read by `06_Configure.s.sol`) lives in `script/config/nav-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/nav-config/meta-balance-adapters/<chainId>.json` for meta adapters. Each file's top-level keys are the adapter names — the filename is the chain.
+Config is split by concern. **Deploy config** (constructor args, read by `04_DeployBalanceAdapters.s.sol`) lives in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` for meta adapters. **NAV registration** (read by `06_Configure.s.sol`) lives in `script/config/nav-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/nav-config/meta-balance-adapters/<chainId>.json` for meta adapters. Each file's top-level keys are the adapter names — the filename is the chain.
 
-### 3.1 Deploy config (both adapter kinds)
+### 3.1 Deploy config
 
-In `contracts-deployment-config/balance-adapters/<chainId>.json`, the constructor block lists only the protocol-specific / chain-level addresses the adapter needs (no instances here). For a **per-instance adapter**:
+For a **per-instance adapter**, add the constructor block (only the protocol-specific / chain-level addresses the adapter needs — no instances here) to `contracts-deployment-config/balance-adapters/<chainId>.json`:
 
 ```json
 {
@@ -242,7 +242,7 @@ In `contracts-deployment-config/balance-adapters/<chainId>.json`, the constructo
 }
 ```
 
-For a **meta-adapter**, the constructor block lists only chain-level constants (the protocol's global contracts):
+For a **meta-adapter**, add the constructor block (only chain-level constants — the protocol's global contracts) to `contracts-deployment-config/meta-balance-adapters/<chainId>.json`:
 
 ```json
 {

@@ -6,8 +6,8 @@ This guide explains all configuration files needed for multi-chain deployments o
 
 1. [Configuration Files Overview](#configuration-files-overview)
 2. [chains/{chainId}.json](#chainschainidjson)
-3. [contracts-deployment-config/price-feeds/{chainId}.json](#contracts-deployment-configprice-feedschainidjson)
-4. [contracts-deployment-config/balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapterschainidjson)
+3. [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson)
+4. [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson)
 4a. [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
 5. [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson)
 6. [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson)
@@ -38,8 +38,9 @@ script/config/
 │   ├── 100.json                                   # Gnosis
 │   └── ...                                         # One file per chain
 ├── contracts-deployment-config/
-│   ├── price-feeds/<chainId>.json                 # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
-│   ├── balance-adapters/<chainId>.json            # Balance adapters to deploy (plain + meta): { "<AdapterName>": { enabled, constructor } }
+│   ├── custom-price-feeds/<chainId>.json          # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
+│   ├── balance-adapters/<chainId>.json            # PLAIN adapters to deploy: { "<AdapterName>": { enabled, constructor } }
+│   ├── meta-balance-adapters/<chainId>.json       # META adapters to deploy: { "<AdapterName>": { enabled, constructor } }
 │   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize, callbackSelector? } } — read by 05
 ├── nav-config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
@@ -68,7 +69,7 @@ safe-transactions/
 
 ## chains/{chainId}.json
 
-One file per chain. Contains chain metadata and role addresses only — **no `bridgeAdapters` block** (bridge-adapter config now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`). Deployed addresses live in `deployments/{chainId}.json`; balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json` and NAV-registration config in `nav-config/balance-adapters/{chainId}.json` (plain) / `nav-config/meta-balance-adapters/{chainId}.json` (meta). **Use environment variables for RPC and explorer API keys (e.g. `$ALCHEMY`, `$ARBISCAN_API_KEY`).**
+One file per chain. Contains chain metadata and role addresses only — **no `bridgeAdapters` block** (bridge-adapter config now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`). Deployed addresses live in `deployments/{chainId}.json`; balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json` (plain) / `contracts-deployment-config/meta-balance-adapters/{chainId}.json` (meta) and NAV-registration config in `nav-config/balance-adapters/{chainId}.json` (plain) / `nav-config/meta-balance-adapters/{chainId}.json` (meta). **Use environment variables for RPC and explorer API keys (e.g. `$ALCHEMY`, `$ARBISCAN_API_KEY`).**
 
 ### Template (one chain)
 
@@ -104,11 +105,11 @@ One file per chain. Contains chain metadata and role addresses only — **no `br
 | `addresses.admin` | address | DEFAULT_ADMIN_ROLE — the deployer EOA during deploy (EOA flow) |
 | `addresses.manager` | address | Manager role for NAV and bridge |
 
-> Deployed implementation, proxy, and adapter addresses are written to `deployments/{chainId}.json` (not here). Balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json`; bridge adapter deploy config lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`.
+> Deployed implementation, proxy, and adapter addresses are written to `deployments/{chainId}.json` (not here). Balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json` (plain) / `contracts-deployment-config/meta-balance-adapters/{chainId}.json` (meta); bridge adapter deploy config lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`.
 
 ---
 
-## contracts-deployment-config/price-feeds/{chainId}.json
+## contracts-deployment-config/custom-price-feeds/{chainId}.json
 
 **Custom price feed adapters to deploy on a chain.** Keyed by feed name, each with `enabled` and `constructor`. Read by `03_DeployPriceFeeds.s.sol`, which deploys every feed where `enabled: true` and writes the address to `deployments/{chainId}.json` under `customPriceFeeds`. Top-level keys are feed names — no chainId wrapper.
 
@@ -157,20 +158,27 @@ reader), not a fake `constructor` key.
 
 ---
 
-## contracts-deployment-config/balance-adapters/{chainId}.json
+## contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json
 
-**Balance adapters to deploy on a chain (both plain and meta).** Keyed by adapter name, each with `enabled` and `constructor`. Read by `04_DeployBalanceAdapters.s.sol`, which deploys every adapter where `enabled: true` (plain `new …`, CREATE) and writes the address to `deployments/{chainId}.json` under `balanceAdapters`. Top-level keys are adapter names — no chainId wrapper.
+**Balance adapters to deploy on a chain.** Plain adapters live in `balance-adapters/{chainId}.json`; meta adapters live in `meta-balance-adapters/{chainId}.json` (same plain-vs-meta classification as `nav-config/`). Keyed by adapter name, each with `enabled` and `constructor`. Read by `04_DeployBalanceAdapters.s.sol`, which deploys every adapter where `enabled: true` across **both** files (plain `new …`, CREATE) and writes the address to `deployments/{chainId}.json` under `balanceAdapters` (all deployed addresses, plain and meta, share that one block). Top-level keys are adapter names — no chainId wrapper.
 
-A meta-adapter is a single deployed contract, so it appears here just like a plain adapter; its **instance set is NOT here** — it lives in `nav-config/meta-balance-adapters/{chainId}.json`. There is no `deployed` field here.
+A meta-adapter is a single deployed contract; its **instance set is NOT here** — it lives in `nav-config/meta-balance-adapters/{chainId}.json`. There is no `deployed` field here.
 
-### Template
+### Template — `balance-adapters/{chainId}.json` (plain)
 
 ```json
 {
   "ERC20Default": {
     "enabled": true,
     "constructor": {}
-  },
+  }
+}
+```
+
+### Template — `meta-balance-adapters/{chainId}.json` (meta)
+
+```json
+{
   "AaveV3InstancesMeta": {
     "enabled": true,
     "constructor": { "protocol": "Aave V3" }
@@ -275,7 +283,7 @@ A meta-adapter is a single deployed contract, so it appears here just like a pla
 |-------|------|-------------|
 | `type` | string | `"Chainlink"`, `"Custom"`, `"Redstone"`, or `"API3"` |
 | `address` | string | Feed address (non-Custom feeds) |
-| `feed` | string | Custom feeds only: the `contracts-deployment-config/price-feeds/{chainId}.json` key; address resolved post-deploy from `deployments/{chainId}.json .customPriceFeeds.<name>` |
+| `feed` | string | Custom feeds only: the `contracts-deployment-config/custom-price-feeds/{chainId}.json` key; address resolved post-deploy from `deployments/{chainId}.json .customPriceFeeds.<name>` |
 | `heartbeat` | number | Oracle heartbeat in seconds |
 
 ---
@@ -360,8 +368,8 @@ A meta-adapter is a single deployed contract, so it appears here just like a pla
 Deployment does **not** use a single `dev-input.json`. User-provided values live in:
 
 - **`config/chains/{chainId}.json`** — Per chain: metadata + `addresses` (securityCouncil, admin, manager) only. Scripts read these for each chain.
-- **`config/contracts-deployment-config/price-feeds/{chainId}.json`** — Per chain: `{feedName}` (enabled + constructor) custom price feeds to deploy; see [contracts-deployment-config/price-feeds/{chainId}.json](#contracts-deployment-configprice-feedschainidjson).
-- **`config/contracts-deployment-config/balance-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + constructor, plain and meta) balance adapters to deploy; see [contracts-deployment-config/balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapterschainidjson).
+- **`config/contracts-deployment-config/custom-price-feeds/{chainId}.json`** — Per chain: `{feedName}` (enabled + constructor) custom price feeds to deploy; see [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson).
+- **`config/contracts-deployment-config/balance-adapters/{chainId}.json`** and **`config/contracts-deployment-config/meta-balance-adapters/{chainId}.json`** — Per chain: plain / meta `{adapter}` (enabled + constructor) balance adapters to deploy; see [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson).
 - **`config/contracts-deployment-config/bridge-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + initialize args + optional callbackSelector) bridge adapters to deploy; see [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson).
 - **`config/nav-config/assets-and-price-feeds/{chainId}.json`** — Per chain: `{symbol}` (address + `priceFeeds[]`) assets to register on NAVCalculator; see [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson).
 - **`config/nav-config/balance-adapters/{chainId}.json`** and **`config/nav-config/meta-balance-adapters/{chainId}.json`** — Per chain: plain / meta adapters to register on NAVCalculator (meta entries carry `instances`/`instancesRaw`); see [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson).
@@ -905,9 +913,9 @@ BridgeAdapter.grantRole(MANAGER, managerAddress);
 
 - [ ] Fill `script/config/chains/{chainId}.json` with `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (per chain)
 - [ ] Add assets to register on NAVCalculator with correct price feeds in `nav-config/assets-and-price-feeds/{chainId}.json`
-- [ ] Add custom price feeds to deploy in `contracts-deployment-config/price-feeds/{chainId}.json`
+- [ ] Add custom price feeds to deploy in `contracts-deployment-config/custom-price-feeds/{chainId}.json`
 - [ ] Add asset symbols for BridgeEscrow (with addresses per chain)
-- [ ] Enable/disable adapters to deploy per chain in `contracts-deployment-config/balance-adapters/{chainId}.json`
+- [ ] Enable/disable adapters to deploy per chain in `contracts-deployment-config/balance-adapters/{chainId}.json` (plain) and `contracts-deployment-config/meta-balance-adapters/{chainId}.json` (meta)
 - [ ] List adapters to register on NAV in `nav-config/balance-adapters/{chainId}.json` (plain) and `nav-config/meta-balance-adapters/{chainId}.json` (meta)
 - [ ] Verify protocol addresses in `chains/{chainId}.json`, `contracts-deployment-config/`, and `nav-config/`
 - [ ] Set environment variables in `.env` (e.g. `ALCHEMY_API_KEY`, explorer API keys)

@@ -226,7 +226,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
-| Adapter | Description | Constructor | Config key (deploy: `contracts-deployment-config/balance-adapters/<chainId>.json`; register: `nav-config/meta-balance-adapters/<chainId>.json`) |
+| Adapter | Description | Constructor | Config key (deploy: `contracts-deployment-config/meta-balance-adapters/<chainId>.json`; register: `nav-config/meta-balance-adapters/<chainId>.json`) |
 |---------|-------------|-------------|------------------|
 | **AaveV3InstancesMeta** | All Aave V3 instances (Core, Prime, …). Instance coordinate = ProtocolDataProvider address. Up to 2 rows per reserve (`Supplied`/`Collateral` + `Borrowed`). Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV3InstancesMeta`; DataProviders under `instances`. |
 | **AaveV2InstancesMeta** | All Aave V2 instances. Thin subclass of `AaveV3InstancesMeta` (same DataProvider ABI; pool resolved via `getLendingPool()`). Instance coordinate = ProtocolDataProvider address. Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV2InstancesMeta`; DataProviders under `instances`. |

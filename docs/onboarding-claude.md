@@ -78,7 +78,7 @@ Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters m
 - For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances`.
 
 How adapters reach NAV today:
-- **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol` (constructor args from `script/config/contracts-deployment-config/balance-adapters/<chainId>.json`), so each adapter's address is chain- and run-specific. Read deployed addresses from `script/config/deployments/<chainId>.json` (`.balanceAdapters.<name>`); do not assume they match across chains.
+- **Per-chain addresses** — adapters are deployed with plain `new` (CREATE) broadcast from the deployer EOA in `04_DeployBalanceAdapters.s.sol` (constructor args from `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` for plain adapters and `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` for meta adapters; `04` reads both), so each adapter's address is chain- and run-specific. Read deployed addresses from `script/config/deployments/<chainId>.json` (`.balanceAdapters.<name>`); do not assume they match across chains.
 - **Registration** is done by `06_Configure.s.sol`, which broadcasts directly from the deployer EOA: `addBalanceAdapters(adapters)` for plain adapters and `addMetaBalanceAdapter(adapter, instances)` for meta-adapters, plus `addMetaInstances(adapter, …)/removeMetaInstances` for meta instance set changes (all idempotent).
 - **No factory or registry contract exists.** The per-protocol factory pattern (`BalanceAdapterFactory` / `BalanceAdapterRegistry`) in [ADR 0001](./decisions/0001-balance-adapter-factory-pattern.md) is designed but **not yet shipped** — `src/balances/factories/` does not exist.
 
@@ -109,7 +109,7 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 1. `01_DeployImplementations.s.sol` — libraries (PriceFeedLib, NavRegistryLib) + implementation contracts (NAVCalculator, BridgeEscrow), via EOA CREATE2.
 2. `02_DeployProxies.s.sol` — UUPS proxies + atomic initialize + role grants (admin + MANAGER to `chainConfig.admin`/`manager` = the **deployer EOA**; the atomic deployer renounces its own admin).
 3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters; asset registration via `script/manage/RegisterAssets.s.sol`.
-4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters (incl. meta-adapters) from `contracts-deployment-config/balance-adapters/<id>.json`.
+4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from `contracts-deployment-config/balance-adapters/<id>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<id>.json` (meta).
 5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
 6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `addMetaInstances`/`removeMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
 7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.

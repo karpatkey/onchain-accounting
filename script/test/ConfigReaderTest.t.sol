@@ -87,12 +87,13 @@ contract ConfigReaderTest is TestEnvConfigurator {
 
     /// @notice isAdapterEnabled reads a real enabled adapter from the deploy-config file.
     function test_IsAdapterEnabled() public view {
-        // AaveV3InstancesMeta is enabled in contracts-deployment-config/balance-adapters/1.json.
+        // AaveV3InstancesMeta is a meta adapter — enabled in contracts-deployment-config/meta-balance-adapters/1.json;
+        // the deploy-balance token resolves across both the plain + meta deploy folders.
         assertTrue(
             ConfigReader.isAdapterEnabled(vm, 1, "deployBalanceAdapters", "AaveV3InstancesMeta"),
             "AaveV3InstancesMeta should be enabled in deploy config"
         );
-        // The legacy "balanceAdapters" token aliases the same deploy-config file.
+        // The legacy "balanceAdapters" token aliases the same (union) deploy-config lookup.
         assertTrue(
             ConfigReader.isAdapterEnabled(vm, 1, "balanceAdapters", "AaveV3InstancesMeta"),
             "balanceAdapters alias resolves the deploy-config file"
@@ -125,7 +126,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(bytes(param).length >= 0, "readAdapterParam should return when path exists");
     }
 
-    /// @notice readPriceFeedParam reads a Custom feed's constructor arg from contracts-deployment-config/price-feeds.
+    /// @notice readPriceFeedParam reads a Custom feed's constructor arg from contracts-deployment-config/custom-price-feeds.
     function test_ReadPriceFeedParam() public view {
         // ETHPlus is an enabled Custom feed on chain 1 with a `ethPlus` constructor arg.
         string memory ethPlus = ConfigReader.readPriceFeedParam(vm, 1, "ETHPlus", "ethPlus");
@@ -174,7 +175,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
     }
 
     /// @notice Every adapter listed in a NAV-config file must be a deployable adapter (matching enabled entry in
-    ///         contracts-deployment-config/balance-adapters) — names are the join key across deploy/nav/deployments,
+    ///         contracts-deployment-config/{balance-adapters,meta-balance-adapters}) — names are the join key across deploy/nav/deployments,
     ///         so a mismatch silently breaks the link (deployed-but-not-added, or added-with-zero-address).
     function test_NavAdaptersHaveDeployConfig() public view {
         uint256[] memory chainIds = _allConfiguredChainIds();
@@ -196,7 +197,7 @@ contract ConfigReaderTest is TestEnvConfigurator {
                         names[i],
                         "' (chain ",
                         vm.toString(chainId),
-                        ") has no enabled entry in contracts-deployment-config/balance-adapters"
+                        ") has no enabled entry in contracts-deployment-config/{balance-adapters,meta-balance-adapters}"
                     )
                 )
             );
@@ -238,6 +239,44 @@ contract ConfigReaderTest is TestEnvConfigurator {
                     )
                 );
             }
+        }
+    }
+
+    /// @notice The deploy-config and nav-config meta/plain splits must agree: the set of META adapters in
+    ///         contracts-deployment-config/meta-balance-adapters must equal the set in nav-config/meta-balance-adapters
+    ///         (an adapter deployed as meta must be registered as meta, and vice-versa). Same for plain.
+    function test_DeployMetaSplitMatchesNavSplit() public view {
+        uint256[] memory chainIds = _allConfiguredChainIds();
+        for (uint256 c = 0; c < chainIds.length; c++) {
+            uint256 chainId = chainIds[c];
+            _assertSameSet(
+                ConfigReader.getEnabledAdapters(vm, chainId, "deployMetaBalanceAdapters"),
+                ConfigReader.getEnabledAdapters(vm, chainId, "navMetaBalanceAdapters"),
+                chainId,
+                "meta"
+            );
+        }
+    }
+
+    /// @dev Asserts two name lists are the same set (each ⊆ the other).
+    function _assertSameSet(string[] memory a, string[] memory b, uint256 chainId, string memory which) internal pure {
+        assertEq(a.length, b.length, string(abi.encodePacked("deploy/nav ", which, " count mismatch")));
+        for (uint256 i = 0; i < a.length; i++) {
+            bool found;
+            for (uint256 j = 0; j < b.length; j++) {
+                if (keccak256(bytes(a[i])) == keccak256(bytes(b[j]))) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(
+                found,
+                string(
+                    abi.encodePacked(
+                        "deploy ", which, " adapter '", a[i], "' (chain ", vm.toString(chainId), ") not in nav ", which
+                    )
+                )
+            );
         }
     }
 

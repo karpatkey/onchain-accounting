@@ -280,7 +280,7 @@ Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on
 
 A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnostic hints per row:
 - *Unregistered token*: the token address isn't an asset in `nav-config/assets-and-price-feeds/<chainId>.json`.
-- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `contracts-deployment-config/price-feeds/<chainId>.json`).
+- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `contracts-deployment-config/custom-price-feeds/<chainId>.json`).
 - *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
 
 **4.3 — NAV adapters available but not deployed on chain** *(surfaced via 4.1 cross-reference)*
@@ -290,7 +290,7 @@ When the reverse-lookup from a 4.1 entry finds a matching adapter Solidity file 
 **To action a 4.1/4.3 row:**
 
 1. Confirm the canonical contract address on the target chain (protocol's docs, Etherscan, or a Debank item's `asset_token_list[].id`).
-2. Add the adapter to `contracts-deployment-config/balance-adapters/<chainId>.json` (deploy config) and `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
+2. Add the adapter to `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) for the deploy config, and `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
 3. If any token the adapter introduces needs a price feed, check `src/prices/protocols/` for an existing feed contract (L2 LST feeds — `wstETH_L2_Price`, `weETH_L2_Price`, etc. — are already shipped). If none exists, flag as a follow-up (no new Solidity in this workflow).
 4. Re-run `refresh-integration-snapshot.sh`. Confirm the gap row clears in Section 4.1.
 

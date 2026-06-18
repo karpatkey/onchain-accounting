@@ -119,7 +119,7 @@ All deployed adapter addresses are persisted in the per-chain deployments file:
 - Price feed adapters → `deployments/<chainId>.json` (per-adapter key)
 - Balance adapters → `deployments/<chainId>.json` (per-adapter key)
 
-The per-concern config files (`contracts-deployment-config/price-feeds/<chainId>.json`, `contracts-deployment-config/balance-adapters/<chainId>.json`, `nav-config/assets-and-price-feeds/<chainId>.json`, `nav-config/balance-adapters/<chainId>.json`, `nav-config/meta-balance-adapters/<chainId>.json`) hold constructor/config inputs only — they do **not** store deployed addresses. `ConfigReader.writeAdapterAddress` always writes to `deployments/<chainId>.json`, regardless of adapter type.
+The per-concern config files (`contracts-deployment-config/custom-price-feeds/<chainId>.json`, `contracts-deployment-config/balance-adapters/<chainId>.json`, `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `nav-config/assets-and-price-feeds/<chainId>.json`, `nav-config/balance-adapters/<chainId>.json`, `nav-config/meta-balance-adapters/<chainId>.json`) hold constructor/config inputs only — they do **not** store deployed addresses. `ConfigReader.writeAdapterAddress` always writes to `deployments/<chainId>.json`, regardless of adapter type.
 
 > **Querying current deploy state.** To see what's actually deployed on each chain at any point: read `deployments/<chainId>.json`. A missing or empty entry = not yet deployed. This runbook is the process; the deployments file is the source of truth for state.
 
@@ -178,7 +178,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
 3. **Update each `script/config/chains/<id>.json`:**
    - Set `addresses.admin` and `addresses.manager` to: **Path A** the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`; **Path B** `$DEPLOYER_EOA` (to be transferred to the Safe by `07_TransferAdminToSecurityCouncil.s.sol` after Phase 6).
    - Deployed addresses are no longer stored in `chains/<id>.json` — the deploy scripts write everything (proxies, impls, ERC20Default, adapters) to `deployments/<chainId>.json`. For a from-scratch redeploy, start from an empty `deployments/<chainId>.json` (or none); the scripts create/populate it after broadcast.
-   - Balance-adapter constructor inputs live in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json`; the `navCalculator` wiring for ERC20Default comes from the new deploy and need not be hand-edited.
+   - Balance-adapter constructor inputs live in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) and `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta); the `navCalculator` wiring for ERC20Default comes from the new deploy and need not be hand-edited.
 
 4. **Run `02_DeployProxies.s.sol --broadcast` per chain:**
    ```bash
@@ -376,11 +376,11 @@ Tick every box below before you broadcast on any chain. Each one has burned a pa
 
 ## Phase 1: Configure Price Feed Adapters
 
-Price feed adapter configuration is split across two per-chain files: `script/config/contracts-deployment-config/price-feeds/<chainId>.json` (constructor inputs for the Custom price adapters we deploy, keyed by feed name) and `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (per-symbol token + feed definitions, keyed by symbol). In both, the top-level keys are the entries — the filename is the chain.
+Price feed adapter configuration is split across two per-chain files: `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json` (constructor inputs for the Custom price adapters we deploy, keyed by feed name) and `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (per-symbol token + feed definitions, keyed by symbol). In both, the top-level keys are the entries — the filename is the chain.
 
 ### 1.1 Add custom price feed deploy entries
 
-Under `contracts-deployment-config/price-feeds/<chainId>.json.<name>`, add `enabled` + `constructor` params for each custom price adapter you want `03_DeployPriceFeeds.s.sol` to deploy on that chain. A token references a custom feed from its own `priceFeeds` list (in `nav-config/assets-and-price-feeds/<chainId>.json`) via `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }`.
+Under `contracts-deployment-config/custom-price-feeds/<chainId>.json.<name>`, add `enabled` + `constructor` params for each custom price adapter you want `03_DeployPriceFeeds.s.sol` to deploy on that chain. A token references a custom feed from its own `priceFeeds` list (in `nav-config/assets-and-price-feeds/<chainId>.json`) via `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }`.
 
 > **Looking up Chainlink heartbeats.** Every `*chainlinkHeartbeat` constructor parameter must match (or slightly exceed) the published heartbeat of the underlying Chainlink feed — otherwise every query returns `stale: true` between heartbeat writes. Chainlink's authoritative source is the JSON directory at `https://reference-data-directory.vercel.app/feeds-<network>.json` (e.g. `feeds-mainnet.json`, `feeds-ethereum-mainnet-arbitrum-1.json`). Each feed entry exposes `heartbeat` (seconds) and `threshold` (deviation %). Alternatively, [data.chain.link](https://data.chain.link) shows the same values per feed page. ETH/USD mainnet is 3600s; USD stablecoins are typically 86400s. If in doubt, round up (e.g. 3900s) to tolerate block-time jitter.
 
@@ -400,7 +400,7 @@ Structure — `nav-config/assets-and-price-feeds/<chainId>.json` (keyed by symbo
 }
 ```
 
-Structure — `contracts-deployment-config/price-feeds/<chainId>.json` (keyed by feed name):
+Structure — `contracts-deployment-config/custom-price-feeds/<chainId>.json` (keyed by feed name):
 
 ```json
 {
@@ -418,7 +418,7 @@ The first entry in a token's `priceFeeds` array is set via `registerAsset`; any 
 
 ### 1.2 Mainnet custom price feed adapters
 
-`03_DeployPriceFeeds.s.sol._deployMainnetPriceAdapters()` dispatches each adapter below, guarded by `ConfigReader.isAdapterEnabled(...)`. An adapter is deployed only if its entry exists and is `enabled: true` under `contracts-deployment-config/price-feeds/1.json.<name>`. The **Configured today** column reflects the current state of that file on this branch — adapters marked `—` are supported by the deploy script but have no deploy entry, so they are skipped at deploy time. Add them to `contracts-deployment-config/price-feeds/1.json` when a fund needs them.
+`03_DeployPriceFeeds.s.sol._deployMainnetPriceAdapters()` dispatches each adapter below, guarded by `ConfigReader.isAdapterEnabled(...)`. An adapter is deployed only if its entry exists and is `enabled: true` under `contracts-deployment-config/custom-price-feeds/1.json.<name>`. The **Configured today** column reflects the current state of that file on this branch — adapters marked `—` are supported by the deploy script but have no deploy entry, so they are skipped at deploy time. Add them to `contracts-deployment-config/custom-price-feeds/1.json` when a fund needs them.
 
 | Adapter | Config key | Configured today | Constructor params needed |
 |---------|-----------|------------------|--------------------------|
@@ -470,7 +470,7 @@ The asset/price-feed config and the chain configs both surface heartbeat values,
 | Location | Used by | What it does |
 |---|---|---|
 | `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>.priceFeeds[].heartbeat` (number or string) | `RegisterAssets.s.sol` → `NAVCalculator.registerAsset(_, _, _, heartbeat)` for the first feed / `addPriceFeed(_, _, _, heartbeat)` for the rest → stored in `priceOracles[asset].chainlinkHeartbeat` | For `Chainlink`/`Redstone`/`API3`-typed entries: NAV checks `block.timestamp - latestRoundData().updatedAt >= heartbeat` and flags the feed stale if exceeded. For `Custom`-typed entries: the primary gate is `getLatestPrice().stale`; the registered heartbeat is then also applied as an external gate on `latestRoundData().updatedAt` (same `>=` check). |
-| `contracts-deployment-config/price-feeds/<chainId>.json .<name>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom adapter's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_Price.sol:85-90`), so any single feed exceeding its heartbeat marks the whole price stale. |
+| `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom adapter's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_Price.sol:85-90`), so any single feed exceeding its heartbeat marks the whole price stale. |
 
 **Conventions to follow (PR #14 baseline, all aligned to the fund-side):**
 
@@ -482,7 +482,7 @@ The asset/price-feed config and the chain configs both surface heartbeat values,
   - All other ETH/USD feeds (Mainnet, Arbitrum, Gnosis): 3600 / 86400 depending on chain — check `PriceOracles.sol`
   - Stablecoins generally: **86400**
 - **Custom-typed token entries.** Use **`type(uint256).max`** (the literal `115792089237316195423570985008687907853269984665640564039457584007913129639935`). This matches the fund-side `maxHeartbeat` constant. The Custom adapter reports its own staleness; this field is advisory.
-- **Custom adapter constructor heartbeats** (in `contracts-deployment-config/price-feeds/<chainId>.json .<name>.constructor`). Each per-feed heartbeat parameter must equal the **actual Chainlink feed's published heartbeat** for the feed it points at. Example: `price-feeds/1.json .syrupUSDC.constructor.usdcToUsdChainlinkHeartbeat = "82800"` because that adapter consumes the standard USDC/USD Mainnet feed (heartbeat 82800). A 86400 here would silently tolerate a 1-hour-stale USDC price.
+- **Custom adapter constructor heartbeats** (in `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.constructor`). Each per-feed heartbeat parameter must equal the **actual Chainlink feed's published heartbeat** for the feed it points at. Example: `custom-price-feeds/1.json .syrupUSDC.constructor.usdcToUsdChainlinkHeartbeat = "82800"` because that adapter consumes the standard USDC/USD Mainnet feed (heartbeat 82800). A 86400 here would silently tolerate a 1-hour-stale USDC price.
 
 **Source of truth.** Every heartbeat — token-entry or adapter-constructor — should match the corresponding fund-side `karpatkey-tokenized-fund/contracts/script/deploy/adapters/priceOracles/PriceOracles.sol` `<chain>PriceOracles.<getter>().chainlinkHeartbeat`. PR #14 audited and aligned all 55 token entries and all 19 adapter-constructor heartbeats; CI doesn't currently enforce this drift, so re-audit on every change.
 
@@ -490,13 +490,13 @@ The asset/price-feed config and the chain configs both surface heartbeat values,
 
 ## Phase 2: Configure Balance Adapters
 
-Balance adapter configuration is split across three per-chain files — **not** in `chains/<id>.json`. Deploy config (constructor inputs) lives in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (keyed by `<AdapterKey>` → `{ enabled, constructor }`, no instances). NAV registration lives in `script/config/nav-config/balance-adapters/<chainId>.json` (plain adapters → `{ enabled }`) and `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta adapters → `{ enabled, instances? | instancesRaw? }`). In every file the top-level keys are the adapter names.
+Balance adapter configuration is split across four per-chain files — **not** in `chains/<id>.json`. Deploy config (constructor inputs) lives in `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain adapters) and `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta adapters), each keyed by `<AdapterKey>` → `{ enabled, constructor }` (no instances). NAV registration lives in `script/config/nav-config/balance-adapters/<chainId>.json` (plain adapters → `{ enabled }`) and `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta adapters → `{ enabled, instances? | instancesRaw? }`). In every file the top-level keys are the adapter names.
 
 ### 2.1 Add adapter entries
 
-> **Starting state:** for the from-scratch redeploy, these files define the adapter set per chain. Most multi-instance protocols are covered by a single meta-adapter (e.g. `AaveV3InstancesMeta`, `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`); any legacy per-instance keys (`AaveV3_Core`, `MorphoMarket_*`, `Aura_*`, etc.) that remain are `enabled: false` and superseded (ADR 0010). Before editing, review what's already there and either add a new instance to a meta-adapter's `instances`/`instancesRaw` set (in `nav-config/meta-balance-adapters/<chainId>.json`) or add a missing standalone adapter. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` in `contracts-deployment-config/balance-adapters/<chainId>.json`.
+> **Starting state:** for the from-scratch redeploy, these files define the adapter set per chain. Most multi-instance protocols are covered by a single meta-adapter (e.g. `AaveV3InstancesMeta`, `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`); any legacy per-instance keys (`AaveV3_Core`, `MorphoMarket_*`, `Aura_*`, etc.) that remain are `enabled: false` and superseded (ADR 0010). Before editing, review what's already there and either add a new instance to a meta-adapter's `instances`/`instancesRaw` set (in `nav-config/meta-balance-adapters/<chainId>.json`) or add a missing standalone adapter. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` across `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta).
 
-For each new adapter you want to **deploy** on a given chain, add an entry in `contracts-deployment-config/balance-adapters/<chainId>.json`:
+For each new adapter you want to **deploy** on a given chain, add an entry in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain adapters) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta adapters):
 
 ```json
 {
@@ -555,18 +555,18 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json`. Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
 1. Add a new `_deployIfEnabled("<AdapterName>")` call inside the `run()` function of `04_DeployBalanceAdapters.s.sol`.
-2. Add a corresponding `<AdapterName>` entry to `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` with `enabled: true` and constructor params, plus the matching key in `nav-config/balance-adapters/<chainId>.json` (plain) or `nav-config/meta-balance-adapters/<chainId>.json` (meta).
-3. Run `04_DeployBalanceAdapters.s.sol` for that chain — adapters not enabled in that chain's `contracts-deployment-config/balance-adapters/<chainId>.json` entry are skipped, and already-deployed adapters are skipped (idempotent).
+2. Add a corresponding `<AdapterName>` entry to `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) with `enabled: true` and constructor params, plus the matching key in `nav-config/balance-adapters/<chainId>.json` (plain) or `nav-config/meta-balance-adapters/<chainId>.json` (meta).
+3. Run `04_DeployBalanceAdapters.s.sol` for that chain — adapters not enabled in that chain's `contracts-deployment-config/balance-adapters/<chainId>.json` or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` entry are skipped, and already-deployed adapters are skipped (idempotent).
 4. Add the adapter address to NAVCalculator via Phase 6.
 
 ### 2.4 Adapter inventory (authoritative — `run()` list in `04_DeployBalanceAdapters.s.sol`)
 
-`04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if `contracts-deployment-config/balance-adapters/<chainId>.json .<name>.enabled == true`. This means the `run()` list is the **union** across chains; per-chain selection happens through that file.
+`04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if the adapter's `<name>.enabled == true` in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). This means the `run()` list is the **union** across chains; per-chain selection happens through those files.
 
 The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the deploy config as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (applied via `addMetaInstances`/`removeMetaInstances`, configured under `nav-config/meta-balance-adapters/<chainId>.json .<Meta>.instances`, or `instancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
@@ -592,15 +592,15 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Rewards:** `MerklRewards` (mutable proof-verified per-(user,token) cache — ADR 0007)
 
-**StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
+**StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` and the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`), and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta) and the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`), and add the name to `06_Configure.s.sol`'s `_balanceAdapterNames()` — otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 
 > **Naming discipline matters.** The `_deployAdapter` dispatcher in `04_DeployBalanceAdapters.s.sol` routes by prefix (`_startsWith(adapterName, "AaveV3_")`). A new instance on Aave V3 must start with `AaveV3_`, a new Morpho Vault with `MorphoVault_`, and so on — otherwise the dispatcher falls through to `"Unknown adapter type"` and the deploy is a no-op.
 
-**Invariant to check before each deploy run:** `contracts-deployment-config/balance-adapters/<chainId>.json .<Name>` exists ⇔ `04_DeployBalanceAdapters.s.sol` has `_deployIfEnabled("<Name>")` ⇔ `06_Configure.s.sol._balanceAdapterNames()` includes `"<Name>"` ⇔ a matching entry in `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json`. All or none.
+**Invariant to check before each deploy run:** `<Name>` exists in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) ⇔ `04_DeployBalanceAdapters.s.sol` has `_deployIfEnabled("<Name>")` ⇔ `06_Configure.s.sol._balanceAdapterNames()` includes `"<Name>"` ⇔ a matching entry in `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json`. All or none.
 
 ---
 
@@ -614,7 +614,7 @@ Run per chain. Only adapters with `enabled: true` in config are deployed.
 > - You're onboarding a new adapter that the fund-side never deployed.
 > - You explicitly want NAV v2 to own its adapter stack independently of the fund repo (e.g. for an audit boundary).
 >
-> If neither applies, set `contracts-deployment-config/price-feeds/<chainId>.json .<name>.enabled = false` (skips the deploy) and proceed to Phase 4. As of 2026-04-28 every `enabled: true` adapter falls in the redundant category — the matching token entries point at fund-side addresses — so Phase 3 can be skipped entirely for the current Alpha-fund deployment.
+> If neither applies, set `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.enabled = false` (skips the deploy) and proceed to Phase 4. As of 2026-04-28 every `enabled: true` adapter falls in the redundant category — the matching token entries point at fund-side addresses — so Phase 3 can be skipped entirely for the current Alpha-fund deployment.
 
 > **RPC shortcut:** `--rpc-url` is optional when `ALCHEMY_API_KEY` is set — each chain config has `"rpc": "$ALCHEMY"` which `ConfigReader` resolves using `ALCHEMY_API_KEY` and the chain's Alchemy network. See `script/deploy/README.md`. The commands below include `--rpc-url` explicitly for clarity.
 
@@ -665,7 +665,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
 
 ### 3.4 Verify
 
-Deployed adapter addresses are auto-saved to `script/config/deployments/<chainId>.json` via `ConfigReader.writeAdapterAddress(...)`. `contracts-deployment-config/price-feeds/<chainId>.json` is only used for constructor inputs; it is not the authoritative record of deployed addresses. Check the console output for each deployed adapter address too — the `[OK] <Name> deployed at: 0x...` line is the fastest sanity check.
+Deployed adapter addresses are auto-saved to `script/config/deployments/<chainId>.json` via `ConfigReader.writeAdapterAddress(...)`. `contracts-deployment-config/custom-price-feeds/<chainId>.json` is only used for constructor inputs; it is not the authoritative record of deployed addresses. Check the console output for each deployed adapter address too — the `[OK] <Name> deployed at: 0x...` line is the fastest sanity check.
 
 **Re-run safety:** If the script is interrupted, re-running will skip already-deployed adapters (checks the deployments file).
 
@@ -998,7 +998,7 @@ Closed in PR #11 (commits [`581719f`](https://github.com/karpatkey/onchain-accou
 
 ### 2. Custom price feed config — CLOSED
 
-Closed in PR #11 (commit [`581719f`](https://github.com/karpatkey/onchain-accounting/commit/581719f)). Every Custom price adapter used by ETH Alpha or USD Alpha has a `contracts-deployment-config/price-feeds/<chainId>.json .<name>` entry with `enabled` and `constructor` params, and the consuming tokens (in `nav-config/assets-and-price-feeds/<chainId>.json`) reference it via a `priceFeeds[]` entry of `{ type: Custom, feed: <name> }`. Deployed addresses persist to `deployments/<chainId>.json` via `ConfigReader.writeAdapterAddress`.
+Closed in PR #11 (commit [`581719f`](https://github.com/karpatkey/onchain-accounting/commit/581719f)). Every Custom price adapter used by ETH Alpha or USD Alpha has a `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>` entry with `enabled` and `constructor` params, and the consuming tokens (in `nav-config/assets-and-price-feeds/<chainId>.json`) reference it via a `priceFeeds[]` entry of `{ type: Custom, feed: <name> }`. Deployed addresses persist to `deployments/<chainId>.json` via `ConfigReader.writeAdapterAddress`.
 
 ### 3. `06_Configure.s.sol` and `04_DeployBalanceAdapters.s.sol` alignment — CLOSED
 
@@ -1041,10 +1041,11 @@ Phase R: Redeploying proxies (from-scratch redeploy) -- one-time
     v
 Phase 0: Prerequisites (merge PRs, env setup, run tests)
     |
-Phase 1: Configure custom price feeds in contracts-deployment-config/price-feeds/<id>.json
+Phase 1: Configure custom price feeds in contracts-deployment-config/custom-price-feeds/<id>.json
          + assets in nav-config/assets-and-price-feeds/<id>.json
 Phase 2: Configure balance adapter deploy params in
-         contracts-deployment-config/balance-adapters/<id>.json + NAV registration in
+         contracts-deployment-config/balance-adapters/<id>.json (plain) +
+         contracts-deployment-config/meta-balance-adapters/<id>.json (meta) + NAV registration in
          nav-config/balance-adapters/<id>.json + nav-config/meta-balance-adapters/<id>.json
     |   (these two can be done in parallel)
     v
@@ -1140,7 +1141,7 @@ Workflow for a brand-new adapter after the migration PRs are merged. Each step h
 1. **Write the adapter** under `src/prices/protocols/<Name>_Price.sol`. Inherit `IPriceFeedCustom` (8-decimal USD output, `(uint256 price, bool stale)` return). Reference: `sDAI_Price.sol` for a simple ERC4626-style feed, `weETH_Price.sol` for a two-hop Chainlink composition.
 2. **Write the unit test** under `test/prices/protocols/<Name>_Price.t.sol`. Minimum: constructor revert coverage for every invalid-argument path.
 3. **Write the fork test** under `test/prices/protocols/fork/<Name>_Price.fork.t.sol`. Pin a block, assert an exact price value, exercise the stale path by warping `block.timestamp` past the heartbeat.
-4. **Register the deploy config** in `contracts-deployment-config/price-feeds/<chainId>.json .<Name>` with `enabled: true` and all constructor params, and reference it from the consuming token's `priceFeeds[]` (in `nav-config/assets-and-price-feeds/<chainId>.json`) via `{ type: Custom, feed: <Name> }`. Make sure `deployments/<chainId>.json` exists (at least `{}`) so `ConfigReader.writeAdapterAddress` has a file to write the deployed address to.
+4. **Register the deploy config** in `contracts-deployment-config/custom-price-feeds/<chainId>.json .<Name>` with `enabled: true` and all constructor params, and reference it from the consuming token's `priceFeeds[]` (in `nav-config/assets-and-price-feeds/<chainId>.json`) via `{ type: Custom, feed: <Name> }`. Make sure `deployments/<chainId>.json` exists (at least `{}`) so `ConfigReader.writeAdapterAddress` has a file to write the deployed address to.
 5. **Wire into `03_DeployPriceFeeds.s.sol`**: add `import {...}` at top, add `_deployIfEnabled`-style dispatch inside the correct `_deploy<Chain>PriceAdapters()` function, add a `_deploy<Name>()` helper that reads constructor params via `ConfigReader.readPriceFeedParam` and writes back via `ConfigReader.writeAdapterAddress`. Reference: `_deploySdai` in the same file.
 6. **Run tests locally**: `forge test --match-path "test/prices/protocols/<Name>*"` must pass before pushing.
 7. **Register the asset with the new price feed**. If the asset is already registered on NAVCalculator with a Chainlink feed, call `addPriceFeed(asset, newFeed, PriceType.Custom, heartbeat)` (Phase 7) via Safe, then remove the old feed with `removePriceFeed(asset, oldFeed)`. Otherwise, register from scratch in Phase 5.
@@ -1168,7 +1169,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 4. **Add to `AdapterConsistency.t.sol`** if the protocol has non-trivial edge cases the existing cross-adapter invariants don't cover (zero balance handling, debt positions, asset filter).
 5. **Import + dispatch in `04_DeployBalanceAdapters.s.sol`**: add `import`, add `_deployIfEnabled("<Protocol>_<Instance>")` to `run()`, add a `_startsWith(adapterName, "<Protocol>_")` branch in `_deployAdapter`, and a `_deploy<Protocol>()` helper that reads params.
 6. **Add to `06_Configure.s.sol._balanceAdapterNames()`.**
-7. **Add config entries:** deploy config in `contracts-deployment-config/balance-adapters/<chainId>.json`, plus the NAV registration key in `nav-config/balance-adapters/<chainId>.json` (plain) or `nav-config/meta-balance-adapters/<chainId>.json` (meta, with `instances`/`instancesRaw`).
+7. **Add config entries:** deploy config in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta), plus the NAV registration key in `nav-config/balance-adapters/<chainId>.json` (plain) or `nav-config/meta-balance-adapters/<chainId>.json` (meta, with `instances`/`instancesRaw`).
 8. **Run full test suite.** `forge test` non-fork + fork must both be green before pushing.
 9. **Deploy + register on NAV** via Phases 4 and 6.
 

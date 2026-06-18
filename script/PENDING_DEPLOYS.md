@@ -29,7 +29,7 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 
 ### 1.1 Pending price feeds
 
-| Chain | Adapter key | Contract | Constructor params (in `contracts-deployment-config/price-feeds/<chainId>.json` `<key>.constructor`) |
+| Chain | Adapter key | Contract | Constructor params (in `contracts-deployment-config/custom-price-feeds/<chainId>.json` `<key>.constructor`) |
 |---|---|---|---|
 | 1 | `ETHx` | `src/prices/protocols/ETHx_Price.sol` (`ETHx_PriceOracle`) | `ethx`, `stakePoolsManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 

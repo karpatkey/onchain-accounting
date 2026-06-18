@@ -219,7 +219,7 @@ Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fo
 
 ## B.4 Wire chain config
 
-Two files. First, the custom-feed deploy config — `script/config/contracts-deployment-config/price-feeds/<chainId>.json`, keyed by feed name (top-level; no chainId wrapper):
+Two files. First, the custom-feed deploy config — `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`, keyed by feed name (top-level; no chainId wrapper):
 
 ```json
 {
@@ -252,7 +252,7 @@ Second, the asset entry — `script/config/nav-config/assets-and-price-feeds/<ch
 }
 ```
 
-Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `contracts-deployment-config/price-feeds` entry needed at all.
+Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `contracts-deployment-config/custom-price-feeds` entry needed at all.
 
 There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `nav-config/assets-and-price-feeds/<chainId>.json`, so adding the asset there is enough. In the integration test, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()`, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
 
@@ -260,7 +260,7 @@ There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` an
 
 ## B.5 Deploy and register
 
-Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `contracts-deployment-config/price-feeds/<chainId>.json` and calls `_deployIfEnabled` per entry — your new entry from §B.4 above will get picked up automatically. The deployed feed address is written into `deployments/<chainId>.json .customPriceFeeds.<name>`; the asset's `Custom` entry references it by `feed: "<name>"`, and `06_Configure` resolves the on-chain address from the deployments file at registration time (no manual copy needed).
+Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `contracts-deployment-config/custom-price-feeds/<chainId>.json` and calls `_deployIfEnabled` per entry — your new entry from §B.4 above will get picked up automatically. The deployed feed address is written into `deployments/<chainId>.json .customPriceFeeds.<name>`; the asset's `Custom` entry references it by `feed: "<name>"`, and `06_Configure` resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
 After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
 
@@ -287,7 +287,7 @@ PR checklist:
 - [ ] `forge build` clean
 - [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
 - [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
-- [ ] `nav-config/assets-and-price-feeds/<chainId>.json` updated for every chain where the feed applies (assets with `priceFeeds` arrays) + `contracts-deployment-config/price-feeds/<chainId>.json` constructor sections for any Custom feeds
+- [ ] `nav-config/assets-and-price-feeds/<chainId>.json` updated for every chain where the feed applies (assets with `priceFeeds` arrays) + `contracts-deployment-config/custom-price-feeds/<chainId>.json` constructor sections for any Custom feeds
 - [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `test/integration/IntegrationFromConfigBase.fork.sol`
 - [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
 - [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations

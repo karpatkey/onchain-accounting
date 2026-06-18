@@ -9,19 +9,21 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 /// @notice Utility for reading/parsing the NAV deployment configuration.
 /// @dev Config is organized by concern, one JSON file per chain (top-level keys; the file *is* the chain). All
 ///      paths are under `script/config/`:
-///      - `chains/<id>.json`                              — chain meta + roles only (no adapter config).
-///      - `contracts-deployment-config/price-feeds/<id>.json`     — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
-///      - `contracts-deployment-config/balance-adapters/<id>.json`— balance + meta adapters to DEPLOY: `.<name>.{enabled,constructor}`.
-///      - `contracts-deployment-config/bridge-adapters/<id>.json` — bridge adapters: `.<name>.{enabled,initialize,callbackSelector}`.
-///      - `nav-config/assets-and-price-feeds/<id>.json`   — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
-///      - `nav-config/balance-adapters/<id>.json`         — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
-///      - `nav-config/meta-balance-adapters/<id>.json`    — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
-///      - `deployments/<id>.json`                         — deployed addresses (state). Top-level for proxies/impls;
-///                                                          nested `.balanceAdapters/.customPriceFeeds/.bridgeAdapters.<name>`.
-///      The `adapterType` token passed to the adapter readers selects the file: `deployBalanceAdapters`,
-///      `deployPriceFeeds` (alias `priceFeeds`/`customPriceFeeds`), `navBalanceAdapters`, `navMetaBalanceAdapters`,
-///      `bridgeAdapters`. Deployments-file accessors still take the section token (`balanceAdapters`/`customPriceFeeds`/
-///      `bridgeAdapters`).
+///      - `chains/<id>.json`                                          — chain meta + roles only (no adapter config).
+///      - `contracts-deployment-config/custom-price-feeds/<id>.json`  — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/balance-adapters/<id>.json`    — PLAIN adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/meta-balance-adapters/<id>.json` — META adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,callbackSelector}`.
+///      - `nav-config/assets-and-price-feeds/<id>.json`               — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
+///      - `nav-config/balance-adapters/<id>.json`                     — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
+///      - `nav-config/meta-balance-adapters/<id>.json`                — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
+///      - `deployments/<id>.json`                                     — deployed addresses (state). Top-level for proxies/impls;
+///                                                                      nested `.balanceAdapters/.customPriceFeeds/.bridgeAdapters.<name>`.
+///      The `adapterType` token passed to the adapter readers selects the file: `deployBalanceAdapters` (alias
+///      `balanceAdapters`, spans the plain + meta deploy folders), `deployMetaBalanceAdapters`, `deployPriceFeeds`
+///      (alias `priceFeeds`/`customPriceFeeds`), `navBalanceAdapters`, `navMetaBalanceAdapters`, `bridgeAdapters`.
+///      Deployments-file accessors still take the section token (`balanceAdapters`/`customPriceFeeds`/`bridgeAdapters`);
+///      all deployed balance-adapter addresses (plain + meta) live under `.balanceAdapters`.
 library ConfigReader {
     using stdJson for string;
 
@@ -74,7 +76,7 @@ library ConfigReader {
         return string(
             abi.encodePacked(
                 vm.projectRoot(),
-                "/script/config/contracts-deployment-config/price-feeds/",
+                "/script/config/contracts-deployment-config/custom-price-feeds/",
                 vm.toString(chainId),
                 ".json"
             )
@@ -86,6 +88,17 @@ library ConfigReader {
             abi.encodePacked(
                 vm.projectRoot(),
                 "/script/config/contracts-deployment-config/balance-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployMetaBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/meta-balance-adapters/",
                 vm.toString(chainId),
                 ".json"
             )
@@ -201,17 +214,24 @@ library ConfigReader {
 
     /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is its own per-chain file with
     ///      top-level keys (empty prefix). The token selects the file: `deployBalanceAdapters` (alias
-    ///      `balanceAdapters`), `navBalanceAdapters`, `navMetaBalanceAdapters`, `deployPriceFeeds`
+    ///      `balanceAdapters`) and `deployMetaBalanceAdapters` (the deploy config, split plain vs meta the same way
+    ///      nav-config is); `navBalanceAdapters`, `navMetaBalanceAdapters`, `deployPriceFeeds`
     ///      (aliases `priceFeeds`/`customPriceFeeds`), `bridgeAdapters`. An unrecognized token reverts.
+    ///      NOTE: the `deployBalanceAdapters`/`balanceAdapters` token resolves across BOTH deploy folders (plain +
+    ///      meta) via `_resolveAdapterFile`/`getEnabledAdapters`, so deploy scripts keep using one token; this helper
+    ///      returns only the plain file (the union/fallback is layered on top).
     function _adapterFileAndPrefix(Vm vm, uint256 chainId, string memory adapterType)
         private
         view
         returns (string memory json, string memory prefix)
     {
         if (_equals(adapterType, "deployBalanceAdapters") || _equals(adapterType, "balanceAdapters")) {
-            // "balanceAdapters" is the legacy alias for the deploy-config file (deploy scripts read enabled/constructor
-            // from here). The NAV-registration side uses the explicit navBalanceAdapters/navMetaBalanceAdapters tokens.
+            // "balanceAdapters" is the legacy alias for the deploy-config (plain) file. The NAV-registration side uses
+            // the explicit navBalanceAdapters/navMetaBalanceAdapters tokens.
             json = _readOrEmpty(vm, _deployBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "deployMetaBalanceAdapters")) {
+            json = _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId));
             prefix = "";
         } else if (_equals(adapterType, "navBalanceAdapters")) {
             json = _readOrEmpty(vm, _navBalanceAdaptersPath(vm, chainId));
@@ -241,18 +261,31 @@ library ConfigReader {
         return bytes(prefix).length == 0 ? "$" : prefix;
     }
 
-    /// @notice Returns every adapter name under a section (excludes `$`-prefixed metadata keys). Does NOT filter by
-    ///         `enabled` — call `isAdapterEnabled` per key for that.
-    function getEnabledAdapters(Vm vm, uint256 chainId, string memory adapterType)
-        internal
-        view
-        returns (string[] memory names)
-    {
-        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
-        string memory jsonPath = _containerPath(prefix);
-        if (!vm.keyExists(json, jsonPath)) return new string[](0);
+    /// @dev The deploy-balance token spans BOTH deploy-config folders (plain + meta). Deploy scripts read enabled +
+    ///      constructor args via this one token regardless of whether an adapter is plain or meta.
+    function _isDeployBalanceToken(string memory adapterType) private pure returns (bool) {
+        return _equals(adapterType, "deployBalanceAdapters") || _equals(adapterType, "balanceAdapters");
+    }
 
-        string[] memory allKeys = vm.parseJsonKeys(json, jsonPath);
+    /// @dev Resolves the deploy-config file holding `adapterName`: the plain file, or — for the deploy-balance token,
+    ///      when the name is absent from the plain file — the meta deploy file (the two are disjoint). Other tokens
+    ///      resolve to their single file unchanged.
+    function _resolveAdapterFile(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        private
+        view
+        returns (string memory json, string memory prefix)
+    {
+        (json, prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        if (_isDeployBalanceToken(adapterType) && !vm.keyExists(json, string(abi.encodePacked(".", adapterName)))) {
+            string memory metaJson = _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId));
+            if (vm.keyExists(metaJson, string(abi.encodePacked(".", adapterName)))) json = metaJson;
+        }
+    }
+
+    /// @dev Collects the non-`$` keys of an adapter container into `names`.
+    function _namesIn(Vm vm, string memory json) private view returns (string[] memory names) {
+        if (!vm.keyExists(json, "$")) return new string[](0);
+        string[] memory allKeys = vm.parseJsonKeys(json, "$");
         uint256 count;
         for (uint256 i; i < allKeys.length; ++i) {
             if (bytes(allKeys[i]).length > 0 && bytes(allKeys[i])[0] != "$") ++count;
@@ -264,20 +297,65 @@ library ConfigReader {
         }
     }
 
-    /// @notice Whether an adapter is enabled in its config file (selected by `adapterType` — see `_adapterFileAndPrefix`).
+    /// @notice Returns every adapter name under a section (excludes `$`-prefixed metadata keys). Does NOT filter by
+    ///         `enabled` — call `isAdapterEnabled` per key for that. The deploy-balance token returns the union of the
+    ///         plain + meta deploy-config folders.
+    function getEnabledAdapters(Vm vm, uint256 chainId, string memory adapterType)
+        internal
+        view
+        returns (string[] memory names)
+    {
+        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        // Non-top-level (bridge, nested-prefix) sections: use parseJsonKeys on the prefix path as before.
+        if (bytes(prefix).length != 0) {
+            string memory jsonPath = _containerPath(prefix);
+            if (!vm.keyExists(json, jsonPath)) return new string[](0);
+            return _filterDollar(vm.parseJsonKeys(json, jsonPath));
+        }
+        names = _namesIn(vm, json);
+        if (_isDeployBalanceToken(adapterType)) {
+            // Union with the meta deploy folder (disjoint keys, so a plain concat is dedup-free).
+            string[] memory metaNames = _namesIn(vm, _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId)));
+            string[] memory merged = new string[](names.length + metaNames.length);
+            uint256 k;
+            for (uint256 i; i < names.length; ++i) {
+                merged[k++] = names[i];
+            }
+            for (uint256 i; i < metaNames.length; ++i) {
+                merged[k++] = metaNames[i];
+            }
+            names = merged;
+        }
+    }
+
+    /// @dev Filters `$`-prefixed metadata keys from a key list.
+    function _filterDollar(string[] memory keys) private pure returns (string[] memory out) {
+        uint256 count;
+        for (uint256 i; i < keys.length; ++i) {
+            if (bytes(keys[i]).length > 0 && bytes(keys[i])[0] != "$") ++count;
+        }
+        out = new string[](count);
+        uint256 j;
+        for (uint256 i; i < keys.length; ++i) {
+            if (bytes(keys[i]).length > 0 && bytes(keys[i])[0] != "$") out[j++] = keys[i];
+        }
+    }
+
+    /// @notice Whether an adapter is enabled in its config file (selected by `adapterType`). For the deploy-balance
+    ///         token this resolves across both the plain and meta deploy-config folders.
     function isAdapterEnabled(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
         internal
         view
         returns (bool)
     {
-        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
         string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".enabled"));
         if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
         return false;
     }
 
     /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
-    ///         (see `_adapterFileAndPrefix`). "" if absent.
+    ///         (see `_adapterFileAndPrefix`; deploy-balance spans both plain + meta folders). "" if absent.
     function readAdapterParam(
         Vm vm,
         uint256 chainId,
@@ -285,7 +363,7 @@ library ConfigReader {
         string memory adapterName,
         string memory paramName
     ) internal view returns (string memory) {
-        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
 
         string memory base = string(abi.encodePacked(prefix, ".", adapterName));
         string memory p = string(abi.encodePacked(base, ".", paramName));
@@ -344,7 +422,7 @@ library ConfigReader {
     }
 
     // -------------------------------------------------------------------------
-    // Custom price feeds (contracts-deployment-config/price-feeds/<id>.json → .<name>)
+    // Custom price feeds (contracts-deployment-config/custom-price-feeds/<id>.json → .<name>)
     // -------------------------------------------------------------------------
 
     /// @notice Reads a Custom price-feed adapter's constructor param from its deploy-config file. "" if absent.

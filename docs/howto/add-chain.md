@@ -59,12 +59,13 @@ Notes:
 
 ## 3. Create the per-concern config files
 
-The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed by chainId. Each concern is split into its own folder, and within each folder there's one file **per chain** (`<newChainId>.json`) whose **top-level keys are the entries** — the filename is the chain, so there is no chainId wrapper inside the JSON. Adding a chain means creating a file in each of the six folders below (plus the `chains/<id>.json` and `deployments/<id>.json` already covered):
+The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed by chainId. Each concern is split into its own folder, and within each folder there's one file **per chain** (`<newChainId>.json`) whose **top-level keys are the entries** — the filename is the chain, so there is no chainId wrapper inside the JSON. Adding a chain means creating a file in each of the seven folders below (plus the `chains/<id>.json` and `deployments/<id>.json` already covered):
 
 | File | Contents | Read by |
 |---|---|---|
-| `script/config/contracts-deployment-config/price-feeds/<newChainId>.json` | `{ "<feedName>": { "enabled", "constructor": {…} } }` — custom price feeds to **deploy** | `03_DeployPriceFeeds.s.sol` |
-| `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — balance + meta adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
+| `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` | `{ "<feedName>": { "enabled", "constructor": {…} } }` — custom price feeds to **deploy** | `03_DeployPriceFeeds.s.sol` |
+| `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **plain** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
+| `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **meta** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…}, "callbackSelector"? } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
 | `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
 | `script/config/nav-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled" } }` — **plain** adapters to add on NAV | `06_Configure.s.sol` → `addBalanceAdapters` |
@@ -81,7 +82,7 @@ Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a 
 }
 ```
 
-For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
+For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §7 for the right contract.
 
 No symbol list to edit: `RegisterAssets.s.sol` reads the symbols from the keys of `nav-config/assets-and-price-feeds/<newChainId>.json` via `getAssetSymbols`. Adding the asset there is enough.
 
@@ -89,7 +90,7 @@ No symbol list to edit: `RegisterAssets.s.sol` reads the symbols from the keys o
 
 Add the `ERC20Default` coverage plus per-protocol entries as you onboard them on this chain (see [`./add-balance-adapter.md`](./add-balance-adapter.md)):
 
-- Deploy config (constructor args) → `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json`.
+- Deploy config (constructor args) → `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` (plain adapters) or `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` (meta adapters).
 - Registration on NAV → `script/config/nav-config/balance-adapters/<newChainId>.json` (plain adapters) or `script/config/nav-config/meta-balance-adapters/<newChainId>.json` (meta adapters, with `instances`/`instancesRaw`).
 
 ### 3.3 Bridge adapters
@@ -124,10 +125,10 @@ forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID -
 # 02 — proxies + initializers (atomic; placeholder + proxy + upgrade in one tx)
 forge script script/deploy/02_DeployProxies.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 03 — deploy custom price feed adapters from contracts-deployment-config/price-feeds/<chainId>.json
+# 03 — deploy custom price feed adapters from contracts-deployment-config/custom-price-feeds/<chainId>.json
 forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 04 — deploy enabled balance adapters from contracts-deployment-config/balance-adapters/<chainId>.json
+# 04 — deploy enabled balance adapters from contracts-deployment-config/balance-adapters/<chainId>.json + meta-balance-adapters/<chainId>.json
 forge script script/deploy/04_DeployBalanceAdapters.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
 # 05 — deploy bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis)
@@ -144,7 +145,7 @@ DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 
@@ -178,8 +179,9 @@ PR checklist:
 
 - [ ] `script/config/chains/<newChainId>.json` populated (chain meta + `addresses` only — no `bridgeAdapters` block)
 - [ ] `script/config/deployments/<newChainId>.json` populated (deployed addresses written by the deploy scripts)
-- [ ] `script/config/contracts-deployment-config/price-feeds/<newChainId>.json` populated (custom feeds to deploy: `enabled` + `constructor`)
-- [ ] `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` populated (adapters to deploy: `enabled` + `constructor`)
+- [ ] `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` populated (custom feeds to deploy: `enabled` + `constructor`)
+- [ ] `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` populated (plain adapters to deploy: `enabled` + `constructor`)
+- [ ] `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters to deploy: `enabled` + `constructor`)
 - [ ] `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` populated (bridge adapters to deploy: `enabled` + `initialize` + optional `callbackSelector`)
 - [ ] `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` populated (assets with `priceFeeds`)
 - [ ] `script/config/nav-config/balance-adapters/<newChainId>.json` populated (plain adapters to register)

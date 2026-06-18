@@ -255,6 +255,14 @@
     "positionId": "<derived: market address>"
   },
 
+  "EulerVaultsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Euler V2 eVaults (EVK, ERC4626). Constructor takes (protocol, navCalculator). The active eVault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under EulerVaultsMeta.instances — eVault addresses). Identity derived on-chain: positionId = eVault address; name = vault.name(). Supply leg only (convertToAssets); no debt leg — wire only for accounts that don't borrow on Euler.",
+    "$perPositionFields": "type: Supply (one leg per eVault in its underlying)",
+    "protocol": "Euler",
+    "positionDetail": { "protocol": "Euler", "product": "Vault", "name": "<derived: vault.name()>" },
+    "positionId": "<derived: eVault address>"
+  },
+
   "GearboxMarket": {
     "$superseded": "Superseded by GearboxMarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply",

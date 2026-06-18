@@ -1,0 +1,64 @@
+{
+  "protocol": "Euler",
+  "adapter": "src/balances/protocols/EulerVaultsMeta.sol",
+  "adapter_test": "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol",
+  "test_contract": "EulerVaultsMetaBalanceAdapterForkTest",
+  "chain": { "id": 1, "name": "mainnet" },
+  "block": {
+    "number": 25346929,
+    "timestamp": 1781815607,
+    "rationale": "Fresh verification block (latest at capture). KPK DAO holds 269.79 of 269.84 total KPK_ETH_Term shares (~99.98%) — a stable, material supply position. The eVault lends deposits out, so maxRedeem (~29.9 shares / ~30 WETH) is far below the full balance; the adapter reports the full convertToAssets value (NAV semantics), and the test redeems only the cash-available portion for the real-money cross-check. Re-fork to this exact block (or refresh and re-pin) before any live dashboard cross-check vs Debank / the Euler app."
+  },
+  "instances": {
+    "KPK_ETH_Term": {
+      "vault": "0xB6D6D89ad4b4D61C15a293e28b74f77F6817fF48",
+      "name": "KPK ETH Yield Term",
+      "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 (WETH)"
+    },
+    "kpk_RWA_USDC": {
+      "vault": "0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245",
+      "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC)",
+      "real_holder": "0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7 (KPK Foundation Safe) — ~1,000,000 of ~1,005,018 total shares",
+      "note": "Verified two ways: (1) test_realUsdcHolder_kpkFoundation reads the real KPK Foundation position (amount == convertToAssets(shares)); (2) the aggregation/NAV-routing tests deposit 2,000 USDC on KPK DAO's behalf so a single SAFE holds both legs. Real Euler EVK eVault — direct ERC4626 deposit works on the fork."
+    }
+  },
+  "identity": {
+    "protocolId": "keccak256('euler-vaults') = ProtocolIds.EULER_VAULTS",
+    "positionId": "abi.encode(address eVault)",
+    "positionKind": "Supplied",
+    "isDebt": false,
+    "note": "Supply leg only — Euler EVK eVaults are ERC4626; amount = convertToAssets(balanceOf). No debt leg (KPK policy permits deposit/withdraw/redeem, no borrow)."
+  },
+  "holders": [
+    {
+      "label": "KPK_DAO",
+      "address": "0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C",
+      "type": "Safe",
+      "notes": [
+        "Dominant holder of KPK_ETH_Term: 269786002840662469182 of 269836052792634957442 total shares (~99.98%).",
+        "Also holds 0.4638 native ETH at the block (priced via a feed in setUp so getAccountNav resolves)."
+      ],
+      "legs_at_fork_block": [
+        {
+          "instance": "KPK_ETH_Term",
+          "asset": "WETH",
+          "kind": "Supplied",
+          "isDebt": false,
+          "shares_raw": "269786002840662469182",
+          "amount_raw": "270079931934549902985",
+          "amount_humanised": "270.079931934549902985 WETH",
+          "ground_truth": "KPK_ETH_TERM.convertToAssets(balanceOf(SAFE)); maxRedeem-portion redemption realizes the same per-share rate (delta 0)"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "method": "direct-onchain-read + partial-redeem cross-check",
+    "delta": 0,
+    "notes": [
+      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 10/10 pass — all four _instancePositions branches against mocks.",
+      "Fork suite (this case): 6/6 pass — aggregation, NAV routing, on-chain identity, asset filter, describePosition, and the strict-equality redemption cross-check.",
+      "convertToAssets and ERC4626 redeem both round down, so realized WETH equals convertToAssets(redeemedShares) exactly (delta 0)."
+    ]
+  }
+}

@@ -18,6 +18,7 @@ import {
   SkyCircleColor,
   SparkCircleColor,
   GearboxCircleColor,
+  EulerCircleColor,
 } from '@karpatkey/design-system'
 
 // Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader & Kelp request ids).
@@ -47,6 +48,7 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
   sky: SkyCircleColor,
   spark: SparkCircleColor,
   gearbox: GearboxCircleColor,
+  euler: EulerCircleColor,
 }
 
 // Protocols without a design-system CircleColor icon fall back to a CDN image keyed the same way.
@@ -64,6 +66,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   sky: 'https://sky.money/',
   spark: 'https://spark.fi/',
   gearbox: 'https://app.gearbox.fi/',
+  euler: 'https://app.euler.finance/',
 }
 
 function getProtocolKey(protocol: string): string {

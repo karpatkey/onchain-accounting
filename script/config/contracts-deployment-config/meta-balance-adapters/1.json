@@ -140,5 +140,12 @@
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
       "protocol": "Uniswap V3"
     }
+  },
+  "EulerVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Euler V2 eVault (supply leg, ERC4626 convertToAssets). Active eVault set lives on NAVCalculator via addMetaInstances (from nav-config). Supply-only \u2014 no debt leg; wire only for accounts that don't borrow on Euler.",
+    "constructor": {
+      "protocol": "Euler"
+    }
   }
 }

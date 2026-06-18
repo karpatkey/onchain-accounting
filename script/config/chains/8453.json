@@ -10,53 +10,5 @@
     "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
-  },
-  "bridgeAdapters": {
-    "Superchain": {
-      "enabled": true,
-      "initialize": {
-        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-        "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
-        "l1Bridge": "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
-        "l2Bridge": "0x4200000000000000000000000000000000000010",
-        "l1Messenger": "0x866E82a600A1414e583f7F13623F1acC5b786258",
-        "l2Messenger": "0x4200000000000000000000000000000000000007",
-        "optimismPortal": "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
-        "version": "1.0.0"
-      }
-    },
-    "Across": {
-      "enabled": true,
-      "initialize": {
-        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
-        "spokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
-        "defaultRelayerFeePct": "5000",
-        "version": "1.0.0"
-      },
-      "callbackSelector": "0x0ea1f938"
-    },
-    "Stargate": {
-      "enabled": true,
-      "initialize": {
-        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
-        "router": "0x45f1A95A4D3f3836523F5c83673c797f4d4d263B",
-        "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-        "version": "1.0.0"
-      },
-      "callbackSelector": "0x001d3567"
-    },
-    "CCTP": {
-      "enabled": true,
-      "initialize": {
-        "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
-        "bridgeEscrow": "0xF8c78A87bcF7B7c07bB5aFd7E667E3a12ee0CfCd",
-        "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
-        "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
-        "version": "1.0.0",
-        "cctpDomain": 6
-      }
-    }
   }
 }

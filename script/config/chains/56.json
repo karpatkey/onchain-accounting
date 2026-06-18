@@ -11,6 +11,5 @@
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "$comment": "Roles default to the canonical karpatkey OIV Safe address used on the other 5 chains. Confirm/replace before broadcasting deploy 02 if a different Safe is preferred on BSC."
-  },
-  "bridgeAdapters": {}
+  }
 }

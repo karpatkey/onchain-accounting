@@ -265,7 +265,9 @@ Adapters are intended to be deployed as UUPS proxies. Call `_disableInitializers
 
 ## 10. How to Configure an Adapter in BridgeEscrow
 
-1. **Deploy the adapter** (implementation + proxy) and run your adapter's `initialize(...)` with admin, escrow address, protocol contracts, and version. Grant `MANAGER` role to the manager address(es) that will call `completeBridge` when needed.
+> **Where bridge-adapter deploy config lives.** Per-chain bridge-adapter config — `enabled`, the `initialize` args, and the optional `callbackSelector` — lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, keyed by adapter name. It is read by `05_DeployBridgeAdapters.s.sol`. (It is no longer carried in a `bridgeAdapters` block in `script/config/chains/<chainId>.json`.)
+
+1. **Deploy the adapter** (implementation + proxy) and run your adapter's `initialize(...)` with admin, escrow address, protocol contracts, and version (from `contracts-deployment-config/bridge-adapters/<chainId>.json`). Grant `MANAGER` role to the manager address(es) that will call `completeBridge` when needed.
 
 2. **Authorize the adapter on the escrow:**  
    As admin, call `BridgeEscrow.authorizeAdapter(adapter)` so the adapter can be used in `depositAndBridge` and can call `releaseByInvoiceId`.

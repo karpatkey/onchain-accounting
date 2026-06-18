@@ -10,18 +10,5 @@
     "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
     "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
-  },
-  "bridgeAdapters": {
-    "Gnosis": {
-      "enabled": false,
-      "initialize": {
-        "admin": "",
-        "bridgeEscrow": "",
-        "omnibridge": "0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d",
-        "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
-        "version": "1.0.0"
-      },
-      "callbackSelector": "0x0bad0c90"
-    }
   }
 }

@@ -8,9 +8,10 @@ import {stdJson} from "forge-std/StdJson.sol";
 /// @notice Utility for reading/parsing the NAV deployment configuration.
 /// @dev Config is organized by concern, one JSON file per chain (top-level keys; the file *is* the chain). All
 ///      paths are under `script/config/`:
-///      - `chains/<id>.json`                              — chain meta, roles, and `bridgeAdapters` intent.
+///      - `chains/<id>.json`                              — chain meta + roles only (no adapter config).
 ///      - `contracts-deployment-config/price-feeds/<id>.json`     — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/balance-adapters/<id>.json`— balance + meta adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/bridge-adapters/<id>.json` — bridge adapters: `.<name>.{enabled,initialize,callbackSelector}`.
 ///      - `nav-config/assets-and-price-feeds/<id>.json`   — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
 ///      - `nav-config/balance-adapters/<id>.json`         — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
 ///      - `nav-config/meta-balance-adapters/<id>.json`    — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
@@ -84,6 +85,17 @@ library ConfigReader {
             abi.encodePacked(
                 vm.projectRoot(),
                 "/script/config/contracts-deployment-config/balance-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBridgeAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/bridge-adapters/",
                 vm.toString(chainId),
                 ".json"
             )
@@ -186,10 +198,10 @@ library ConfigReader {
     // Balance adapters (balance-adapters.json) + bridge adapters (chains/<id>.json)
     // -------------------------------------------------------------------------
 
-    /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is a per-chain file with top-level
-    ///      keys (empty prefix); bridgeAdapters stay nested in the chain config. The token selects the file:
-    ///      `deployBalanceAdapters`/`navBalanceAdapters`/`navMetaBalanceAdapters`/`deployPriceFeeds`
-    ///      (aliases `priceFeeds`/`customPriceFeeds`) → their per-chain files; anything else → chain config.
+    /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is its own per-chain file with
+    ///      top-level keys (empty prefix). The token selects the file: `deployBalanceAdapters` (alias
+    ///      `balanceAdapters`), `navBalanceAdapters`, `navMetaBalanceAdapters`, `deployPriceFeeds`
+    ///      (aliases `priceFeeds`/`customPriceFeeds`), `bridgeAdapters`; anything else → chain config.
     function _adapterFileAndPrefix(Vm vm, uint256 chainId, string memory adapterType)
         private
         view
@@ -212,8 +224,12 @@ library ConfigReader {
         ) {
             json = _readOrEmpty(vm, _deployPriceFeedsPath(vm, chainId));
             prefix = "";
+        } else if (_equals(adapterType, "bridgeAdapters")) {
+            // Bridge adapters (deploy/initialize args + enabled + callbackSelector) live in their own per-chain file.
+            json = _readOrEmpty(vm, _deployBridgeAdaptersPath(vm, chainId));
+            prefix = "";
         } else {
-            // bridgeAdapters (and any other) — chain config, nested under the type key.
+            // Fallback — chain config, nested under the type key.
             json = _readOrEmpty(vm, _chainPath(vm, chainId));
             prefix = string(abi.encodePacked(".", adapterType));
         }

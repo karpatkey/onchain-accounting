@@ -1020,7 +1020,7 @@ Bridge adapters exist to account for funds in-flight between chains (outbound: b
 
 **Does not block Alpha fund launch** — Alpha funds bridge inbound to Arbitrum and outbound from Base, both covered. Deploy on Optimism + Mainnet before using those chains as bridge sources. Gnosis doesn't have a cross-chain bridge product yet; its entry is a placeholder.
 
-Use `05_DeployBridgeAdapters.s.sol` to deploy. Re-run safety is the same as `03`/`04` — already-deployed entries are skipped.
+Use `05_DeployBridgeAdapters.s.sol` to deploy. Bridge-adapter config (`enabled` + `initialize` args + optional `callbackSelector`, keyed by adapter name) is read from `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json` — **not** from `chains/<chainId>.json`, which no longer carries a `bridgeAdapters` block. Re-run safety is the same as `03`/`04` — already-deployed entries are skipped.
 
 ### 5. Native xDAI coverage on Gnosis — deferred
 

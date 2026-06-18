@@ -8,6 +8,7 @@ This guide explains all configuration files needed for multi-chain deployments o
 2. [chains/{chainId}.json](#chainschainidjson)
 3. [contracts-deployment-config/price-feeds/{chainId}.json](#contracts-deployment-configprice-feedschainidjson)
 4. [contracts-deployment-config/balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapterschainidjson)
+4a. [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
 5. [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson)
 6. [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson)
 7. [deployments/{chainId}.json](#deploymentschainidjson)
@@ -24,13 +25,13 @@ The repo uses **per-concern, per-chain config files**. Each file is named `<chai
 
 Two concerns are separated:
 
-- **`contracts-deployment-config/`** — *what to deploy* (+ constructor args). Read by `03_DeployPriceFeeds.s.sol` / `04_DeployBalanceAdapters.s.sol`.
+- **`contracts-deployment-config/`** — *what to deploy* (+ constructor/initialize args). Read by `03_DeployPriceFeeds.s.sol` / `04_DeployBalanceAdapters.s.sol` / `05_DeployBridgeAdapters.s.sol`.
 - **`nav-config/`** — *what to register/add on the NAVCalculator*. Read by `script/manage/RegisterAssets.s.sol` / `06_Configure.s.sol`.
 
 ```
 config/
 ├── chains/
-│   ├── 1.json                                     # Mainnet: RPC, explorer, metadata, role addresses, bridgeAdapters intent
+│   ├── 1.json                                     # Mainnet: RPC, explorer, metadata, role addresses (metadata + addresses only)
 │   ├── 42161.json                                 # Arbitrum
 │   ├── 10.json                                    # Optimism
 │   ├── 8453.json                                  # Base
@@ -38,7 +39,8 @@ config/
 │   └── ...                                         # One file per chain
 ├── contracts-deployment-config/
 │   ├── price-feeds/<chainId>.json                 # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
-│   └── balance-adapters/<chainId>.json            # Balance adapters to deploy (plain + meta): { "<AdapterName>": { enabled, constructor } }
+│   ├── balance-adapters/<chainId>.json            # Balance adapters to deploy (plain + meta): { "<AdapterName>": { enabled, constructor } }
+│   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize, callbackSelector? } } — read by 05
 ├── nav-config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
@@ -63,7 +65,7 @@ safe-transactions/
 
 ## chains/{chainId}.json
 
-One file per chain. Contains chain metadata, role addresses, and bridge adapter intent. Deployed addresses live in `deployments/{chainId}.json`; balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json` and NAV-registration config in `nav-config/balance-adapters/{chainId}.json` (plain) / `nav-config/meta-balance-adapters/{chainId}.json` (meta). **Use environment variables for RPC and explorer API keys (e.g. `$ALCHEMY`, `$ARBISCAN_API_KEY`).**
+One file per chain. Contains chain metadata and role addresses only — **no `bridgeAdapters` block** (bridge-adapter config now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`). Deployed addresses live in `deployments/{chainId}.json`; balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json` and NAV-registration config in `nav-config/balance-adapters/{chainId}.json` (plain) / `nav-config/meta-balance-adapters/{chainId}.json` (meta). **Use environment variables for RPC and explorer API keys (e.g. `$ALCHEMY`, `$ARBISCAN_API_KEY`).**
 
 ### Template (one chain)
 
@@ -80,18 +82,6 @@ One file per chain. Contains chain metadata, role addresses, and bridge adapter 
     "securityCouncil": "0x...",
     "admin": "0x...",
     "manager": "0x..."
-  },
-  "bridgeAdapters": {
-    "CCIP": {
-      "enabled": true,
-      "initialize": {
-        "admin": "0x...",
-        "bridgeEscrow": "0x...",
-        "router": "0x...",
-        "feeToken": "0x...",
-        "version": "1.0.0"
-      }
-    }
   }
 }
 ```
@@ -110,9 +100,8 @@ One file per chain. Contains chain metadata, role addresses, and bridge adapter 
 | `addresses.securityCouncil` | address | Security-council Safe — end-state admin (step 07), not a deploy participant |
 | `addresses.admin` | address | DEFAULT_ADMIN_ROLE — the deployer EOA during deploy (EOA flow) |
 | `addresses.manager` | address | Manager role for NAV and bridge |
-| `bridgeAdapters` | object | Bridge adapter config per adapter: `enabled`, `initialize` |
 
-> Deployed implementation, proxy, and adapter addresses are written to `deployments/{chainId}.json` (not here). Balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json`.
+> Deployed implementation, proxy, and adapter addresses are written to `deployments/{chainId}.json` (not here). Balance adapter deploy config lives in `contracts-deployment-config/balance-adapters/{chainId}.json`; bridge adapter deploy config lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`.
 
 ---
 
@@ -183,6 +172,46 @@ A meta-adapter is a single deployed contract, so it appears here just like a pla
 |-------|------|-------------|
 | `enabled` | bool | Deploy this adapter on this chain? |
 | `constructor` | object | Constructor parameters for the adapter |
+
+---
+
+## contracts-deployment-config/bridge-adapters/{chainId}.json
+
+**Bridge adapters to deploy on a chain.** Keyed by adapter name (e.g. `CCIP`, `CCTP`, `Across`, `Stargate`, `Superchain`, `Gnosis`), each with `enabled`, the adapter's `initialize` args, and an optional `callbackSelector` for callback-based protocols. Read by `05_DeployBridgeAdapters.s.sol`, which deploys every adapter where `enabled: true` and writes the address to `deployments/{chainId}.json` under `bridgeAdapters`. Top-level keys are adapter names — no chainId wrapper. (This config previously lived under a `bridgeAdapters` block in `chains/{chainId}.json`; it now lives here.)
+
+### Template
+
+```json
+{
+  "CCIP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x...",
+      "bridgeEscrow": "0x...",
+      "router": "0x...",
+      "feeToken": "0x...",
+      "version": "1.0.0"
+    },
+    "callbackSelector": "0x85572ffb"
+  },
+  "CCTP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x...",
+      "bridgeEscrow": "0x...",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+### Field descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | bool | Deploy this bridge adapter on this chain? |
+| `initialize` | object | Initialize args for the adapter (admin, bridgeEscrow, protocol contracts, version) |
+| `callbackSelector` | string | Optional bytes4 callback selector for callback-based protocols (CCIP, Across, Stargate, Gnosis). Omitted for CCTP / Superchain (no callback). See the "Bridge adapters: callbacks" table below. |
 
 ---
 
@@ -314,9 +343,10 @@ A meta-adapter is a single deployed contract, so it appears here just like a pla
 
 Deployment does **not** use a single `dev-input.json`. User-provided values live in:
 
-- **`config/chains/{chainId}.json`** — Per chain: `addresses` (securityCouncil, admin, manager) and `bridgeAdapters` intent. Scripts read these for each chain.
+- **`config/chains/{chainId}.json`** — Per chain: metadata + `addresses` (securityCouncil, admin, manager) only. Scripts read these for each chain.
 - **`config/contracts-deployment-config/price-feeds/{chainId}.json`** — Per chain: `{feedName}` (enabled + constructor) custom price feeds to deploy; see [contracts-deployment-config/price-feeds/{chainId}.json](#contracts-deployment-configprice-feedschainidjson).
 - **`config/contracts-deployment-config/balance-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + constructor, plain and meta) balance adapters to deploy; see [contracts-deployment-config/balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapterschainidjson).
+- **`config/contracts-deployment-config/bridge-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + initialize args + optional callbackSelector) bridge adapters to deploy; see [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson).
 - **`config/nav-config/assets-and-price-feeds/{chainId}.json`** — Per chain: `{symbol}` (address + `priceFeeds[]`) assets to register on NAVCalculator; see [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson).
 - **`config/nav-config/balance-adapters/{chainId}.json`** and **`config/nav-config/meta-balance-adapters/{chainId}.json`** — Per chain: plain / meta adapters to register on NAVCalculator (meta entries carry `instances`/`instancesRaw`); see [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson).
 - **`config/deployments/{chainId}.json`** — The only place deployed addresses are written (proxies, impls, custom price feeds, balance adapters, bridge adapters); see [deployments/{chainId}.json](#deploymentschainidjson).
@@ -574,7 +604,7 @@ Adapters that receive protocol callbacks (e.g. CCIP router, LayerZero endpoint) 
 | CCTP      | —                                    | none              | No callback; use `authorizeAdapter` |
 | Superchain| —                                    | none              | No callback; use `authorizeAdapter` |
 
-**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle’s CCTP domain IDs (used for `depositForBurn` and receive path). Each chain config that has CCTP can include `cctpDomain` in `bridgeAdapters.CCTP.initialize` for reference. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this—configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle’s CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`bridgeAdapters.CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this—configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
 
 These bytes4 selectors are asserted in `test/bridge/BridgeAdapterCallbacks.t.sol` (`test_documentedCallbackSelectors_bytes4`). Keep this table in sync with that test.
 

@@ -1,0 +1,62 @@
+{
+  "ETH": {
+    "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+        "heartbeat": 1200
+      }
+    ]
+  },
+  "WETH": {
+    "address": "0x4200000000000000000000000000000000000006",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
+        "heartbeat": 1200
+      }
+    ]
+  },
+  "wstETH": {
+    "address": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x698B585CbC4407e2D54aa898B2600B53C68958f7",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "USDC": {
+    "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "USDT": {
+    "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0xECef79E109e997bCA29c1c0897ec9d7b03647F5E",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "COMP": {
+    "address": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0xe1011160d78a80E2eEBD60C228EEf7af4Dfcd4d7",
+        "heartbeat": 86400
+      }
+    ]
+  }
+}

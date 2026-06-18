@@ -1,0 +1,50 @@
+{
+  "AaveV3_Arbitrum": {
+    "enabled": false
+  },
+  "MorphoVault_kpkUSDCYieldV1": {
+    "enabled": false
+  },
+  "MorphoMarket_sUSDS_USDC": {
+    "enabled": false
+  },
+  "MorphoMarket_syrupUSDC_USDC": {
+    "enabled": false
+  },
+  "Aura_GHO_USDC_USDT": {
+    "enabled": false
+  },
+  "BalancerV3_GHO_USDC_USDT": {
+    "enabled": false
+  },
+  "Fluid_fToken_USDC": {
+    "enabled": false
+  },
+  "Fluid_fToken_USDT": {
+    "enabled": false
+  },
+  "Fluid_fToken_WETH": {
+    "enabled": false
+  },
+  "Fluid_fToken_wstETH": {
+    "enabled": false
+  },
+  "Fluid_fToken_GHO": {
+    "enabled": false
+  },
+  "CompoundV3_USDCe": {
+    "enabled": false
+  },
+  "CompoundV3_USDC": {
+    "enabled": false
+  },
+  "CompoundV3_USDT": {
+    "enabled": false
+  },
+  "CompoundV3_WETH": {
+    "enabled": false
+  },
+  "MerklRewards": {
+    "enabled": false
+  }
+}

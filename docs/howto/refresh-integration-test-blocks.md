@@ -54,7 +54,7 @@ Most test accounts hold positions outside what NAV currently supports — sittin
 The script instead reconstructs a Debank-side total that's restricted to NAV's coverage. Two buckets are summed:
 
 1. **Allowlisted protocols (full value).** `chains.<chainId>.supportedDeBankProtocols` in `accounts.json` is the per-chain allowlist of Debank protocol ids that NAV has a dedicated balance adapter for (e.g. `aave3`, `morphoblue`, `balancer3`, `aura`). NAV's adapter handles the position math (debt netting, projected interest, reward accrual, etc.), so for these protocols we trust Debank's pre-aggregated `portfolio_item_list[].stats.net_usd_value` and sum it in full. Debank uses the bare id on Mainnet (`aave3`) and a chain prefix elsewhere (`arb_aave3`); the script accepts both.
-2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `assets.json` `.tokens.<chainId>` *or* in `script/test/wallet-aggregating-adapters.json` (currently `Cap → cUsd, stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultAdapter._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
+2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `nav-config/assets-and-price-feeds/<chainId>.json` (top-level keyed by symbol) *or* in `script/test/wallet-aggregating-adapters.json` (currently `Cap → cUsd, stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultAdapter._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
 
 > **The `wallet-aggregating-adapters.json` registry.** Some balance adapters (Cap, today) read `balanceOf(token)` for one or more wallet tokens that aren't standalone NAV-registered priceable assets, then aggregate them into a single `PositionBalance` denominated in another asset (Cap reads cUsd + stcUsd → returns USDC). Those wallet tokens still need to count as "covered" in Bucket 2; otherwise the snapshot anchor under-counts vs the live filtered total. The registry maps `adapter_key → [constructor_param_names]`; both `refresh-integration-snapshot.sh` (jq) and `generate-comparison-report.py` (python) read it and union the constructor-arg addresses into the wallet allowlist. Adding a new wallet-aggregating adapter is one line in the JSON; both scripts pick it up.
 
@@ -64,7 +64,7 @@ The script instead reconstructs a Debank-side total that's restricted to NAV's c
 
 > **When NAV deliberately doesn't track a protocol Debank reports**, leave the Debank id OUT of `supportedDeBankProtocols` AND list it in the chain's `$untracked_by_design` field (see `accounts.json.chains.1.$untracked_by_design`). This documents to reviewers that the ❌ entry in the comparison report is intentional, not an oversight. Concrete cases on chain 1 today: `aave2` (Aave V2 deprecated; Aave V2 SM stkAAVE not implemented), `balancer2`, `sablier`, `acrocc_v2`, `multichain`, `compound` (Compound V2). Wallet tokens with no Chainlink mainnet feed (COW, HEX, POL, CASHW) belong in the same field.
 
-**When you add a new asset** to `script/config/assets.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up new entries via the chain's tokens map.
+**When you add a new asset** to `nav-config/assets-and-price-feeds/<chainId>.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up newly registered assets.
 
 ---
 
@@ -279,8 +279,8 @@ Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on
 **4.2 — Debank items in supported protocols with no NAV match**
 
 A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnostic hints per row:
-- *Unregistered token*: the token address isn't in the chain's `tokens` map in `script/config/assets.json`.
-- *Missing price feed*: the token is registered but has no `priceFeeds` entry in `script/config/chains/<chainId>.json`.
+- *Unregistered token*: the token address isn't an asset in `nav-config/assets-and-price-feeds/<chainId>.json`.
+- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `contracts-deployment-config/price-feeds/<chainId>.json`).
 - *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
 
 **4.3 — NAV adapters available but not deployed on chain** *(surfaced via 4.1 cross-reference)*
@@ -290,7 +290,7 @@ When the reverse-lookup from a 4.1 entry finds a matching adapter Solidity file 
 **To action a 4.1/4.3 row:**
 
 1. Confirm the canonical contract address on the target chain (protocol's docs, Etherscan, or a Debank item's `asset_token_list[].id`).
-2. Add an entry under `balanceAdapters` in `script/config/chains/<chainId>.json` following the same shape as the existing mainnet entry for that adapter.
+2. Add the adapter to `contracts-deployment-config/balance-adapters/<chainId>.json` (deploy config) and `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
 3. If any token the adapter introduces needs a price feed, check `src/prices/protocols/` for an existing feed contract (L2 LST feeds — `wstETH_L2_Price`, `weETH_L2_Price`, etc. — are already shipped). If none exists, flag as a follow-up (no new Solidity in this workflow).
 4. Re-run `refresh-integration-snapshot.sh`. Confirm the gap row clears in Section 4.1.
 

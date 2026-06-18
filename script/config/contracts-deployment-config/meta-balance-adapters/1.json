@@ -143,7 +143,7 @@
   },
   "EulerVaultsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Euler V2 eVault (supply leg, ERC4626 convertToAssets). Active eVault set lives on NAVCalculator via addMetaInstances (from nav-config). Supply-only \u2014 no debt leg; wire only for accounts that don't borrow on Euler.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Euler V2 ERC4626 vault \u2014 EulerEarn aggregators (Earn) and core eVaults (Lend/Borrow). Active vault set lives on NAVCalculator via addMetaInstances (from nav-config). Emits a Supply leg (convertToAssets) and, for core eVaults the account borrows from, a Borrow leg (debtOf).",
     "constructor": {
       "protocol": "Euler"
     }

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {EulerVaultsMetaBalanceAdapter} from "src/balances/protocols/EulerVaultsMeta.sol";
+import {EulerVaultsMetaBalanceAdapter, IEulerEVaultDebt} from "src/balances/protocols/EulerVaultsMeta.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -38,6 +38,14 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant SAFE = 0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C;
     // KPK Foundation Safe — the dominant holder of kpk_RWA_USDC (~1,000,000 of ~1,005,018 total shares).
     address public constant USDC_HOLDER = 0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7;
+
+    // A real Euler V2 borrower at the fork block: supplies USDC collateral in eUSDC-2 and borrows WETH from eWETH-2
+    // (both are core EVK eVaults — the underlying strategies KPK_ETH_Term itself allocates to). Used to exercise the
+    // borrow (debt) leg + the earn/lend/borrow combination on a single account.
+    address public constant BORROWER = 0x5c950F946F02F3AcBa1F9e68A3CCDb7DD148e820;
+    IERC4626 public constant E_USDC2 = IERC4626(0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9); // core eVault, USDC
+    IERC4626 public constant E_WETH2 = IERC4626(0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2); // core eVault, WETH
+
     uint256 public constant FORK_BLOCK = 25_346_929;
 
     address admin = makeAddr("admin");
@@ -187,6 +195,80 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_describePosition_realVaultName() public view {
         assertEq(adapter.describePosition(abi.encode(address(KPK_ETH_TERM))), "KPK ETH Yield Term");
+    }
+
+    /// @notice Real account exercising all three Euler shapes in one query: an **earn** leg (EulerEarn KPK_ETH_Term,
+    ///         seeded with a deposit), a **lend** leg (real USDC collateral in core eVault eUSDC-2), and a **borrow**
+    ///         leg (real WETH debt in core eVault eWETH-2). Proves the adapter emits a Supplied leg + a Borrowed
+    ///         (isDebt) leg, each strict-equal to the on-chain `convertToAssets` / `debtOf`.
+    function test_realBorrower_earnLendBorrow() public {
+        // Seed an EulerEarn (earn) position so the same real borrower also shows the aggregator leg.
+        deal(address(WETH), BORROWER, 5e18);
+        vm.startPrank(BORROWER);
+        WETH.approve(address(KPK_ETH_TERM), 5e18);
+        KPK_ETH_TERM.deposit(5e18, BORROWER);
+        vm.stopPrank();
+
+        bytes32[] memory ins = new bytes32[](3);
+        ins[0] = bytes32(uint256(uint160(address(KPK_ETH_TERM)))); // earn  (EulerEarn, WETH)
+        ins[1] = bytes32(uint256(uint160(address(E_USDC2)))); // lend  (core eVault, USDC collateral)
+        ins[2] = bytes32(uint256(uint160(address(E_WETH2)))); // borrow(core eVault, WETH debt)
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(BORROWER, ins, address(0));
+
+        uint256 earn;
+        uint256 lend;
+        uint256 borrow;
+        bool fe;
+        bool fl;
+        bool fb;
+        for (uint256 i = 0; i < pos.length; i++) {
+            bytes32 id = keccak256(pos[i].positionId);
+            if (id == keccak256(abi.encode(address(KPK_ETH_TERM))) && !pos[i].isDebt) {
+                earn = pos[i].amount;
+                fe = true;
+                assertEq(pos[i].balanceAsset.asset, address(WETH));
+                assertTrue(pos[i].positionKind == PositionKind.Supplied);
+            } else if (id == keccak256(abi.encode(address(E_USDC2))) && !pos[i].isDebt) {
+                lend = pos[i].amount;
+                fl = true;
+                assertEq(pos[i].balanceAsset.asset, address(USDC));
+                assertTrue(pos[i].positionKind == PositionKind.Supplied);
+            } else if (id == keccak256(abi.encode(address(E_WETH2))) && pos[i].isDebt) {
+                borrow = pos[i].amount;
+                fb = true;
+                assertEq(pos[i].balanceAsset.asset, address(WETH));
+                assertTrue(pos[i].positionKind == PositionKind.Borrowed);
+            }
+        }
+        assertTrue(fe && fl && fb, "earn + lend + borrow legs all present");
+
+        // Strict equality vs on-chain.
+        assertEq(earn, KPK_ETH_TERM.convertToAssets(KPK_ETH_TERM.balanceOf(BORROWER)), "earn == convertToAssets");
+        assertEq(lend, E_USDC2.convertToAssets(E_USDC2.balanceOf(BORROWER)), "lend == convertToAssets");
+        assertEq(borrow, IEulerEVaultDebt(address(E_WETH2)).debtOf(BORROWER), "borrow == debtOf");
+        assertGt(borrow, 0, "real debt present");
+    }
+
+    /// @notice NAV signs the borrow leg negative: routing the core eVaults through NAV, the WETH-filtered positions
+    ///         include the eWETH-2 debt as a negative-value entry attributed to the adapter.
+    function test_navNetsEulerDebt() public {
+        vm.startPrank(manager);
+        bytes32[] memory add = new bytes32[](2);
+        add[0] = bytes32(uint256(uint160(address(E_USDC2))));
+        add[1] = bytes32(uint256(uint160(address(E_WETH2))));
+        nav.addMetaInstances(address(adapter), add);
+        vm.stopPrank();
+
+        INAVCalculator.Position[] memory wethPos = nav.getAccountPositionsForAsset(BORROWER, address(WETH), address(0));
+        bool foundDebt;
+        for (uint256 i = 0; i < wethPos.length; i++) {
+            if (wethPos[i].balanceAdapter == address(adapter) && wethPos[i].isDebt) {
+                foundDebt = true;
+                assertLt(wethPos[i].value, 0, "Euler debt leg prices to a negative value");
+            }
+        }
+        assertTrue(foundDebt, "NAV surfaces the Euler borrow leg as signed debt");
     }
 
     /// @notice Real-holder check for the USDC instance: KPK Foundation's actual kpk_RWA_USDC position is reported as a

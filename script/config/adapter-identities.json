@@ -256,11 +256,11 @@
   },
 
   "EulerVaultsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Euler V2 eVaults (EVK, ERC4626). Constructor takes (protocol, navCalculator). The active eVault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under EulerVaultsMeta.instances — eVault addresses). Identity derived on-chain: positionId = eVault address; name = vault.name(). Supply leg only (convertToAssets); no debt leg — wire only for accounts that don't borrow on Euler.",
-    "$perPositionFields": "type: Supply (one leg per eVault in its underlying)",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Euler V2 ERC4626 vaults — both EulerEarn aggregator vaults (the 'Earn' product) and core eVaults (EVK, the 'Lend/Borrow' product). Constructor takes (protocol, navCalculator). The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under EulerVaultsMeta.instances — vault addresses). Identity derived on-chain: positionId = vault address (shared by both legs); name = vault.name(). Emits up to two legs per vault: a Supply leg (convertToAssets, EulerEarn earn deposits or core-eVault lend/collateral) and a Borrow leg (core-eVault debtOf, read under try/catch since EulerEarn lacks it). EVC-collateral supply is reported as Supply (value identical; not labelled Collateral).",
+    "$perPositionFields": "type: Supply and/or Borrow (Supply via convertToAssets; Borrow via debtOf on core eVaults)",
     "protocol": "Euler",
     "positionDetail": { "protocol": "Euler", "product": "Vault", "name": "<derived: vault.name()>" },
-    "positionId": "<derived: eVault address>"
+    "positionId": "<derived: vault address>"
   },
 
   "GearboxMarket": {

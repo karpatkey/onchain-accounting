@@ -38,6 +38,42 @@ contract MockEVault {
     }
 }
 
+/// @notice Core-eVault-shaped mock: ERC4626 + a `debtOf` borrow accessor (which EulerEarn vaults lack), so the
+///         adapter emits a Borrowed leg alongside the Supplied leg.
+contract MockCoreEVault {
+    string public name;
+    address private _asset;
+    uint256 private _rate; // assets per share, 1e18-scaled
+    mapping(address => uint256) public balanceOf;
+    mapping(address => uint256) private _debt;
+
+    constructor(string memory name_, address asset_, uint256 rate_) {
+        name = name_;
+        _asset = asset_;
+        _rate = rate_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * _rate) / 1e18;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function setDebt(address account, uint256 amount) external {
+        _debt[account] = amount;
+    }
+
+    function debtOf(address account) external view returns (uint256) {
+        return _debt[account];
+    }
+}
+
 contract MockToken {
     string public symbol;
     uint8 public decimals;
@@ -194,5 +230,77 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     function test_describePosition_returnsVaultName() public view {
         assertEq(adapter.describePosition(abi.encode(address(vaultB))), "KPK ETH Yield Term");
         assertEq(adapter.describePosition(abi.encode(address(vaultA))), "KPK RWA USDC");
+    }
+
+    // ----- borrow (debt) leg, core eVaults -----
+
+    function test_borrowLeg_emittedAlongsideSupply() public {
+        // Core eVault where alice both supplies (collateral) and borrows.
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eWETH-2", address(weth), 1e18);
+        core.setBalance(alice, 2e18); // 2 WETH supplied
+        core.setDebt(alice, 5e17); // 0.5 WETH borrowed
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 2, "supply + borrow legs");
+
+        // Supply leg first.
+        assertEq(pos[0].amount, 2e18);
+        assertFalse(pos[0].isDebt);
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+        // Borrow leg second.
+        assertEq(pos[1].amount, 5e17);
+        assertTrue(pos[1].isDebt, "borrow leg flagged as debt");
+        assertTrue(pos[1].positionKind == PositionKind.Borrowed);
+
+        // Same asset, same on-chain-derived positionId, distinguished only by positionKind.
+        assertEq(pos[0].balanceAsset.asset, address(weth));
+        assertEq(pos[1].balanceAsset.asset, address(weth));
+        assertEq(pos[0].positionId, abi.encode(address(core)));
+        assertEq(pos[1].positionId, abi.encode(address(core)));
+        assertEq(pos[0].protocolId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[1].protocolId, ProtocolIds.EULER_VAULTS);
+    }
+
+    function test_borrowOnly_noSupplyLeg() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eWETH-2", address(weth), 1e18);
+        core.setDebt(alice, 1e18); // borrow only, no shares
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 1, "only the borrow leg");
+        assertEq(pos[0].amount, 1e18);
+        assertTrue(pos[0].isDebt);
+        assertTrue(pos[0].positionKind == PositionKind.Borrowed);
+    }
+
+    function test_earnVault_withoutDebtOf_supplyOnly_noRevert() public {
+        // EulerEarn-shaped mock (vaultA) has no debtOf; the try/catch must not drop the supply leg.
+        vaultA.setBalance(alice, 1_000_000);
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(vaultA))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 1, "supply leg survives a vault without debtOf");
+        assertFalse(pos[0].isDebt);
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+    }
+
+    function test_debtLeg_respectsAssetFilter() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eWETH-2", address(weth), 1e18);
+        core.setBalance(alice, 1e18);
+        core.setDebt(alice, 5e17);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+
+        // Filtering to USDC drops the WETH vault entirely (both legs).
+        assertEq(adapter.getAdapterPositionsForInstances(alice, ins, address(usdc)).length, 0);
+        // Filtering to WETH keeps both legs.
+        assertEq(adapter.getAdapterPositionsForInstances(alice, ins, address(weth)).length, 2);
     }
 }

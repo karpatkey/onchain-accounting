@@ -19,15 +19,15 @@
       "vault": "0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245",
       "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC)",
       "real_holder": "0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7 (KPK Foundation Safe) — ~1,000,000 of ~1,005,018 total shares",
-      "note": "Verified two ways: (1) test_realUsdcHolder_kpkFoundation reads the real KPK Foundation position (amount == convertToAssets(shares)); (2) the aggregation/NAV-routing tests deposit 2,000 USDC on KPK DAO's behalf so a single SAFE holds both legs. Real Euler EVK eVault — direct ERC4626 deposit works on the fork."
+      "note": "Verified two ways: (1) test_realUsdcHolder_kpkFoundation reads the real KPK Foundation position (amount == convertToAssets(shares)); (2) the aggregation/NAV-routing tests deposit 2,000 USDC on KPK DAO's behalf so a single SAFE holds both legs. Real EulerEarn vault — direct ERC4626 deposit works on the fork."
     }
   },
+  "vault_type": "Both KPK instances are EulerEarn aggregator vaults (MetaMorpho fork: curator/guardian/supplyQueue), not core eVaults. KPK supplies only — no EVC controllers enabled on-chain. The adapter also handles core eVaults (Lend/Borrow): see case 2 below.",
   "identity": {
     "protocolId": "keccak256('euler-vaults') = ProtocolIds.EULER_VAULTS",
-    "positionId": "abi.encode(address eVault)",
-    "positionKind": "Supplied",
-    "isDebt": false,
-    "note": "Supply leg only — Euler EVK eVaults are ERC4626; amount = convertToAssets(balanceOf). No debt leg (KPK policy permits deposit/withdraw/redeem, no borrow)."
+    "positionId": "abi.encode(address vault) — shared by both legs",
+    "positionKinds": ["Supplied (convertToAssets, isDebt=false)", "Borrowed (debtOf, isDebt=true, core eVaults only)"],
+    "note": "Up to two legs per vault. Supply via convertToAssets(balanceOf) for EulerEarn earn + core-eVault lend/collateral. Borrow via debtOf(account) for core eVaults (read under try/catch; EulerEarn lacks it). EVC-collateral supply is reported as Supplied (value identical; not labelled Collateral)."
   },
   "holders": [
     {
@@ -50,14 +50,29 @@
           "ground_truth": "KPK_ETH_TERM.convertToAssets(balanceOf(SAFE)); maxRedeem-portion redemption realizes the same per-share rate (delta 0)"
         }
       ]
+    },
+    {
+      "label": "EARN_LEND_BORROW (case 2 — debt leg)",
+      "address": "0x5c950F946F02F3AcBa1F9e68A3CCDb7DD148e820",
+      "type": "EOA",
+      "notes": [
+        "Real Euler V2 borrower at the fork block — supplies USDC collateral in core eVault eUSDC-2 and borrows WETH from core eVault eWETH-2 (both are strategies KPK_ETH_Term itself allocates to).",
+        "Test (test_realBorrower_earnLendBorrow) also seeds a 5 WETH EulerEarn deposit into KPK_ETH_Term so one account shows earn + lend + borrow.",
+        "test_navNetsEulerDebt confirms the borrow leg prices to a negative value through NAV."
+      ],
+      "legs_at_fork_block": [
+        { "instance": "KPK_ETH_Term (EulerEarn)", "asset": "WETH", "kind": "Supplied (earn)", "isDebt": false, "ground_truth": "convertToAssets(balanceOf) after a 5 WETH in-test deposit" },
+        { "instance": "eUSDC-2 (core eVault 0x797D…48a9)", "asset": "USDC", "kind": "Supplied (lend/collateral)", "isDebt": false, "ground_truth": "eUSDC2.convertToAssets(balanceOf) — real collateral" },
+        { "instance": "eWETH-2 (core eVault 0xD8b2…84C2)", "asset": "WETH", "kind": "Borrowed", "isDebt": true, "ground_truth": "eWETH2.debtOf(account) — real debt" }
+      ]
     }
   ],
   "verification": {
-    "method": "direct-onchain-read + partial-redeem cross-check",
+    "method": "direct-onchain-read + partial-redeem cross-check + real-borrower debtOf",
     "delta": 0,
     "notes": [
-      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 10/10 pass — all four _instancePositions branches against mocks.",
-      "Fork suite (this case): 6/6 pass — aggregation, NAV routing, on-chain identity, asset filter, describePosition, and the strict-equality redemption cross-check.",
+      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 14/14 pass — supply/borrow/asset-filter/registration/zero branches against mocks (core-eVault mock with debtOf + Earn mock without it).",
+      "Fork suite (test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol): 9/9 pass — EulerEarn aggregation, NAV routing, identity, asset filter, describePosition, redemption cross-check, real earn+lend+borrow account, and NAV debt-netting.",
       "convertToAssets and ERC4626 redeem both round down, so realized WETH equals convertToAssets(redeemedShares) exactly (delta 0)."
     ]
   }

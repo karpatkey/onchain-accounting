@@ -117,7 +117,13 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
 {
   "sDAI": {
     "enabled": true,
-    "constructor": { "description": "sDAI (Savings DAI) price adapter" }
+    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + DAI/USD.",
+    "constructor": {
+      "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+      "dsrManager": "0x373238337Bfe1146fb49989fc222523f83081dDb",
+      "daiToUsdChainlinkOracle": "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9",
+      "daiToUsdChainlinkHeartbeat": "3600"
+    }
   },
   "wstETH": {
     "enabled": true,
@@ -132,12 +138,19 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
 }
 ```
 
+Each key under `constructor` must be an actual argument of the feed adapter's Solidity constructor — the
+deploy script reads them **by name** (`03_DeployPriceFeeds.s.sol` calls `readPriceFeedParam(name, "<arg>")`
+for each one), so the names must match exactly and an unrecognized key is silently ignored. There is **no**
+`description` argument; for a human-readable note use the entry-level `$comment` field (ignored by the
+reader), not a fake `constructor` key.
+
 ### Field descriptions
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | Deploy this custom feed adapter? |
-| `constructor` | object | Constructor parameters for the custom feed adapter |
+| `$comment` | string | Optional human note; ignored by the deploy script. |
+| `constructor` | object | The feed adapter's actual constructor arguments, keyed by parameter name. |
 
 ---
 

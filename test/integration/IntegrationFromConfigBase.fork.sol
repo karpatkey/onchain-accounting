@@ -12,8 +12,6 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
-import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
-import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 
 // Balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
@@ -826,21 +824,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         for (uint256 i = 0; i < feedCount; i++) {
             string memory t = ConfigReader.readAssetFeedType(vm, _chainId, symbol, i);
             if (_equals(t, "None")) continue;
-            // Map the config type string to the PriceType enum explicitly so the fork harness exercises the same
-            // registration semantics as production RegisterAssets (which distinguishes Chainlink/Redstone/API3).
-            // Fail fast on an unrecognized type rather than silently treating it as Chainlink.
-            IPrices.PriceType pt;
-            if (_equals(t, "Custom")) {
-                pt = IPrices.PriceType.Custom;
-            } else if (_equals(t, "Chainlink")) {
-                pt = IPrices.PriceType.Chainlink;
-            } else if (_equals(t, "Redstone")) {
-                pt = IPrices.PriceType.Redstone;
-            } else if (_equals(t, "API3")) {
-                pt = IPrices.PriceType.API3;
-            } else {
-                revert(string(abi.encodePacked("unknown price feed type '", t, "' for ", symbol)));
-            }
+            // Shared type→enum mapping (ConfigReader.readAssetFeedPriceType — same table production RegisterAssets uses,
+            // so the two can't disagree on which types are recognized). Fail fast on an unrecognized type.
+            (IPrices.PriceType pt, bool validType) = ConfigReader.readAssetFeedPriceType(vm, _chainId, symbol, i);
+            if (!validType) revert(string(abi.encodePacked("unknown price feed type '", t, "' for ", symbol)));
 
             address adapter;
             if (pt == IPrices.PriceType.Custom) {
@@ -874,26 +861,40 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _registerAllBalanceAdapters() internal {
+        // Mirror production 06_Configure: route plain vs meta by which NAV-config file the adapter's name is in
+        // (nav-config/balance-adapters vs nav-config/meta-balance-adapters), NOT by ERC165. Using the same source of
+        // truth as production means a mis-filed adapter (meta name in the plain file, or vice-versa) fails here exactly
+        // as it would in 06 — the registration reverts, the adapter is left unregistered, and the NAV assertion catches
+        // it. An adapter in neither nav file is intentionally not registered (mirrors prod's deployed-but-not-added).
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
-            // Meta-adapters cannot use the plain path (addBalanceAdapters rejects them); register them via
-            // addMetaBalanceAdapter with an empty set here, then _configureMetaInstances seeds the actual set.
-            if (ERC165Checker.supportsInterface(a, type(IMetaBalanceAdapter).interfaceId)) {
+            string memory name = _deployedBalanceAdapterNames[i];
+            bool isMeta = ConfigReader.isAdapterEnabled(vm, _chainId, "navMetaBalanceAdapters", name);
+            // MerklRewards is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
+            // exercise Merkl-reward NAV; it is a plain adapter not present in any nav-config file, so register it via
+            // the plain path here to match that deploy-side special case.
+            bool isPlain = ConfigReader.isAdapterEnabled(vm, _chainId, "navBalanceAdapters", name)
+                || _equals(name, "MerklRewards");
+
+            if (isMeta) {
+                // Meta path: register with an empty set; _configureMetaInstances seeds the actual instances after.
                 try nav.addMetaBalanceAdapter(a, new bytes32[](0)) {
                 // ok
                 }
                 catch (bytes memory err) {
-                    console2.log("[adapter] addMetaBalanceAdapter FAILED for", a);
+                    console2.log("[adapter] addMetaBalanceAdapter FAILED for", name, a);
                     console2.logBytes(err);
                 }
-            } else {
+            } else if (isPlain) {
                 try nav.addBalanceAdapters(aa(a)) {
                 // ok
                 }
                 catch (bytes memory err) {
-                    console2.log("[adapter] addBalanceAdapters FAILED for", a);
+                    console2.log("[adapter] addBalanceAdapters FAILED for", name, a);
                     console2.logBytes(err);
                 }
+            } else {
+                console2.log("[adapter] not in any nav-config file, not registered:", name, a);
             }
         }
     }

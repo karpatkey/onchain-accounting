@@ -203,6 +203,44 @@ contract ConfigReaderTest is TestEnvConfigurator {
         }
     }
 
+    /// @notice Reverse of the above: every adapter ENABLED in the deploy config (so 04 deploys it) must be registered
+    ///         on NAV via exactly one of the nav-config files — else 06_Configure would deploy it but never call
+    ///         addBalanceAdapters/addMetaBalanceAdapter for it (deployed-but-not-added: its positions silently omitted
+    ///         from NAV). Also enforces an adapter is not in BOTH nav files. (ERC20Default is auto-registered in
+    ///         NAVCalculator.initialize() and is intentionally absent from all three files, so it never appears here.)
+    function test_DeployedAdaptersAreRegisteredOnNav() public view {
+        uint256[] memory chainIds = _allConfiguredChainIds();
+        for (uint256 c = 0; c < chainIds.length; c++) {
+            uint256 chainId = chainIds[c];
+            string[] memory deployNames = ConfigReader.getEnabledAdapters(vm, chainId, "deployBalanceAdapters");
+            for (uint256 i = 0; i < deployNames.length; i++) {
+                if (!ConfigReader.isAdapterEnabled(vm, chainId, "deployBalanceAdapters", deployNames[i])) continue;
+                bool plain = ConfigReader.isAdapterEnabled(vm, chainId, "navBalanceAdapters", deployNames[i]);
+                bool meta = ConfigReader.isAdapterEnabled(vm, chainId, "navMetaBalanceAdapters", deployNames[i]);
+                assertTrue(
+                    plain || meta,
+                    string(
+                        abi.encodePacked(
+                            "deploy adapter '",
+                            deployNames[i],
+                            "' (chain ",
+                            vm.toString(chainId),
+                            ") is enabled to deploy but registered in NEITHER nav-config file (deployed-but-not-added)"
+                        )
+                    )
+                );
+                assertFalse(
+                    plain && meta,
+                    string(
+                        abi.encodePacked(
+                            "adapter '", deployNames[i], "' is enabled in BOTH nav-config balance + meta files"
+                        )
+                    )
+                );
+            }
+        }
+    }
+
     /// @notice Test that reading params for a non-existent adapter returns empty strings (no revert)
     function test_ReadMissingAdapterParamsReturnsEmpty() public view {
         // MorphoBlue_USDC is not present in chain 1 config — reads should return "" not revert

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {stdJson} from "forge-std/StdJson.sol";
+import {IPrices} from "../../src/prices/IPrices.sol";
 
 /// @title ConfigReader
 /// @notice Utility for reading/parsing the NAV deployment configuration.
@@ -201,7 +202,7 @@ library ConfigReader {
     /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is its own per-chain file with
     ///      top-level keys (empty prefix). The token selects the file: `deployBalanceAdapters` (alias
     ///      `balanceAdapters`), `navBalanceAdapters`, `navMetaBalanceAdapters`, `deployPriceFeeds`
-    ///      (aliases `priceFeeds`/`customPriceFeeds`), `bridgeAdapters`; anything else → chain config.
+    ///      (aliases `priceFeeds`/`customPriceFeeds`), `bridgeAdapters`. An unrecognized token reverts.
     function _adapterFileAndPrefix(Vm vm, uint256 chainId, string memory adapterType)
         private
         view
@@ -229,9 +230,9 @@ library ConfigReader {
             json = _readOrEmpty(vm, _deployBridgeAdaptersPath(vm, chainId));
             prefix = "";
         } else {
-            // Fallback — chain config, nested under the type key.
-            json = _readOrEmpty(vm, _chainPath(vm, chainId));
-            prefix = string(abi.encodePacked(".", adapterType));
+            // Every adapter concern now has its own per-chain file; there is no chain-config fallback. Fail fast on an
+            // unrecognized token rather than silently reading an empty/wrong file (which would resolve to absent/false).
+            revert(string(abi.encodePacked("ConfigReader: unknown adapterType '", adapterType, "'")));
         }
     }
 
@@ -275,8 +276,8 @@ library ConfigReader {
         return false;
     }
 
-    /// @notice Reads an adapter constructor/initialize/bare param. balanceAdapters → balance-adapters.json;
-    ///         bridgeAdapters → chain config.
+    /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
+    ///         (see `_adapterFileAndPrefix`). "" if absent.
     function readAdapterParam(
         Vm vm,
         uint256 chainId,
@@ -365,10 +366,36 @@ library ConfigReader {
     // -------------------------------------------------------------------------
 
     /// @notice Returns every asset symbol configured for a chain.
-    function getAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory) {
+    function getAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory symbols) {
         string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
         if (!vm.keyExists(json, "$")) return new string[](0);
-        return vm.parseJsonKeys(json, "$");
+        string[] memory all = vm.parseJsonKeys(json, "$");
+        // Skip `$`-prefixed metadata keys (e.g. `$comment`/`$schema`), matching getEnabledAdapters — they are not assets.
+        uint256 count;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") ++count;
+        }
+        symbols = new string[](count);
+        uint256 j;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") symbols[j++] = all[i];
+        }
+    }
+
+    /// @notice Maps feed `i`'s config `type` string to the on-chain PriceType enum. `valid` is false for an empty or
+    ///         unrecognized type. Single source of truth shared by RegisterAssets (production) and the fork harness so
+    ///         the two cannot disagree on which type strings are recognized.
+    function readAssetFeedPriceType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (IPrices.PriceType pt, bool valid)
+    {
+        string memory t = readAssetFeedType(vm, chainId, symbol, i);
+        if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
+        if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
+        if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
+        if (_equals(t, "API3")) return (IPrices.PriceType.API3, true);
+        return (IPrices.PriceType.Chainlink, false);
     }
 
     /// @notice Reads an asset's token address ("" if absent).
@@ -399,7 +426,9 @@ library ConfigReader {
         return vm.keyExists(json, p) ? json.readString(p) : "";
     }
 
-    /// @notice Reads feed `i`'s heartbeat (seconds, as string). Defaults to "3600" if absent.
+    /// @notice Reads feed `i`'s heartbeat (seconds, as string). Defaults to "3600" if absent. Accepts the heartbeat
+    ///         written either as a JSON number (`3600`) or a quoted string (`"3600"`) — other deploy-config files use
+    ///         quoted numeric strings, so tolerating both avoids a whole-run revert on a string-typed heartbeat.
     function readAssetFeedHeartbeat(Vm vm, uint256 chainId, string memory symbol, uint256 i)
         internal
         view
@@ -407,8 +436,13 @@ library ConfigReader {
     {
         string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
         string memory p = _feedPath(vm, symbol, i, "heartbeat");
-        if (vm.keyExists(json, p)) return vm.toString(json.readUint(p));
-        return "3600";
+        if (!vm.keyExists(json, p)) return "3600";
+        // Numeric form first; fall back to reading it as a string if the value was authored quoted.
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return vm.toString(v);
+        } catch {
+            return json.readString(p);
+        }
     }
 
     /// @notice Resolves feed `i`'s on-chain address. For `address`-bearing feeds returns it directly; for `Custom`

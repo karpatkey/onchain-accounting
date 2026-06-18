@@ -103,14 +103,32 @@ contract RegisterAssets is BaseDeployScript {
             navProxy.staticcall(abi.encodeWithSelector(INAVCalculator.isAssetRegistered.selector, asset));
         bool registered = ok && data.length > 0 && abi.decode(data, (bool));
         if (!registered && _hasNoCode(asset)) return acts; // not a contract and not pre-registered
+
+        uint256 onChainFeeds;
         if (registered) {
             (bool okc, bytes memory cd) =
                 navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
-            if (okc && cd.length > 0 && abi.decode(cd, (uint256)) > 0) return acts; // already wired
+            // If the on-chain feed count can't be read, skip rather than risk re-adding existing feeds (a duplicate
+            // addPriceFeed reverts and would abort the whole batch).
+            if (!(okc && cd.length == 32)) return acts;
+            onChainFeeds = abi.decode(cd, (uint256));
         }
 
+        // An unregistered asset's PRIMARY oracle must be its first configured feed (priceFeeds[0]). If feed[0] is not
+        // resolvable yet (e.g. a Custom feed not deployed), skip the whole asset rather than silently promote a
+        // fallback feed to primary — deploy the primary feed first (03_DeployPriceFeeds), then re-run.
+        if (!registered && !_feedResolvable(symbol, 0)) {
+            console2.log("  [skip] primary feed unresolved (deploy it first):", symbol);
+            return acts;
+        }
+
+        // Wire feeds in config order. The k-th *resolvable* configured feed corresponds to the k-th on-chain feed
+        // (feeds are appended, never reordered), so for a registered asset the first `onChainFeeds` resolvable feeds
+        // are already present and skipped; only trailing (new) feeds are added — which lets ADR-0009 redundancy feeds
+        // be topped up on an already-live asset instead of being silently dropped.
         bytes[] memory tmp = new bytes[](feedCount);
         uint256 n;
+        uint256 resolvableIdx;
         for (uint256 i = 0; i < feedCount; i++) {
             (IPrices.PriceType pt, bool validType) = _feedType(symbol, i);
             if (!validType) continue;
@@ -118,14 +136,18 @@ contract RegisterAssets is BaseDeployScript {
             if (bytes(faddr).length == 0) continue; // unresolved (e.g. Custom feed not deployed yet)
             address feed = vm.parseAddress(faddr);
             if (feed == address(0)) continue;
-            uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
 
-            // First resolvable feed of an unregistered asset → registerAsset; everything else → addPriceFeed.
-            if (!registered && n == 0) {
+            if (!registered && resolvableIdx == 0) {
+                // Primary = first resolvable feed; we verified above that feed[0] resolves, so this IS config feed[0].
+                uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
                 tmp[n++] = abi.encodeCall(NAVCalculator.registerAsset, (asset, feed, pt, hb));
+            } else if (registered && resolvableIdx < onChainFeeds) {
+                // Already present on-chain (added in a prior run) — skip to avoid a duplicate addPriceFeed.
             } else {
+                uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
                 tmp[n++] = abi.encodeCall(NAVCalculator.addPriceFeed, (asset, feed, pt, hb));
             }
+            resolvableIdx++;
         }
 
         acts = new bytes[](n);
@@ -136,12 +158,17 @@ contract RegisterAssets is BaseDeployScript {
 
     /// @dev Maps a feed `type` string to the on-chain PriceType enum. validType=false → skip the feed.
     function _feedType(string memory symbol, uint256 i) private view returns (IPrices.PriceType pt, bool validType) {
-        string memory t = ConfigReader.readAssetFeedType(vm, currentChainId, symbol, i);
-        if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
-        if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
-        if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
-        if (_equals(t, "API3")) return (IPrices.PriceType.API3, true);
-        return (IPrices.PriceType.Chainlink, false);
+        // Shared type→enum mapping (single source of truth in ConfigReader, also used by the integration harness).
+        return ConfigReader.readAssetFeedPriceType(vm, currentChainId, symbol, i);
+    }
+
+    /// @notice Whether feed `i` of `symbol` is resolvable (recognized type + a non-zero address now available).
+    function _feedResolvable(string memory symbol, uint256 i) private view returns (bool) {
+        (, bool validType) = _feedType(symbol, i);
+        if (!validType) return false;
+        string memory faddr = ConfigReader.readAssetFeedAddress(vm, currentChainId, symbol, i);
+        if (bytes(faddr).length == 0) return false;
+        return vm.parseAddress(faddr) != address(0);
     }
 
     function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {

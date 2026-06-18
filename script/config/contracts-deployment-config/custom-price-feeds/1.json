@@ -114,5 +114,35 @@
       "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
       "usdcToUsdChainlinkHeartbeat": "82800"
     }
+  },
+  "OETH": {
+    "enabled": true,
+    "$comment": "CrossRate: OETH/USD = ETH/USD x OETH/ETH (Chainlink). underlyingAsset=OETH (Y), xToUsdFeed=ETH/USD (X), yToXFeed=OETH/ETH.",
+    "constructor": {
+      "underlyingAsset": "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
+    }
+  },
+  "ankrETH": {
+    "enabled": true,
+    "$comment": "ankrETH/USD = (ETH/USD) * 1e18 / ankrETH.ratio() (ratio is ankrETH-per-ETH).",
+    "constructor": {
+      "ankrEth": "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "NXM": {
+    "enabled": true,
+    "$comment": "NXM/USD = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD. RAMM resolved from Nexus master code 'RA'. Prices member NXM book value; wNXM not priced here.",
+    "constructor": {
+      "nxm": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
+      "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
   }
 }

@@ -80,5 +80,26 @@
         "heartbeat": 86400
       }
     ]
+  },
+  "GNO": {
+    "address": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x22441d81416430A54336aB28765abd31a792Ad37",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "EURe": {
+    "$comment": "EURe (Monerium, 1:1 EUR-backed) priced via Chainlink EUR/USD. API3 EUR/USD on gnosis to be added as a second feed (ADR 0009) once the Api3ReaderProxyV1 address is obtained.",
+    "address": "0xcB444e90D8198415266c6a2724b7900fb12FC56E",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0xab70BCB260073d036d1660201e9d5405F5829b7a",
+        "heartbeat": 86400
+      }
+    ]
   }
 }

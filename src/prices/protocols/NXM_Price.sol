@@ -6,6 +6,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
 /// @title NXM / wNXM Custom Price Oracle
 /// @notice Returns the USD price of NXM (or its 1:1 wrapper wNXM) by combining Nexus Mutual's RAMM internal price
@@ -20,7 +22,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      instance per priced token: NXM itself, and/or wNXM — the transferable wrapper that a Nexus member can unwrap
 ///      1:1 to NXM, so book value is realizable for a member holder (matching how data aggregators price wNXM).
 /// @author kpk
-/* solhint-disable var-name-mixedcase */
+/* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract NXM_PriceOracle is IPriceFeedCustom {
     using Math for uint256;
 
@@ -46,6 +48,9 @@ contract NXM_PriceOracle is IPriceFeedCustom {
     constructor(address token_, address ramm_, address ethToUsdChainlinkOracle_, uint256 ethToUsdChainlinkHeartbeat_) {
         TOKEN = OracleArgumentChecks.assertERC20Address(token_);
         RAMM = OracleArgumentChecks.assertNonZeroAddress(ramm_);
+        // Fail fast at deploy if RAMM is not a live Nexus RAMM: a non-contract (EOA) or wrong contract makes
+        // getInternalPrice() revert or return 0, which would otherwise only surface as a silently-skipped feed.
+        if (IRamm(ramm_).getInternalPrice() == 0) revert InvalidArgumentsWithContext("RAMM");
         ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
         ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
         _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();

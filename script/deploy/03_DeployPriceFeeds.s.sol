@@ -181,9 +181,12 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployAnkrEth();
         }
 
-        // Deploy NXM Price Oracle (NXM/USD = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
+        // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "NXM")) {
-            _deployNxm();
+            _deployNxm("NXM");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wNXM")) {
+            _deployNxm("wNXM");
         }
 
         vm.stopBroadcast();
@@ -444,22 +447,24 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("ankrETH_PriceOracle deployed at:", address(ankrEthAdapter));
     }
 
-    function _deployNxm() internal {
-        address deployed = _readAdapterDeployed("priceFeeds", "NXM");
+    /// @notice Deploys the NXM_PriceOracle for the given config name ("NXM" or "wNXM"). Both price the same RAMM
+    ///         book value; the `token` constructor arg sets which token the feed reports as its underlying.
+    function _deployNxm(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {
             console2.log("NXM_PriceOracle already deployed at:", deployed);
             return;
         }
 
-        address nxm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "NXM", "nxm"));
-        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "NXM", "ramm"));
+        address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "token"));
+        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ramm"));
         address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "NXM", "ethToUsdChainlinkOracle"));
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkOracle"));
         uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "NXM", "ethToUsdChainlinkHeartbeat"));
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkHeartbeat"));
 
-        NXM_PriceOracle nxmAdapter = new NXM_PriceOracle(nxm, ramm, ethUsdOracle, ethUsdHeartbeat);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "NXM", address(nxmAdapter));
+        NXM_PriceOracle nxmAdapter = new NXM_PriceOracle(token, ramm, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(nxmAdapter));
         console2.log("NXM_PriceOracle deployed at:", address(nxmAdapter));
     }
 

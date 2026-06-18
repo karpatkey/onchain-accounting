@@ -215,6 +215,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("OETH", _deployOeth);
             _tryDeployPriceFeed("ankrETH", _deployAnkrEth);
             _tryDeployPriceFeed("NXM", _deployNxm);
+            _tryDeployPriceFeed("wNXM", _deployWnxm);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -344,13 +345,21 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployNxm() internal returns (address) {
-        address nxm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "NXM", "nxm"));
-        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "NXM", "ramm"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "NXM", "ethToUsdChainlinkOracle"));
+        return _deployNxmLike("NXM");
+    }
+
+    function _deployWnxm() internal returns (address) {
+        return _deployNxmLike("wNXM");
+    }
+
+    /// @dev NXM and wNXM share one feed shape (RAMM book value); `name` selects the config + priced token.
+    function _deployNxmLike(string memory name) internal returns (address) {
+        address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "token"));
+        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ramm"));
+        address ethUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "NXM", "ethToUsdChainlinkHeartbeat"));
-        return address(new NXM_PriceOracle(nxm, ramm, ethUsd, ethUsdHb));
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkHeartbeat"));
+        return address(new NXM_PriceOracle(token, ramm, ethUsd, ethUsdHb));
     }
 
     function _deployOsEth() internal returns (address) {

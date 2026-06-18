@@ -7,23 +7,25 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-/// @title NXM Custom Price Oracle
-/// @notice Returns the USD price of NXM by combining Nexus Mutual's RAMM internal price with Chainlink's ETH/USD feed.
+/// @title NXM / wNXM Custom Price Oracle
+/// @notice Returns the USD price of NXM (or its 1:1 wrapper wNXM) by combining Nexus Mutual's RAMM internal price
+///         with Chainlink's ETH/USD feed.
 /// @dev NXM has no external market oracle by design; its value is determined internally by the Ratcheting AMM (RAMM),
 ///      which exposes `getInternalPrice()` as a manipulation-resistant TWAP of ETH-per-NXM (18 decimals).
 ///      The price is computed as `price = (ETH/NXM) * (ETH/USD)`, where:
 ///      - `ETH/NXM` comes from the RAMM contract's `getInternalPrice()` function (18 decimals)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
 ///      Result is scaled to 8 decimals: `price = getInternalPrice * ETH/USD / 1e18`.
-///      Prices the member-held NXM book value; wNXM (the transferable wrapper) trades on the open market and is
-///      NOT priced by this feed.
+///      The returned price is the RAMM book value per NXM-unit, assigned to the token passed as `token_`. Deploy one
+///      instance per priced token: NXM itself, and/or wNXM — the transferable wrapper that a Nexus member can unwrap
+///      1:1 to NXM, so book value is realizable for a member holder (matching how data aggregators price wNXM).
 /// @author kpk
 /* solhint-disable var-name-mixedcase */
 contract NXM_PriceOracle is IPriceFeedCustom {
     using Math for uint256;
 
-    /// @notice NXM token address.
-    address public immutable NXM;
+    /// @notice The priced token (NXM or its 1:1 wrapper wNXM).
+    address public immutable TOKEN;
 
     /// @notice Nexus Mutual RAMM contract providing the internal ETH-per-NXM price.
     address public immutable RAMM;
@@ -37,12 +39,12 @@ contract NXM_PriceOracle is IPriceFeedCustom {
     /// @notice Number of decimals the returned price is represented with.
     uint8 private immutable _decimals;
 
-    /// @param nxm_ The address of the NXM token.
+    /// @param token_ The address of the priced token (NXM or its 1:1 wrapper wNXM).
     /// @param ramm_ The address of the Nexus Mutual RAMM contract.
     /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
     /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not updated.
-    constructor(address nxm_, address ramm_, address ethToUsdChainlinkOracle_, uint256 ethToUsdChainlinkHeartbeat_) {
-        NXM = OracleArgumentChecks.assertERC20Address(nxm_);
+    constructor(address token_, address ramm_, address ethToUsdChainlinkOracle_, uint256 ethToUsdChainlinkHeartbeat_) {
+        TOKEN = OracleArgumentChecks.assertERC20Address(token_);
         RAMM = OracleArgumentChecks.assertNonZeroAddress(ramm_);
         ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
         ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
@@ -81,7 +83,7 @@ contract NXM_PriceOracle is IPriceFeedCustom {
 
     /// @inheritdoc IPriceFeedCustom
     function underlyingAssetSupported() external view override returns (address) {
-        return NXM;
+        return TOKEN;
     }
 
     /// @inheritdoc IPriceFeedCustom

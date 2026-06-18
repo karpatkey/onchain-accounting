@@ -139,7 +139,17 @@
     "enabled": true,
     "$comment": "NXM/USD = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD. RAMM resolved from Nexus master code 'RA'. Prices member NXM book value; wNXM not priced here.",
     "constructor": {
-      "nxm": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
+      "token": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
+      "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
+      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "wNXM": {
+    "enabled": true,
+    "$comment": "wNXM/USD = same RAMM book value as NXM (wNXM is the 1:1 wrapper; a Nexus member can unwrap it to NXM). Reuses NXM_PriceOracle with token=wNXM.",
+    "constructor": {
+      "token": "0x0d438F3b5175Bebc262bF23753C1E53d03432bDE",
       "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
       "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "ethToUsdChainlinkHeartbeat": "3600"

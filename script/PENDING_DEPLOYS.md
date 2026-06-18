@@ -7,7 +7,7 @@
 **Companion docs:** [`NAV_V2_DEPLOYMENT_RUNBOOK.md`](NAV_V2_DEPLOYMENT_RUNBOOK.md) (operational playbook), [`config/CONFIG_GUIDE.md`](config/CONFIG_GUIDE.md) (chain config schema). (Prior-production address records have been retired — for the NAV v2 redeploy there is no current production state to reference; deployed addresses are written to `deployments/<chainId>.json` as they land.)
 
 > **Addendum 2026-05-30 (re-run §6 to regenerate against the wiped config):**
-> - **`KelpWithdrawalQueue`** (Mainnet, PR #44 merged) and **`LidoWithdrawalQueue`** (Mainnet, PR #45) are wired with `deployed: ""` — TBD like everything else, pending `04_DeployBalanceAdapters` + `addBalanceAdapter` registration (both are already in the `_balanceAdapterNames()` lists in `06_Configure.s.sol`).
+> - **`KelpWithdrawalQueue`** (Mainnet, PR #44 merged) and **`LidoWithdrawalQueue`** (Mainnet, PR #45) are wired with `deployed: ""` — TBD like everything else, pending `04_DeployBalanceAdapters` + `addBalanceAdapters` registration (both are already in the `_balanceAdapterNames()` lists in `06_Configure.s.sol`).
 > - **NAVCalculator implementation:** PR #44's `NAVCalculator.hasPositions` change (fail-open via the positions path) ships as part of the fresh NAV v2 implementation deployed in `01_DeployImplementations.s.sol` — no separate UUPS upgrade is needed because the impl is being deployed from scratch.
 
 ---
@@ -29,7 +29,7 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 
 ### 1.1 Pending price feeds
 
-| Chain | Adapter key | Contract | Constructor params (in `assets.json.priceFeeds.<key>.<chainId>.constructor`) |
+| Chain | Adapter key | Contract | Constructor params (in `contracts-deployment-config/price-feeds/<chainId>.json` `<key>.constructor`) |
 |---|---|---|---|
 | 1 | `ETHx` | `src/prices/protocols/ETHx_Price.sol` (`ETHx_PriceOracle`) | `ethx`, `stakePoolsManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 
@@ -234,11 +234,11 @@ json.dump(c, open('script/config/chains/1.json','w'), indent=2)
 # Repeat for chains/8453.json and chains/42161.json.
 ```
 
-Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. Because there is no prior production deployment to migrate from (the NAV v2 redeploy starts from a clean NAVCalculator), `06_Configure.s.sol` only needs to call `addBalanceAdapter(<new>)` for each adapter — there is no `removeBalanceAdapter(<old>)` cutover step.
+Then run Phase A's `04_DeployBalanceAdapters.s.sol` per chain. Because there is no prior production deployment to migrate from (the NAV v2 redeploy starts from a clean NAVCalculator), `06_Configure.s.sol` only needs to call `addBalanceAdapters(<new>)` for each adapter — there is no `removeBalanceAdapter(<old>)` cutover step.
 
 ## 4.6 WBTC + AAVE asset registration on mainnet
 
-PR #35 added WBTC and AAVE to `script/manage/RegisterAssets.s.sol` (indices 29 and 30). The integration harness now derives symbols from the `assets.json` keys (`getAssetSymbols`) rather than the old hardcoded `_symbolsForChain` list, so WBTC/AAVE wallet legs are counted as soon as they are present in `assets.json`. Production has not yet registered them.
+PR #35 added WBTC and AAVE to `script/manage/RegisterAssets.s.sol` (indices 29 and 30). The integration harness now derives symbols from the `nav-config/assets-and-price-feeds/<chainId>.json` keys (`getAssetSymbols`) rather than the old hardcoded `_symbolsForChain` list, so WBTC/AAVE wallet legs are counted as soon as they are present in that file. Production has not yet registered them.
 
 Action: include `registerAsset(WBTC, ...)` and `registerAsset(AAVE, ...)` in the mainnet Phase C Safe TX bundle alongside the existing `registerAsset(EURC, ...)` and `setPriceFeed(ETHx, ...)` calls.
 
@@ -279,7 +279,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
 
 After Phase A, every chain's `deployments/<chainId>.json` has new `deployed:` fields populated (this is the only place addresses are written; broadcast logs are no longer committed). Open a PR with:
 
-- `deployments/1.json` — core proxies/impls + every balance/price/bridge adapter address (the ETHx feed address also copies into `assets.json.customPriceFeeds` / the ETHx `priceFeeds[]` entry)
+- `deployments/1.json` — core proxies/impls + every balance/price/bridge adapter address (the ETHx feed address also lands in `deployments/1.json .customPriceFeeds`, referenced by the ETHx `priceFeeds[]` entry in `nav-config/assets-and-price-feeds/1.json`)
 - `deployments/10.json`, `deployments/8453.json`, `deployments/42161.json` — per-chain core + adapter addresses
 
 This PR is config-only, doesn't change behaviour.
@@ -289,7 +289,7 @@ This PR is config-only, doesn't change behaviour.
 After Phase B merges to main:
 
 ```bash
-# Per chain, generate the calldata for register/setPriceFeed/addBalanceAdapter calls.
+# Per chain, generate the calldata for register/setPriceFeed/addBalanceAdapters calls.
 forge script script/manage/RegisterAssets.s.sol --rpc-url $MAINNET_URL --sig 'run()'
 forge script script/manage/RegisterAssets.s.sol --rpc-url $OP_URL --sig 'run()'
 forge script script/manage/RegisterAssets.s.sol --rpc-url $BASE_URL --sig 'run()'
@@ -301,9 +301,9 @@ Mainnet bundle includes:
 - `registerAsset(WBTC, …, Chainlink, …)` — new in PR #35 (§4.6)
 - `registerAsset(AAVE, …, Chainlink, …)` — new in PR #35 (§4.6)
 - `setPriceFeed(ETHx, <ethxAdapter>, Custom, 0)` — point ETHx at the freshly-deployed feed
-- `addBalanceAdapter(<adapter>)` for **every** balance adapter in the mainnet config (not just the original-gap set) — the NAV v2 proxy starts with no adapters registered, so all are added fresh. No `removeBalanceAdapter(<old>)` calls are needed (nothing was previously registered).
+- `addBalanceAdapters(<adapter>)` for **every** balance adapter in the mainnet config (not just the original-gap set) — the NAV v2 proxy starts with no adapters registered, so all are added fresh. No `removeBalanceAdapter(<old>)` calls are needed (nothing was previously registered).
 
-Other chains: `addBalanceAdapter(...)` × 3 (op), 9 (base), 9 (arb).
+Other chains: `addBalanceAdapters(...)` × 3 (op), 9 (base), 9 (arb).
 
 Owners on the per-chain Safe (`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every chain) sign and execute.
 
@@ -337,7 +337,7 @@ These were identified during the audit but aren't blocked on PR #35:
 1. **kpk vault catalog expansion**: 8 mainnet vaults + 1 Arbitrum vault still need their config blocks added (§2). Plus rename `MorphoVault_kpkEURC_V1` → `_kpkEURCYield_V2`. Deploy via Phase A pattern.
 2. **Markets-per-vault enumeration** (§3): enumerate `withdrawQueue` for each kpk vault, deduplicate market IDs, cross-reference vs existing `MorphoMarket_*` configs, add the gaps.
 3. **`AaveV3SafetyModule` naming alignment**: chain config has `AaveV3SafetyModule` (no suffix). With the from-scratch redeploy there is no prior production address under any other key — just confirm the single `AaveV3SafetyModule` key is the one deployed.
-4. **MorphoMarket redeploys (§4.5)**: redeploy MorphoMarket on 3 chains under the updated protocol name as part of the NAV v2 redeploy. Just `addBalanceAdapter(<new>)` per chain — no `removeBalanceAdapter(<old>)` (nothing previously registered on the fresh proxy).
+4. **MorphoMarket redeploys (§4.5)**: redeploy MorphoMarket on 3 chains under the updated protocol name as part of the NAV v2 redeploy. Just `addBalanceAdapters(<new>)` per chain — no `removeBalanceAdapter(<old>)` (nothing previously registered on the fresh proxy).
 
 ---
 

@@ -64,5 +64,5 @@ When refreshing fork blocks (via the bump workflow described in `docs/howto/refr
 - Adapter: `src/balances/protocols/AaveV3SafetyModule.sol`
 - Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol` (fork)
 - Deploy schema: `script/config/chains/1.json` `balanceAdapters.AaveV3SafetyModule` (only `protocol` field)
-- Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceAdapter(legacy)` + `nav.addBalanceAdapter(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
+- Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceAdapters(legacy)` + `nav.addBalanceAdapters(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
 - Superseded: ADR [0002](0002-aave-safety-module-multi-token.md) (the admin-managed-list design)

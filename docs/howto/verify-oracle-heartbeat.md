@@ -25,7 +25,7 @@ The `?proxyAddress=` query parameter filters the result to the single entry matc
 ```jsonc
 {
   "name": "USDC / USD",
-  "proxyAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", // what assets.json references
+  "proxyAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", // recorded as an asset's priceFeeds[].address in nav-config/assets-and-price-feeds/<chainId>.json
   "contractAddress": "0x...",                                    // underlying OCR2 aggregator
   "heartbeat": 86400,                                            // seconds
   "threshold": 0.25,                                             // deviation % that also triggers update
@@ -35,9 +35,9 @@ The `?proxyAddress=` query parameter filters the result to the single entry matc
 }
 ```
 
-> **Note:** `contractAddress` is the OCR2 aggregator (implementation). Consumer contracts — and `assets.json` — should always use `proxyAddress`.
+> **Note:** `contractAddress` is the OCR2 aggregator (implementation). Consumer contracts — and an asset's `priceFeeds[].address` in `nav-config/assets-and-price-feeds/<chainId>.json` — should always use `proxyAddress`.
 
-## Example links for feeds in assets.json
+## Example links for feeds in nav-config/assets-and-price-feeds/<chainId>.json
 
 ### Ethereum Mainnet
 

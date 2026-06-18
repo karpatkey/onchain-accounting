@@ -60,10 +60,12 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | File / Path | Purpose |
 |-------------|---------|
 | `chains/{chainId}.json` | Per-chain config: RPC, explorer, Safe, roles, `addresses` block, adapter enable flags |
-| `assets.json` | Asset registry: each asset's `priceFeeds[]` plus `customPriceFeeds` (custom price-oracle adapters and their constructor args) |
-| `balance-adapters.json` | Balance-adapter registry: `adapters` plus per-adapter `instances` / `instancesRaw` (meta-adapter instance coordinates) |
+| `nav-config/assets-and-price-feeds/{chainId}.json` | Asset registry: each asset's `address` + `priceFeeds[]` (the assets to register on NAVCalculator) |
+| `contracts-deployment-config/price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
+| `contracts-deployment-config/balance-adapters/{chainId}.json` | Balance + meta adapters to deploy (`enabled` + `constructor`) |
+| `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
 | `deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land. Broadcast logs are no longer committed. For the NAV v2 from-scratch redeploy every field here starts **TBD** (empty). |
-| (No separate `dev-input.json`) | All user input lives in `chains/{chainId}.json` (`addresses` + adapter flags), `assets.json`, and `balance-adapters.json` |
+| (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (`addresses` + adapter flags) plus the per-concern `contracts-deployment-config/` and `nav-config/` files above |
 
 ## Deployment Workflow
 

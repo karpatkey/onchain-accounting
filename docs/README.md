@@ -23,7 +23,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 |---|---|
 | [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | Adding a new balance adapter. End-to-end: contract, factory, unit + fork tests, chain config, deploy + register. Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (framework) first. |
 | [`howto/add-price-feed.md`](howto/add-price-feed.md) | Adding a new custom price feed. Same recipe shape, framework reference is [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md). |
-| [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain (`chains/<id>.json`, asset registry, deploy steps). |
+| [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain — the per-concern config folders: `chains/<id>.json` (chain meta + roles), `contracts-deployment-config/` (what to deploy), `nav-config/` (assets + adapter registration), plus deploy steps. |
 | [`howto/position-identity-schema.md`](howto/position-identity-schema.md) | **Position identity reference** — `protocolId` slugs, `positionId` ABI-decode schemas per protocol, `PositionKind` enum, stable reconciliation key, TypeScript decode examples, `NavLens` verbose reads. Read when building indexers, frontends, or reconciliation jobs. |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against DeBank. |
 | [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
@@ -85,7 +85,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional adapters to a live chain, registering new assets, rotating roles, validating an existing deployment. |
 | [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
 | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
-| [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` and `assets.json`. |
+| [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
 | [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `06_…` deploy scripts. |
 | [`script/test/README.md`](../script/test/README.md) | Per-folder index for `script/test/` (snapshot refresh + comparison report). |

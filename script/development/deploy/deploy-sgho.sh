@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Deploy + register the sGHO (Aave Savings GHO) balance oracle on a running dev anvil fork.
+# Deploy + register the sGHO (Aave Savings GHO) balance adapter on a running dev anvil fork.
 #
 # Usage:  deploy-sgho.sh <chainId>
 #   e.g.  deploy-sgho.sh 1
 #
-# ERC4626WrapBalanceOracle is a standalone (non-meta) adapter pointed at the sGHO vault. This helper
-# `forge create`s it and calls addBalanceOracle on the dev NAV. The constructor reverts unless GHO is
+# ERC4626WrapBalanceAdapter is a standalone (non-meta) adapter pointed at the sGHO vault. This helper
+# `forge create`s it and calls addBalanceAdapters on the dev NAV. The constructor reverts unless GHO is
 # registered on the NAV (register-assets.sh registers GHO on chain 1). sGHO vault default below;
 # override via DEV_SGHO_WRAPPER.
 #
@@ -37,13 +37,13 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy sGHO oracle  chain=$CID NAV=$NAV"
+echo "=== deploy sGHO adapter  chain=$CID NAV=$NAV"
 echo "    wrapper: $SGHO_WRAPPER"
 
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/ERC4626Wrap.sol:ERC4626WrapBalanceOracle \
+  forge create src/balances/protocols/ERC4626Wrap.sol:ERC4626WrapBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$SGHO_WRAPPER" "$NAV" 2>&1
 ) || true
@@ -55,9 +55,9 @@ if [ -z "$ADAPTER" ]; then
 fi
 echo "  ERC4626Wrap_sGHO: $ADAPTER"
 
-cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \
+cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
-echo "  registered on NAV (addBalanceOracle)"
+echo "  registered on NAV (addBalanceAdapters)"
 
 jq --arg a "$ADAPTER" '. + {"ERC4626Wrap_sGHO": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"

@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveV2InstancesMeta.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set governed on NAVCalculator via `setMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
+`src/balances/protocols/AaveV2InstancesMeta.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -78,7 +78,7 @@ The aToken balance already includes accrued interest (rebasing aToken), so it is
 |---|---|
 | `case-supply-borrow-holders-mainnet.json` | Machine-readable evidence pack: holders, per-leg amounts, kinds, ground-truth, naming note |
 | `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints the per-leg breakdown — used for ad-hoc cross-checks against a portfolio tracker |
-| `script/development/deploy/deploy-aave-instances-meta.sh` | Meta-based dev-anvil deploy helper: deploys + `addBalanceOracle` + `setMetaInstances` for the Aave V3 (Core+Lido) and V2 metas (the ADR-0010 equivalent of the removed per-instance helpers) |
+| `script/development/deploy/deploy-aave-instances-meta.sh` | Meta-based dev-anvil deploy helper: deploys + `addMetaBalanceAdapter(adapter, instances)` (atomic register + seed) for the Aave V3 (Core+Lido) and V2 metas (the ADR-0010 equivalent of the removed per-instance helpers) |
 
 ## 7. Expected balances
 
@@ -93,7 +93,7 @@ Captured at the fork block in §5. The test does **not** hardcode `EXPECTED_*` c
 | STETH_SUPPLY_USDC_BORROW | USDC | Borrowed | USDC | `7319144` | 7.319144 USDC |
 | STETH_SUPPLY_USDC_BORROW | USDC | Collateral | USDC | `1` | 0.000001 USDC (dust) |
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
+### 7b. Per-asset summary (what `getAdapterBalanceForAsset` returns)
 
 | Holder | Token | Total credit (raw) | Total debt (raw) | isDebt |
 |---|---|---|---|---|

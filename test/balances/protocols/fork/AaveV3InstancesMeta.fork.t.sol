@@ -16,7 +16,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title AaveV3InstancesMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving Aave V3 instances, routed through a real NAVCalculator that holds the
-///         configured DataProvider set (addMetaInstances). Uses the mainnet Core instance and an account with
+///         configured DataProvider set (seeded via addMetaBalanceAdapter). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
 contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;

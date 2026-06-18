@@ -2,11 +2,11 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveUmbrella.sol` — the immutable `AaveUmbrellaBalanceOracle`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, label `"umbrella stake"`.
+`src/balances/protocols/AaveUmbrella.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, label `"umbrella stake"`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — `AaveUmbrellaBalanceOracle` implements `IBalanceOracleAdapter` + `IPositionDescribable` directly (it is *not* a meta-adapter; the live set is discovered, not governed via `setMetaInstances`).
+- **Inheritance:** none — `AaveUmbrellaBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly (it is *not* a meta-adapter; the live set is discovered, not governed via `addMetaInstances`/`removeMetaInstances`).
 - **Dynamic discovery:** `RewardsController.getAllAssets()` enumerates every stake token. Aave governance can add a stake token (or reconfigure its reward token) and the adapter picks it up automatically, provided the bare reserve it resolves to is registered on NAVCalculator. Unregistered reserves are silently skipped (same convention as the Aave lending adapters).
 - **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `script/config/chains/1.json` is the only chain config with `AaveUmbrella` (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
 - **Today's stake-token set** (`getAllAssets()` at the fork block):
@@ -25,18 +25,18 @@
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/AaveUmbrella.fork.t.sol` → `AaveUmbrellaBalanceOracleForkTest` already covers, at the pinned block, against four real holders (one per stake token):
+`test/balances/protocols/fork/AaveUmbrella.fork.t.sol` → `AaveUmbrellaBalanceAdapterForkTest` already covers, at the pinned block, against four real holders (one per stake token):
 - holders have non-zero stake balances; `underlyingAssetsSupported` dedupes to the registered bare reserves;
 - every stake token reports the same RewardsController;
-- per-holder `getOracleBalanceForAsset` equals an independent staked+rewards recomputation (§8);
-- `getOraclePositions` emits the Staking + Rewards legs (incl. the same-asset stkGHO case where both legs are GHO);
-- the assetFilter restricts/excludes correctly; `getOracleBalances` returns one entry per underlying.
+- per-holder `getAdapterBalanceForAsset` equals an independent staked+rewards recomputation (§8);
+- `getAdapterPositions` emits the Staking + Rewards legs (incl. the same-asset stkGHO case where both legs are GHO);
+- the assetFilter restricts/excludes correctly; `getAdapterBalances` returns one entry per underlying.
 
 All kept as regression nets.
 
 ## 3. What this case adds
 
-- **Mock-based unit test** (`test/balances/protocols/AaveUmbrella.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getOraclePositions` skips it). 11 tests, no fork.
+- **Mock-based unit test** (`test/balances/protocols/AaveUmbrella.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 11 tests, no fork.
 - **Fork block** set to the verification block `25_287_877` — the fork test and this README's §7 figures pin the **same** block. The live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: the per-leg ground truth for a comprehensive all-four-stake-token holder, plus a dashboard wiring helper.
 
@@ -81,8 +81,8 @@ Slashing-correct automatically: Umbrella stake tokens reduce `totalAssets` (not 
 | Block | **25,287,877** |
 | Block timestamp | 1781104487 (`0x6a297f67`) — **2026-06-10 15:14:47 UTC** |
 | RewardsController (trust anchor) | `0x4655Ce3D625a63d30bA704087E52B4C31E38188B` |
-| Adapter under test | `AaveUmbrellaBalanceOracle` |
-| Fork-test contract | `AaveUmbrellaBalanceOracleForkTest` in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` |
+| Adapter under test | `AaveUmbrellaBalanceAdapter` |
+| Fork-test contract | `AaveUmbrellaBalanceAdapterForkTest` in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` |
 | Unit-test contract | `AaveUmbrellaBalanceMathTest` in `test/balances/protocols/AaveUmbrella.t.sol` |
 
 ## 6. Case files in this folder
@@ -91,7 +91,7 @@ Slashing-correct automatically: Umbrella stake tokens reduce `totalAssets` (not 
 |---|---|
 | `case-stake-holders-mainnet.json` | Machine-readable evidence pack: holders, per-leg amounts, kinds, positionIds, ground-truth method |
 | `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints the per-leg breakdown for ad-hoc cross-checks |
-| `script/development/deploy/deploy-aave-umbrella.sh` | Dev-anvil deploy helper: `forge create` the adapter + `addBalanceOracle` on the local NAV |
+| `script/development/deploy/deploy-aave-umbrella.sh` | Dev-anvil deploy helper: `forge create` the adapter + `addBalanceAdapters([adapter])` on the local NAV |
 
 ## 7. Expected balances
 
@@ -110,7 +110,7 @@ Captured at the fork block in §5. The fork test does **not** hardcode `EXPECTED
 | stkGHO.v1 | Staking | GHO | `321722605569835228164` | 321.722605569835228164 GHO | `0x4f82…5033` |
 | stkGHO.v1 | Rewards | GHO | `48878864883629751593` | 48.878864883629751593 GHO | `0x4f82…5033` |
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns — `STK_WA_WETH_HOLDER`)
+### 7b. Per-asset summary (what `getAdapterBalanceForAsset` returns — `STK_WA_WETH_HOLDER`)
 
 | Reserve | Total (raw) | Total (humanised) | isDebt |
 |---|---|---|---|
@@ -123,7 +123,7 @@ Other holders (per-asset totals): `STK_WA_USDC_HOLDER` → USDC `208367191` (202
 
 ## 8. Ground-truth cross-check
 
-`test_stkwaEth*_balance_matchesAdapterDiscovery` / `test_stkGHO_balance_matchesAdapterDiscovery` recompute each holder's value along the **same walk the adapter takes but via independent interface reads**, then assert equality with `getOracleBalanceForAsset`:
+`test_stkwaEth*_balance_matchesAdapterDiscovery` / `test_stkGHO_balance_matchesAdapterDiscovery` recompute each holder's value along the **same walk the adapter takes but via independent interface reads**, then assert equality with `getAdapterBalanceForAsset`:
 
 | Leg | Recomputed independently as |
 |---|---|
@@ -158,7 +158,7 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 | Same-asset stkGHO: Staking + Rewards both GHO, distinguished by `positionKind` | ✅ |
 | Identity: `positionId == abi.encode(stakeToken)`, `protocolId == aave-v3-umbrella` | ✅ |
 | Zero-leg skip / rewards-only leg / assetFilter | ✅ |
-| Unregistered-reserve skip in `getOraclePositions` (balance methods still report it) | ✅ |
+| Unregistered-reserve skip in `getAdapterPositions` (balance methods still report it) | ✅ |
 
 **Mainnet: 12 / 12 fork + 21 / 21 unit tests pass.** Single mainnet deployment → no cross-chain surface. Aave Umbrella is verified.
 

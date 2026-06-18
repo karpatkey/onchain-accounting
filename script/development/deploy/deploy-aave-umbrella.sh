@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Deploy + register the Aave Umbrella balance oracle on a running dev anvil fork.
+# Deploy + register the Aave Umbrella balance adapter on a running dev anvil fork.
 #
 # Usage:  deploy-aave-umbrella.sh <chainId>
 #   e.g.  deploy-aave-umbrella.sh 1
 #
-# AaveUmbrellaBalanceOracle is a standalone (non-meta) adapter: it pins only the Umbrella
+# AaveUmbrellaBalanceAdapter is a standalone (non-meta) adapter: it pins only the Umbrella
 # RewardsController and discovers the stake-token set at runtime. So this helper just `forge create`s
-# it and calls addBalanceOracle on the dev NAV (no setMetaInstances). Mainnet RewardsController default
-# below; override via DEV_UMBRELLA_REWARDS_CONTROLLER.
+# it and calls addBalanceAdapters on the dev NAV (it is plain, so it has no instance set to seed).
+# Mainnet RewardsController default below; override via DEV_UMBRELLA_REWARDS_CONTROLLER.
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json, with the
 # bare reserves USDC/USDT/WETH/GHO registered — register-assets.sh does this for chain 1).
@@ -38,13 +38,13 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy Aave Umbrella oracle  chain=$CID NAV=$NAV"
+echo "=== deploy Aave Umbrella adapter  chain=$CID NAV=$NAV"
 echo "    rewardsController: $REWARDS_CONTROLLER"
 
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/AaveUmbrella.sol:AaveUmbrellaBalanceOracle \
+  forge create src/balances/protocols/AaveUmbrella.sol:AaveUmbrellaBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$REWARDS_CONTROLLER" "$NAV" 2>&1
 ) || true
@@ -56,9 +56,9 @@ if [ -z "$ADAPTER" ]; then
 fi
 echo "  AaveUmbrella: $ADAPTER"
 
-cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \
+cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
-echo "  registered on NAV (addBalanceOracle)"
+echo "  registered on NAV (addBalanceAdapters)"
 
 jq --arg a "$ADAPTER" '. + {"AaveUmbrella": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"

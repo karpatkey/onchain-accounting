@@ -7,7 +7,7 @@ import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.so
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryAaveUmbrellaLiveBalances
-/// @notice Ad-hoc evidence helper: deploys the Aave Umbrella balance oracle pointed at a deployed NAV (used as
+/// @notice Ad-hoc evidence helper: deploys the Aave Umbrella balance adapter pointed at a deployed NAV (used as
 ///         the asset registry) on the dev fork and prints the per-leg breakdown the adapter emits for the
 ///         verification holders. Used to capture the amounts documented in this folder's README and to
 ///         cross-check against a portfolio tracker.
@@ -28,17 +28,17 @@ contract QueryAaveUmbrellaLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        AaveUmbrellaBalanceAdapter oracle = new AaveUmbrellaBalanceAdapter(REWARDS_CONTROLLER, nav);
+        AaveUmbrellaBalanceAdapter adapter = new AaveUmbrellaBalanceAdapter(REWARDS_CONTROLLER, nav);
 
-        _dump(oracle, "STK_WA_WETH_HOLDER (all four)", STK_WA_WETH_HOLDER);
-        _dump(oracle, "STK_GHO_HOLDER", STK_GHO_HOLDER);
-        _dump(oracle, "STK_WA_USDC_HOLDER", STK_WA_USDC_HOLDER);
-        _dump(oracle, "STK_WA_USDT_HOLDER", STK_WA_USDT_HOLDER);
+        _dump(adapter, "STK_WA_WETH_HOLDER (all four)", STK_WA_WETH_HOLDER);
+        _dump(adapter, "STK_GHO_HOLDER", STK_GHO_HOLDER);
+        _dump(adapter, "STK_WA_USDC_HOLDER", STK_WA_USDC_HOLDER);
+        _dump(adapter, "STK_WA_USDT_HOLDER", STK_WA_USDT_HOLDER);
     }
 
-    function _dump(AaveUmbrellaBalanceAdapter oracle, string memory label, address holder) internal view {
+    function _dump(AaveUmbrellaBalanceAdapter adapter, string memory label, address holder) internal view {
         console2.log("=== holder:", label);
-        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(holder, address(0));
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         console2.log("legs:", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("---");

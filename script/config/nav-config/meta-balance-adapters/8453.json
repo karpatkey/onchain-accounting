@@ -60,7 +60,7 @@
   },
   "PancakeSwapV3PoolsMeta": {
     "enabled": false,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = abi.encode(NonfungiblePositionManager, tokenId) per NFT position. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
     "instances": [
       "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
     ]

@@ -5,8 +5,8 @@
 #   e.g.  deploy-pancakeswap-v3-meta.sh 1 0x1445F32D1A74872bA41f3D8cF4022E9996120b31
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json).
-# Registers the adapter (addBalanceOracle) AND sets its instance set (setMetaInstances) — both are
-# needed for a meta-adapter (ADR 0010), mirroring script/deploy/06_Configure.s.sol.
+# Registers + seeds the meta-adapter with a single atomic addMetaBalanceAdapter(adapter, instances)
+# call (ADR 0010), mirroring script/deploy/06_Configure.s.sol.
 set -euo pipefail
 
 CID=${1:?chainId required}

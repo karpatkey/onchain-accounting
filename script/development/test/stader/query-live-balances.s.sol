@@ -7,7 +7,7 @@ import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/Stader
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryStaderWithdrawalQueueLiveBalances
-/// @notice Ad-hoc evidence helper: deploys the Stader Withdrawal Queue oracle pointed at a deployed NAV (the asset
+/// @notice Ad-hoc evidence helper: deploys the Stader Withdrawal Queue adapter pointed at a deployed NAV (the asset
 ///         registry) on the dev fork and prints each holder's WETH leg. Used to capture the values in this folder's
 ///         README and to cross-check against a portfolio tracker.
 /// @dev The position is denominated in WETH (the position is ETH owed by the manager once ETHx is burned). WETH must
@@ -30,22 +30,22 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        StaderWithdrawalQueueBalanceAdapter oracle =
+        StaderWithdrawalQueueBalanceAdapter adapter =
             new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
 
-        _print(oracle, "PENDING (1 un-finalized)", PENDING);
-        _print(oracle, "FINALIZED (1 finalized)", FINALIZED);
-        _print(oracle, "MULTI (2 requests summed)", MULTI);
+        _print(adapter, "PENDING (1 un-finalized)", PENDING);
+        _print(adapter, "FINALIZED (1 finalized)", FINALIZED);
+        _print(adapter, "MULTI (2 requests summed)", MULTI);
     }
 
-    function _print(StaderWithdrawalQueueBalanceAdapter oracle, string memory label, address holder) internal view {
-        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(holder, WETH);
+    function _print(StaderWithdrawalQueueBalanceAdapter adapter, string memory label, address holder) internal view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(holder, WETH);
         console2.log("=== Stader WQ holder:", label);
         console2.log("  address:  ", holder);
         console2.log("  ETH owed: ", amount);
         console2.log("  isDebt:   ", isDebt);
 
-        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(holder, address(0));
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         console2.log("  legs:     ", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("  ---");

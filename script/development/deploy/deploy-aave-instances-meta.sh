@@ -5,7 +5,8 @@
 #   e.g.  deploy-aave-instances-meta.sh 1
 #
 # Deploys BOTH the Aave V3 meta (instances = Core + Lido ProtocolDataProviders) and the Aave V2 meta
-# (instance = V2 ProtocolDataProvider), registering each (addBalanceOracle + setMetaInstances) — mirrors
+# (instance = V2 ProtocolDataProvider), registering each via a single atomic
+# addMetaBalanceAdapter(adapter, instances) call (register + seed) — mirrors
 # script/deploy/06_Configure.s.sol. Mainnet ProtocolDataProvider defaults below; override per chain via the
 # DEV_V3_DATA_PROVIDERS / DEV_V2_DATA_PROVIDERS env vars (comma-separated). To deploy only one version, set
 # the other's list to empty.

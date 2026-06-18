@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Deploy + register the Lido stETH Withdrawal Queue balance oracle on a running dev anvil fork.
+# Deploy + register the Lido stETH Withdrawal Queue balance adapter on a running dev anvil fork.
 #
 # Usage:  deploy-lido-withdrawal-queue.sh <chainId>
 #   e.g.  deploy-lido-withdrawal-queue.sh 1
 #
-# LidoWithdrawalQueueBalanceOracle is a standalone (non-meta) adapter pointed at Lido's
+# LidoWithdrawalQueueBalanceAdapter is a standalone (non-meta) adapter pointed at Lido's
 # WithdrawalQueueERC721. It reports the ETH owed across an account's open (un-claimed) withdrawal
 # requests, denominated in native ETH (the asset Lido pays on claim; priced via ETH/USD). This
-# helper `forge create`s it and calls addBalanceOracle on the dev NAV. Native ETH must be registered
+# helper `forge create`s it and calls addBalanceAdapters on the dev NAV. Native ETH must be registered
 # on the NAV for the position to render (01_DeployNAV registers the native ETH/USD feed at bootstrap).
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json).
@@ -39,14 +39,14 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy Lido Withdrawal Queue oracle  chain=$CID NAV=$NAV"
+echo "=== deploy Lido Withdrawal Queue adapter  chain=$CID NAV=$NAV"
 echo "    withdrawalQueue: $WITHDRAWAL_QUEUE"
 echo "    underlyingToken: $UNDERLYING_TOKEN (native ETH)"
 
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/LidoWithdrawalQueue.sol:LidoWithdrawalQueueBalanceOracle \
+  forge create src/balances/protocols/LidoWithdrawalQueue.sol:LidoWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAWAL_QUEUE" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true
@@ -58,9 +58,9 @@ if [ -z "$ADAPTER" ]; then
 fi
 echo "  LidoWithdrawalQueue: $ADAPTER"
 
-cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \
+cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
-echo "  registered on NAV (addBalanceOracle)"
+echo "  registered on NAV (addBalanceAdapters)"
 
 jq --arg a "$ADAPTER" '. + {"LidoWithdrawalQueue": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"

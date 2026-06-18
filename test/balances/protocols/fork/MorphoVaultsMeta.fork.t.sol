@@ -25,7 +25,7 @@ contract TestUsdcVault is ERC4626 {
 
 /// @title MorphoVaultsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho ERC4626 vaults, routed through a real NAVCalculator that holds
-///         the configured instance set (addMetaInstances). Uses the real kpkUSDC V1 vault + a second ERC4626 over
+///         the configured instance set (seeded via addMetaBalanceAdapter). Uses the real kpkUSDC V1 vault + a second ERC4626 over
 ///         real USDC at a pinned block.
 contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     using Strings for address;

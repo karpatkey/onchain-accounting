@@ -119,7 +119,8 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
     ///         balanceOf (an independent read path from the adapter's getUserReserveData), with the correct kind,
     ///         AAVE_V2_LENDING protocolId, and (LendingPool, reserve) positionId.
     function _assertGroundTruth(address user) internal view {
-        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(user, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(user, _instance(), address(0));
         assertGt(pos.length, 0, "expected at least one V2 leg");
         for (uint256 i = 0; i < pos.length; i++) {
             INAVCalculator.PositionBalance memory p = pos[i];
@@ -158,7 +159,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
     ///         canonical token balanceOf exactly.
     function test_supplyBorrow_exactLegs() public view {
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(STETH_SUPPLY_USDC_BORROW, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(STETH_SUPPLY_USDC_BORROW, _instance(), address(0));
         (address aSteth,,) = IAaveV2Tokens(DATA_PROVIDER).getReserveTokensAddresses(STETH);
         (,, address vdUsdc) = IAaveV2Tokens(DATA_PROVIDER).getReserveTokensAddresses(MAINNET_USDC);
         bool sawStethCredit;
@@ -191,7 +192,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
 
     function test_protocolId_isAaveV2() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(PURE_USDC_SUPPLIER, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(PURE_USDC_SUPPLIER, _instance(), address(0));
         assertGt(p.length, 0);
         assertEq(p[0].protocolId, ProtocolIds.AAVE_V2_LENDING, "protocolId == keccak256('aave-v2-lending')");
     }

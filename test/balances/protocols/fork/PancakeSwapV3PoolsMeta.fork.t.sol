@@ -72,7 +72,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
-        balances = _deployBalancesForOracle(_assets());
+        balances = _deployBalancesForAdapter(_assets());
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
     }
 
@@ -111,7 +111,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     ///         amounts on both tokens. A uint8 `slot0` read (the inherited Uniswap path) would revert here.
     function test_slot0Override_activePositionNonZero() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         assertGt(_sumFrom(p, WETH, false), 0, "WETH total should be non-zero for active positions");
         assertGt(_sumFrom(p, USDT, false), 0, "USDT total should be non-zero for active positions");
         assertGt(_sumFrom(p, WETH, true), 0, "WETH principal should be non-zero (override fed getAmountsForLiquidity)");
@@ -121,7 +121,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     /// @notice Identity is derived on-chain: positionId = abi.encode(NPM, tokenId).
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         assertGt(p.length, 0, "expected at least one leg");
         for (uint256 i = 0; i < p.length; i++) {
             (address npm, uint256 tokenId) = abi.decode(p[i].positionId, (address, uint256));
@@ -139,7 +139,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     function test_groundTruth_principalEqualsNpmSettlement() public {
         // Adapter's principal BEFORE mutating state (fetch once, reuse for both tokens).
         INAVCalculator.PositionBalance[] memory adapterPositions =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         uint256 adapterWeth = _sumFrom(adapterPositions, WETH, true);
         uint256 adapterUsdt = _sumFrom(adapterPositions, USDT, true);
 

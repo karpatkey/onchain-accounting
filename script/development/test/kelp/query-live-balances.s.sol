@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {KelpWithdrawalQueueBalanceOracle} from "src/balances/protocols/KelpWithdrawalQueue.sol";
+import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/protocols/KelpWithdrawalQueue.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryKelpWithdrawalQueueLiveBalances
@@ -23,10 +23,10 @@ contract QueryKelpWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        KelpWithdrawalQueueBalanceOracle oracle = new KelpWithdrawalQueueBalanceOracle(WITHDRAWAL_MANAGER, nav);
+        KelpWithdrawalQueueBalanceAdapter oracle = new KelpWithdrawalQueueBalanceAdapter(WITHDRAWAL_MANAGER, nav);
 
         console2.log("=== Kelp WQ holder (MULTI_ASSET):", HOLDER);
-        INAVCalculator.PositionBalance[] memory p = oracle.getOraclePositions(HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(HOLDER, address(0));
         console2.log("  legs:", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("  ---");

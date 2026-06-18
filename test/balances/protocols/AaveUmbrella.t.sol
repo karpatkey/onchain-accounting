@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -19,26 +19,26 @@ import {
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @title AaveUmbrellaBalanceOracleTest
-/// @notice Unit tests for the dynamic-discovery AaveUmbrellaBalanceOracle.
+/// @title AaveUmbrellaBalanceAdapterTest
+/// @notice Unit tests for the dynamic-discovery AaveUmbrellaBalanceAdapter.
 /// @dev The adapter discovers the full Umbrella stake-token set at runtime via
 ///      `RewardsController.getAllAssets()`. Behaviour against real Mainnet contracts is covered by
 ///      the fork-test companion in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol`. These
 ///      unit tests cover the surface that doesn't depend on a live controller: constructor guards,
 ///      ERC165, and the zero-account / zero-asset early-exit shortcuts (which return empty results
 ///      before touching the controller, so they work even when the controller is a stub).
-contract AaveUmbrellaBalanceOracleTest is BalanceAdapterTestBase {
+contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev Stand-in for the RewardsController. Marked as a contract via deployed bytecode so the
     ///      adapter constructor's `code.length > 0` check passes; its functions are not invoked by
     ///      the early-exit paths exercised here.
     address internal stubRewardsController;
 
-    AaveUmbrellaBalanceOracle public oracle;
+    AaveUmbrellaBalanceAdapter public oracle;
 
     function setUp() public override {
         super.setUp();
         stubRewardsController = address(new RewardsControllerStub());
-        oracle = new AaveUmbrellaBalanceOracle(stubRewardsController, address(balances));
+        oracle = new AaveUmbrellaBalanceAdapter(stubRewardsController, address(balances));
     }
 
     // ─── Constructor ──────────────────────────────────────────────────────────
@@ -51,54 +51,55 @@ contract AaveUmbrellaBalanceOracleTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroRewardsController() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveUmbrellaBalanceOracle(address(0), address(balances));
+        new AaveUmbrellaBalanceAdapter(address(0), address(balances));
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new AaveUmbrellaBalanceOracle(stubRewardsController, address(0));
+        new AaveUmbrellaBalanceAdapter(stubRewardsController, address(0));
     }
 
     function test_constructor_revertsOnNonContractRewardsController() public {
         vm.expectRevert(); // require message; selector check unnecessary
-        new AaveUmbrellaBalanceOracle(makeAddr("eoa-controller"), address(balances));
+        new AaveUmbrellaBalanceAdapter(makeAddr("eoa-controller"), address(balances));
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(); // require message; selector check unnecessary
-        new AaveUmbrellaBalanceOracle(stubRewardsController, makeAddr("eoa-nav"));
+        new AaveUmbrellaBalanceAdapter(stubRewardsController, makeAddr("eoa-nav"));
     }
 
     // ─── Zero-account / zero-asset shortcuts (no controller calls expected) ───
 
-    function test_getOracleBalanceForAsset_returnsZeroForZeroAccount() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(address(0), address(usdc));
+    function test_getAdapterBalanceForAsset_returnsZeroForZeroAccount() public view {
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(address(0), address(usdc));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_returnsZeroForZeroAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(0));
+    function test_getAdapterBalanceForAsset_returnsZeroForZeroAsset() public view {
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(alice, address(0));
         assertEq(amount, 0);
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalances_returnsEmptyArraysForZeroAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(address(0));
+    function test_getAdapterBalances_returnsEmptyArraysForZeroAccount() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            oracle.getAdapterBalances(address(0));
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);
     }
 
-    function test_getOraclePositions_returnsEmptyArrayForZeroAccount() public view {
+    function test_getAdapterPositions_returnsEmptyArrayForZeroAccount() public view {
         // Zero-account shortcut returns [] before touching NAV_CALCULATOR or the controller.
-        assertEq(oracle.getOraclePositions(address(0), address(0)).length, 0);
+        assertEq(oracle.getAdapterPositions(address(0), address(0)).length, 0);
     }
 
     // ─── ERC165 ───────────────────────────────────────────────────────────────
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(oracle.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
         assertFalse(oracle.supportsInterface(bytes4(0xdeadbeef)));
     }
@@ -114,10 +115,10 @@ contract RewardsControllerStub {}
 ///         bare-reserve resolution (aToken `UNDERLYING_ASSET_ADDRESS()` vs a plain token), Staking +
 ///         Rewards leg emission with the right identity, zero-leg skipping, the assetFilter, and the
 ///         documented asymmetry where balance methods report an unregistered reserve but
-///         getOraclePositions silently skips it.
+///         getAdapterPositions silently skips it.
 /// @dev Conversions: a stake token / wrapper with 1e18-scaled `rate` returns `shares * rate / 1e18`.
 contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
-    AaveUmbrellaBalanceOracle internal oracle;
+    AaveUmbrellaBalanceAdapter internal oracle;
     MockUmbrellaRewardsController internal controller;
 
     Mock_ERC20 internal gho;
@@ -156,7 +157,7 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         controller.addStakeToken(address(stkGho));
         controller.addStakeToken(address(stkUnreg));
 
-        oracle = new AaveUmbrellaBalanceOracle(address(controller), address(balances));
+        oracle = new AaveUmbrellaBalanceAdapter(address(controller), address(balances));
 
         // alice holds all three stake tokens, with rewards on the two registered ones.
         stkwaUsdc.setBalance(alice, 1000e6); // 6-dec USDC shares
@@ -188,7 +189,7 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         MockUmbrellaRewardsController c = new MockUmbrellaRewardsController();
         c.addStakeToken(address(stkwaUsdc));
         c.addStakeToken(address(stkwaUsdc2));
-        AaveUmbrellaBalanceOracle o = new AaveUmbrellaBalanceOracle(address(c), address(balances));
+        AaveUmbrellaBalanceAdapter o = new AaveUmbrellaBalanceAdapter(address(c), address(balances));
         address[] memory list = o.underlyingAssetsSupported();
         assertEq(list.length, 1, "two stake tokens over USDC should dedupe to one reserve");
         assertEq(list[0], address(usdc));
@@ -196,25 +197,25 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
 
     // ─── balance math (staked + rewards) ───────────────────────────────────────
 
-    function test_getOracleBalanceForAsset_sumsStakedPlusRewards_twoHop() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(usdc));
+    function test_getAdapterBalanceForAsset_sumsStakedPlusRewards_twoHop() public view {
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, EXP_USDC_TOTAL, "USDC = two-hop staked + aToken reward");
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_sumsStakedPlusRewards_oneHop() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(gho));
+    function test_getAdapterBalanceForAsset_sumsStakedPlusRewards_oneHop() public view {
+        (uint256 amount,) = oracle.getAdapterBalanceForAsset(alice, address(gho));
         assertEq(amount, EXP_GHO_TOTAL, "GHO = one-hop staked + plain-token reward");
     }
 
-    function test_getOracleBalanceForAsset_reportsUnregisteredReserve() public view {
-        // Balance methods do NOT gate on NAV registration (only getOraclePositions does).
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(unreg));
+    function test_getAdapterBalanceForAsset_reportsUnregisteredReserve() public view {
+        // Balance methods do NOT gate on NAV registration (only getAdapterPositions does).
+        (uint256 amount,) = oracle.getAdapterBalanceForAsset(alice, address(unreg));
         assertEq(amount, EXP_UNREG_TOTAL, "unregistered bare reserve still summed by balance methods");
     }
 
-    function test_getOracleBalances_oneEntryPerReserve() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+    function test_getAdapterBalances_oneEntryPerReserve() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getAdapterBalances(alice);
         assertEq(assets.length, 3, "alice has three distinct underlyings");
         assertEq(_amountFor(assets, amounts, address(usdc)), EXP_USDC_TOTAL);
         assertEq(_amountFor(assets, amounts, address(gho)), EXP_GHO_TOTAL);
@@ -224,17 +225,17 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         }
     }
 
-    function test_getOracleBalances_dedupesWhenTwoStakeTokensShareReserve() public {
+    function test_getAdapterBalances_dedupesWhenTwoStakeTokensShareReserve() public {
         MockUmbrellaStakeToken stkwaUsdc2 = new MockUmbrellaStakeToken(address(waUsdc), 1e18, "stkwaUSDC2.v1");
         MockUmbrellaRewardsController c = new MockUmbrellaRewardsController();
         c.addStakeToken(address(stkwaUsdc));
         c.addStakeToken(address(stkwaUsdc2));
-        AaveUmbrellaBalanceOracle o = new AaveUmbrellaBalanceOracle(address(c), address(balances));
+        AaveUmbrellaBalanceAdapter o = new AaveUmbrellaBalanceAdapter(address(c), address(balances));
         stkwaUsdc.setBalance(alice, 1000e6); // → 1155e6 USDC
         stkwaUsdc2.setBalance(alice, 100e6); // → 100e6 * 1.05 = 105e6 USDC
         c.setRewards(address(stkwaUsdc), alice, _arr1(address(aUsdc)), _amt1(EXP_USDC_REWARD));
 
-        (address[] memory assets, uint256[] memory amounts,) = o.getOracleBalances(alice);
+        (address[] memory assets, uint256[] memory amounts,) = o.getAdapterBalances(alice);
         assertEq(assets.length, 1, "shared reserve collapses to one entry");
         assertEq(assets[0], address(usdc));
         assertEq(amounts[0], EXP_USDC_STAKED + 105e6 + EXP_USDC_REWARD, "summed across both stake tokens");
@@ -242,8 +243,8 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
 
     // ─── position emission / identity ───────────────────────────────────────────
 
-    function test_getOraclePositions_emitsStakingAndRewardsLegsWithIdentity() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+    function test_getAdapterPositions_emitsStakingAndRewardsLegsWithIdentity() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(alice, address(0));
         // USDC Staking + USDC Rewards + GHO Staking + GHO Rewards = 4 (UNREG skipped, unregistered).
         assertEq(positions.length, 4, "expected 4 legs across the two registered reserves");
 
@@ -254,7 +255,7 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         for (uint256 i; i < positions.length; ++i) {
             INAVCalculator.PositionBalance memory p = positions[i];
             assertEq(p.protocolId, ProtocolIds.AAVE_V3_UMBRELLA, "protocolId == aave-v3-umbrella");
-            assertEq(p.balanceOracle, address(oracle), "balanceOracle == adapter");
+            assertEq(p.balanceAdapter, address(oracle), "balanceAdapter == adapter");
             assertFalse(p.isDebt, "umbrella legs are never debt");
 
             if (p.balanceAsset.asset == address(usdc) && p.positionKind == PositionKind.Staking) {
@@ -279,8 +280,8 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         assertTrue(ghoStaking && ghoRewards, "missing a GHO leg");
     }
 
-    function test_getOraclePositions_skipsUnregisteredReserve() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+    function test_getAdapterPositions_skipsUnregisteredReserve() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(alice, address(0));
         for (uint256 i; i < positions.length; ++i) {
             assertTrue(
                 positions[i].balanceAsset.asset != address(unreg), "unregistered reserve must not emit a position"
@@ -288,17 +289,17 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         }
     }
 
-    function test_getOraclePositions_skipsZeroRewardLeg() public view {
+    function test_getAdapterPositions_skipsZeroRewardLeg() public view {
         // bob has staked GHO but no rewards → exactly one (Staking) leg, no Rewards leg.
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(bob, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(bob, address(0));
         assertEq(positions.length, 1, "no-reward holder should emit only the Staking leg");
         assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Staking));
         assertEq(positions[0].balanceAsset.asset, address(gho));
         assertEq(positions[0].amount, EXP_GHO_STAKED);
     }
 
-    function test_getOraclePositions_assetFilter_restrictsToReserve() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(gho));
+    function test_getAdapterPositions_assetFilter_restrictsToReserve() public view {
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(alice, address(gho));
         assertEq(positions.length, 2, "GHO filter -> Staking + Rewards only");
         for (uint256 i; i < positions.length; ++i) {
             assertEq(positions[i].balanceAsset.asset, address(gho));

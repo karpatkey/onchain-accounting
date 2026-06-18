@@ -901,7 +901,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Applies each meta-adapter's `metaInstances` config to NAVCalculator (ADR 0010). This is how the
     ///         NAV calculator is told which instances of a protocol to query — e.g. the Morpho-vault universe.
-    /// @dev Runs after registration (setMetaInstances requires the adapter to be registered) and within the same
+    /// @dev Runs after registration (addMetaInstances requires the adapter to be registered) and within the same
     ///      `admin` prank that holds MANAGER. Adapters with no `metaInstances` config are skipped.
     function _configureMetaInstances() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {

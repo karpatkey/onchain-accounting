@@ -15,7 +15,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title MorphoMarketsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho Blue markets, routed through a real NAVCalculator that holds
-///         the configured marketId set (setMetaInstances). Uses the apxUSD/apyUSD market at a pinned block where
+///         the configured marketId set (addMetaInstances). Uses the apxUSD/apyUSD market at a pinned block where
 ///         the account holds all three legs (supply + borrow + collateral), and asserts parity with the
 ///         per-market MorphoMarket adapter.
 contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {

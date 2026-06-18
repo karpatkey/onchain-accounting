@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryStaderWithdrawalQueueLiveBalances
@@ -11,7 +11,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         registry) on the dev fork and prints each holder's WETH leg. Used to capture the values in this folder's
 ///         README and to cross-check against a portfolio tracker.
 /// @dev The position is denominated in WETH (the position is ETH owed by the manager once ETHx is burned). WETH must
-///      be registered on the NAV for getOraclePositions to emit the leg (deploy.sh registers the WETH/USD feed). Point
+///      be registered on the NAV for getAdapterPositions to emit the leg (deploy.sh registers the WETH/USD feed). Point
 ///      this at the dev anvil RPC where deploy.sh stood up a NAV proxy:
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/stader/query-live-balances.s.sol:QueryStaderWithdrawalQueueLiveBalances \
@@ -30,22 +30,22 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        StaderWithdrawalQueueBalanceOracle oracle =
-            new StaderWithdrawalQueueBalanceOracle(USER_WITHDRAWAL_MANAGER, WETH, nav);
+        StaderWithdrawalQueueBalanceAdapter oracle =
+            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
 
         _print(oracle, "PENDING (1 un-finalized)", PENDING);
         _print(oracle, "FINALIZED (1 finalized)", FINALIZED);
         _print(oracle, "MULTI (2 requests summed)", MULTI);
     }
 
-    function _print(StaderWithdrawalQueueBalanceOracle oracle, string memory label, address holder) internal view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(holder, WETH);
+    function _print(StaderWithdrawalQueueBalanceAdapter oracle, string memory label, address holder) internal view {
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(holder, WETH);
         console2.log("=== Stader WQ holder:", label);
         console2.log("  address:  ", holder);
         console2.log("  ETH owed: ", amount);
         console2.log("  isDebt:   ", isDebt);
 
-        INAVCalculator.PositionBalance[] memory p = oracle.getOraclePositions(holder, address(0));
+        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(holder, address(0));
         console2.log("  legs:     ", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("  ---");

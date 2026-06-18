@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployAaveInstancesMeta (development)
 /// @notice Deploys one Aave instances meta-adapter (V2 or V3) on the local anvil fork, registers it on
-///         NAVCalculator (addBalanceOracle) and sets its active instance set (setMetaInstances). The instance
+///         NAVCalculator (addBalanceAdapter) and sets its active instance set (addMetaInstances). The instance
 ///         coordinate is each instance's ProtocolDataProvider address widened to bytes32, exactly as
 ///         AaveV3InstancesMeta/AaveV2InstancesMeta._instancePositions decodes it via _toAddress. Registering a
 ///         meta-adapter requires BOTH calls — the meta-adapter equivalent of script/deploy/06_Configure.s.sol.
@@ -26,7 +26,7 @@ contract DeployAaveInstancesMeta is Script {
         address[] memory dataProviders = vm.envAddress("DEV_DATA_PROVIDERS", ",");
 
         // DataProvider addresses widen to the bytes32 instance coordinate exactly as
-        // MetaBalanceOracle._toAddress reverses it: address(uint160(uint256(instance))).
+        // MetaBalanceAdapter._toAddress reverses it: address(uint160(uint256(instance))).
         bytes32[] memory instances = new bytes32[](dataProviders.length);
         for (uint256 i = 0; i < dataProviders.length; i++) {
             instances[i] = bytes32(uint256(uint160(dataProviders[i])));
@@ -44,8 +44,7 @@ contract DeployAaveInstancesMeta is Script {
         }
 
         INAVCalculator nav = INAVCalculator(navProxy);
-        nav.addBalanceOracle(adapter);
-        nav.setMetaInstances(adapter, instances);
+        nav.addMetaBalanceAdapter(adapter, instances);
 
         vm.stopBroadcast();
 

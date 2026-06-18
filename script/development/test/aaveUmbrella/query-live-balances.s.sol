@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryAaveUmbrellaLiveBalances
@@ -16,7 +16,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/aaveUmbrella/query-live-balances.s.sol:QueryAaveUmbrellaLiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
-///      For a registry-controlled dump at an exact archive block, read getOraclePositions in the fork test
+///      For a registry-controlled dump at an exact archive block, read getAdapterPositions in the fork test
 ///      (test/balances/protocols/fork/AaveUmbrella.fork.t.sol), which deploys its own Balances harness.
 contract QueryAaveUmbrellaLiveBalances is Script {
     address constant REWARDS_CONTROLLER = 0x4655Ce3D625a63d30bA704087E52B4C31E38188B;
@@ -28,7 +28,7 @@ contract QueryAaveUmbrellaLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        AaveUmbrellaBalanceOracle oracle = new AaveUmbrellaBalanceOracle(REWARDS_CONTROLLER, nav);
+        AaveUmbrellaBalanceAdapter oracle = new AaveUmbrellaBalanceAdapter(REWARDS_CONTROLLER, nav);
 
         _dump(oracle, "STK_WA_WETH_HOLDER (all four)", STK_WA_WETH_HOLDER);
         _dump(oracle, "STK_GHO_HOLDER", STK_GHO_HOLDER);
@@ -36,9 +36,9 @@ contract QueryAaveUmbrellaLiveBalances is Script {
         _dump(oracle, "STK_WA_USDT_HOLDER", STK_WA_USDT_HOLDER);
     }
 
-    function _dump(AaveUmbrellaBalanceOracle oracle, string memory label, address holder) internal view {
+    function _dump(AaveUmbrellaBalanceAdapter oracle, string memory label, address holder) internal view {
         console2.log("=== holder:", label);
-        INAVCalculator.PositionBalance[] memory p = oracle.getOraclePositions(holder, address(0));
+        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(holder, address(0));
         console2.log("legs:", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("---");

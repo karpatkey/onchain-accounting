@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626Wrap.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QuerySghoLiveBalances
@@ -22,14 +22,14 @@ contract QuerySghoLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        ERC4626WrapBalanceOracle oracle = new ERC4626WrapBalanceOracle(SGHO, nav);
+        ERC4626WrapBalanceAdapter oracle = new ERC4626WrapBalanceAdapter(SGHO, nav);
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(HOLDER, GHO);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(HOLDER, GHO);
         console2.log("=== sGHO holder:", HOLDER);
         console2.log("  GHO value:", amount);
         console2.log("  isDebt:   ", isDebt);
 
-        INAVCalculator.PositionBalance[] memory p = oracle.getOraclePositions(HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory p = oracle.getAdapterPositions(HOLDER, address(0));
         console2.log("  legs:     ", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("  ---");

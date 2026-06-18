@@ -143,7 +143,7 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 }
 
-/// @title LidoWithdrawalQueueBalanceOracleForkTest_Fresh
+/// @title LidoWithdrawalQueueBalanceAdapterForkTest_Fresh
 /// @notice Fresh dual-holder pin at the verification block (augments the original suite above; does not replace it).
 /// @dev Captured 2026-06-11 at block 25_294_574 — see `script/development/test/lidoWithdrawalQueue/README.md`.
 ///      Queue state at the block: lastRequestId 127194, lastFinalizedRequestId 127171, lastCheckpointIndex 1123.
@@ -154,7 +154,7 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 ///        (equals amountOfStETH here; no negative rebase). The divergent (haircut) case is covered with mocks in the
 ///        unit test. The finalized request can be claimed by its owner at any time after this block — the pin keeps
 ///        it reproducible.
-contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBase {
+contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBase {
     address public constant WITHDRAWAL_QUEUE = 0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1;
     address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
@@ -166,7 +166,7 @@ contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBas
     address public constant SECONDARY = 0x2DE923BEE124514939ACa4f8f057e11Ff8d44F2b;
     uint256 public constant SECONDARY_EXPECTED_ETH = 54_619_912_948_304_940_018;
 
-    LidoWithdrawalQueueBalanceOracle public oracle;
+    LidoWithdrawalQueueBalanceAdapter public oracle;
 
     function setUp() public override {
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
@@ -175,7 +175,7 @@ contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBas
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        oracle = new LidoWithdrawalQueueBalanceOracle(WITHDRAWAL_QUEUE, NATIVE_ETH, address(balances));
+        oracle = new LidoWithdrawalQueueBalanceAdapter(WITHDRAWAL_QUEUE, NATIVE_ETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -187,16 +187,16 @@ contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBas
     // ---- PRIMARY: two pending requests, amountOfStETH branch + multi-request summing ----
 
     function test_primary_pendingMultiRequest_balance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(PRIMARY, NATIVE_ETH);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(PRIMARY, NATIVE_ETH);
         assertEq(amount, PRIMARY_EXPECTED_ETH, "Sum of amountOfStETH across two pending requests");
         assertFalse(isDebt);
     }
 
     function test_primary_pendingMultiRequest_position() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(PRIMARY, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(PRIMARY, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(oracle));
         assertEq(positions[0].amount, PRIMARY_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
@@ -207,13 +207,13 @@ contract LidoWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBas
     // ---- SECONDARY: one finalized-unclaimed request, getClaimableEther branch ----
 
     function test_secondary_finalized_balance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SECONDARY, NATIVE_ETH);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(SECONDARY, NATIVE_ETH);
         assertEq(amount, SECONDARY_EXPECTED_ETH, "getClaimableEther for the finalized request");
         assertFalse(isDebt);
     }
 
     function test_secondary_finalized_position() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SECONDARY, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(SECONDARY, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(positions[0].amount, SECONDARY_EXPECTED_ETH);

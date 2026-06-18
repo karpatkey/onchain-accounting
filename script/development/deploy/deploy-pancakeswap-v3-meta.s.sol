@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployPancakeSwapV3Meta (development)
 /// @notice Deploys the PancakeSwap V3 pools meta-adapter on the local anvil fork, registers it on
-///         NAVCalculator (addBalanceOracle) and sets its active pool instance set (setMetaInstances).
+///         NAVCalculator (addBalanceAdapter) and sets its active pool instance set (addMetaInstances).
 ///         This is the meta-adapter equivalent of the per-pool deploy helpers removed in the ADR-0010
 ///         refactor: registering a meta-adapter requires BOTH calls (see script/deploy/06_Configure.s.sol).
 /// @dev Reads context from env vars set by the wrapper shell script:
@@ -23,7 +23,7 @@ contract DeployPancakeSwapV3Meta is Script {
         string memory protocolName = vm.envString("DEV_PROTOCOL_NAME");
         address[] memory pools = vm.envAddress("DEV_POOLS", ",");
 
-        // Pool addresses widen to the bytes32 instance coordinate exactly as MetaBalanceOracle._toAddress
+        // Pool addresses widen to the bytes32 instance coordinate exactly as MetaBalanceAdapter._toAddress
         // reverses it: address(uint160(uint256(instance))). Left-pad the address into bytes32.
         bytes32[] memory instances = new bytes32[](pools.length);
         for (uint256 i = 0; i < pools.length; i++) {
@@ -36,8 +36,7 @@ contract DeployPancakeSwapV3Meta is Script {
             new PancakeSwapV3PoolsMetaBalanceAdapter(npm, protocolName, navProxy);
 
         INAVCalculator nav = INAVCalculator(navProxy);
-        nav.addBalanceOracle(address(adapter));
-        nav.setMetaInstances(address(adapter), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
 
         vm.stopBroadcast();
 

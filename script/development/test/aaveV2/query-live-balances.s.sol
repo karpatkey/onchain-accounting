@@ -16,7 +16,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/aaveV2/query-live-balances.s.sol:QueryAaveV2LiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
-///      For a registry-free dump at an exact archive block, read getOraclePositionsForInstances in the fork test
+///      For a registry-free dump at an exact archive block, read getAdapterPositionsForInstances in the fork test
 ///      (test/balances/protocols/fork/AaveV2InstancesMeta.fork.t.sol), which deploys its own Balances harness.
 contract QueryAaveV2LiveBalances is Script {
     address constant DATA_PROVIDER = 0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d; // Aave V2 ProtocolDataProvider
@@ -41,7 +41,7 @@ contract QueryAaveV2LiveBalances is Script {
         address holder
     ) internal view {
         console2.log("=== holder:", label);
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(holder, instances, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(holder, instances, address(0));
         console2.log("legs:", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("---");

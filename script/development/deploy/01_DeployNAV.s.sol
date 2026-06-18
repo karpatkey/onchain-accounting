@@ -47,7 +47,7 @@ contract DeployNAV is Script {
 
         vm.stopBroadcast();
 
-        address defaultOracle = nav.erc20DefaultOracle();
+        address defaultAdapter = nav.erc20DefaultAdapter();
 
         console2.log("native symbol:    ", nativeSymbol);
         console2.log("sequencer feed:   ", sequencerFeed);
@@ -56,7 +56,7 @@ contract DeployNAV is Script {
         console2.log("admin/manager:    ", admin);
         console2.log("NAV impl:         ", address(impl));
         console2.log("NAV proxy:        ", address(proxy));
-        console2.log("ERC20DefaultOracle:", defaultOracle);
+        console2.log("ERC20DefaultAdapter:", defaultAdapter);
 
         // Marker line that deploy.sh greps to capture addresses without parsing the full log.
         console2.log(
@@ -66,7 +66,7 @@ contract DeployNAV is Script {
                 " ",
                 vm.toString(address(proxy)),
                 " ",
-                vm.toString(defaultOracle)
+                vm.toString(defaultAdapter)
             )
         );
     }

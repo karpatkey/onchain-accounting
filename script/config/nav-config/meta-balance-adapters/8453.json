@@ -1,0 +1,68 @@
+{
+  "AaveV3InstancesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Base, disabled below.",
+    "instances": [
+      "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad"
+    ]
+  },
+  "MorphoMarketsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
+    "instancesRaw": [
+      "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
+      "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+      "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
+      "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea"
+    ]
+  },
+  "BalancerV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC pool legs, disabled below.",
+    "instances": [
+      "0x7AB124EC4029316c2A42F713828ddf2a192B36db"
+    ]
+  },
+  "BalancerV3GaugesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC gauge legs, disabled below.",
+    "instances": [
+      "0x70DB188E5953f67a4B16979a2ceA26248b315401"
+    ]
+  },
+  "FluidFTokensMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
+    "instances": [
+      "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169",
+      "0x9272D6153133175175Bc276512B2336BE3931CE9",
+      "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5",
+      "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631"
+    ]
+  },
+  "CompoundV3CometsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
+    "instances": [
+      "0x784efeB622244d2348d4F2522f8860B96fbEcE89",
+      "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
+      "0xb125E6687d4313864e53df431d5425969c15Eb2F",
+      "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
+      "0x46e6b214b524310239732D51387075E0e70970bf"
+    ]
+  },
+  "AuraRewardsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
+    "instances": [
+      "0x28a002a98F4DA7A7B541b5e4d7a42E0F64E4aeF1"
+    ]
+  },
+  "PancakeSwapV3PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = abi.encode(NonfungiblePositionManager, tokenId) per NFT position. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+    "instances": [
+      "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
+    ]
+  }
+}

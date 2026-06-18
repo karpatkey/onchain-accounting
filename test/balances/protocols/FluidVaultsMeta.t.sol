@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -57,18 +57,19 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
     function test_fanOut_collateralAndBorrow() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 4);
 
         // vaultA Collateral (wstETH)
@@ -98,13 +99,13 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         FluidVaultsMetaBalanceAdapter m2 = new FluidVaultsMetaBalanceAdapter(address(r2), "Fluid", address(nav));
         bytes32[] memory one = new bytes32[](1);
         one[0] = bytes32(uint256(uint160(address(vaultA))));
-        assertEq(m2.getOraclePositionsForInstances(alice, one, address(0)).length, 0);
+        assertEq(m2.getAdapterPositionsForInstances(alice, one, address(0)).length, 0);
     }
 
     function test_assetFilter() public view {
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(usdc));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(usdc));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(usdc));
         assertTrue(p[0].isDebt);
@@ -114,7 +115,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         nav.unregisterAssetHelper(address(usdc));
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
         assertEq(p.length, 1, "only the registered collateral leg survives");
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
@@ -123,7 +124,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));
         ins[1] = _instances()[1];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 2, "bad vault isolated, vaultB legs returned");
     }
 

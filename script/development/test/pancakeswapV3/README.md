@@ -2,14 +2,14 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol` — the immutable `PancakeSwapV3PoolsMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every PancakeSwap V3 pool, with the active pool set governed on NAVCalculator via `setMetaInstances`. Constructor: `(positionManager, protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(npm, tokenId)`; label = `NFT #<tokenId>`).
+`src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol` — the immutable `PancakeSwapV3PoolsMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every PancakeSwap V3 pool, with the active pool set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(positionManager, protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(npm, tokenId)`; label = `NFT #<tokenId>`).
 
 ### Inheritance + per-chain scope (Phase 0)
 
 - **Inheritance:** `PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter`. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork sharing every relevant view, so the subclass carries only **two overrides**:
   - `_slot0(pool)` — the **entire correctness surface**. PancakeSwap declares `slot0().feeProtocol` as `uint32` (Uniswap's `uint8`); Solidity 0.8's strict ABI decoder reverts on a `uint8` read whenever the high bits are set, which is the case on every active PCS pool. The override reads `slot0()` through a local `IPancakeV3Pool` interface so the `uint32` field decodes. `_slot0` is read once per pool (before the NFT loop) and feeds `getAmountsForLiquidity`, so a meaningful test needs an **active (liquidity > 0)** position.
   - `_protocolId()` — returns `ProtocolIds.PANCAKESWAP_V3` (the parent's was an inherited constant `uniswap-v3`; see §10). All other behaviour — NFT discovery, principal/fee math, NAV filtering — is the byte-for-byte same code path the Uniswap V3 fork test exercises, **verified by inheritance** (PR #43).
-- **Per-chain scope:** PancakeSwap deploys V3 via CREATE2, so the NonfungiblePositionManager (`0x46A15B0b27311cedF172AB29E4f4766fbE7F4364`) and factory (`0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865`) — and therefore the pool bytecode and `slot0` ABI — are **byte-identical on every chain**. The adapter has **zero per-chain code branches**; only the constructor `navCalculator` and the `setMetaInstances` pool list differ per deployment. Confirmed live: NPM + factory identical and `feeProtocol = 222825800 (> 255)` on Ethereum, Base, and Arbitrum (same value per fee tier). Optimism and Gnosis have **no** PCS V3 (no NPM code) so the adapter is never configured there. A single mainnet fork test is therefore sufficient for the chain-divergent code.
+- **Per-chain scope:** PancakeSwap deploys V3 via CREATE2, so the NonfungiblePositionManager (`0x46A15B0b27311cedF172AB29E4f4766fbE7F4364`) and factory (`0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865`) — and therefore the pool bytecode and `slot0` ABI — are **byte-identical on every chain**. The adapter has **zero per-chain code branches**; only the constructor `navCalculator` and the `addMetaBalanceAdapter` pool list differ per deployment. Confirmed live: NPM + factory identical and `feeProtocol = 222825800 (> 255)` on Ethereum, Base, and Arbitrum (same value per fee tier). Optimism and Gnosis have **no** PCS V3 (no NPM code) so the adapter is never configured there. A single mainnet fork test is therefore sufficient for the chain-divergent code.
 - **Math branches:** the `_slot0` override is exercised on the meaningful path by an in-range NFT (principal on both tokens + fee delta on both). Above-range, below-range, settled-`tokensOwed`, foreign-pool filter, and the 256-NFT iteration bound are all inherited and covered by the Uniswap V3 case (§2). **Coverage gap (documented, not covered):** farmed positions are staked into MasterChefV3 (`0x556B9306565093C855AEA9AE92A594704c2Cd59e`) and owned by it, not the user, so `NPM.tokenOfOwnerByIndex(account)` never sees them — the adapter misses farmed LP and pending CAKE entirely. Closing this requires a dedicated MasterChefV3 farm adapter (deferred).
 
 ## 2. Existing fork test coverage
@@ -49,7 +49,7 @@ Mirrors Uniswap v3-periphery's `PositionValue` exactly (with `FullMath.mulDiv` �
 
 | Holder | Address | Rationale |
 |---|---|---|
-| `ACTIVE_LP` | `0x783C3255340f8Ba524452A9BE5d12a77e9Ce1F53` | Holds an active in-range WETH/USDT 0.05% position (NFT #22279). One NFT exercises the full leg set the override touches: Supply on both tokens + Fees on both tokens. (The same wallet also *farms* NFT #22272 via MasterChefV3 — the coverage gap in §1/§10.) |
+| `ACTIVE_LP` | `0x783C3255340f8Ba524452A9BE5d12a77e9Ce1F53` | Holds an active in-range WETH/USDT 0.05% position (NFT #22279). One NFT exercises the full leg set the override touches: Supplied on both tokens + Fees on both tokens. (The same wallet also *farms* NFT #22272 via MasterChefV3 — the coverage gap in §1/§10.) |
 
 ### Setup
 
@@ -81,24 +81,24 @@ Sanity values consumed by the §4 math. The pool's NFTs churn owners (this walle
 |---|---|
 | `case-active-holder-mainnet.json` | Per-NFT machine-readable evidence pack with state, branch, and expected amounts |
 | `query-live-balances.s.sol` | Forge script that forks Ethereum at a given block and prints the per-leg breakdown — used for ad-hoc cross-checks against the PancakeSwap UI / Debank |
-| `script/development/deploy/deploy-pancakeswap-v3-meta.sh` | Meta-based dev-anvil deploy helper: deploys the adapter + `addBalanceOracle` + `setMetaInstances` (the ADR-0010 equivalent of the removed per-pool helpers) |
+| `script/development/deploy/deploy-pancakeswap-v3-meta.sh` | Meta-based dev-anvil deploy helper: deploys the adapter + `addMetaBalanceAdapter(adapter, instances)` (atomic register + seed, the ADR-0010 equivalent of the removed per-pool helpers) |
 
 ## 7. Expected balances
 
-Values captured at the fork block in §5. Unlike the closed-form Uniswap V2 case, the test does **not** hardcode `EXPECTED_*` constants — it asserts the Supply principal equals the protocol's own settlement (§8) and that both tokens are non-zero; the amounts below are the captured reference.
+Values captured at the fork block in §5. Unlike the closed-form Uniswap V2 case, the test does **not** hardcode `EXPECTED_*` constants — it asserts the Supplied principal equals the protocol's own settlement (§8) and that both tokens are non-zero; the amounts below are the captured reference.
 
 ### 7a. Per-leg detail (every emission the adapter makes)
 
 | Holder | Pool | NFT | Leg | Token | Amount (raw) | Amount (humanised) |
 |---|---|---|---|---|---|---|
-| ACTIVE_LP | WETH/USDT 0.05% | #22279 | Supply | WETH | `272975132653695808` | 0.272975 WETH |
-| ACTIVE_LP | WETH/USDT 0.05% | #22279 | Supply | USDT | `238885630` | 238.885630 USDT |
+| ACTIVE_LP | WETH/USDT 0.05% | #22279 | Supplied | WETH | `272975132653695808` | 0.272975 WETH |
+| ACTIVE_LP | WETH/USDT 0.05% | #22279 | Supplied | USDT | `238885630` | 238.885630 USDT |
 | ACTIVE_LP | WETH/USDT 0.05% | #22279 | Fees | WETH | `187131191867546` | 0.000187 WETH |
 | ACTIVE_LP | WETH/USDT 0.05% | #22279 | Fees | USDT | `326144` | 0.326144 USDT |
 
-The `Supply` legs come from `getAmountsForLiquidity(...)` (§4); the `Fees` legs from `mulDiv(feeGrowthInside − feeGrowthInsideLast, L, 2^128) + tokensOwed` (§4).
+The `Supplied` legs come from `getAmountsForLiquidity(...)` (§4); the `Fees` legs from `mulDiv(feeGrowthInside − feeGrowthInsideLast, L, 2^128) + tokensOwed` (§4).
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
+### 7b. Per-asset summary (the per-token NAV contribution)
 
 Sum of the per-leg rows above for the same `(holder, pool, token)`.
 
@@ -115,7 +115,7 @@ Sum of the per-leg rows above for the same `(holder, pool, token)`.
 |---|---|---|---|
 | `test_groundTruth_principalEqualsNpmSettlement` | discovered dynamically (#22279 at this block) | in-range | `NPM.decreaseLiquidity(L)` |
 
-The test reads the adapter's Supply principal, then impersonates the owner with `vm.prank`, discovers the holder's active WETH/USDT 0.05% NFTs (`balanceOf` + `tokenOfOwnerByIndex`), and calls `decreaseLiquidity` at full liquidity — whose return `(amount0, amount1)` is the principal the protocol would release. The adapter's principal must equal that **exactly** (both use the same round-down `SqrtPriceMath`).
+The test reads the adapter's Supplied principal, then discovers the holder's active WETH/USDT 0.05% NFTs (`balanceOf` + `tokenOfOwnerByIndex`) and, impersonating the owner with `vm.prank` per NFT, calls `decreaseLiquidity` at full liquidity — whose return `(amount0, amount1)` is the principal the protocol would release. The adapter's principal must equal that **exactly** (both use the same round-down `SqrtPriceMath`).
 
 This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity` simulation: same NPM contract, same forked archive state at the same block, same EVM — no possibility of derivation drift. **Why no Python here:** the Uniswap V2 evidence pack uses a Python re-derivation because its dilution math is a small closed-form formula; the V3 family (Uniswap V3 and this) instead uses on-chain settlement, which is a stronger ground truth and avoids reimplementing the tick/fixed-point math. This case follows the Uniswap V3 precedent exactly.
 

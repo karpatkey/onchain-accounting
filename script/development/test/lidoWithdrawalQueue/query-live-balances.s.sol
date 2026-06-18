@@ -3,15 +3,15 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {LidoWithdrawalQueueBalanceOracle} from "src/balances/protocols/LidoWithdrawalQueue.sol";
+import {LidoWithdrawalQueueBalanceAdapter} from "src/balances/protocols/LidoWithdrawalQueue.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryLidoWithdrawalQueueLiveBalances
-/// @notice Ad-hoc evidence helper: deploys the Lido Withdrawal Queue oracle pointed at a deployed NAV (the asset
+/// @notice Ad-hoc evidence helper: deploys the Lido Withdrawal Queue adapter pointed at a deployed NAV (the asset
 ///         registry) on the dev fork and prints each holder's ETH leg. Used to capture the values in this folder's
 ///         README and to cross-check against a portfolio tracker.
 /// @dev The position is denominated in native ETH (the asset Lido pays on claim). Native ETH must be registered on
-///      the NAV for getOraclePositions to emit the leg (01_DeployNAV registers the native ETH/USD feed). Point this
+///      the NAV for getAdapterPositions to emit the leg (01_DeployNAV registers the native ETH/USD feed). Point this
 ///      at the dev anvil RPC where deploy.sh stood up a NAV proxy:
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/lidoWithdrawalQueue/query-live-balances.s.sol:QueryLidoWithdrawalQueueLiveBalances \
@@ -28,21 +28,21 @@ contract QueryLidoWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        LidoWithdrawalQueueBalanceOracle oracle =
-            new LidoWithdrawalQueueBalanceOracle(WITHDRAWAL_QUEUE, NATIVE_ETH, nav);
+        LidoWithdrawalQueueBalanceAdapter adapter =
+            new LidoWithdrawalQueueBalanceAdapter(WITHDRAWAL_QUEUE, NATIVE_ETH, nav);
 
-        _print(oracle, "PRIMARY (2 pending)", PRIMARY);
-        _print(oracle, "SECONDARY (1 finalized)", SECONDARY);
+        _print(adapter, "PRIMARY (2 pending)", PRIMARY);
+        _print(adapter, "SECONDARY (1 finalized)", SECONDARY);
     }
 
-    function _print(LidoWithdrawalQueueBalanceOracle oracle, string memory label, address holder) internal view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(holder, NATIVE_ETH);
+    function _print(LidoWithdrawalQueueBalanceAdapter adapter, string memory label, address holder) internal view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
         console2.log("=== Lido WQ holder:", label);
         console2.log("  address:  ", holder);
         console2.log("  ETH owed: ", amount);
         console2.log("  isDebt:   ", isDebt);
 
-        INAVCalculator.PositionBalance[] memory p = oracle.getOraclePositions(holder, address(0));
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         console2.log("  legs:     ", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("  ---");

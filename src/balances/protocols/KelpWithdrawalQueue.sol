@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -9,18 +9,18 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Kelp DAO rsETH Withdrawal Queue Balance Oracle
+/// @title Kelp DAO rsETH Withdrawal Queue Balance Adapter
 /// @author kpk
 /// @notice Reports assets owed to an account from open requests in Kelp DAO's rsETH exit queue
 ///         (the `LRTWithdrawalManager`).
 /// @dev When a user unstakes rsETH, the rsETH is burned and a per-(asset, user) withdrawal request
 ///      is recorded denominated in the LST the user chose to receive (stETH, ETHx or native ETH).
-///      Until claimed, that value is invisible to wallet/receipt-token oracles — it only lives as a
-///      pending claim on the manager. This oracle surfaces it: for every asset Kelp supports it sums
+///      Until claimed, that value is invisible to wallet/receipt-token adapters — it only lives as a
+///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it sums
 ///      the account's open requests (`expectedAssetAmount`) and emits one credit position per asset.
 ///      The supported-asset set is discovered at runtime from `lrtConfig().getSupportedAssetList()`
 ///      rather than hardcoded, mirroring the dynamic-discovery pattern in `AaveUmbrella.sol`.
-contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Constants
     //
@@ -111,18 +111,18 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         return _supportedAssets();
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -133,8 +133,8 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         return "rsETH withdrawal queue";
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -148,8 +148,8 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         return (_owedForAsset(asset, account), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -182,11 +182,11 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account's open exit-queue requests.
     /// @dev One credit position per Kelp-supported asset with a non-zero owed amount that is also
     ///      registered in NAVCalculator. Requests for assets not registered in NAV are dropped.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -220,7 +220,7 @@ contract KelpWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDes
 
             tmp[count++] = INAVCalculator.PositionBalance({
                 balanceAsset: underlying,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: owed,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,

@@ -8,7 +8,7 @@ Chainlink publishes a reference data directory that exposes every feed's `heartb
 https://reference-data-directory.vercel.app/feeds-{network}.json?proxyAddress={address}
 ```
 
-The `?proxyAddress=` query parameter filters the result to the single entry matching that proxy address. It works as client-side filtering in a browser; programmatic HTTP clients receive the full unfiltered JSON.
+The `?proxyAddress=` query parameter is meant to narrow the result to the single entry matching that proxy address. The server ignores it, though, and always returns the full feed array — the Chainlink docs site applies the filter client-side in the browser. Programmatic HTTP clients therefore receive the full unfiltered JSON and must filter on `proxyAddress` themselves.
 
 ## Network identifiers
 
@@ -25,7 +25,7 @@ The `?proxyAddress=` query parameter filters the result to the single entry matc
 ```jsonc
 {
   "name": "USDC / USD",
-  "proxyAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", // what assets.json references
+  "proxyAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", // recorded as an asset's priceFeeds[].address in nav-config/assets-and-price-feeds/<chainId>.json
   "contractAddress": "0x...",                                    // underlying OCR2 aggregator
   "heartbeat": 86400,                                            // seconds
   "threshold": 0.25,                                             // deviation % that also triggers update
@@ -35,9 +35,11 @@ The `?proxyAddress=` query parameter filters the result to the single entry matc
 }
 ```
 
-> **Note:** `contractAddress` is the OCR2 aggregator (implementation). Consumer contracts — and `assets.json` — should always use `proxyAddress`.
+> **Note:** `contractAddress` is the OCR2 aggregator (implementation). Consumer contracts — and an asset's `priceFeeds[].address` in `nav-config/assets-and-price-feeds/<chainId>.json` — should always use `proxyAddress`.
 
-## Example links for feeds in assets.json
+## Example links for feeds used by `nav-config/assets-and-price-feeds/<chainId>.json`
+
+The direct Chainlink feeds below (ETH/USD, USDC/USD, etc.) are recorded as an asset's `priceFeeds[].address`. The LST exchange-rate feeds (stETH/ETH, weETH/eETH, wstETH/ETH, cbETH/ETH, rsETH/ETH) are **not** — those assets use a `Custom` feed, and the proxy address below is wired in as a constructor arg of the Custom adapter in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (e.g. `stEthToEthChainlinkOracle`). Either way, the heartbeat you record in config must match the feed's published `heartbeat`.
 
 ### Ethereum Mainnet
 

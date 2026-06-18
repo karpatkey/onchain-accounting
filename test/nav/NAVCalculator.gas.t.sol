@@ -5,6 +5,7 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title NAVCalculator Gas Benchmark Tests
 /// @notice Tests gas usage for various scenarios to establish performance baselines
@@ -37,28 +38,28 @@ contract NAVCalculatorGasTest is SuperTest {
         vm.stopPrank();
     }
 
-    /// @notice Helper to setup multiple oracles
-    function setupMultipleOracles(uint256 oracleCount, address asset)
+    /// @notice Helper to setup multiple adapters
+    function setupMultipleAdapters(uint256 adapterCount, address asset)
         internal
-        returns (Mock_CustomBalanceOracle[] memory)
+        returns (Mock_CustomBalanceAdapter[] memory)
     {
-        Mock_CustomBalanceOracle[] memory oracles = new Mock_CustomBalanceOracle[](oracleCount);
+        Mock_CustomBalanceAdapter[] memory adapters = new Mock_CustomBalanceAdapter[](adapterCount);
 
         vm.startPrank(navCalculatorManager);
-        for (uint256 i = 0; i < oracleCount; i++) {
-            Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-            // Note: setBalances is not needed for NAVCalculator tests - the mock oracle doesn't use it
-            // oracle.setBalances(IBalances(address(nav))); // NAVCalculator doesn't implement IBalances
+        for (uint256 i = 0; i < adapterCount; i++) {
+            Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+            // Note: setBalances is not needed for NAVCalculator tests - the mock adapter doesn't use it
+            // adapter.setBalances(IBalances(address(nav))); // NAVCalculator doesn't implement IBalances
             address[] memory assets = new address[](1);
             assets[0] = asset;
-            oracle.setUnderlyingAssetsSupported(assets);
-            oracle.setBalance(asset, safe, (i + 1) * 100 * 10 ** usdc.decimals(), false);
-            nav.addBalanceOracle(address(oracle));
-            oracles[i] = oracle;
+            adapter.setUnderlyingAssetsSupported(assets);
+            adapter.setBalance(asset, safe, (i + 1) * 100 * 10 ** usdc.decimals(), false);
+            nav.addBalanceAdapters(aa(address(adapter)));
+            adapters[i] = adapter;
         }
         vm.stopPrank();
 
-        return oracles;
+        return adapters;
     }
 
     // ============================================
@@ -84,7 +85,7 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(navResult.value, 0, "NAV should be positive");
         assertGt(gasUsed, 0, "gas measured");
 
-        // Gas usage documentation: For 50 assets with ERC20DefaultOracle, gas usage is typically 50M-100M
+        // Gas usage documentation: For 50 assets with ERC20DefaultAdapter, gas usage is typically 50M-100M
         // Actual gas usage will be visible in test output for benchmarking purposes
     }
 
@@ -107,7 +108,7 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(navResult.value, 0, "NAV should be positive");
         assertGt(gasUsed, 0, "gas measured");
 
-        // Gas usage documentation: For 100 assets with ERC20DefaultOracle, gas usage is typically 200M-300M
+        // Gas usage documentation: For 100 assets with ERC20DefaultAdapter, gas usage is typically 200M-300M
         // Actual gas usage will be visible in test output for benchmarking purposes
     }
 
@@ -139,29 +140,29 @@ contract NAVCalculatorGasTest is SuperTest {
     }
 
     // ============================================
-    // Oracle Count Impact
+    // Adapter Count Impact
     // ============================================
 
-    /// @notice Test gas impact of oracle count
-    function test_gasBenchmark_oracleCountImpact() public {
+    /// @notice Test gas impact of adapter count
+    function test_gasBenchmark_adapterCountImpact() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Test with 1 oracle (just ERC20DefaultOracle)
+        // Test with 1 adapter (just ERC20DefaultAdapter)
         uint256 gasBefore1 = gasleft();
         INAVCalculator.NAV memory nav1 = nav.getAccountNav(safe, address(0));
         uint256 gas1 = gasBefore1 - gasleft();
         assertGt(gas1, 0, "gas measured");
 
-        // Add 5 more oracles
-        setupMultipleOracles(5, address(usdc));
+        // Add 5 more adapters
+        setupMultipleAdapters(5, address(usdc));
 
         uint256 gasBefore5 = gasleft();
         INAVCalculator.NAV memory nav5 = nav.getAccountNav(safe, address(0));
         uint256 gas5 = gasBefore5 - gasleft();
         assertGt(gas5, 0, "gas measured");
 
-        // Add 10 more oracles (total 15)
-        setupMultipleOracles(10, address(usdc));
+        // Add 10 more adapters (total 15)
+        setupMultipleAdapters(10, address(usdc));
 
         uint256 gasBefore15 = gasleft();
         INAVCalculator.NAV memory nav15 = nav.getAccountNav(safe, address(0));
@@ -169,20 +170,20 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(gas15, 0, "gas measured");
 
         // Verify correctness
-        assertGt(nav5.value, nav1.value, "More oracles should report more positions");
-        assertGt(nav15.value, nav5.value, "Even more oracles should report even more positions");
+        assertGt(nav5.value, nav1.value, "More adapters should report more positions");
+        assertGt(nav15.value, nav5.value, "Even more adapters should report even more positions");
 
         // Gas usage documentation:
-        // - 1 oracle gas: visible in test output
-        // - 5 oracles gas: visible in test output
-        // - 15 oracles gas: visible in test output
-        // Gas should increase with oracle count, but not linearly (some optimization)
+        // - 1 adapter gas: visible in test output
+        // - 5 adapters gas: visible in test output
+        // - 15 adapters gas: visible in test output
+        // Gas should increase with adapter count, but not linearly (some optimization)
     }
 
-    /// @notice Test gas with 20 oracles
-    function test_gasBenchmark_oracleCount_20Oracles() public {
+    /// @notice Test gas with 20 adapters
+    function test_gasBenchmark_adapterCount_20Adapters() public {
         usdc.mint(safe, 10 ** usdc.decimals());
-        setupMultipleOracles(20, address(usdc));
+        setupMultipleAdapters(20, address(usdc));
 
         uint256 gasBefore = gasleft();
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
@@ -190,7 +191,7 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(navResult.value, 0, "NAV should be positive");
         assertGt(gasUsed, 0, "gas measured");
 
-        // Gas usage documentation: With 20 oracles, gas usage will be visible in test output
+        // Gas usage documentation: With 20 adapters, gas usage will be visible in test output
     }
 
     // ============================================
@@ -221,13 +222,13 @@ contract NAVCalculatorGasTest is SuperTest {
         address testAsset = registered[0].asset; // Use first generated asset (which has balance)
 
         // Make some prices stale - use a Chainlink oracle with short heartbeat
-        Mock_PriceOracleChainlink staleOracle = new Mock_PriceOracleChainlink("Stale", 1e8, 8);
+        Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1e8, 8);
 
         vm.startPrank(navCalculatorManager);
-        // Add stale oracle then remove the original so only staleOracle remains.
+        // Add stale adapter then remove the original so only staleAdapter remains.
         // Use heartbeat of 1 second so it becomes stale quickly.
         address originalFeed = nav.getPriceFeedAt(testAsset, 0).priceFeed;
-        nav.addPriceFeed(testAsset, address(staleOracle), IPrices.PriceType.Chainlink, 1);
+        nav.addPriceFeed(testAsset, address(staleAdapter), IPrices.PriceType.Chainlink, 1);
         nav.removePriceFeed(testAsset, originalFeed);
         vm.stopPrank();
 
@@ -299,7 +300,7 @@ contract NAVCalculatorGasTest is SuperTest {
     }
 
     // ============================================
-    // Gas Per Asset/Oracle Analysis
+    // Gas Per Asset/Adapter Analysis
     // ============================================
 
     /// @notice Analyze gas per asset
@@ -338,28 +339,28 @@ contract NAVCalculatorGasTest is SuperTest {
         }
     }
 
-    /// @notice Analyze gas per oracle
-    function test_gasBenchmark_gasPerOracle() public {
+    /// @notice Analyze gas per adapter
+    function test_gasBenchmark_gasPerAdapter() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        uint256[] memory oracleCounts = new uint256[](4);
-        oracleCounts[0] = 1;
-        oracleCounts[1] = 5;
-        oracleCounts[2] = 10;
-        oracleCounts[3] = 15;
+        uint256[] memory adapterCounts = new uint256[](4);
+        adapterCounts[0] = 1;
+        adapterCounts[1] = 5;
+        adapterCounts[2] = 10;
+        adapterCounts[3] = 15;
 
-        for (uint256 i = 0; i < oracleCounts.length; i++) {
-            // Setup oracles
+        for (uint256 i = 0; i < adapterCounts.length; i++) {
+            // Setup adapters
             if (i > 0) {
-                setupMultipleOracles(oracleCounts[i] - 1, address(usdc)); // -1 because ERC20DefaultOracle already exists
+                setupMultipleAdapters(adapterCounts[i] - 1, address(usdc)); // -1 because ERC20DefaultAdapter already exists
             }
 
             uint256 gasBefore = gasleft();
             nav.getAccountNav(safe, address(0));
             uint256 gasUsed = gasBefore - gasleft();
 
-            uint256 gasPerOracle = gasUsed / oracleCounts[i];
-            assertGt(gasPerOracle, 0, "gas per oracle measured");
+            uint256 gasPerAdapter = gasUsed / adapterCounts[i];
+            assertGt(gasPerAdapter, 0, "gas per adapter measured");
         }
     }
 }

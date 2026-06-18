@@ -2,18 +2,18 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title StaderWithdrawalQueueBalanceOracleForkTest
+/// @title StaderWithdrawalQueueBalanceAdapterForkTest
 /// @notice Fork tests against Stader's UserWithdrawalManager on mainnet.
 /// @dev TEST_USER below is a real account with one open (pre-finalization) request id 8056 at FORK_BLOCK,
 ///      with `ethExpected = 37.440331321957283515` ETH and `ethFinalized = 0` (so the adapter reports ethExpected).
-contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
+contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
     uint256 public constant FORK_BLOCK = 25_015_000;
@@ -21,13 +21,13 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
     address public constant TEST_USER = 0x5066bc626C292d02ACFef8d002905877148Cb37A;
     uint256 public constant TEST_USER_EXPECTED_ETH = 37_440_331_321_957_283_515;
 
-    StaderWithdrawalQueueBalanceOracle public oracle;
+    StaderWithdrawalQueueBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
-        balances = _deployBalancesForOracle(MAINNET_WETH);
-        oracle = new StaderWithdrawalQueueBalanceOracle(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        balances = _deployBalancesForAdapter(MAINNET_WETH);
+        adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -38,23 +38,24 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
 
     // ---- Real position ----
 
-    function test_getOracleBalanceForAsset_realHolder() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(TEST_USER, MAINNET_WETH);
+    function test_getAdapterBalanceForAsset_realHolder() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(TEST_USER, MAINNET_WETH);
         assertEq(amount, TEST_USER_EXPECTED_ETH, "Should match ethExpected for the open request");
         assertFalse(isDebt);
     }
 
-    function test_getOraclePositions_realHolder() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, address(0));
+    function test_getAdapterPositions_realHolder() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(TEST_USER, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
     }
 
-    function test_getOracleBalances_realHolder() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(TEST_USER);
+    function test_getAdapterBalances_realHolder() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
+            adapter.getAdapterBalances(TEST_USER);
         assertEq(assets.length, 1);
         assertEq(assets[0], MAINNET_WETH);
         assertEq(amounts[0], TEST_USER_EXPECTED_ETH);
@@ -63,47 +64,47 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
 
     // ---- Empty / negative cases ----
 
-    function test_getOracleBalanceForAsset_zeroAddress() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(address(0), MAINNET_WETH);
+    function test_getAdapterBalanceForAsset_zeroAddress() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(0), MAINNET_WETH);
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_unknownHolder() public view {
+    function test_getAdapterBalanceForAsset_unknownHolder() public view {
         address eoa = address(uint160(uint256(keccak256("noQueueHolder"))));
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(eoa, MAINNET_WETH);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(eoa, MAINNET_WETH);
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(TEST_USER, MAINNET_USDC);
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(TEST_USER, MAINNET_USDC);
         assertEq(amount, 0);
     }
 
-    function test_getOraclePositions_assetFilterMismatch() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(TEST_USER, MAINNET_USDC);
+    function test_getAdapterPositions_assetFilterMismatch() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(TEST_USER, MAINNET_USDC);
         assertEq(positions.length, 0);
     }
 
     // ---- Interface ----
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_underlyingAssetsSupported() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], MAINNET_WETH);
     }
 
     function test_immutableAddresses() public view {
-        assertEq(address(oracle.USER_WITHDRAWAL_MANAGER()), USER_WITHDRAWAL_MANAGER);
-        assertEq(oracle.UNDERLYING_TOKEN(), MAINNET_WETH);
+        assertEq(address(adapter.USER_WITHDRAWAL_MANAGER()), USER_WITHDRAWAL_MANAGER);
+        assertEq(adapter.UNDERLYING_TOKEN(), MAINNET_WETH);
     }
 }
 
-/// @title StaderWithdrawalQueueBalanceOracleForkTest_Fresh
+/// @title StaderWithdrawalQueueBalanceAdapterForkTest_Fresh
 /// @notice Fresh dual-holder pin at the verification block (augments the original suite above; does not replace it).
 /// @dev Captured 2026-06-16 at block 25_330_819 — see `script/development/test/stader/README.md`.
 ///      Queue state at the block: nextRequestId 8219, nextRequestIdToFinalize 8215 (so ids ≤ 8214 are finalized,
@@ -115,7 +116,7 @@ contract StaderWithdrawalQueueBalanceOracleForkTest is BalanceAdapterTestBase {
 ///        rate-converted estimate. The finalized request can be claimed by its owner at any time after this block —
 ///        the pin keeps it reproducible. Multi-request summing and the claimed-skip path are covered with mocks in
 ///        the unit test (a single holder spanning both branches doesn't exist on-chain at this block).
-contract StaderWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestBase {
+contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
     uint256 public constant FORK_BLOCK = 25_330_819;
@@ -137,13 +138,13 @@ contract StaderWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestB
     uint256 public constant MULTI_REQ_8197_ETH = 218_116_272_938_735;
     uint256 public constant MULTI_EXPECTED_ETH = MULTI_REQ_8196_ETH + MULTI_REQ_8197_ETH;
 
-    StaderWithdrawalQueueBalanceOracle public oracle;
+    StaderWithdrawalQueueBalanceAdapter public oracle;
 
     function setUp() public override {
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
-        balances = _deployBalancesForOracle(MAINNET_WETH);
-        oracle = new StaderWithdrawalQueueBalanceOracle(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        balances = _deployBalancesForAdapter(MAINNET_WETH);
+        oracle = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -155,16 +156,16 @@ contract StaderWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestB
     // ---- PENDING: ethFinalized == 0 → ethExpected branch ----
 
     function test_pending_usesEthExpected_balance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(PENDING_HOLDER, MAINNET_WETH);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(PENDING_HOLDER, MAINNET_WETH);
         assertEq(amount, PENDING_EXPECTED_ETH, "Un-finalized request must be valued via ethExpected");
         assertFalse(isDebt);
     }
 
     function test_pending_usesEthExpected_position() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(PENDING_HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(PENDING_HOLDER, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(oracle));
         assertEq(positions[0].amount, PENDING_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
@@ -175,14 +176,14 @@ contract StaderWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestB
     // ---- FINALIZED: ethFinalized > 0 → preferred over ethExpected ----
 
     function test_finalized_prefersEthFinalized_balance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(FINALIZED_HOLDER, MAINNET_WETH);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(FINALIZED_HOLDER, MAINNET_WETH);
         assertEq(amount, FINALIZED_EXPECTED_ETH, "Finalized request must be valued via ethFinalized");
         assertTrue(amount < FINALIZED_ETH_EXPECTED_FIELD, "ethFinalized is strictly below ethExpected here");
         assertFalse(isDebt);
     }
 
     function test_finalized_prefersEthFinalized_position() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(FINALIZED_HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(FINALIZED_HOLDER, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
         assertEq(positions[0].amount, FINALIZED_EXPECTED_ETH);
@@ -193,13 +194,13 @@ contract StaderWithdrawalQueueBalanceOracleForkTest_Fresh is BalanceAdapterTestB
     // ---- MULTI: two open requests summed into one aggregated leg (real on-chain summing) ----
 
     function test_multi_sumsAcrossRequests_balance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(MULTI_HOLDER, MAINNET_WETH);
+        (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(MULTI_HOLDER, MAINNET_WETH);
         assertEq(amount, MULTI_EXPECTED_ETH, "Sum of both open requests (8196 + 8197)");
         assertFalse(isDebt);
     }
 
     function test_multi_sumsAcrossRequests_position() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(MULTI_HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(MULTI_HOLDER, address(0));
         // Still ONE aggregated leg, not one-per-request — the adapter sums; the per-request split is display-only.
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);

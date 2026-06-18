@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -12,10 +12,11 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title AaveV3InstancesMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving Aave V3 instances, routed through a real NAVCalculator that holds the
-///         configured DataProvider set (setMetaInstances). Uses the mainnet Core instance and an account with
+///         configured DataProvider set (seeded via addMetaBalanceAdapter). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
 contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
@@ -33,14 +34,14 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    AaveV3InstancesMetaBalanceAdapter public oracle;
-    SparkLendBalanceOracle public perInstance;
+    AaveV3InstancesMetaBalanceAdapter public adapter;
+    SparkLendBalanceAdapter public perInstance;
 
     function setUp() public override {
         super.setUp(); // forks mainnet at DEFAULT_FORK_BLOCK
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
@@ -74,14 +75,13 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        oracle = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        perInstance = new SparkLendBalanceOracle(CORE_DATA_PROVIDER, address(nav));
+        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        perInstance = new SparkLendBalanceAdapter(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceOracle(address(oracle));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(uint160(CORE_DATA_PROVIDER)));
-        nav.setMetaInstances(address(oracle), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
     }
 
@@ -91,18 +91,18 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_positions_nonEmpty_attributed() public view {
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(USER, _ids(), address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(USER, _ids(), address(0));
         assertGt(pos.length, 0, "account has Core positions");
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].balanceOracle, address(oracle));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertGt(pos[i].amount, 0);
         }
     }
 
     function test_parity_withPerInstanceAdapter() public view {
         INAVCalculator.PositionBalance[] memory metaPos =
-            oracle.getOraclePositionsForInstances(USER, _ids(), address(0));
-        INAVCalculator.PositionBalance[] memory refPos = perInstance.getOraclePositions(USER, address(0));
+            adapter.getAdapterPositionsForInstances(USER, _ids(), address(0));
+        INAVCalculator.PositionBalance[] memory refPos = perInstance.getAdapterPositions(USER, address(0));
 
         assertEq(metaPos.length, refPos.length, "same leg count as per-instance adapter");
         // Same reserve iteration order; identical VALUE fields. positionId is the same Pool address for both, but
@@ -118,11 +118,11 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_navRouting_surfacesPositions() public view {
         INAVCalculator.PositionBalance[] memory expected =
-            oracle.getOraclePositionsForInstances(USER, _ids(), address(0));
+            adapter.getAdapterPositionsForInstances(USER, _ids(), address(0));
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(USER, address(0));
         uint256 metaCount = 0;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].balanceOracle == address(oracle)) metaCount++;
+            if (positions[i].balanceAdapter == address(adapter)) metaCount++;
         }
         assertEq(metaCount, expected.length, "NAV surfaces every meta-adapter leg");
         assertGt(metaCount, 0);
@@ -132,7 +132,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_assetFilter_singleAsset() public view {
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(USER, _ids(), USDC);
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(USER, _ids(), USDC);
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAsset.asset, USDC);
         }

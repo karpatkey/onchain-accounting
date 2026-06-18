@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -15,16 +15,18 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 ///         across *any* pool — the AMM-supplied LP only, no gauge staking and no rewards (those are the separate
 ///         BalancerV3GaugesMetaBalanceAdapter). The instance coordinate is the pool (BPT) address, widened to bytes32.
 ///         Emits one `Supply` leg per registered underlying pool token. See ADR 0010.
-contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
+contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using BalancerV3PoolLib for IStablePool;
 
     bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_POOL;
 
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pool (BPT) address. Emits one Supply leg per registered pool token for the account's
     ///      wallet BPT share. Skips unregistered tokens and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
@@ -56,7 +58,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
             temp[count++] = INAVCalculator.PositionBalance({
                 balanceAsset: assetInfo,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
@@ -72,12 +74,12 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         return IStablePool(_toAddress(instance)).poolTokens();
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata positionId) external view override returns (string memory) {
         address pool = abi.decode(positionId, (address));
         try IERC20Metadata(pool).name() returns (string memory n) {

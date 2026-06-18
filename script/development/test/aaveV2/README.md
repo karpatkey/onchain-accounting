@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveV2InstancesMeta.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set governed on NAVCalculator via `setMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
+`src/balances/protocols/AaveV2InstancesMeta.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -11,7 +11,7 @@
   - `_getProtocolId()` — returns `ProtocolIds.AAVE_V2_LENDING` (`keccak256("aave-v2-lending")`) instead of the parent's `aave-v3-lending`.
   - `_marketId(pool)` — resolves the display market id via the V2 `LendingPool.getAddressesProvider().getMarketId()` (V3 uses the pool's `ADDRESSES_PROVIDER()`). Returns "Aave genesis market".
   All other behaviour — reserve enumeration, the aToken/variable-debt math, `Collateral`/`Supplied`/`Borrowed` kind selection, NAV filtering — is the byte-for-byte same code path the Aave V3 instances meta exercises, **verified by inheritance**.
-- **Per-chain scope:** Aave V2 (the "genesis market") is configured **only on Ethereum mainnet** — a single instance, ProtocolDataProvider `0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d`, LendingPool `0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9`. `chains/1.json` is the only chain config with `AaveV2InstancesMeta`. No per-chain code branches; a single mainnet fork test is sufficient.
+- **Per-chain scope:** Aave V2 (the "genesis market") is configured **only on Ethereum mainnet** — a single instance, ProtocolDataProvider `0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d`, LendingPool `0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9`. `script/config/nav-config/meta-balance-adapters/1.json` is the only chain config with `AaveV2InstancesMeta`. No per-chain code branches; a single mainnet fork test is sufficient.
 - **Math branches:** per reserve, `getUserReserveData` yields `(aTokenBalance, _, variableDebt, …, usageAsCollateral)`. The adapter emits up to two legs:
   - `aTokenBalance > 0` → `Collateral` if `usageAsCollateral` else `Supplied` (credit, `isDebt = false`).
   - `variableDebt > 0` → `Borrowed` (`isDebt = true`).
@@ -31,7 +31,7 @@ All kept as regression nets.
 - Assertion that `protocolId == aave-v2-lending` (the `_getProtocolId` override).
 - Assertion of the correct `PositionKind` per leg (`Collateral` / `Borrowed`) cross-checked against the reserve's `usageAsCollateral` / debt.
 - A **multi-leg holder** (stETH collateral + USDC variable debt) exercising `Collateral` + `Borrowed` across two reserves in one account.
-- The `describePosition` label `"USDC position (Aave genesis market)"` (the `_marketId` override; see §below and the naming note).
+- The `describePosition` label `"USDC position (Aave genesis market)"` (the `_marketId` override; see the naming note in §9).
 
 ## 4. Adapter formula recap
 
@@ -78,7 +78,7 @@ The aToken balance already includes accrued interest (rebasing aToken), so it is
 |---|---|
 | `case-supply-borrow-holders-mainnet.json` | Machine-readable evidence pack: holders, per-leg amounts, kinds, ground-truth, naming note |
 | `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints the per-leg breakdown — used for ad-hoc cross-checks against a portfolio tracker |
-| `script/development/deploy/deploy-aave-instances-meta.sh` | Meta-based dev-anvil deploy helper: deploys + `addBalanceOracle` + `setMetaInstances` for the Aave V3 (Core+Lido) and V2 metas (the ADR-0010 equivalent of the removed per-instance helpers) |
+| `script/development/deploy/deploy-aave-instances-meta.sh` | Meta-based dev-anvil deploy helper: deploys + `addMetaBalanceAdapter(adapter, instances)` (atomic register + seed) for the Aave V3 (Core+Lido) and V2 metas (the ADR-0010 equivalent of the removed per-instance helpers) |
 
 ## 7. Expected balances
 
@@ -93,7 +93,7 @@ Captured at the fork block in §5. The test does **not** hardcode `EXPECTED_*` c
 | STETH_SUPPLY_USDC_BORROW | USDC | Borrowed | USDC | `7319144` | 7.319144 USDC |
 | STETH_SUPPLY_USDC_BORROW | USDC | Collateral | USDC | `1` | 0.000001 USDC (dust) |
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
+### 7b. Per-asset summary (legs aggregated per token)
 
 | Holder | Token | Total credit (raw) | Total debt (raw) | isDebt |
 |---|---|---|---|---|

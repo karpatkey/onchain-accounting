@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {AaveV3SafetyModuleBalanceOracle, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveV3SafetyModuleBalanceAdapter, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -13,13 +13,13 @@ interface IStakeTokenExtended is IStakeToken {
     function distributionEnd() external view returns (uint256);
 }
 
-/// @title AaveV3SafetyModuleBalanceOracleForkTest
-/// @notice Fork tests for the hardcoded multi-token AaveV3SafetyModuleBalanceOracle against real Mainnet contracts.
+/// @title AaveV3SafetyModuleBalanceAdapterForkTest
+/// @notice Fork tests for the hardcoded multi-token AaveV3SafetyModuleBalanceAdapter against real Mainnet contracts.
 /// @dev The adapter pins the SM stake token addresses as constants; these fork tests verify each is reachable on a
 ///      real fork and that the balance / position math matches the underlying contracts. Real holders for each
 ///      stake token were sourced from recent Transfer-event logs on Mainnet and verified to have non-zero current
 ///      balances at the pinned block.
-contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
+contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
     // Hardcoded SM stake-token addresses (must match the constants in the adapter).
     IStakeTokenExtended public constant STK_AAVE = IStakeTokenExtended(0x4da27a545c0c5B758a6BA100e3a049001de870f5);
     IStakeTokenExtended public constant STK_ABPT = IStakeTokenExtended(0xa1116930326D21fB917d5A27F1E9943A9595fb47);
@@ -34,7 +34,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
     uint256 public constant FORK_BLOCK = 25_000_000; // recent Mainnet, all four stake tokens active
 
-    AaveV3SafetyModuleBalanceOracle public oracle;
+    AaveV3SafetyModuleBalanceAdapter public adapter;
 
     // positionDetail prefix must match the constructor arg used in setUp.
     string private constant _PD_PREFIX = "{\"p\":\"t\"";
@@ -52,7 +52,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         _setupFork();
-        _setupOracle();
+        _setupAdapter();
     }
 
     function _setupFork() internal override {
@@ -61,14 +61,14 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
     }
 
-    function _setupOracle() internal {
+    function _setupAdapter() internal {
         address[] memory assets = new address[](4);
         assets[0] = AAVE;
         assets[1] = GHO;
         assets[2] = ABPT;
         assets[3] = ABPT_V2;
-        balances = _deployBalancesForOracle(assets);
-        oracle = new AaveV3SafetyModuleBalanceOracle(address(balances));
+        balances = _deployBalancesForAdapter(assets);
+        adapter = new AaveV3SafetyModuleBalanceAdapter(address(balances));
     }
 
     // ─── Sanity ───────────────────────────────────────────────────────────────
@@ -82,14 +82,14 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
     function test_underlyingAssetsSupported_dedupesAAVEAcrossStakeTokens() public view {
         // All four stake tokens reward in AAVE; AAVE appears once in the deduplicated list.
-        address[] memory list = oracle.underlyingAssetsSupported();
+        address[] memory list = adapter.underlyingAssetsSupported();
         assertEq(list.length, 4);
     }
 
     // ─── Per-stake-token: balance math matches the underlying contract ────────
 
     function test_stkGho_stakedTokenBalance_matchesPreviewRedeem() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(STK_GHO_HOLDER, GHO);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, GHO);
         uint256 expected = STK_GHO.previewRedeem(STK_GHO.balanceOf(STK_GHO_HOLDER));
         assertEq(amount, expected, "GHO leg should match previewRedeem(balanceOf)");
         assertGt(amount, 0);
@@ -101,7 +101,7 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         // all four stake tokens. Even when the holder has zero balance in some of them, a stake token can
         // still report nonzero `getTotalRewardsBalance` if the asset index is non-trivial — so we sum all
         // four rewards rather than just the ones with non-zero stake.
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(STK_AAVE_HOLDER, AAVE);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(STK_AAVE_HOLDER, AAVE);
 
         uint256 stakedClaim = STK_AAVE.previewRedeem(STK_AAVE.balanceOf(STK_AAVE_HOLDER));
         uint256 totalRewards = STK_AAVE.getTotalRewardsBalance(STK_AAVE_HOLDER)
@@ -113,14 +113,14 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
     }
 
     function test_stkAbpt_stakedTokenBalance_matchesPreviewRedeem() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(STK_ABPT_HOLDER, ABPT);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(STK_ABPT_HOLDER, ABPT);
         uint256 expected = STK_ABPT.previewRedeem(STK_ABPT.balanceOf(STK_ABPT_HOLDER));
         assertEq(amount, expected);
         assertGt(amount, 0);
     }
 
     function test_stkAbptV2_stakedTokenBalance_matchesPreviewRedeem() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(STK_ABPT_V2_HOLDER, ABPT_V2);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(STK_ABPT_V2_HOLDER, ABPT_V2);
         uint256 expected = STK_ABPT_V2.previewRedeem(STK_ABPT_V2.balanceOf(STK_ABPT_V2_HOLDER));
         assertEq(amount, expected);
         assertGt(amount, 0);
@@ -128,16 +128,16 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
 
     // ─── Asset filtering and position attribution ─────────────────────────────
 
-    function test_getOraclePositions_attributesPerStakeToken() public view {
+    function test_getAdapterPositions_attributesPerStakeToken() public view {
         // STK_GHO_HOLDER's stkGHO position must appear with a non-zero amount and the right metadata.
         // (The reward-leg position is conditional on `getTotalRewardsBalance > 0` — covered separately.)
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, address(0));
 
         bool sawGhoStakedFromGho;
         for (uint256 i; i < positions.length; ++i) {
             address asset = positions[i].balanceAsset.asset;
             assertGt(positions[i].amount, 0);
-            assertEq(positions[i].balanceOracle, address(oracle));
+            assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             if (asset == GHO && positions[i].positionKind == PositionKind.Staking) {
                 sawGhoStakedFromGho = true;
@@ -146,8 +146,8 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         assertTrue(sawGhoStakedFromGho, "missing GHO/stkGHO position");
     }
 
-    function test_getOraclePositions_assetFilter_onlyEmitsMatchingAsset() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(STK_GHO_HOLDER, GHO);
+    function test_getAdapterPositions_assetFilter_onlyEmitsMatchingAsset() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, GHO);
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, GHO);
     }
@@ -162,9 +162,9 @@ contract AaveV3SafetyModuleBalanceOracleForkTest is BalanceAdapterTestBase {
         if (distributionEnd <= block.timestamp) return; // distribution already concluded; nothing to test
 
         vm.warp(distributionEnd);
-        (uint256 atEnd,) = oracle.getOracleBalanceForAsset(STK_GHO_HOLDER, AAVE);
+        (uint256 atEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
         vm.warp(distributionEnd + 100 days);
-        (uint256 afterEnd,) = oracle.getOracleBalanceForAsset(STK_GHO_HOLDER, AAVE);
+        (uint256 afterEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
         assertEq(afterEnd, atEnd, "no further reward accrual past distribution end");
     }
 

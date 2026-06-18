@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -50,8 +50,8 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
     // ─── interface ────────────────────────────────────────────────────────────
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
@@ -69,7 +69,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 100e18); // 10% of pool
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
 
         assertEq(pos.length, 2);
         // 10% of 500 USDC = 50 USDC
@@ -90,11 +90,11 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 100e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertGt(pos.length, 0);
         assertEq(pos[0].protocolId, ProtocolIds.CURVE_POOL);
         assertEq(pos[0].positionId, abi.encode(address(pool)));
-        assertEq(pos[0].balanceOracle, address(meta));
+        assertEq(pos[0].balanceAdapter, address(meta));
     }
 
     function test_selfLp_noWalletBalance_empty() public {
@@ -105,7 +105,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         // no wallet balance set
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertEq(pos.length, 0);
     }
 
@@ -117,7 +117,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 100e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(usdc));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(usdc));
         assertEq(pos.length, 1);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
@@ -132,7 +132,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 100e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertEq(pos.length, 1); // only USDC
         assertEq(pos[0].balanceAsset.asset, address(usdc));
     }
@@ -150,7 +150,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 90e18); // 10%
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertEq(pos.length, 3);
     }
 
@@ -177,7 +177,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
         // Instance coordinate = pool address; pool.lp_token() → lpToken; lpToken.minter() → pool
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
 
         assertEq(pos.length, 2);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
@@ -200,7 +200,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         pool.setWalletBalance(alice, 80e18); // 10%
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(pool)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
 
         assertEq(pos.length, 2);
         assertEq(pos[0].balanceAsset.asset, address(usdc));
@@ -227,7 +227,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(poolA))));
         instances[1] = bytes32(uint256(uint160(address(poolB))));
 
-        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getAdapterPositionsForInstances(alice, instances, address(0));
         assertEq(pos.length, 3); // 2 from poolA + 1 from poolB
     }
 
@@ -242,7 +242,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad instance
         instances[1] = bytes32(uint256(uint160(address(good))));
 
-        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getAdapterPositionsForInstances(alice, instances, address(0));
         assertEq(pos.length, 2); // only good pool's coins
     }
 

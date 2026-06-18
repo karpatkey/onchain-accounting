@@ -33,7 +33,7 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         IERC4626(F_USDC).deposit(50_000e6, user);
         vm.stopPrank();
 
-        balances = _deployBalancesForOracle(USDC);
+        balances = _deployBalancesForAdapter(USDC);
         meta = new FluidFTokensMetaBalanceAdapter("Fluid", address(balances));
     }
 
@@ -43,7 +43,7 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function test_metaBalance() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(user, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(user, _instance(), address(0));
         assertEq(p.length, 1);
         assertApproxEqAbs(p[0].amount, 50_000e6, 1, "approx deposited assets");
         assertEq(p[0].positionId, abi.encode(F_USDC));

@@ -22,39 +22,32 @@ Use this path when a Chainlink USD feed for the asset already exists and is cano
    Cross-reference the `updatedAt` timestamp against recent block times to confirm the heartbeat in practice.
 4. Record the token's contract address on each chain you want to support.
 
-### A.2 Add to `assets.json`
+### A.2 Add to `nav-config/assets-and-price-feeds/<chainId>.json`
 
-Under `tokens.<chainId>.<SYMBOL>`:
+Add a top-level entry keyed by `<SYMBOL>`:
 
 ```json
 "WBTC": {
   "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
-  "type": "Chainlink",
-  "pricefeed": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
-  "heartbeat": 3600
+  "priceFeeds": [
+    {
+      "type": "Chainlink",
+      "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
+      "heartbeat": 3600
+    }
+  ]
 }
 ```
 
 Rules:
-- `type` must be `"Chainlink"`.
-- `pricefeed` is the Chainlink **proxy** address (not the aggregator).
+- Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.
+- `address` is the feed's on-chain address — for Chainlink, the **proxy** (not the aggregator).
 - `heartbeat` is in seconds. Use the value from the feed page.
+- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-price-redundancy.md) and §C).
 
-### A.3 Add to both `_symbolsForChain` lists
+### A.3 No symbol list to edit
 
-There are two independent `_symbolsForChain(chainId)` functions that must both be updated:
-
-1. **`script/manage/RegisterAssets.s.sol`** — controls which assets get registered on-chain via the management TX.
-2. **`test/integration/IntegrationFromConfigBase.fork.sol`** — controls which assets the integration test registers on the fork. Missing a symbol here means the price feed is never deployed in the test and the asset is silently unpriced.
-
-In each, increase the array size by 1 and append the symbol:
-
-```solidity
-string[] memory s = new string[](30);
-// ... existing entries ...
-s[29] = "WBTC";
-return s;
-```
+There is no `_symbolsForChain` list to update anymore. Both `script/manage/RegisterAssets.s.sol` and the integration harness `test/integration/IntegrationFromConfigBase.fork.sol` read symbols directly from `nav-config/assets-and-price-feeds/<chainId>.json` (via `getAssetSymbols`). Adding the asset as a top-level key there is sufficient.
 
 ### A.4 Add constant to `test/ChainlinkPriceFeeds.sol` (if not already present)
 
@@ -68,7 +61,7 @@ Check for an existing entry before adding. The constant is used in fork tests an
 
 ### A.5 Register via deploy script
 
-No new contract to deploy. The `RegisterAssets.s.sol` script reads `assets.json.tokens` and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for each symbol returned by `_symbolsForChain`. Run it as part of the next deployment cycle or management TX.
+No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `nav-config/assets-and-price-feeds/<chainId>.json` (`getAssetSymbols`) and calls `NAVCalculator.registerAsset(token, feed, PriceType.Chainlink, heartbeat)` for the first feed, then `NAVCalculator.addPriceFeed(...)` for the rest. Run it as part of the next deployment cycle or management TX.
 
 To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
 
@@ -84,11 +77,7 @@ Expect `(price > 0, 8, false)`.
 
 ## B. Custom price feed (requires a new contract)
 
-Use this path when **any** of these are true:
-
-- The asset is a yield-bearing wrapper of another asset (e.g., sDAI, sUSDe, sUSDS) and the price is `(rate × underlying/USD)`.
-- The asset is a (re)staking receipt token whose rate is exposed on-chain (cbETH, wstETH, weETH, rETH, rsETH, ezETH).
-- There is no Chainlink USD feed for the asset, but you can derive the price from two existing feeds (use `CrossRate_Price`).
+Use this path when there is no canonical Chainlink USD feed but the price is derivable on-chain — start with the decision check in §B.0.
 
 ---
 
@@ -142,7 +131,7 @@ contract MyAsset_PriceOracle is IPriceFeedCustom {
     address public immutable MY_ASSET;
     uint256 public immutable USD_CHAINLINK_HEARTBEAT;
     uint8 public constant RATIO_DECIMALS = 18; // adjust per protocol's rate precision
-    uint8 private _decimals;
+    uint8 private immutable _decimals;
 
     constructor(
         address myAsset_,
@@ -157,15 +146,38 @@ contract MyAsset_PriceOracle is IPriceFeedCustom {
         _decimals = USD_CHAINLINK_ORACLE.decimals();
     }
 
-    function getLatestPrice() external view returns (uint256 price, bool stale) {
-        (, int256 usdPrice,, uint256 updatedAt,) = USD_CHAINLINK_ORACLE.latestRoundData();
-        if (usdPrice <= 0) return (0, true);
-        if (block.timestamp - updatedAt > USD_CHAINLINK_HEARTBEAT) stale = true;
+    function _compute()
+        private
+        view
+        returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        int256 usdPrice;
+        (roundId, usdPrice, startedAt, updatedAt, answeredInRound) = USD_CHAINLINK_ORACLE.latestRoundData();
+        if (usdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveUpdatedAt >= USD_CHAINLINK_HEARTBEAT) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         uint256 rate = _readRate(); // protocol-specific
-        if (rate == 0) return (0, true);
+        if (rate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         price = uint256(usdPrice) * rate / (10 ** RATIO_DECIMALS);
+    }
+
+    function getLatestPrice() external view returns (uint256 price, bool stale) {
+        (price, stale,,,,) = _compute();
+    }
+
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        uint256 price;
+        bool stale;
+        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
+        answer = stale ? int256(0) : int256(price);
     }
 
     function decimals() external view returns (uint8) { return _decimals; }
@@ -187,6 +199,7 @@ Conventions:
 - **Pin every input as `immutable`** in the constructor. No setters.
 - **Use `OracleArgumentChecks`** for argument validation. Don't roll your own zero-checks.
 - **Return `(0, true)` on any failure path**, never revert. Stale prices propagate into NAV via `NAV.stalePriceAssets`.
+- **Implement `latestRoundData()`** as well as `getLatestPrice()`. `IPriceFeedCustom` requires both; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting underlying-oracle freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable oracle). Computing both from one private `_compute()` helper, as above, keeps them consistent.
 - **`decimals()`** returns the Chainlink feed's decimals (typically 8 for USD pairs). The custom feed's output must match this.
 - **Heartbeat applies to the Chainlink leg only**; the rate provider is on-chain and trusted. If the rate goes negative or zero, treat as stale.
 - **One asset per contract.** Even if two assets share the same recipe, deploy two contracts.
@@ -209,6 +222,7 @@ Cover, with mocked Chainlink + mocked rate provider:
 - **Constructor zero-heartbeat guard**.
 - **`decimals()`** returns the Chainlink feed's decimals.
 - **`underlyingAssetSupported()`** returns the asset address.
+- **`latestRoundData()`** returns the underlying oracle's round data (and `answer == 0` when stale).
 - **`supportsInterface`** returns true for `IPriceFeedCustom` and `IERC165`.
 
 ### B.3.2 Fork test
@@ -226,48 +240,48 @@ Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fo
 
 ## B.4 Wire chain config
 
-File: `script/config/assets.json`. Add an entry under `priceFeeds.<assetSymbol>.<chainId>` (for the custom price oracle constructor args):
+Two files. First, the custom-feed deploy config — `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`, keyed by feed name (top-level; no chainId wrapper):
 
 ```json
-"priceFeeds": {
+{
   "myAsset": {
-    "1": {
-      "enabled": true,
-      "constructor": {
-        "myAsset": "0x...",
-        "rateProvider": "0x...",
-        "usdChainlinkOracle": "0x...",
-        "usdChainlinkHeartbeat": "3600"
-      }
+    "enabled": true,
+    "constructor": {
+      "myAsset": "0x...",
+      "rateProvider": "0x...",
+      "usdChainlinkOracle": "0x...",
+      "usdChainlinkHeartbeat": "3600"
     }
   }
 }
 ```
 
-And add the token entry under `tokens.<chainId>.<symbol>`:
+Second, the asset entry — `script/config/nav-config/assets-and-price-feeds/<chainId>.json`, with a `Custom` feed that references the custom feed by name:
 
 ```json
-"tokens": {
-  "1": {
-    "MYASSET": {
-      "address": "0x...",
-      "type": "Custom",
-      "pricefeed": "0x...(deployed-feed-address)",
-      "heartbeat": 3600
-    }
+{
+  "MYASSET": {
+    "address": "0x...",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "myAsset",
+        "heartbeat": 3600
+      }
+    ]
   }
 }
 ```
 
-Note: the field is `pricefeed` (lowercase), not `oracle`. For Chainlink-only assets (path A), `type` is `"Chainlink"` and `pricefeed` is the Chainlink proxy address — no `priceFeeds` constructor entry needed at all.
+Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (the on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`), whereas `Chainlink`/`Redstone`/`API3` entries carry the feed `"address"` directly. For Chainlink-only assets (path A), use `type: "Chainlink"` with the proxy `address` — no `contracts-deployment-config/custom-price-feeds` entry needed at all.
 
-Add the symbol to `_symbolsForChain(chainId)` in **both** `script/manage/RegisterAssets.s.sol` (production registration) and `test/integration/IntegrationFromConfigBase.fork.sol` (integration test). Also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()` in the integration test, along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See §B.3.2 for where to slot these.
+There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `nav-config/assets-and-price-feeds/<chainId>.json`, so adding the asset there is enough. In the integration harness `test/integration/IntegrationFromConfigBase.fork.sol`, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()` (under the branch for the chains where the feed applies), along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See the §B.6 checklist for the full set of wiring touchpoints.
 
 ---
 
 ## B.5 Deploy and register
 
-Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`, which iterates `assets.json.priceFeeds` and calls `_deployIfEnabled` per entry — your new entry from §4 above will get picked up automatically. The deployed feed address is written back into `chains/<chainId>.json.priceFeeds.<adapterName>.deployed` and (on a Safe-TX-only flow) you copy it into `assets.json.tokens.<chainId>.<symbol>.pricefeed`.
+Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`. The script dispatches per chain (`_deployMainnetPriceAdapters`, `_deployArbitrumPriceAdapters`, etc.), and within each dispatch calls a hardcoded `_deploy<Asset>()` helper gated by `ConfigReader.isAdapterEnabled(vm, chainId, "priceFeeds", "<name>")` — so you must add a `_deploy<Asset>()` function and wire it into the relevant chain's dispatch block (and import the contract) before your entry from §B.4 is picked up. Each helper reads its constructor params via `ConfigReader.readPriceFeedParam` and writes the deployed feed address into `deployments/<chainId>.json .customPriceFeeds.<name>` via `ConfigReader.writeAdapterAddress`. The asset's `Custom` entry then references the feed by `feed: "<name>"`, and `RegisterAssets.s.sol` (below) resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
 After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
 
@@ -282,7 +296,7 @@ This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, 
 Verify:
 
 ```bash
-cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool)" $myAsset --rpc-url $RPC
+cast call $NAV_CALCULATOR "latestPrice(address)(int256,uint8,bool)" $myAsset --rpc-url $RPC
 ```
 
 Expect `(price > 0, decimals, false)` at a fresh block.
@@ -294,9 +308,8 @@ PR checklist:
 - [ ] `forge build` clean
 - [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
 - [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
-- [ ] `assets.json` updated for every chain where the feed applies (`tokens` + `priceFeeds` constructor sections)
-- [ ] `_symbolsForChain` updated in **both** `script/manage/RegisterAssets.s.sol` and `test/integration/IntegrationFromConfigBase.fork.sol`
-- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `IntegrationFromConfigBase.fork.sol`
+- [ ] `nav-config/assets-and-price-feeds/<chainId>.json` updated for every chain where the feed applies (assets with `priceFeeds` arrays) + `contracts-deployment-config/custom-price-feeds/<chainId>.json` constructor sections for any Custom feeds
+- [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `test/integration/IntegrationFromConfigBase.fork.sol`
 - [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`
 - [ ] PR description includes: which asset, which inputs (rate provider + Chainlink feed), expected price range at the test block, any L2-specific considerations
 

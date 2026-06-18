@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -40,7 +40,7 @@ import {BalancerV2PoolLib, IBalancerV2Pool, IBalancerV2Vault} from "./balancer/B
 ///           AURA from extra pools is accumulated into the single AURA leg.
 ///
 ///      positionId = abi.encode(address auraRewards)
-contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
+contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AURA;
     uint256 private constant _MAX_EXTRA = 8;
 
@@ -73,7 +73,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_      Human-readable name (e.g. "Aura").
     /// @param navCalculator_     The NAVCalculator contract for asset-registry access.
     constructor(address booster_, address balancerV2Vault_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(booster_.code.length > 0, "Booster must be a contract");
         BOOSTER = IAuraBooster(booster_);
@@ -101,9 +101,9 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
+    // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -139,7 +139,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                     if (amount == 0) continue;
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: amount,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -167,7 +167,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                     if (!found) continue;
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: v2Amts[i],
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -188,7 +188,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 if (found) {
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: balEarned,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -231,7 +231,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
                 tmp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: info,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: extraEarned,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
@@ -249,7 +249,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
             if (found) {
                 tmp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: info,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: totalAuraFromBal,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
@@ -265,7 +265,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         address auraRewards = _toAddress(instance);
         IStablePool pool = _poolOf(auraRewards);
@@ -308,7 +308,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address auraRewards = abi.decode(pid, (address));

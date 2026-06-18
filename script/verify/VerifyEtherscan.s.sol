@@ -60,30 +60,19 @@ contract VerifyEtherscan is BaseDeployScript {
 
     function _emitVerifyBalanceAdapters() internal view {
         address nav = readDeployedAddress("NAVCalculatorProxy");
-        string[17] memory names = [
-            "AaveV3_USDC",
-            "AaveV3_WETH",
-            "CompoundV3_USDC",
-            "CompoundV3_USDS",
-            "CompoundV3_USDT",
-            "CompoundV3_WBTC",
-            "CompoundV3_WETH",
-            "CompoundV3_wstETH",
-            "CompoundV3_USDCe",
-            "CompoundV3_USDbC",
-            "CompoundV3_AERO",
-            "SparkLend",
-            "SparkLend_USDC",
-            "MorphoBlue_USDC",
-            "DaiDsr",
-            "SkySavingsUsds",
-            "ERC20Default"
-        ];
+        // Drive the list from the deploy config (whatever 04 actually deploys) rather than a hardcoded list that
+        // drifts as adapters change. `_balanceAdapterPathAndArgs` still only knows how to build constructor args for
+        // the adapter types it has been taught; for any deployed adapter it can't (e.g. meta-adapters), emit a loud
+        // notice with the address so the operator verifies it manually instead of it being silently omitted.
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployBalanceAdapters");
         for (uint256 i = 0; i < names.length; i++) {
             address a = _readAdapterDeployed("balanceAdapters", names[i]);
-            if (a == address(0)) continue;
+            if (a == address(0)) continue; // not deployed (yet)
             (string memory path, bytes memory args) = _balanceAdapterPathAndArgs(names[i], nav);
-            if (bytes(path).length == 0) continue; // skip unsupported or missing config
+            if (bytes(path).length == 0) {
+                console2.log("[verify] no constructor-args mapping; verify manually:", names[i], a);
+                continue;
+            }
             _emitVerify(string(abi.encodePacked("balanceAdapters.", names[i])), a, path, _toHex(args));
         }
     }
@@ -115,7 +104,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
-            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceOracle";
+            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceAdapter";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
@@ -135,7 +124,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "DaiDsr")) {
-            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceOracle";
+            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceAdapter";
             address dai = _parseAddr("balanceAdapters", name, "dai", address(0));
             address dsrManager = _parseAddr("balanceAdapters", name, "dsrManager", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
@@ -146,7 +135,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "SkySavingsUsds")) {
-            path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceOracle";
+            path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceAdapter";
             address savingsUsds = _parseAddr("balanceAdapters", name, "savingsUsds", address(0));
             string memory protocol = _readParam("balanceAdapters", name, "protocol");
             string memory positionDetail = _readParam("balanceAdapters", name, "positionDetail");
@@ -156,7 +145,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "ERC20Default") || _startsWith(name, "ERC20Default_")) {
-            path = "src/balances/protocols/ERC20DefaultOracle.sol:ERC20DefaultOracle";
+            path = "src/balances/protocols/ERC20DefaultAdapter.sol:ERC20DefaultAdapter";
             address nav = _navOrDefault(navCalculator, name);
             if (nav == address(0)) return ("", "");
             address[] memory initialAssets = new address[](0);
@@ -171,10 +160,7 @@ contract VerifyEtherscan is BaseDeployScript {
         view
         returns (address)
     {
-        string memory s = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(s).length == 0) return address(0);
-        address a = vm.parseAddress(s);
-        return a;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     function _parseAddr(

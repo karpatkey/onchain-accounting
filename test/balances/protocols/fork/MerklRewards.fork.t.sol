@@ -2,16 +2,16 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
+import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title MerklRewardsBalanceOracleForkTest
-/// @notice Fork tests for `MerklRewardsBalanceOracle`. Validates the adapter integrates cleanly with the real
+/// @title MerklRewardsBalanceAdapterForkTest
+/// @notice Fork tests for `MerklRewardsBalanceAdapter`. Validates the adapter integrates cleanly with the real
 ///         Merkl Distributor on Ethereum mainnet — `getMerkleRoot()` returns non-zero, the public `claimed`
 ///         getter works, invalid proofs revert, and uncached reads return 0. The merkle proof-verification math
 ///         itself is exhaustively tested with synthetic trees in `MerklRewards.t.sol`; capturing a real proof at
 ///         a pinned block is brittle (Merkl rotates roots ~every 8h) and is left as a future enhancement.
-contract MerklRewardsBalanceOracleForkTest is BalanceAdapterTestBase {
+contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @notice Merkl Distributor — same address on every supported EVM chain.
     address public constant MERKL_DISTRIBUTOR = 0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae;
 
@@ -21,12 +21,12 @@ contract MerklRewardsBalanceOracleForkTest is BalanceAdapterTestBase {
     address public owner = makeAddr("merkl-owner");
     address public alice = makeAddr("alice");
 
-    MerklRewardsBalanceOracle public oracle;
+    MerklRewardsBalanceAdapter public adapter;
 
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
-        balances = _deployBalancesForOracle(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
-        oracle = new MerklRewardsBalanceOracle(MERKL_DISTRIBUTOR, address(balances), owner);
+        balances = _deployBalancesForAdapter(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
+        adapter = new MerklRewardsBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), owner);
     }
 
     // ============================================
@@ -57,19 +57,19 @@ contract MerklRewardsBalanceOracleForkTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_adapter_immutableStateMatchesConstructor() public view {
-        assertEq(oracle.DISTRIBUTOR(), MERKL_DISTRIBUTOR);
-        assertEq(address(oracle.NAV_CALCULATOR()), address(balances));
-        assertEq(oracle.owner(), owner);
+        assertEq(adapter.DISTRIBUTOR(), MERKL_DISTRIBUTOR);
+        assertEq(address(adapter.NAV_CALCULATOR()), address(balances));
+        assertEq(adapter.owner(), owner);
     }
 
     function test_adapter_uncachedReadReturnsZero() public view {
-        (uint256 amt, bool isDebt) = oracle.getOracleBalanceForAsset(alice, MAINNET_DAI);
+        (uint256 amt, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, MAINNET_DAI);
         assertEq(amt, 0);
         assertFalse(isDebt);
     }
 
     function test_adapter_emptyPositionsForFreshAccount() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0);
     }
 
@@ -77,9 +77,9 @@ contract MerklRewardsBalanceOracleForkTest is BalanceAdapterTestBase {
         // Build a leaf that is virtually guaranteed not to be in the active tree, then submit it with an
         // empty proof. The adapter should run real proof verification against the real on-chain root and revert.
         bytes32[] memory emptyProof = new bytes32[](0);
-        vm.expectRevert(MerklRewardsBalanceOracle.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         vm.prank(owner);
-        oracle.submitProof(alice, MAINNET_DAI, 1_000_000 ether, emptyProof);
+        adapter.submitProof(alice, MAINNET_DAI, 1_000_000 ether, emptyProof);
     }
 
     function test_adapter_uninitializedRootGuardWithRealDistributor() public view {

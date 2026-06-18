@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title FluidVaultsMetaParityForkTest
 /// @notice Validates the Fluid vaults meta-adapter against the real mainnet wstETH/USDC T1 vault: the on-chain
 ///         `constantsView` token decode + VaultResolver read path of the meta-adapter
-///         (parity over getOraclePositions). Both adapters share one BalancesHarnessForFork.
+///         (parity over getAdapterPositions). Both adapters share one BalancesHarnessForFork.
 contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant VAULT = 0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE; // wstETH/USDC
     address public constant VAULT_RESOLVER = 0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC;
@@ -30,7 +30,7 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList = new address[](2);
         assetsList[0] = WSTETH;
         assetsList[1] = USDC;
-        balances = _deployBalancesForOracle(assetsList);
+        balances = _deployBalancesForAdapter(assetsList);
 
         meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, "Fluid", address(balances));
     }
@@ -57,7 +57,7 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         // Verifies the adapter resolves the vault's tokens via constantsView and aggregates NFT positions
         // without reverting. A holder with positions in this specific vault would assert amounts > 0;
         // this test validates the call path regardless of whether the test address holds a position.
-        meta.getOraclePositionsForInstances(user, _instance(), address(0));
+        meta.getAdapterPositionsForInstances(user, _instance(), address(0));
     }
 
     /// @notice The meta-adapter decodes the real vault's tokens (wstETH collateral, USDC debt) via constantsView.

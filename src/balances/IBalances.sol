@@ -6,14 +6,14 @@ interface IBalances {
     // Type definitions
     //
 
-    enum OracleType {
+    enum AdapterType {
         Default,
         Custom
     }
 
-    struct BalanceOracle {
-        address oracle;
-        OracleType oracleType;
+    struct BalanceAdapter {
+        address adapter;
+        AdapterType adapterType;
         string protocol;
     }
 
@@ -21,71 +21,85 @@ interface IBalances {
     // Events
     //
 
-    /// @notice Event emitted when a balance oracle is added to the global registry.
-    /// @param underlyingAsset Reserved; currently address(0) as oracles are registered globally, not per asset.
-    /// @param oracle The address of the oracle being added.
-    /// @param oracleType The type of the oracle (Default or Custom).
-    event BalanceOracleAdded(address indexed underlyingAsset, address indexed oracle, OracleType oracleType);
+    /// @notice Event emitted when a balance adapter is added to the global registry.
+    /// @param underlyingAsset Reserved; currently address(0) as adapters are registered globally, not per asset.
+    /// @param adapter The address of the adapter being added.
+    /// @param adapterType The type of the adapter (Default or Custom).
+    event BalanceAdapterAdded(address indexed underlyingAsset, address indexed adapter, AdapterType adapterType);
 
-    /// @notice Event emitted when a balance oracle is removed from the global registry.
-    /// @param underlyingAsset Reserved; currently address(0) as oracles are global.
-    /// @param oracle The address of the balance oracle being removed.
-    event BalanceOracleRemoved(address indexed underlyingAsset, address oracle);
+    /// @notice Event emitted when a balance adapter is removed from the global registry.
+    /// @param underlyingAsset Reserved; currently address(0) as adapters are global.
+    /// @param adapter The address of the balance adapter being removed.
+    event BalanceAdapterRemoved(address indexed underlyingAsset, address adapter);
 
     //
     // Errors
     //
 
-    /// @notice Error when the balance oracle is not set.
-    error BalanceOracleNotSet();
+    /// @notice Error when the balance adapter is not set.
+    error BalanceAdapterNotSet();
 
-    /// @notice Error when the balance oracle is not valid
-    error InvalidBalanceOracle();
+    /// @notice Error when the balance adapter is not valid
+    error InvalidBalanceAdapter();
 
-    /// @notice Error when the balance oracle type is not valid
-    error InvalidBalanceOracleType();
+    /// @notice Error when the balance adapter type is not valid
+    error InvalidBalanceAdapterType();
 
-    /// @notice Error when the same balance oracle is already set.
-    error DuplicateBalanceOracle();
+    /// @notice Error when the same balance adapter is already set.
+    error DuplicateBalanceAdapter();
 
-    /// @notice Validates that the oracle implements IBalanceOracleAdapter (reverts with InvalidBalanceOracle if not).
-    /// @param oracle The address of the oracle to check.
-    function checkBalanceOracleSupport(address oracle) external view;
+    /// @notice Error when adding a meta-instance coordinate that is already present (would double-count NAV).
+    error DuplicateMetaInstance();
+
+    /// @notice Error when removing a meta-instance coordinate that is not present in the adapter's set.
+    error MetaInstanceNotFound();
+
+    /// @notice Error when a meta-adapter (implements IMetaBalanceAdapter) is registered via the plain
+    ///         addBalanceAdapters path; meta-adapters must use addMetaBalanceAdapter.
+    error MetaAdapterNotAllowed();
+
+    /// @notice Error when a meta-instance operation targets an adapter that is not a meta-adapter
+    ///         (does not implement IMetaBalanceAdapter).
+    error NotMetaAdapter();
+
+    /// @notice Validates that the adapter implements IBalanceAdapter (reverts with InvalidBalanceAdapter if not).
+    /// @param adapter The address of the adapter to check.
+    function checkBalanceAdapterSupport(address adapter) external view;
 
     //
-    // Global Oracle Registry
+    // Global Adapter Registry
     //
 
-    /// @notice Returns all registered oracles in the global registry
-    /// @return oracles Array of all oracle addresses
-    function getAllOracles() external view returns (address[] memory oracles);
+    /// @notice Returns all registered adapters in the global registry
+    /// @return adapters Array of all adapter addresses
+    function getAllAdapters() external view returns (address[] memory adapters);
 
-    /// @notice Returns the total number of registered oracles
-    /// @return count Total number of oracles
-    function getOracleCount() external view returns (uint256 count);
+    /// @notice Returns the total number of registered adapters
+    /// @return count Total number of adapters
+    function getAdapterCount() external view returns (uint256 count);
 
-    /// @notice Checks if an oracle is registered in the global registry
-    /// @param oracle The oracle address to check
-    /// @return registered True if the oracle is registered
-    function isOracleRegistered(address oracle) external view returns (bool registered);
+    /// @notice Checks if an adapter is registered in the global registry
+    /// @param adapter The adapter address to check
+    /// @return registered True if the adapter is registered
+    function isAdapterRegistered(address adapter) external view returns (bool registered);
 
-    /// @notice Returns the type of a registered oracle
-    /// @param oracle The oracle address
-    /// @return oracleType The type of the oracle
-    function getOracleType(address oracle) external view returns (OracleType oracleType);
+    /// @notice Returns the type of a registered adapter
+    /// @param adapter The adapter address
+    /// @return adapterType The type of the adapter
+    function getAdapterType(address adapter) external view returns (AdapterType adapterType);
 
-    /// @notice Returns all oracles that support the given asset
-    /// @dev Loops through all global oracles and checks if the asset is in their underlyingAssetsSupported() list
+    /// @notice Returns all adapters that support the given asset
+    /// @dev Loops through all global adapters and checks if the asset is in their underlyingAssetsSupported() list
     /// @param asset The asset address to check
-    /// @return oracles Array of oracle addresses that support the asset
-    function getOraclesForAsset(address asset) external view returns (address[] memory oracles);
+    /// @return adapters Array of adapter addresses that support the asset
+    function getAdaptersForAsset(address asset) external view returns (address[] memory adapters);
 
     //
-    // Meta-oracle instance registry (ADR 0010)
+    // Meta-adapter instance registry (ADR 0010)
     //
 
-    /// @notice Returns the configured meta-adapter instance coordinates for an oracle (empty for non-meta oracles).
-    /// @param oracle The oracle address.
-    /// @return instances The instance coordinates currently configured for the oracle.
-    function getMetaInstances(address oracle) external view returns (bytes32[] memory instances);
+    /// @notice Returns the configured meta-adapter instance coordinates for an adapter (empty for non-meta adapters).
+    /// @param adapter The adapter address.
+    /// @return instances The instance coordinates currently configured for the adapter.
+    function getMetaInstances(address adapter) external view returns (bytes32[] memory instances);
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -19,7 +19,7 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 ///         gauge rewards. Wallet-held (unstaked) LP is the separate BalancerV3PoolsMetaBalanceAdapter. The instance
 ///         coordinate is the gauge address, widened to bytes32. Emits `Staking` legs per pool token and `Rewards`
 ///         legs per reward token. See ADR 0010.
-contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
+contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for uint256;
     using SafeCast for int128;
     using BalancerV3PoolLib for IStablePool;
@@ -36,13 +36,13 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address balancerMinter_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the gauge address. Emits a Staking leg per registered pool token (the account's staked
     ///      BPT share) plus a Rewards leg per registered reward token (BAL via the minter + the gauge's extra
     ///      reward tokens). Skips unregistered tokens and respects assetFilter.
@@ -94,7 +94,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Pool tokens (the staked LP's underlyings) plus the gauge's reward tokens and BAL.
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
@@ -117,7 +117,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata positionId) external view override returns (string memory) {
         address gauge = abi.decode(positionId, (address));
         try IERC20Metadata(gauge).symbol() returns (string memory s) {
@@ -271,7 +271,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,

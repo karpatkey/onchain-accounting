@@ -160,7 +160,7 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         // Deploy osToken (StakeWise V3) custom price feeds — osETH on Mainnet, osGNO on Gnosis.
-        // osTokens are now Custom-priced ERC20s (held balance via ERC20DefaultOracle, priced
+        // osTokens are now Custom-priced ERC20s (held balance via ERC20DefaultAdapter, priced
         // convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
             _deployOsToken("osETH");
@@ -514,12 +514,7 @@ contract DeployPriceFeeds is BaseDeployScript {
         view
         returns (address)
     {
-        string memory deployed = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(deployed).length == 0) {
-            return address(0);
-        }
-        address addr = vm.parseAddress(deployed);
-        return addr == address(0) ? address(0) : addr;
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     // Arbitrum price feed deployments

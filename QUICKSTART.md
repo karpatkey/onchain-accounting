@@ -90,7 +90,7 @@ Proxy addresses are identical on all chains. 02 does deploy + init + role-grant 
 
 ## Step 5: Deploy on Other Chains
 
-Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain’s RPC and `--chain-id`).
+Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain's RPC and `--chain-id`).
 
 ## Step 6: Deploy Adapters (Optional)
 
@@ -114,7 +114,7 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --account $DEPLOYER_NAME --broadcast
 ```
 
-## Step 7: Configure (register oracles, meta-instances, bridge adapters)
+## Step 7: Configure (register adapters, meta-instances, bridge adapters)
 
 Run by the deployer EOA (holds admin + MANAGER). Idempotent / re-runnable:
 

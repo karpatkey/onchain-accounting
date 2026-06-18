@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title SparkLendBalanceOracleForkTest
-/// @notice Fork tests for SparkLendBalanceOracle using real mainnet contracts
+/// @title SparkLendBalanceAdapterForkTest
+/// @notice Fork tests for SparkLendBalanceAdapter using real mainnet contracts
 /// @dev Tests adapter behavior with real Spark protocol contracts and positions
 /// @dev SparkLend inherits from AaveV3Instance, so it uses the same protocol structure
-contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
+contract SparkLendBalanceAdapterForkTest is BalanceAdapterTestBase {
     // Spark contract addresses (mainnet)
     address public constant DATA_PROVIDER = 0xFc21d6d146E6086B8359705C8b28512a983db0cb;
 
@@ -23,8 +23,8 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     uint256 public constant FORK_BLOCK_1 = 20_734_274;
     uint256 public constant FORK_BLOCK_2 = 17_772_457;
 
-    // Oracle instance
-    SparkLendBalanceOracle public oracle;
+    // Adapter instance
+    SparkLendBalanceAdapter public adapter;
 
     // Real user addresses with positions in Spark
     address public constant SUPPLY_DAI_WBTC_BORROW_WETH_USER = 0xB6875EC94bE06d159A28d627422b7c9388cc8861;
@@ -39,7 +39,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Real Position Tests - Block 1
     // ============================================
 
-    function test_getOracleBalanceForAsset_supply_dai() public {
+    function test_getAdapterBalanceForAsset_supply_dai() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
 
         address[] memory assets = new address[](4);
@@ -47,16 +47,16 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = WBTC;
         assets[2] = WETH;
         assets[3] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, DAI);
         assertGt(amount, 0, "User should have DAI supply position");
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_supply_wbtc() public {
+    function test_getAdapterBalanceForAsset_supply_wbtc() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
 
         address[] memory assets = new address[](4);
@@ -64,16 +64,16 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = WBTC;
         assets[2] = WETH;
         assets[3] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WBTC);
         assertGt(amount, 0, "User should have WBTC supply position");
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_borrow_weth() public {
+    function test_getAdapterBalanceForAsset_borrow_weth() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
 
         address[] memory assets = new address[](4);
@@ -81,11 +81,11 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = WBTC;
         assets[2] = WETH;
         assets[3] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SUPPLY_DAI_WBTC_BORROW_WETH_USER, WETH);
         assertTrue(isDebt, "User should have WETH borrow position (negative balance)");
         assertGt(amount, 0, "User should have WETH debt amount");
     }
@@ -94,32 +94,32 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Real Position Tests - Block 2
     // ============================================
 
-    function test_getOracleBalanceForAsset_supply_gnosis() public {
+    function test_getAdapterBalanceForAsset_supply_gnosis() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_2);
 
         address[] memory assets = new address[](2);
         assets[0] = GNO;
         assets[1] = DAI;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, GNO);
         assertGt(amount, 0, "User should have GNO supply position");
         assertFalse(isDebt);
     }
 
-    function test_getOracleBalanceForAsset_debt_dai() public {
+    function test_getAdapterBalanceForAsset_debt_dai() public {
         fork = vm.createSelectFork(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_2);
 
         address[] memory assets = new address[](2);
         assets[0] = GNO;
         assets[1] = DAI;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SUPPLY_GNO_DEBT_DAI_USER, DAI);
         assertTrue(isDebt, "User should have DAI debt position (negative balance)");
         assertGt(amount, 0, "User should have DAI debt amount");
     }
@@ -128,7 +128,7 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
     // Position Aggregation Tests
     // ============================================
 
-    function test_getOracleBalance_aggregatesPositions() public {
+    function test_getAdapterBalance_aggregatesPositions() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
 
         address[] memory assets = new address[](4);
@@ -136,19 +136,19 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = WBTC;
         assets[2] = WETH;
         assets[3] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
         (address[] memory resultAssets, uint256[] memory amounts,) =
-            oracle.getOracleBalances(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
+            adapter.getAdapterBalances(SUPPLY_DAI_WBTC_BORROW_WETH_USER);
 
         // Should have at least DAI, WBTC, and WETH positions
         assertGe(resultAssets.length, 3, "Should have multiple positions");
         assertEq(resultAssets.length, amounts.length, "Arrays should match length");
     }
 
-    function test_getOraclePositions_returnsCorrectPositions() public {
+    function test_getAdapterPositions_returnsCorrectPositions() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK_1);
 
         address[] memory assets = new address[](4);
@@ -156,12 +156,12 @@ contract SparkLendBalanceOracleForkTest is BalanceAdapterTestBase {
         assets[1] = WBTC;
         assets[2] = WETH;
         assets[3] = USDC;
-        balances = _deployBalancesForOracle(assets);
+        balances = _deployBalancesForAdapter(assets);
 
-        oracle = new SparkLendBalanceOracle(address(DATA_PROVIDER), address(balances));
+        adapter = new SparkLendBalanceAdapter(address(DATA_PROVIDER), address(balances));
 
         INAVCalculator.PositionBalance[] memory positions =
-            oracle.getOraclePositions(SUPPLY_DAI_WBTC_BORROW_WETH_USER, address(0));
+            adapter.getAdapterPositions(SUPPLY_DAI_WBTC_BORROW_WETH_USER, address(0));
 
         assertGe(positions.length, 1, "Should have at least one position");
 

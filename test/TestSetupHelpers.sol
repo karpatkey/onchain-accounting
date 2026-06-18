@@ -5,31 +5,32 @@ import {Test} from "forge-std/Test.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @notice Balances harness for fork tests
 /// @dev Extends Balances and implements a minimal asset registry so it can stand in for NAVCalculator.
 ///      Adapters call getRegisteredAssets() etc.; this harness maintains its own _registeredAssets.
 contract BalancesHarnessForFork is Balances {
-    ERC20DefaultOracle public defaultOracle;
+    ERC20DefaultAdapter public defaultAdapter;
 
     INAVCalculator.Asset[] private _registeredAssets;
     mapping(address => uint256) private _assetIndex;
 
     constructor() initializer {
         __Balances_init();
-        defaultOracle = new ERC20DefaultOracle(address(this), new address[](0));
-        _setErc20DefaultOracle(address(defaultOracle));
+        defaultAdapter = new ERC20DefaultAdapter(address(this), new address[](0));
+        _setErc20DefaultAdapter(address(defaultAdapter));
     }
 
     function registerAssetForTest(address asset, uint8 decimals, string memory symbol) public {
         if (_assetIndex[asset] != 0) return;
         _registeredAssets.push(INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals}));
         _assetIndex[asset] = _registeredAssets.length;
-        if (address(defaultOracle) != address(0)) {
-            defaultOracle.addSupportedAsset(asset);
+        if (address(defaultAdapter) != address(0)) {
+            defaultAdapter.addSupportedAsset(asset);
         }
     }
 
@@ -60,35 +61,39 @@ contract BalancesHarnessForFork is Balances {
 
 /// @title TestSetupHelpers
 /// @notice Helper functions for consistent test setup patterns
-/// @dev Provides utilities for safe oracle access, price feed setup, and balance oracle setup
+/// @dev Provides utilities for safe adapter access, price feed setup, and balance adapter setup
 abstract contract TestSetupHelpers is Test {
     // ============================================
-    // Safe Oracle Access Helpers
+    // Safe Adapter Access Helpers
     // ============================================
 
-    /// @notice Safely gets a balance oracle at a specific index from the global registry
+    /// @notice Safely gets a balance adapter at a specific index from the global registry
     /// @param balances The Balances contract instance
-    /// @param idx The oracle index in the global registry
-    /// @return oracle The oracle address
-    /// @return exists Whether the oracle exists at that index
-    function safeGetBalanceOracle(Balances balances, uint256 idx) internal view returns (address oracle, bool exists) {
-        address[] memory allOracles = balances.getAllOracles();
-        if (idx >= allOracles.length) {
+    /// @param idx The adapter index in the global registry
+    /// @return adapter The adapter address
+    /// @return exists Whether the adapter exists at that index
+    function safeGetBalanceAdapter(Balances balances, uint256 idx)
+        internal
+        view
+        returns (address adapter, bool exists)
+    {
+        address[] memory allAdapters = balances.getAllAdapters();
+        if (idx >= allAdapters.length) {
             return (address(0), false);
         }
-        oracle = allOracles[idx];
-        exists = oracle != address(0);
+        adapter = allAdapters[idx];
+        exists = adapter != address(0);
     }
 
     /// @notice Safely checks if a price oracle exists for an asset
     /// @param nav The NAVCalculator contract instance
     /// @param asset The asset address
-    /// @return oracle The first oracle address (address(0) if none registered)
+    /// @return adapter The first adapter address (address(0) if none registered)
     /// @return exists Whether at least one price oracle exists
-    function safeGetPriceOracle(NAVCalculator nav, address asset) internal view returns (address oracle, bool exists) {
+    function safeGetPriceOracle(NAVCalculator nav, address asset) internal view returns (address adapter, bool exists) {
         uint256 count = nav.getPriceFeedCount(asset);
         if (count == 0) return (address(0), false);
-        oracle = nav.getPriceFeedAt(asset, 0).priceFeed;
+        adapter = nav.getPriceFeedAt(asset, 0).priceFeed;
         exists = true;
     }
 
@@ -127,39 +132,39 @@ abstract contract TestSetupHelpers is Test {
     /// @notice Ensures native address (ETH) has a price feed set up
     /// @param nav The NAVCalculator contract instance
     /// @param manager The manager address with permissions
-    /// @param ethOracle The ETH price oracle address
+    /// @param ethAdapter The ETH price oracle address
     /// @param heartbeat The chainlink heartbeat (or max uint for custom)
-    function ensureNativePriceFeed(NAVCalculator nav, address manager, address ethOracle, uint256 heartbeat) internal {
-        ensurePriceFeed(nav, manager, nav.NATIVE_ADDRESS(), ethOracle, IPrices.PriceType.Chainlink, heartbeat);
+    function ensureNativePriceFeed(NAVCalculator nav, address manager, address ethAdapter, uint256 heartbeat) internal {
+        ensurePriceFeed(nav, manager, nav.NATIVE_ADDRESS(), ethAdapter, IPrices.PriceType.Chainlink, heartbeat);
     }
 
     // ============================================
-    // Balance Oracle Setup Helpers
+    // Balance Adapter Setup Helpers
     // ============================================
 
-    /// @notice Ensures a balance oracle is registered globally
+    /// @notice Ensures a balance adapter is registered globally
     /// @param nav The NAVCalculator contract instance
     /// @param manager The manager address with permissions
-    /// @param oracle The balance oracle address
-    function ensureBalanceOracle(NAVCalculator nav, address manager, address oracle) internal {
-        // Check if oracle already exists in global registry
-        if (nav.isOracleRegistered(oracle)) {
+    /// @param adapter The balance adapter address
+    function ensureBalanceAdapter(NAVCalculator nav, address manager, address adapter) internal {
+        // Check if adapter already exists in global registry
+        if (nav.isAdapterRegistered(adapter)) {
             return; // Already exists
         }
 
-        // Add the oracle globally
+        // Add the adapter globally
         vm.prank(manager);
-        nav.addBalanceOracle(oracle);
+        nav.addBalanceAdapters(aa(adapter));
     }
 
-    /// @notice Ensures native address has a balance oracle set up
+    /// @notice Ensures native address has a balance adapter set up
     /// @param balances The Balances contract instance
-    /// @dev The native address should use the ERC20DefaultOracle
-    function ensureNativeBalanceOracle(Balances balances) internal view {
-        if (!balances.isOracleRegistered(balances.erc20DefaultOracle())) {
-            // This should not happen if ERC20DefaultOracle is properly set up
+    /// @dev The native address should use the ERC20DefaultAdapter
+    function ensureNativeBalanceAdapter(Balances balances) internal view {
+        if (!balances.isAdapterRegistered(balances.erc20DefaultAdapter())) {
+            // This should not happen if ERC20DefaultAdapter is properly set up
             // But we check to provide a clear error message
-            revert("Native balance oracle not initialized. ERC20DefaultOracle should be set in constructor.");
+            revert("Native balance adapter not initialized. ERC20DefaultAdapter should be set in constructor.");
         }
     }
 
@@ -197,14 +202,14 @@ abstract contract TestSetupHelpers is Test {
     // Complete Asset Setup Helpers
     // ============================================
 
-    /// @notice Sets up a complete asset (register + price feed + balance oracle)
+    /// @notice Sets up a complete asset (register + price feed + balance adapter)
     /// @param nav The NAVCalculator contract instance
     /// @param manager The manager address with permissions
     /// @param asset The asset address
     /// @param priceOracle The price oracle address
     /// @param priceType The price type
     /// @param heartbeat The chainlink heartbeat
-    /// @param balanceOracle The balance oracle address (optional, ERC20DefaultOracle is always available)
+    /// @param balanceAdapter The balance adapter address (optional, ERC20DefaultAdapter is always available)
     function setupCompleteAsset(
         NAVCalculator nav,
         address manager,
@@ -212,25 +217,25 @@ abstract contract TestSetupHelpers is Test {
         address priceOracle,
         IPrices.PriceType priceType,
         uint256 heartbeat,
-        address balanceOracle
+        address balanceAdapter
     ) internal {
         ensureAssetRegistered(nav, manager, asset, priceOracle, priceType, heartbeat);
         // Price feed is set during registration, but ensurePriceFeed will update if needed
         ensurePriceFeed(nav, manager, asset, priceOracle, priceType, heartbeat);
-        // Only add custom balance oracle if provided (ERC20DefaultOracle is always available)
-        if (balanceOracle != address(0)) {
-            ensureBalanceOracle(nav, manager, balanceOracle);
+        // Only add custom balance adapter if provided (ERC20DefaultAdapter is always available)
+        if (balanceAdapter != address(0)) {
+            ensureBalanceAdapter(nav, manager, balanceAdapter);
         }
     }
 
-    /// @notice Sets up native address with price feed and ensures balance oracle exists
+    /// @notice Sets up native address with price feed and ensures balance adapter exists
     /// @param nav The NAVCalculator contract instance
     /// @param manager The manager address with permissions
-    /// @param ethOracle The ETH price oracle address
+    /// @param ethAdapter The ETH price oracle address
     /// @param heartbeat The chainlink heartbeat
-    function setupNativeAsset(NAVCalculator nav, address manager, address ethOracle, uint256 heartbeat) internal {
-        ensureNativePriceFeed(nav, manager, ethOracle, heartbeat);
-        ensureNativeBalanceOracle(nav);
+    function setupNativeAsset(NAVCalculator nav, address manager, address ethAdapter, uint256 heartbeat) internal {
+        ensureNativePriceFeed(nav, manager, ethAdapter, heartbeat);
+        ensureNativeBalanceAdapter(nav);
     }
 
     // ============================================

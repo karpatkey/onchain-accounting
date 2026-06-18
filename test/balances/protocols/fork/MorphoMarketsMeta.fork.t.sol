@@ -11,10 +11,11 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title MorphoMarketsMetaBalanceAdapter fork tests
 /// @notice One meta-adapter serving multiple Morpho Blue markets, routed through a real NAVCalculator that holds
-///         the configured marketId set (setMetaInstances). Uses the apxUSD/apyUSD market at a pinned block where
+///         the configured marketId set (seeded via addMetaBalanceAdapter). Uses the apxUSD/apyUSD market at a pinned block where
 ///         the account holds all three legs (supply + borrow + collateral), and asserts parity with the
 ///         per-market MorphoMarket adapter.
 contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
@@ -33,7 +34,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address manager = makeAddr("manager");
 
     NAVCalculator public nav;
-    MorphoMarketsMetaBalanceAdapter public oracle;
+    MorphoMarketsMetaBalanceAdapter public adapter;
 
     function setUp() public override {
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
@@ -41,7 +42,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());
@@ -76,27 +77,27 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        oracle = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
+        adapter = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
 
         vm.startPrank(manager);
-        nav.addBalanceOracle(address(oracle));
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        nav.setMetaInstances(address(oracle), instances);
+        nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
     }
 
     function test_threeLegs_present() public view {
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(USER, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos =
+            adapter.getAdapterPositionsForInstances(USER, instances, address(0));
         assertEq(pos.length, 3, "collateral + loan-supply + loan-borrow");
 
         uint256 collateral;
         uint256 supply;
         uint256 borrow;
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].balanceOracle, address(oracle));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertGt(pos[i].amount, 0);
             if (pos[i].balanceAsset.asset == APYUSD) collateral++;
             else if (pos[i].balanceAsset.asset == APXUSD && !pos[i].isDebt) supply++;
@@ -111,7 +112,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(USER, address(0));
         uint256 metaCount = 0;
         for (uint256 i = 0; i < positions.length; i++) {
-            if (positions[i].balanceOracle == address(oracle)) metaCount++;
+            if (positions[i].balanceAdapter == address(adapter)) metaCount++;
         }
         assertEq(metaCount, 3, "NAV surfaces all three legs via the meta-adapter");
 
@@ -125,7 +126,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         instances[0] = MARKET_ID;
         // Filtering by the loan token must return BOTH the supply and borrow legs (the multi-leg-per-filter case
         // the NAV buffer sizing was fixed for).
-        INAVCalculator.PositionBalance[] memory pos = oracle.getOraclePositionsForInstances(USER, instances, APXUSD);
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(USER, instances, APXUSD);
         assertEq(pos.length, 2, "loan-token filter returns supply + borrow");
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAsset.asset, APXUSD);
@@ -135,7 +136,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_underlyingAssetsForInstances() public view {
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;
-        address[] memory assets = oracle.underlyingAssetsSupportedForInstances(instances);
+        address[] memory assets = adapter.underlyingAssetsSupportedForInstances(instances);
         assertEq(assets.length, 2);
         assertEq(assets[0], APYUSD, "collateral first");
         assertEq(assets[1], APXUSD, "loan second");

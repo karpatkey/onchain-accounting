@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Deploy + register the Kelp DAO rsETH Withdrawal Queue balance oracle on a running dev anvil fork.
+# Deploy + register the Kelp DAO rsETH Withdrawal Queue balance adapter on a running dev anvil fork.
 #
 # Usage:  deploy-kelp-withdrawal-queue.sh <chainId>
 #   e.g.  deploy-kelp-withdrawal-queue.sh 1
 #
-# KelpWithdrawalQueueBalanceOracle is a standalone (non-meta) adapter pointed at Kelp's
+# KelpWithdrawalQueueBalanceAdapter is a standalone (non-meta) adapter pointed at Kelp's
 # LRTWithdrawalManager (the rsETH exit queue). It reports the assets owed across an account's open
 # withdrawal requests — one credit position per Kelp-supported payout asset (stETH, ETHx, native ETH)
 # that is also registered on the NAV. The supported-asset set is discovered at runtime from
 # LRTConfig.getSupportedAssetList(), so the constructor takes only (withdrawalManager, navCalculator).
 # stETH and native ETH are registered on the dev NAV at bootstrap; ETHx uses a custom feed the dev
-# deploy.sh skips, so an ETHx request is correctly dropped from getOraclePositions (still readable via
-# getOracleBalanceForAsset).
+# deploy.sh skips, so an ETHx request is correctly dropped from getAdapterPositions (still readable via
+# getAdapterBalanceForAsset).
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json).
 set -euo pipefail
@@ -40,13 +40,13 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy Kelp Withdrawal Queue oracle  chain=$CID NAV=$NAV"
+echo "=== deploy Kelp Withdrawal Queue adapter  chain=$CID NAV=$NAV"
 echo "    withdrawalManager: $WITHDRAWAL_MANAGER"
 
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/KelpWithdrawalQueue.sol:KelpWithdrawalQueueBalanceOracle \
+  forge create src/balances/protocols/KelpWithdrawalQueue.sol:KelpWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAWAL_MANAGER" "$NAV" 2>&1
 ) || true
@@ -58,9 +58,9 @@ if [ -z "$ADAPTER" ]; then
 fi
 echo "  KelpWithdrawalQueue: $ADAPTER"
 
-cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \
+cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
-echo "  registered on NAV (addBalanceOracle)"
+echo "  registered on NAV (addBalanceAdapters)"
 
 jq --arg a "$ADAPTER" '. + {"KelpWithdrawalQueue": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"

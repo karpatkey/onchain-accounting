@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -12,7 +12,7 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Merkl Rewards Balance Oracle (proof-cached)
+/// @title Merkl Rewards Balance Adapter (proof-cached)
 /// @author kpk
 /// @notice Reports a user's *unclaimed* Merkl reward balances. Merkl distributes rewards via off-chain merkle trees;
 ///         only cumulative *claimed* amounts live on-chain. To make pending allocations queryable from a `view`
@@ -21,7 +21,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         fabricate amounts. The owner is trusted only to keep the cache fresh; failure to do so makes NAV
 ///         under-count rewards but never over-count.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionDescribable {
+contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -54,7 +54,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
     mapping(address user => mapping(address token => CachedAllocation)) public allocations;
 
     /// @dev Per-user enumeration list. Populated on first `submitProof` for a (user, token) pair, drained by
-    ///      `clearAllocation`. Used to power `getOracleBalances` and `getOraclePositions` without `address(0)`
+    ///      `clearAllocation`. Used to power `getAdapterBalances` and `getAdapterPositions` without `address(0)`
     ///      asset filtering — Merkl's universe of distributed tokens is open, so the adapter cannot enumerate it
     ///      ahead of time and `underlyingAssetsSupported()` returns empty.
     mapping(address user => address[]) private _userTokens;
@@ -136,7 +136,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
 
     /// @notice Drop a cached allocation. Idempotent.
     /// @dev Useful to garbage-collect tokens that the user has fully claimed or that Merkl no longer distributes.
-    ///      Not required for correctness — stale entries already read as 0 from `getOracleBalanceForAsset`.
+    ///      Not required for correctness — stale entries already read as 0 from `getAdapterBalanceForAsset`.
     function clearAllocation(address user, address token) external onlyOwner {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
         if (allocations[user][token].submittedAt == 0) return; // nothing to clear
@@ -158,8 +158,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -170,15 +170,15 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
         return "claimable rewards";
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    /// @notice Open-universe oracle: Merkl distributes arbitrary tokens, so the universe of supported assets is
+    /// @inheritdoc IBalanceAdapter
+    /// @notice Open-universe adapter: Merkl distributes arbitrary tokens, so the universe of supported assets is
     ///         not enumerable ahead of time and this returns an empty array. The interface allows this.
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
         return new address[](0);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -188,8 +188,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
         return (_unclaimed(account, asset), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -221,8 +221,8 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOraclePositions(address account, address assetFilter)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -246,7 +246,7 @@ contract MerklRewardsBalanceOracle is IBalanceOracleAdapter, Ownable, IPositionD
             if (bal == 0) continue;
             tmp[count++] = INAVCalculator.PositionBalance({
                 balanceAsset: meta,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: bal,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,

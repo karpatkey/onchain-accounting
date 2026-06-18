@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -65,8 +65,8 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
     // ─── interface ────────────────────────────────────────────────────────────
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
@@ -80,7 +80,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setStaked(alice, 100e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         // Expect 2 Staking legs (USDC, DAI) — no CRV if integrate_fraction is 0, no extra rewards
         uint256 staking = _countKind(pos, PositionKind.Staking);
@@ -96,11 +96,11 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
     function test_positionIdentity() public {
         gauge.setStaked(alice, 100e18);
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
         assertGt(pos.length, 0);
         assertEq(pos[0].protocolId, ProtocolIds.CURVE_GAUGE);
         assertEq(pos[0].positionId, abi.encode(address(gauge)));
-        assertEq(pos[0].balanceOracle, address(meta));
+        assertEq(pos[0].balanceAdapter, address(meta));
     }
 
     function test_noStake_butRewards_stillReported() public {
@@ -109,7 +109,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         // minter.minted = 0 → claimable = 500 CRV
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         assertEq(pos.length, 1);
         assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Rewards));
@@ -125,7 +125,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         minter.setMinted(alice, address(gauge), 300e18); // already claimed 300 CRV
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         uint256 rewards = _countKind(pos, PositionKind.Rewards);
         assertEq(rewards, 1);
@@ -142,7 +142,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         minter.setMinted(alice, address(gauge), 500e18); // fully claimed
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         // No CRV Rewards leg (amount is 0)
         for (uint256 i; i < pos.length; ++i) {
@@ -161,7 +161,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setIntegrateFraction(alice, 9_999e18); // large, but minter is 0
 
         INAVCalculator.PositionBalance[] memory pos =
-            l2Meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            l2Meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         for (uint256 i; i < pos.length; ++i) {
             assertFalse(pos[i].balanceAsset.asset == address(crv), "no CRV without minter");
@@ -176,7 +176,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setClaimableReward(address(ldoReward), alice, 42e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         INAVCalculator.PositionBalance memory ldoPos = _findAsset(pos, address(ldoReward));
         assertEq(ldoPos.amount, 42e18);
@@ -190,7 +190,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setStaked(alice, 50e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         for (uint256 i; i < pos.length; ++i) {
             assertFalse(pos[i].balanceAsset.asset == address(unknown));
@@ -205,7 +205,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setClaimableReward(address(crv), alice, 999e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(0));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
 
         uint256 crvCount;
         for (uint256 i; i < pos.length; ++i) {
@@ -221,7 +221,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         gauge.setIntegrateFraction(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
-            meta.getOraclePositionsForInstances(alice, _instance(address(gauge)), address(usdc));
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(usdc));
 
         for (uint256 i; i < pos.length; ++i) {
             assertEq(pos[i].balanceAsset.asset, address(usdc));
@@ -238,7 +238,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         instances[0] = bytes32(uint256(uint160(address(0xdead)))); // bad gauge
         instances[1] = bytes32(uint256(uint160(address(gauge))));
 
-        INAVCalculator.PositionBalance[] memory pos = meta.getOraclePositionsForInstances(alice, instances, address(0));
+        INAVCalculator.PositionBalance[] memory pos = meta.getAdapterPositionsForInstances(alice, instances, address(0));
         assertGt(pos.length, 0, "good gauge still returned");
     }
 

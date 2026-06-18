@@ -55,7 +55,7 @@ contract NavLens {
         verboseNav.positions = _toVerbose(NAV_CALCULATOR.getAccountPositions(account, quoteAsset));
     }
 
-    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each oracle.
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
     function _toVerbose(INAVCalculator.Position[] memory pos)
         internal
         view
@@ -66,11 +66,11 @@ contract NavLens {
         for (uint256 i = 0; i < len; i++) {
             string memory name = "";
             string memory label = "";
-            address oracle = pos[i].balanceOracle;
-            try IPositionDescribable(oracle).protocolName() returns (string memory n) {
+            address adapter = pos[i].balanceAdapter;
+            try IPositionDescribable(adapter).protocolName() returns (string memory n) {
                 name = n;
             } catch {}
-            try IPositionDescribable(oracle).describePosition(pos[i].positionId) returns (string memory l) {
+            try IPositionDescribable(adapter).describePosition(pos[i].positionId) returns (string memory l) {
                 label = l;
             } catch {}
             verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: name, positionLabel: label});

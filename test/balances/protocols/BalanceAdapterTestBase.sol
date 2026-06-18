@@ -38,7 +38,7 @@ abstract contract BalanceAdapterTestBase is Test {
         dai = new Mock_ERC20("DAI", 18);
         weth = new Mock_ERC20("WETH", 18);
 
-        // Add tokens to default oracle supported list (asset registry is in NAVCalculator)
+        // Add tokens to default adapter supported list (asset registry is in NAVCalculator)
         balances.addSupportedAssetForTest(address(usdc));
         balances.addSupportedAssetForTest(address(dai));
         balances.addSupportedAssetForTest(address(weth));

@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626Wrap.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -43,12 +43,12 @@ contract MockToken {
     uint8 public decimals = 18;
 }
 
-/// @title ERC4626WrapBalanceOracle unit tests (no fork)
-contract ERC4626WrapBalanceOracleTest is Test {
+/// @title ERC4626WrapBalanceAdapter unit tests (no fork)
+contract ERC4626WrapBalanceAdapterTest is Test {
     MockBalances mockBalances;
     MockERC4626Wrapper wrapper;
     MockToken underlying;
-    ERC4626WrapBalanceOracle oracle;
+    ERC4626WrapBalanceAdapter adapter;
 
     address alice = makeAddr("alice");
 
@@ -63,7 +63,7 @@ contract ERC4626WrapBalanceOracleTest is Test {
         wrapper = new MockERC4626Wrapper(address(underlying));
         // Stub `isAssetRegistered(underlying) -> true` so the constructor check passes.
         _stubAssetRegistered();
-        oracle = new ERC4626WrapBalanceOracle(address(wrapper), address(mockBalances));
+        adapter = new ERC4626WrapBalanceAdapter(address(wrapper), address(mockBalances));
     }
 
     /// @dev Stubs both:
@@ -84,17 +84,17 @@ contract ERC4626WrapBalanceOracleTest is Test {
 
     function test_constructor_invalidArgs_zeroWrapper() public {
         vm.expectRevert(InvalidArguments.selector);
-        new ERC4626WrapBalanceOracle(address(0), address(mockBalances));
+        new ERC4626WrapBalanceAdapter(address(0), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractWrapper() public {
         vm.expectRevert("Wrapper must be a contract");
-        new ERC4626WrapBalanceOracle(address(0xdead), address(mockBalances));
+        new ERC4626WrapBalanceAdapter(address(0xdead), address(mockBalances));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new ERC4626WrapBalanceOracle(address(wrapper), address(0xdead));
+        new ERC4626WrapBalanceAdapter(address(wrapper), address(0xdead));
     }
 
     function test_constructor_reverts_whenUnderlyingNotRegistered() public {
@@ -102,109 +102,109 @@ contract ERC4626WrapBalanceOracleTest is Test {
         MockERC4626Wrapper otherWrapper = new MockERC4626Wrapper(address(otherUnderlying));
         // `mockBalances.isAssetRegistered(otherUnderlying)` falls back to default `false`.
         vm.expectRevert("Wrapper underlying must be a NAV-registered asset");
-        new ERC4626WrapBalanceOracle(address(otherWrapper), address(mockBalances));
+        new ERC4626WrapBalanceAdapter(address(otherWrapper), address(mockBalances));
     }
 
     function test_constructor_stores_immutables() public view {
-        assertEq(address(oracle.WRAPPER()), address(wrapper));
-        assertEq(oracle.ASSET(), address(underlying));
-        assertEq(address(oracle.NAV_CALCULATOR()), address(mockBalances));
+        assertEq(address(adapter.WRAPPER()), address(wrapper));
+        assertEq(adapter.ASSET(), address(underlying));
+        assertEq(address(adapter.NAV_CALCULATOR()), address(mockBalances));
     }
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(oracle.supportsInterface(0x12345678));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(adapter.supportsInterface(0x12345678));
     }
 
     function test_underlyingAssetsSupported() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], address(underlying));
     }
 
-    function test_getOracleBalanceForAsset_zeroAccount() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(address(0), address(underlying));
+    function test_getAdapterBalanceForAsset_zeroAccount() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(address(0), address(underlying));
         assertEq(amount, 0);
         assertEq(isDebt, false);
     }
 
-    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(0xbeef));
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0xbeef));
         assertEq(amount, 0);
         assertEq(isDebt, false);
     }
 
-    function test_getOracleBalanceForAsset_zeroBalance() public view {
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(underlying));
+    function test_getAdapterBalanceForAsset_zeroBalance() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(underlying));
         assertEq(amount, 0);
         assertEq(isDebt, false);
     }
 
-    function test_getOracleBalanceForAsset_1to1() public {
+    function test_getAdapterBalanceForAsset_1to1() public {
         wrapper.setBalance(alice, 100e18);
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(alice, address(underlying));
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(underlying));
         assertEq(amount, 100e18);
         assertEq(isDebt, false);
     }
 
-    function test_getOracleBalanceForAsset_appliesConvertRatio() public {
+    function test_getAdapterBalanceForAsset_appliesConvertRatio() public {
         // 1 share = 1.0361 underlying (simulating stata-token accrual)
         wrapper.setBalance(alice, 100e18);
         wrapper.setConvertRatioBps(10_361);
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(alice, address(underlying));
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(underlying));
         assertEq(amount, 103_61e16); // 103.61 * 1e18
     }
 
-    function test_getOracleBalances_empty_whenZero() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+    function test_getAdapterBalances_empty_whenZero() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 0);
         assertEq(amounts.length, 0);
         assertEq(isDebt.length, 0);
     }
 
-    function test_getOracleBalances_one_entry() public {
+    function test_getAdapterBalances_one_entry() public {
         wrapper.setBalance(alice, 50e18);
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(alice);
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 1);
         assertEq(assets[0], address(underlying));
         assertEq(amounts[0], 50e18);
         assertEq(isDebt[0], false);
     }
 
-    function test_getOraclePositions_dropped_whenAssetUnregisteredAfterDeploy() public {
+    function test_getAdapterPositions_dropped_whenAssetUnregisteredAfterDeploy() public {
         // Simulate the underlying being unregistered post-deploy (e.g. via nav.unregisterAsset).
         // Restore default empty `getRegisteredAssets()` from MockBalances; constructor mock for
         // `isAssetRegistered` already happened, so this only affects the runtime intersection.
         vm.clearMockedCalls();
         wrapper.setBalance(alice, 100e18);
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "should drop when underlying not currently registered");
     }
 
-    function test_getOraclePositions_emitted_whenRegistered() public {
+    function test_getAdapterPositions_emitted_whenRegistered() public {
         _stubAssetRegistered();
         wrapper.setBalance(alice, 100e18);
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(underlying));
         assertEq(positions[0].amount, 100e18);
         assertEq(positions[0].isDebt, false);
         assertEq(positions[0].positionId, abi.encode(address(wrapper)));
-        assertEq(positions[0].balanceOracle, address(oracle));
+        assertEq(positions[0].balanceAdapter, address(adapter));
     }
 
-    function test_getOraclePositions_assetFilter_match() public {
+    function test_getAdapterPositions_assetFilter_match() public {
         _stubAssetRegistered();
         wrapper.setBalance(alice, 100e18);
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(underlying));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(underlying));
         assertEq(positions.length, 1);
     }
 
-    function test_getOraclePositions_assetFilter_nonmatch() public {
+    function test_getAdapterPositions_assetFilter_nonmatch() public {
         _stubAssetRegistered();
         wrapper.setBalance(alice, 100e18);
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(alice, address(0xbeef));
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0xbeef));
         assertEq(positions.length, 0);
     }
 }

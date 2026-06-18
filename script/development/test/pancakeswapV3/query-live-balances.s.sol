@@ -17,7 +17,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/pancakeswapV3/query-live-balances.s.sol:QueryPancakeV3LiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
-///      For a registry-free dump at an exact archive block, read getOraclePositionsForInstances in the fork test
+///      For a registry-free dump at an exact archive block, read getAdapterPositionsForInstances in the fork test
 ///      (test/balances/protocols/fork/PancakeSwapV3PoolsMeta.fork.t.sol), which deploys its own Balances harness.
 contract QueryPancakeV3LiveBalances is Script {
     address constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
@@ -27,14 +27,14 @@ contract QueryPancakeV3LiveBalances is Script {
     function run() public {
         // navCalculator arg is only used as the asset registry; pass the address provided via env (a deployed
         // NAVCalculator on the fork) so _getAssetInfo resolves WETH/USDT. On a bare fork without a registry,
-        // prefer the fork test which calls getOraclePositionsForInstances directly.
+        // prefer the fork test which calls getAdapterPositionsForInstances directly.
         address nav = vm.envAddress("DEV_NAV_PROXY");
         PancakeSwapV3PoolsMetaBalanceAdapter meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", nav);
 
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = bytes32(uint256(uint160(POOL)));
 
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(HOLDER, instances, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(HOLDER, instances, address(0));
         console2.log("legs:", p.length);
         for (uint256 i = 0; i < p.length; i++) {
             console2.log("---");

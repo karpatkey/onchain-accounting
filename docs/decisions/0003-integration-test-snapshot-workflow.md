@@ -21,8 +21,8 @@ A single JSON file — `test/integration/accounts.json` — is the source of tru
 A bump-and-snapshot workflow regenerates the JSON in four discrete steps:
 
 1. **Bump fork blocks.** `cast block-number` per chain, write `forkBlock` back to JSON.
-2. **Refresh NAV.** `forge script script/test/RefreshIntegrationSnapshot.s.sol` per chain. The script forks at the bumped block, replays the integration test deploy pipeline (NAV + every enabled price feed + every enabled balance adapter), reads NAV per enabled account, and emits structured `SNAPSHOT|…` log lines. The shell wrapper parses those lines and writes `navUsd8dp` into JSON via `jq`.
-3. **Refresh Debank reference (optional).** `curl /v1/user/chain_balance` per (chain × account) when `DEBANK_API_KEY` is set. Write `debankUsd` into JSON.
+2. **Refresh NAV.** `forge test --match-test test_emitSnapshots` per chain. The test forks at the bumped block, replays the integration test deploy pipeline (NAV + every enabled price feed + every enabled balance adapter), reads NAV per enabled account, and emits structured `SNAPSHOT|…` log lines. The shell wrapper parses those lines and writes `navUsd8dp` into JSON via `jq`. (The original design used a dedicated `forge script script/test/RefreshIntegrationSnapshot.s.sol`; `forge script` hung indefinitely on Mainnet, so the refresh script switched to `forge test`, which runs the identical pipeline. The script is retained for reference but no longer invoked — see the howto doc.)
+3. **Refresh Debank reference (optional).** `curl /v1/user/all_complex_protocol_list` (and `/v1/user/token_list`) per account when `DEBANK_API_KEY` is set, summing the relevant per-chain USD value. Write `debankUsd` into JSON.
 4. **Tolerance check + report.** For every (chain × account) with both `navUsd8dp` and `debankUsd`, assert `|nav/1e8 − debank| / debank ≤ tolerance`. Print a markdown report; exit code 2 if any drift exceeds tolerance.
 
 Tests stay deterministic: `_assertNavsForCurrentChain` asserts `nav.value == expected.<chainId>.navUsd8dp` from JSON. The Debank cross-check is bump-time only.
@@ -50,7 +50,7 @@ A GitHub Actions workflow (`.github/workflows/refresh-integration-snapshot.yml`)
 
 1. **Live Debank assertions on every CI run.** Rejected. Costs Debank units on every run, depends on Debank uptime, and timing drift between forge's fork block and Debank "now" introduces noise that would make CI flaky. Tolerance check at bump time gives the same signal without these costs.
 2. **One test method per account (`test_account1_nav`, …) backed by JSON.** Rejected. Would require either codegenning per-account methods at fork-setup time (Solidity can't) or hardcoding N method stubs in each per-chain test (defeats the JSON-driven goal).
-3. **`forge test`-based snapshot generator (early-return on no env var).** Rejected. Forge would still run `setUp` for each per-chain contract on normal runs (~1 min × 5 chains = 5 min CI overhead). A dedicated `forge script` is invoked only when the user runs the refresh.
+3. **`forge test`-based snapshot generator that early-returns on every normal run.** Rejected as the *registered test*. A dedicated `forge script`, invoked only when the user runs the refresh, was chosen instead so normal CI runs don't pay the `setUp` cost for a snapshot path. (Note: snapshot emission later moved into a dedicated `test_emitSnapshots` method run via `--match-test` because `forge script` hung on Mainnet — see step 2. This is targeted by name at refresh time only, so it does not add per-chain `setUp` cost to normal runs, preserving the property this alternative was rejected for.)
 4. **`vm.writeJson` writing back to the same file from Solidity.** Rejected after testing — the array-index path syntax `.accounts[i].expected.<chainId>.navUsd8dp` is interpreted as an object key in the version of Foundry pinned by this repo, producing `"accounts[0]": {…}` siblings rather than updating `.accounts[0]`. Log-then-jq sidesteps the bug.
 
 ## Reference
@@ -58,7 +58,8 @@ A GitHub Actions workflow (`.github/workflows/refresh-integration-snapshot.yml`)
 - Workflow doc: [`docs/howto/refresh-integration-test-blocks.md`](../howto/refresh-integration-test-blocks.md)
 - Source of truth: `test/integration/accounts.json`
 - Test base: `test/integration/IntegrationFromConfigBase.fork.sol`
-- Forge script: `script/test/RefreshIntegrationSnapshot.s.sol`
+- Snapshot emission: `test_emitSnapshots` in `test/integration/IntegrationFromConfigBase.fork.sol` (run via `forge test --match-test`)
+- Legacy forge script (retained, no longer invoked): `script/test/RefreshIntegrationSnapshot.s.sol`
 - Shell orchestrator: `script/test/refresh-integration-snapshot.sh`
 - CI workflow: `.github/workflows/refresh-integration-snapshot.yml`
-- Framework reference: ADR [0001](0001-balance-adapter-factory-pattern.md)
+- Related decision: ADR [0004](0004-morpho-projected-vs-stored-balances.md) — Morpho projected vs stored balances, the main source of expected Debank drift

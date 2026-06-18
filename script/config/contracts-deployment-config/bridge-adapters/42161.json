@@ -1,0 +1,46 @@
+{
+  "CCIP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+      "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+      "router": "0x141fa059441E0ca23ce184B6A78bafD2A517DdE8",
+      "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
+      "version": "1.0.0"
+    },
+    "callbackSelector": "0x85572ffb"
+  },
+  "Across": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+      "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+      "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
+      "defaultRelayerFeePct": "5000",
+      "version": "1.0.0"
+    },
+    "callbackSelector": "0x0ea1f938"
+  },
+  "Stargate": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+      "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+      "router": "0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "version": "1.0.0"
+    },
+    "callbackSelector": "0x001d3567"
+  },
+  "CCTP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
+      "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
+      "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      "version": "1.0.0",
+      "cctpDomain": 3
+    }
+  }
+}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -24,13 +24,13 @@ interface IStakeWiseVault {
 /// @notice One immutable adapter that reports an account's StakeWise V3 vault positions across *any* vault on a
 ///         chain — emitting two gross legs per vault: `Staking` (vault shares → underlying) and `Borrowed` (minted
 ///         osToken debt → underlying). The instance coordinate is the vault address, widened to bytes32; the
-///         active vault set lives on NAVCalculator (`setMetaInstances`). The underlying token (the staking asset,
+///         active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The underlying token (the staking asset,
 ///         e.g. the ETH sentinel on mainnet / GNO on Gnosis) is the chain-level constant pinned in the
 ///         constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
 /// @dev Reports the gross
-///      Staking/Borrowed split is the same; only the signed-net `getOracleBalances`/`getOracleBalanceForAsset`
+///      Staking/Borrowed split is the same; only the signed-net `getAdapterBalances`/`getAdapterBalanceForAsset`
 ///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
-contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
+contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
 
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
@@ -40,13 +40,13 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Human-readable protocol name (e.g. "StakeWise V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address underlyingToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(underlyingToken_ != address(0), "underlyingToken=0");
         UNDERLYING_TOKEN = underlyingToken_;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the vault address. Emits a `Staking` leg (vault shares) and a `Borrowed` leg (osToken
     ///      debt), both denominated in the underlying token, dropping zeros. Returns empty if the underlying is
     ///      unregistered or filtered out by `assetFilter`.
@@ -84,13 +84,13 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32) internal view override returns (address[] memory assets) {
         assets = new address[](1);
         assets[0] = UNDERLYING_TOKEN;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address vault = abi.decode(pid, (address));
@@ -108,7 +108,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
             protocolId: PROTOCOL_ID,

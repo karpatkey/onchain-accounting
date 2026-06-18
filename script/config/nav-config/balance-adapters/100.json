@@ -1,0 +1,8 @@
+{
+  "AaveV3_Gnosis": {
+    "enabled": false
+  },
+  "MerklRewards": {
+    "enabled": false
+  }
+}

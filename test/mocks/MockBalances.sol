@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AssetNotFound} from "src/errors.sol";
 
 /// @title MockBalances
-/// @notice Minimal mock implementation of IBalances for protocol oracle tests
+/// @notice Minimal mock implementation of IBalances for protocol adapter tests
 contract MockBalances is IBalances {
     mapping(address => uint8) private _assetDecimals;
     mapping(address => string) private _assetSymbols;
@@ -32,30 +32,30 @@ contract MockBalances is IBalances {
         _assetSymbols[asset] = symbol;
     }
 
-    // Stub implementations for other IBalances methods (not used in protocol oracle tests)
+    // Stub implementations for other IBalances methods (not used in protocol adapter tests)
     function balanceOf(address, uint256, address) external pure returns (int256) {
         return 0;
     }
 
-    function checkBalanceOracleSupport(address) external pure {}
+    function checkBalanceAdapterSupport(address) external pure {}
 
-    function getAllOracles() external pure returns (address[] memory) {
+    function getAllAdapters() external pure returns (address[] memory) {
         return new address[](0);
     }
 
-    function getOracleCount() external pure returns (uint256) {
+    function getAdapterCount() external pure returns (uint256) {
         return 0;
     }
 
-    function isOracleRegistered(address) external pure returns (bool) {
+    function isAdapterRegistered(address) external pure returns (bool) {
         return false;
     }
 
-    function getOracleType(address) external pure returns (OracleType) {
-        return OracleType.Default;
+    function getAdapterType(address) external pure returns (AdapterType) {
+        return AdapterType.Default;
     }
 
-    function getOraclesForAsset(address) external pure returns (address[] memory) {
+    function getAdaptersForAsset(address) external pure returns (address[] memory) {
         return new address[](0);
     }
 

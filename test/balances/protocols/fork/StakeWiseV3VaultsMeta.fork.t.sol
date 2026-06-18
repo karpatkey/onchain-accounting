@@ -24,7 +24,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function _deploy() internal {
-        balances = _deployBalancesForOracle(GNO);
+        balances = _deployBalancesForAdapter(GNO);
         meta = new StakeWiseV3VaultsMetaBalanceAdapter(GNO, "StakeWise V3", address(balances));
     }
 
@@ -44,7 +44,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
     function test_user1_hasPosition() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
         _deploy();
-        (uint256 s, uint256 b) = _legs(meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0)));
+        (uint256 s, uint256 b) = _legs(meta.getAdapterPositionsForInstances(TEST_USER, _vaultInstance(), address(0)));
         assertTrue(s > 0 || b > 0, "user1 should have a position");
     }
 
@@ -52,7 +52,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_2);
         _deploy();
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(TEST_USER2, _vaultInstance(), address(0));
+            meta.getAdapterPositionsForInstances(TEST_USER2, _vaultInstance(), address(0));
         assertTrue(p.length > 0, "user2 should have a position");
     }
 
@@ -60,7 +60,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
         _deploy();
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(TEST_USER, _vaultInstance(), address(0));
+            meta.getAdapterPositionsForInstances(TEST_USER, _vaultInstance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, abi.encode(VAULT), "positionId = vault address");

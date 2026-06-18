@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -37,7 +37,7 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      Compatible with all Convex pools whose BaseRewardPool exposes pid() and the standard
 ///      extraRewards/extraRewardsLength interface. CRV is the main reward token on all mainnet
 ///      Convex pools; CVX is derived independently.
-contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
+contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
 
     uint256 private constant _MAX_EXTRA = 8;
@@ -59,16 +59,16 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_  Human-readable name (e.g. "Convex").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address booster_, address cvxToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(booster_ == address(0) || booster_.code.length > 0, "Booster must be a contract");
         BOOSTER = IConvexBooster(booster_);
         CVX_TOKEN = cvxToken_;
     }
 
-    // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
+    // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -104,7 +104,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                             if (amount == 0) continue;
                             tmp[n++] = INAVCalculator.PositionBalance({
                                 balanceAsset: info,
-                                balanceOracle: address(this),
+                                balanceAdapter: address(this),
                                 amount: amount,
                                 isDebt: false,
                                 protocolId: PROTOCOL_ID,
@@ -127,7 +127,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 if (found) {
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: crvEarned,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -146,7 +146,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
                 if (found) {
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,
-                        balanceOracle: address(this),
+                        balanceAdapter: address(this),
                         amount: cvxAmount,
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
@@ -192,7 +192,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
                 tmp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: info,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: amount,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
@@ -208,7 +208,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         address rewarder = _toAddress(instance);
         address lpToken = _lpTokenOf(rewarder);
@@ -258,7 +258,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceOracle {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address rewarder = abi.decode(pid, (address));

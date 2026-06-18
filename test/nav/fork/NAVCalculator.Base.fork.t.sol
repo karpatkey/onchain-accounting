@@ -8,6 +8,7 @@ import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/Compoun
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     /// @notice Safe with Aave V3, Compound V3, Morpho positions on Base (same as base harness default)
@@ -76,31 +77,27 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdBase(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
+        aaveAdapter = aaveMeta;
 
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
 
-        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
 
-        nav.addBalanceOracle(address(aaveOracle));
-        nav.addBalanceOracle(address(compoundV3Comet));
-        nav.addBalanceOracle(address(morphoBlueOracle));
-
-        // Configure meta-adapter instance sets
+        // Meta-adapters register + seed atomically via addMetaBalanceAdapter (plain addBalanceAdapters rejects meta).
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveMeta), aaveInstances);
 
         bytes32[] memory comets = new bytes32[](1);
         comets[0] = bytes32(uint256(uint160(cUsdCv3)));
-        nav.setMetaInstances(address(compoundV3Comet), comets);
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), comets);
 
         bytes32[] memory markets = new bytes32[](1);
         markets[0] = marketIdCbbtcUsdc;
-        nav.setMetaInstances(address(morphoBlueOracle), markets);
+        nav.addMetaBalanceAdapter(address(morphoBlueAdapter), markets);
     }
 
     function test_logPositions() public view {

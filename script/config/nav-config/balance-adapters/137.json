@@ -1,0 +1,14 @@
+{
+  "Fluid_fToken_USDC": {
+    "enabled": false
+  },
+  "Fluid_fToken_USDT": {
+    "enabled": false
+  },
+  "Fluid_fToken_WETH": {
+    "enabled": false
+  },
+  "Fluid_fToken_WPOL": {
+    "enabled": false
+  }
+}

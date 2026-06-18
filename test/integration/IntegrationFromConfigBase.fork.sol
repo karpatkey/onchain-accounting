@@ -16,27 +16,27 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 // Balance adapters
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
-import {SparkLendBalanceOracle} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {ERC4626WrapBalanceOracle} from "src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
-import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
+import {CapBalanceAdapter} from "src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
 import {ConvexRewardsMetaBalanceAdapter} from "src/balances/protocols/ConvexRewardsMeta.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
-import {AaveUmbrellaBalanceOracle} from "src/balances/protocols/AaveUmbrella.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrella.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {AuraRewardsMetaBalanceAdapter} from "src/balances/protocols/AuraRewardsMeta.sol";
-import {MerklRewardsBalanceOracle, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
+import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
-import {StaderWithdrawalQueueBalanceOracle} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
@@ -71,11 +71,12 @@ import {syrupUSDC_L2_PriceOracle} from "src/prices/protocols/syrupUSDC_L2_Price.
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title IntegrationFromConfigBase
 /// @notice Per-chain integration test harness that mirrors the deploy pipeline:
 ///         deploys NAVCalculator + every enabled price feed adapter (assets.json) + every enabled
-///         balance adapter (chains/<id>.json), registers all assets and balance oracles, then reads
+///         balance adapter (chains/<id>.json), registers all assets and balance adapters, then reads
 ///         NAV for the configured accounts. Equivalent to running 02_2 + 03 + 04 + 06_Configure + RegisterAssets
 ///         end-to-end inside a forked-mainnet test.
 /// @dev Deployment dispatch is duplicated from script/deploy/{03,04}*.sol so the test can avoid the
@@ -104,9 +105,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     string internal constant MERKL_PROOFS_JSON = "test/integration/merkl-proofs.json";
 
     /// @notice Address of the deployed MerklRewards adapter for this chain (zero if not deployed).
-    address internal _merklOracle;
+    address internal _merklAdapter;
 
-    /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceOracle pass).
+    /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceAdapter pass).
     address[] internal _deployedBalanceAdapters;
 
     /// @notice Config names parallel to `_deployedBalanceAdapters` (used to read per-adapter config such as
@@ -115,12 +116,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Maps feed name → ephemerally-deployed price feed address. Populated by
     ///         _tryDeployPriceFeed during _deployAllPriceFeeds. Serves two purposes in
-    ///         _registerAssetIfPossible: (1) fallback when assets.json.pricefeed is blank (feed
-    ///         exists in code but not yet deployed to production); (2) override when a prod
-    ///         address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
-    ///         to IPriceFeedCustom). Key is the feed deploy name, not the token symbol — use
-    ///         _priceFeedNameForSymbol to convert. Fork-only; production registration via
-    ///         RegisterAssets.s.sol reads pricefeed from assets.json.
+    ///         _registerAssetIfPossible: (1) fallback when an asset's Custom feed has no deployed
+    ///         address (feed exists in code but not yet deployed to production); (2) override when a
+    ///         prod address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
+    ///         to IPriceFeedCustom). Key is the feed deploy name from assets.json's `priceFeeds[].feed`,
+    ///         resolved via ConfigReader.readAssetFeedName. Fork-only; production registration via
+    ///         RegisterAssets.s.sol reads feeds from assets.json.
     mapping(string => address) internal _ephemeralPriceFeeds;
 
     function _setupAndDeploy() internal {
@@ -137,7 +138,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
@@ -154,9 +155,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
         _deployAllPriceFeeds();
         // Asset registration MUST precede balance-adapter deployment because some adapter
-        // constructors (e.g. ERC4626WrapBalanceOracle) require the underlying asset to be
+        // constructors (e.g. ERC4626WrapBalanceAdapter) require the underlying asset to be
         // registered before they can deploy. Production deploy mirrors this via the Safe-TX
-        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceOracle).
+        // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceAdapter).
         _registerAllAssets();
         _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
@@ -234,20 +235,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address addr = deployer();
         _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
-    }
-
-    /// @notice Returns the price feed name (as used in _deployAllPriceFeeds) for a given token symbol.
-    function _priceFeedNameForSymbol(string memory symbol) internal view returns (string memory) {
-        if (_chainId == 1) {
-            return symbol;
-        }
-        if (_chainId == 100 && _equals(symbol, "sDAI")) {
-            return "sXDAI";
-        }
-        if (_chainId == 100 && _equals(symbol, "osGNO")) {
-            return "osGNO";
-        }
-        return string(abi.encodePacked(symbol, "_L2"));
     }
 
     function _deploySdai() internal returns (address) {
@@ -622,13 +609,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAaveV3(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
+        return address(new SparkLendBalanceAdapter(dataProvider, navAddr));
     }
 
     function _deploySparkLend(string memory name, address navAddr) internal returns (address) {
         address dataProvider =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "dataProvider"));
-        return address(new SparkLendBalanceOracle(dataProvider, navAddr));
+        return address(new SparkLendBalanceAdapter(dataProvider, navAddr));
     }
 
     function _deployCompoundV3CometsMeta(string memory name, address navAddr) internal returns (address) {
@@ -685,7 +672,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
         address wrapper =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
-        return address(new ERC4626WrapBalanceOracle(wrapper, navAddr));
+        return address(new ERC4626WrapBalanceAdapter(wrapper, navAddr));
     }
 
     function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
@@ -698,7 +685,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address stcUsd =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
         address usdc = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "usdc"));
-        return address(new CapBalanceOracle(cUsd, stcUsd, usdc, navAddr));
+        return address(new CapBalanceAdapter(cUsd, stcUsd, usdc, navAddr));
     }
 
     function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
@@ -724,13 +711,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
-        return address(new AaveV3SafetyModuleBalanceOracle(navAddr));
+        return address(new AaveV3SafetyModuleBalanceAdapter(navAddr));
     }
 
     function _deployAaveUmbrella(string memory name, address navAddr) internal returns (address) {
         address rewardsController =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardsController"));
-        return address(new AaveUmbrellaBalanceOracle(rewardsController, navAddr));
+        return address(new AaveUmbrellaBalanceAdapter(rewardsController, navAddr));
     }
 
     function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
@@ -739,8 +726,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        address adapter = address(new MerklRewardsBalanceOracle(distributor, navAddr, admin));
-        _merklOracle = adapter;
+        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin));
+        _merklAdapter = adapter;
         return adapter;
     }
 
@@ -776,7 +763,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        return address(new StaderWithdrawalQueueBalanceOracle(userWithdrawalManager, underlyingToken, navAddr));
+        return address(new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
     }
 
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
@@ -809,102 +796,124 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     // -----------------------------------------------------------------------
-    // Asset registration (uses assets.json oracle addresses verbatim — these
-    // are either Chainlink feeds or fund-side Custom oracles already on chain).
+    // Asset registration (uses assets.json adapter addresses verbatim — these
+    // are either Chainlink feeds or fund-side Custom adapters already on chain).
     // -----------------------------------------------------------------------
 
     function _registerAllAssets() internal {
-        string[] memory symbols = _symbolsForChain(_chainId);
+        string[] memory symbols = ConfigReader.getAssetSymbols(vm, _chainId);
         for (uint256 i = 0; i < symbols.length; i++) {
             _registerAssetIfPossible(symbols[i]);
         }
     }
 
+    /// @notice Registers an asset and wires ALL of its configured price feeds: the first via registerAsset, any
+    ///         additional via addPriceFeed (ADR 0009 redundancy). Custom feeds resolve to the in-test ephemeral
+    ///         deployment (`_ephemeralPriceFeeds[<feed name>]`), since this harness deploys feeds in-memory rather
+    ///         than from a deployments file. Chainlink/Redstone/API3 feeds use the static address from
+    ///         `nav-config/assets-and-price-feeds/<chainId>.json`.
     function _registerAssetIfPossible(string memory symbol) internal {
-        string memory addrStr = ConfigReader.readTokenAddress(vm, _chainId, symbol);
+        string memory addrStr = ConfigReader.readAssetAddress(vm, _chainId, symbol);
         if (bytes(addrStr).length == 0) return;
         address asset = vm.parseAddress(addrStr);
         if (asset == address(0)) return;
 
-        string memory typeStr = ConfigReader.readTokenType(vm, _chainId, symbol);
-        if (_equals(typeStr, "None")) return;
+        uint256 feedCount = ConfigReader.assetFeedCount(vm, _chainId, symbol);
+        bool registered = nav.isAssetRegistered(asset);
 
-        // Resolve the oracle address. Prefer assets.json's hardcoded `pricefeed` (set by
-        // 03_DeployPriceFeeds at production deploy time). When that field is blank — i.e. the
-        // feed contract exists in code but hasn't been deployed to production yet, e.g. ETHx
-        // pre-mainnet-deploy — fall back to the ephemerally-deployed instance from
-        // _deployAllPriceFeeds. This makes the integration test exercise the feed end-to-end
-        // before the production deploy lands. Once the production deploy completes and
-        // assets.json.pricefeed is populated, this branch becomes inert for that symbol.
-        address oracle;
-        if (ConfigReader.hasTokenOracle(vm, _chainId, symbol)) {
-            oracle = vm.parseAddress(ConfigReader.readTokenOracle(vm, _chainId, symbol));
-        } else if (_ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)] != address(0)) {
-            oracle = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            console2.log("[asset/ephemeral]", symbol, oracle);
-        } else {
-            return;
-        }
-        uint256 heartbeat = vm.parseUint(ConfigReader.readTokenHeartbeat(vm, _chainId, symbol));
+        for (uint256 i = 0; i < feedCount; i++) {
+            string memory t = ConfigReader.readAssetFeedType(vm, _chainId, symbol, i);
+            if (_equals(t, "None")) continue;
+            // Shared type→enum mapping (ConfigReader.readAssetFeedPriceType — same table production RegisterAssets uses,
+            // so the two can't disagree on which types are recognized). Fail fast on an unrecognized type.
+            (IPrices.PriceType pt, bool validType) = ConfigReader.readAssetFeedPriceType(vm, _chainId, symbol, i);
+            if (!validType) revert(string(abi.encodePacked("unknown price feed type '", t, "' for ", symbol)));
 
-        IPrices.PriceType pt = _equals(typeStr, "Custom") ? IPrices.PriceType.Custom : IPrices.PriceType.Chainlink;
-
-        // For Custom feeds: prefer the ephemerally-deployed feed over any prod address in assets.json.
-        // Reason: adding latestRoundData() to IPriceFeedCustom changed the ERC165 interface ID —
-        // old deployed addresses fail checkPriceOracleSupport(). The ephemeral feed (new code)
-        // passes the check and is functionally equivalent for fork tests.
-        if (pt == IPrices.PriceType.Custom) {
-            address fresh = _ephemeralPriceFeeds[_priceFeedNameForSymbol(symbol)];
-            if (fresh != address(0)) oracle = fresh;
-        }
-
-        // The native sentinel is pre-registered by NAVCalculator.initialize(). For it (and any other
-        // pre-registered asset) add the first price feed via addPriceFeed.
-        if (nav.isAssetRegistered(asset)) {
-            try nav.addPriceFeed(asset, oracle, pt, heartbeat) {
-                console2.log("[asset/addFeed]", symbol, asset);
-            } catch (bytes memory err) {
-                console2.log("[asset/addFeed]", symbol, "FAILED");
-                console2.logBytes(err);
+            address adapter;
+            if (pt == IPrices.PriceType.Custom) {
+                // Ephemeral (new-code) feed deployed in this harness, keyed by the configured feed name. Preferred
+                // over any prod address because IPriceFeedCustom's ERC165 id changed (old deployments fail the check).
+                adapter = _ephemeralPriceFeeds[ConfigReader.readAssetFeedName(vm, _chainId, symbol, i)];
+            } else {
+                string memory fa = ConfigReader.readAssetFeedAddress(vm, _chainId, symbol, i);
+                if (bytes(fa).length > 0) adapter = vm.parseAddress(fa);
             }
-            return;
-        }
+            if (adapter == address(0)) continue;
 
-        try nav.registerAsset(asset, oracle, pt, heartbeat) {
-            console2.log("[asset]", symbol, asset);
-        } catch (bytes memory err) {
-            console2.log("[asset]", symbol, "REGISTER FAILED");
-            console2.logBytes(err);
+            uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, _chainId, symbol, i));
+            if (!registered) {
+                try nav.registerAsset(asset, adapter, pt, hb) {
+                    registered = true;
+                    console2.log("[asset]", symbol, asset);
+                } catch (bytes memory err) {
+                    console2.log("[asset]", symbol, "REGISTER FAILED");
+                    console2.logBytes(err);
+                }
+            } else {
+                try nav.addPriceFeed(asset, adapter, pt, hb) {
+                    console2.log("[asset/addFeed]", symbol, asset);
+                } catch (bytes memory err) {
+                    console2.log("[asset/addFeed]", symbol, "FAILED");
+                    console2.logBytes(err);
+                }
+            }
         }
     }
 
     function _registerAllBalanceAdapters() internal {
+        // Mirror production 06_Configure: route plain vs meta by which NAV-config file the adapter's name is in
+        // (nav-config/balance-adapters vs nav-config/meta-balance-adapters), NOT by ERC165. Using the same source of
+        // truth as production means a mis-filed adapter (meta name in the plain file, or vice-versa) fails here exactly
+        // as it would in 06 — the registration reverts, the adapter is left unregistered, and the NAV assertion catches
+        // it. An adapter in neither nav file is intentionally not registered (mirrors prod's deployed-but-not-added).
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
-            try nav.addBalanceOracle(a) {
-            // ok
-            }
-            catch (bytes memory err) {
-                console2.log("[oracle] addBalanceOracle FAILED for", a);
-                console2.logBytes(err);
+            string memory name = _deployedBalanceAdapterNames[i];
+            bool isMeta = ConfigReader.isAdapterEnabled(vm, _chainId, "navMetaBalanceAdapters", name);
+            // MerklRewards is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
+            // exercise Merkl-reward NAV; it is a plain adapter not present in any nav-config file, so register it via
+            // the plain path here to match that deploy-side special case.
+            bool isPlain = ConfigReader.isAdapterEnabled(vm, _chainId, "navBalanceAdapters", name)
+                || _equals(name, "MerklRewards");
+
+            if (isMeta) {
+                // Meta path: register with an empty set; _configureMetaInstances seeds the actual instances after.
+                try nav.addMetaBalanceAdapter(a, new bytes32[](0)) {
+                // ok
+                }
+                catch (bytes memory err) {
+                    console2.log("[adapter] addMetaBalanceAdapter FAILED for", name, a);
+                    console2.logBytes(err);
+                }
+            } else if (isPlain) {
+                try nav.addBalanceAdapters(aa(a)) {
+                // ok
+                }
+                catch (bytes memory err) {
+                    console2.log("[adapter] addBalanceAdapters FAILED for", name, a);
+                    console2.logBytes(err);
+                }
+            } else {
+                console2.log("[adapter] not in any nav-config file, not registered:", name, a);
             }
         }
     }
 
     /// @notice Applies each meta-adapter's `metaInstances` config to NAVCalculator (ADR 0010). This is how the
     ///         NAV calculator is told which instances of a protocol to query — e.g. the Morpho-vault universe.
-    /// @dev Runs after registration (setMetaInstances requires the oracle to be registered) and within the same
+    /// @dev Runs after registration (addMetaInstances requires the adapter to be registered) and within the same
     ///      `admin` prank that holds MANAGER. Adapters with no `metaInstances` config are skipped.
     function _configureMetaInstances() internal {
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
             address a = _deployedBalanceAdapters[i];
             string memory name = _deployedBalanceAdapterNames[i];
 
-            // Union address-keyed (`metaInstances`, widened) + raw bytes32 (`metaInstancesRaw`, e.g. marketIds).
+            // Union address-keyed (`instances`, widened) + raw bytes32 (`instancesRaw`, e.g. marketIds) from the
+            // meta-adapter NAV-config file (nav-config/meta-balance-adapters/<id>.json).
             address[] memory addrs =
-                ConfigReader.readAdapterAddressArray(vm, _chainId, "balanceAdapters", name, "metaInstances");
+                ConfigReader.readAdapterAddressArray(vm, _chainId, "navMetaBalanceAdapters", name, "instances");
             bytes32[] memory raw =
-                ConfigReader.readAdapterBytes32Array(vm, _chainId, "balanceAdapters", name, "metaInstancesRaw");
+                ConfigReader.readAdapterBytes32Array(vm, _chainId, "navMetaBalanceAdapters", name, "instancesRaw");
             if (addrs.length + raw.length == 0) continue;
 
             bytes32[] memory instances = new bytes32[](addrs.length + raw.length);
@@ -915,10 +924,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 instances[addrs.length + j] = raw[j];
             }
 
-            // No try/catch: the per-instance adapters are disabled in config, so a failed setMetaInstances must
+            // No try/catch: the per-instance adapters are disabled in config, so a failed addMetaInstances must
             // fail the run loudly rather than silently omit the migrated positions from snapshots/asserts.
-            nav.setMetaInstances(a, instances);
-            console2.log("[meta] setMetaInstances", name, instances.length);
+            nav.addMetaInstances(a, instances);
+            console2.log("[meta] addMetaInstances", name, instances.length);
         }
     }
 
@@ -928,7 +937,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @dev    Called from setUp while vm.startPrank(admin) is active. Submitter must equal the
     ///         adapter's owner (set to `admin` in `_deployMerklRewards`).
     function _seedMerklProofs() internal {
-        if (_merklOracle == address(0)) return;
+        if (_merklAdapter == address(0)) return;
         if (!vm.exists(MERKL_PROOFS_JSON)) {
             console2.log("[merkl] no proof fixture file; skipping cache seed");
             return;
@@ -948,7 +957,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
         if (vm.keyExistsJson(json, expectedRootKey)) {
             bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
-            address distributor = MerklRewardsBalanceOracle(_merklOracle).DISTRIBUTOR();
+            address distributor = MerklRewardsBalanceAdapter(_merklAdapter).DISTRIBUTOR();
             bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
             if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
                 console2.log(
@@ -981,7 +990,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             string memory proofKey = string.concat(chainKey, ".proofs[", vm.toString(i), "]");
             bytes32[] memory proof = vm.parseJsonBytes32Array(json, proofKey);
             uint256 amount = vm.parseUint(amountStrs[i]);
-            try MerklRewardsBalanceOracle(_merklOracle).submitProof(users[i], tokens[i], amount, proof) {
+            try MerklRewardsBalanceAdapter(_merklAdapter).submitProof(users[i], tokens[i], amount, proof) {
                 ok++;
             } catch (bytes memory err) {
                 failed++;
@@ -991,101 +1000,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         console2.log("[merkl] proofs cached:", ok);
         if (failed != 0) console2.log("[merkl] proofs failed (treated as 0 in NAV):", failed);
-    }
-
-    /// @notice Per-chain token symbol list (sourced from script/manage/RegisterAssets.s.sol).
-    function _symbolsForChain(uint256 chainId) internal pure returns (string[] memory) {
-        if (chainId == 1) {
-            string[] memory s = new string[](35);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "eETH";
-            s[4] = "weETH";
-            s[5] = "rETH";
-            s[6] = "ETH+";
-            s[7] = "ezETH";
-            s[8] = "rsETH";
-            s[9] = "MORPHO";
-            s[10] = "USDC";
-            s[11] = "BAL";
-            s[12] = "AURA";
-            s[13] = "RPL";
-            s[14] = "GEAR";
-            s[15] = "stETH";
-            s[16] = "CRV";
-            s[17] = "CVX";
-            s[18] = "USDS";
-            s[19] = "USDT";
-            s[20] = "DAI";
-            s[21] = "GHO";
-            s[22] = "USDe";
-            s[23] = "sUSDe";
-            s[24] = "RLUSD";
-            s[25] = "crvUSD";
-            s[26] = "sUSDS";
-            s[27] = "syrupUSDC";
-            s[28] = "COMP";
-            s[29] = "WBTC";
-            s[30] = "AAVE";
-            s[31] = "osETH"; // Custom-priced (osToken_PriceOracle): convertToAssets(1e18) * ETH/USD
-            s[32] = "EIGEN";
-            s[33] = "ETHx"; // Custom-priced (ETHx_PriceOracle); skipped until assets.json .tokens.1.ETHx.pricefeed is set
-            s[34] = "EURC";
-            return s;
-        }
-        if (chainId == 42161) {
-            string[] memory s = new string[](12);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "ezETH";
-            s[5] = "rsETH";
-            s[6] = "MORPHO";
-            s[7] = "USDC";
-            s[8] = "USDT";
-            s[9] = "GHO";
-            s[10] = "syrupUSDC";
-            s[11] = "COMP";
-            return s;
-        }
-        if (chainId == 100) {
-            string[] memory s = new string[](8);
-            s[0] = "xDAI";
-            s[1] = "WXDAI";
-            s[2] = "WETH";
-            s[3] = "wstETH";
-            s[4] = "USDCe";
-            s[5] = "sDAI";
-            s[6] = "GHO";
-            s[7] = "osGNO";
-            return s;
-        }
-        if (chainId == 8453) {
-            string[] memory s = new string[](9);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "weETH";
-            s[4] = "cbETH";
-            s[5] = "MORPHO";
-            s[6] = "USDC";
-            s[7] = "GHO";
-            s[8] = "COMP";
-            return s;
-        }
-        if (chainId == 10) {
-            string[] memory s = new string[](6);
-            s[0] = "ETH";
-            s[1] = "WETH";
-            s[2] = "wstETH";
-            s[3] = "USDC";
-            s[4] = "USDT";
-            s[5] = "COMP";
-            return s;
-        }
-        return new string[](0);
     }
 
     // -----------------------------------------------------------------------
@@ -1133,7 +1047,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Attempt to read human-readable protocol name from the adapter.
         // Used by generate-comparison-report.py to map positions to DeBank protocol IDs.
         string memory protoName = "";
-        try IPositionDescribable(pos.balanceOracle).protocolName() returns (string memory n) {
+        try IPositionDescribable(pos.balanceAdapter).protocolName() returns (string memory n) {
             protoName = n;
         } catch {}
 

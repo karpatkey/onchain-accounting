@@ -4,14 +4,15 @@ pragma solidity ^0.8.0;
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
-import {AaveV3SafetyModuleBalanceOracle} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
+import {DaiDsrBalanceAdapter} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     /// @notice Safe with Aave V3, Compound V3, Morpho, DSR positions on Ethereum Mainnet (same as base harness default)
@@ -140,24 +141,26 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         nav.registerAsset(wbtc, ChainlinkPriceFeeds.btcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
-        AaveV3SafetyModuleBalanceOracle smOracle = new AaveV3SafetyModuleBalanceOracle(address(nav));
+        aaveAdapter = aaveMeta;
+        AaveV3SafetyModuleBalanceAdapter smAdapter = new AaveV3SafetyModuleBalanceAdapter(address(nav));
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        morphoBlueOracle = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
-        daiDsr = new DaiDsrBalanceOracle(dai, dsr, address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        daiDsr = new DaiDsrBalanceAdapter(dai, dsr, address(nav));
 
-        nav.addBalanceOracle(address(aaveOracle));
-        nav.addBalanceOracle(address(smOracle));
-        nav.addBalanceOracle(address(compoundV3Comet));
-        nav.addBalanceOracle(address(morphoBlueOracle));
-        nav.addBalanceOracle(address(daiDsr));
+        // Non-meta adapters register via the plain batch path.
+        nav.addBalanceAdapters(aa(address(smAdapter)));
+        nav.addBalanceAdapters(aa(address(daiDsr)));
 
+        // Meta-adapters register via addMetaBalanceAdapter (atomic register + seed). The Compound/Morpho metas
+        // carry no instances in this test, so they register with an empty set (contribute nothing).
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), new bytes32[](0));
+        nav.addMetaBalanceAdapter(address(morphoBlueAdapter), new bytes32[](0));
     }
 
     function test_logPositions() public view {

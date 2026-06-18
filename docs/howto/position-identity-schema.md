@@ -11,7 +11,7 @@ how to decode and use the identity for indexing, reconciliation, and action rout
 ```solidity
 struct PositionBalance {
     Asset        balanceAsset;   // token the amount is denominated in
-    address      balanceOracle;  // adapter that reported this row (provenance only)
+    address      balanceAdapter;  // adapter that reported this row (provenance only)
     uint256      amount;         // magnitude, always positive
     bool         isDebt;         // NAV sign: true = subtract, false = add
     bytes32      protocolId;     // keccak256("protocol-slug")
@@ -28,7 +28,7 @@ The ERC20 token (or native-token sentinel `0xEeee…EeeE`) that `amount` is deno
 Populated from NAVCalculator's asset registry; `symbol` and `decimals` are the registry values,
 not read live from the token contract.
 
-**`balanceOracle`** — `address`
+**`balanceAdapter`** — `address`
 
 The adapter contract that produced this row. Provenance / audit trail — changing which adapter
 is registered does not change the position. Excluded from the reconciliation key.
@@ -98,13 +98,13 @@ Protocol contract addresses are shown as `0x<Name>` to remain chain-agnostic.
 
 ### Per-instance adapters
 
-#### `ERC20DefaultOracle` — wallet balance
+#### `ERC20DefaultAdapter` — wallet balance
 
 ```solidity
 // One leg per registered asset held directly in the account.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<ERC20DefaultOracle>,
+    balanceAdapter: 0x<ERC20DefaultAdapter>,
     amount:        1_500_000_000,          // 1 500.000000 USDC
     isDebt:        false,
     protocolId:    keccak256("wallet"),
@@ -120,7 +120,7 @@ PositionBalance({
 // Other legs: Collateral (usageAsCollateralEnabled = true), Borrowed (variableDebt).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x6B17…1d0F, symbol: "DAI", decimals: 18 }),
-    balanceOracle: 0x<SparkLendOracle>,
+    balanceAdapter: 0x<SparkLendAdapter>,
     amount:        3_000e18,               // 3 000 DAI
     isDebt:        false,
     protocolId:    keccak256("spark-lend"),
@@ -136,7 +136,7 @@ PositionBalance({
 // Other legs: Rewards (claimable AAVE reward denominated in STAKED_TOKEN).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x7Fc6…DaE9, symbol: "AAVE", decimals: 18 }),
-    balanceOracle: 0x<AaveV3SafetyModuleOracle>,
+    balanceAdapter: 0x<AaveV3SafetyModuleAdapter>,
     amount:        500e18,                 // 500 AAVE staked in stkAAVE
     isDebt:        false,
     protocolId:    keccak256("aave-v3-safety-module"),
@@ -152,7 +152,7 @@ PositionBalance({
 // Other legs: Rewards (claimable reward in bare reserve).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<AaveUmbrellaOracle>,
+    balanceAdapter: 0x<AaveUmbrellaAdapter>,
     amount:        1_000_000_000,          // 1 000 USDC (principal via waToken exchange rate)
     isDebt:        false,
     protocolId:    keccak256("aave-v3-umbrella"),
@@ -166,7 +166,7 @@ PositionBalance({
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<CapOracle>,
+    balanceAdapter: 0x<CapAdapter>,
     amount:        2_000_000_000,          // 2 000 USDC
     isDebt:        false,
     protocolId:    keccak256("cap"),
@@ -181,7 +181,7 @@ PositionBalance({
 // Account-global: positionId = "" (one DSR position per account).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x6B17…1d0F, symbol: "DAI", decimals: 18 }),
-    balanceOracle: 0x<DaiDsrOracle>,
+    balanceAdapter: 0x<DaiDsrAdapter>,
     amount:        3_000e18,               // 3 000 DAI (chi-adjusted)
     isDebt:        false,
     protocolId:    keccak256("dai-dsr"),
@@ -196,7 +196,7 @@ PositionBalance({
 // Generic adapter for any ERC4626 share token (e.g. stata-tokens).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x40D1…2f, symbol: "GHO", decimals: 18 }),
-    balanceOracle: 0x<ERC4626WrapOracle>,
+    balanceAdapter: 0x<ERC4626WrapAdapter>,
     amount:        1_000e18,               // 1 000 GHO (convertToAssets of share balance)
     isDebt:        false,
     protocolId:    keccak256("erc4626"),
@@ -211,7 +211,7 @@ PositionBalance({
 // Sums all open requests per asset; positionId = "" (per-asset legs, not per-request).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
-    balanceOracle: 0x<KelpWithdrawalQueueOracle>,
+    balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
     amount:        2e18,                   // 2 stETH owed across open requests
     isDebt:        false,
     protocolId:    keccak256("kelp-withdrawal"),
@@ -226,7 +226,7 @@ PositionBalance({
 // Sums amountOfStETH across all unclaimed request IDs; denominated in ETH (not stETH).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
-    balanceOracle: 0x<LidoWithdrawalQueueOracle>,
+    balanceAdapter: 0x<LidoWithdrawalQueueAdapter>,
     amount:        1e18,                   // 1 ETH owed on finalization
     isDebt:        false,
     protocolId:    keccak256("lido-withdrawal"),
@@ -241,7 +241,7 @@ PositionBalance({
 // One leg per reward token; proof-cached balance (may lag until next proof update).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xD533…cd52, symbol: "CRV", decimals: 18 }),
-    balanceOracle: 0x<MerklRewardsOracle>,
+    balanceAdapter: 0x<MerklRewardsAdapter>,
     amount:        250e18,                 // 250 CRV unclaimed
     isDebt:        false,
     protocolId:    keccak256("merkl"),
@@ -255,7 +255,7 @@ PositionBalance({
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xdC03…84F, symbol: "USDS", decimals: 18 }),
-    balanceOracle: 0x<SkySavingsUsdsOracle>,
+    balanceAdapter: 0x<SkySavingsUsdsAdapter>,
     amount:        5_000e18,               // 5 000 USDS (convertToAssets)
     isDebt:        false,
     protocolId:    keccak256("sky-savings"),
@@ -270,7 +270,7 @@ PositionBalance({
 // Sums all open request ETH values; denominated in WETH.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
-    balanceOracle: 0x<StaderWithdrawalQueueOracle>,
+    balanceAdapter: 0x<StaderWithdrawalQueueAdapter>,
     amount:        5e17,                   // 0.5 WETH owed
     isDebt:        false,
     protocolId:    keccak256("stader-withdrawal"),
@@ -289,7 +289,7 @@ PositionBalance({
 // Per-reserve: positionId = abi.encode(pool, reserve). Other legs: Collateral, Borrowed.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<AaveV3InstancesMeta>,
+    balanceAdapter: 0x<AaveV3InstancesMeta>,
     amount:        1_500_000_000,          // 1 500 USDC aToken balance
     isDebt:        false,
     protocolId:    keccak256("aave-v3-lending"),
@@ -304,7 +304,7 @@ PositionBalance({
 // Identical schema to AaveV3InstancesMeta; pool resolved via getLendingPool() instead of getPool().
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<AaveV2InstancesMeta>,
+    balanceAdapter: 0x<AaveV2InstancesMeta>,
     amount:        1_500_000_000,
     isDebt:        false,
     protocolId:    keccak256("aave-v2-lending"),
@@ -318,7 +318,7 @@ PositionBalance({
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<MorphoVaultsMeta>,
+    balanceAdapter: 0x<MorphoVaultsMeta>,
     amount:        5_000_000_000,          // 5 000 USDC (convertToAssets)
     isDebt:        false,
     protocolId:    keccak256("morpho-vaults"),
@@ -333,7 +333,7 @@ PositionBalance({
 // Per-market: positionId = raw bytes32 marketId. Other legs: Supplied (loan supply), Borrowed.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x7f39…Ca0, symbol: "wstETH", decimals: 18 }),
-    balanceOracle: 0x<MorphoMarketsMeta>,
+    balanceAdapter: 0x<MorphoMarketsMeta>,
     amount:        2e18,                   // 2 wstETH collateral
     isDebt:        false,
     protocolId:    keccak256("morpho-markets"),
@@ -347,7 +347,7 @@ PositionBalance({
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<GearboxMarketsMeta>,
+    balanceAdapter: 0x<GearboxMarketsMeta>,
     amount:        1_000_000_000,
     isDebt:        false,
     protocolId:    keccak256("gearbox-v3"),
@@ -361,7 +361,7 @@ PositionBalance({
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<FluidFTokensMeta>,
+    balanceAdapter: 0x<FluidFTokensMeta>,
     amount:        1_000_000_000,
     isDebt:        false,
     protocolId:    keccak256("fluid-ftokens"),
@@ -376,7 +376,7 @@ PositionBalance({
 // Aggregates across all account NFT positions in this vault. Other legs: Borrowed.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
-    balanceOracle: 0x<FluidVaultsMeta>,
+    balanceAdapter: 0x<FluidVaultsMeta>,
     amount:        1e18,                   // 1 WETH collateral (aggregated)
     isDebt:        false,
     protocolId:    keccak256("fluid-vaults"),
@@ -391,7 +391,7 @@ PositionBalance({
 // Other legs: Borrowed (base token debt), Collateral (per collateral asset), Rewards (COMP).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<CompoundV3CometsMeta>,
+    balanceAdapter: 0x<CompoundV3CometsMeta>,
     amount:        2_000_000_000,          // 2 000 USDC base supply
     isDebt:        false,
     protocolId:    keccak256("compound-v3"),
@@ -406,7 +406,7 @@ PositionBalance({
 // Staking = vault shares → ETH. Other leg: Borrowed (minted osETH debt).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
-    balanceOracle: 0x<StakeWiseV3VaultsMeta>,
+    balanceAdapter: 0x<StakeWiseV3VaultsMeta>,
     amount:        2e18,                   // 2 ETH (convertToAssets(getShares))
     isDebt:        false,
     protocolId:    keccak256("stakewise-v3"),
@@ -421,7 +421,7 @@ PositionBalance({
 // One Supplied leg per pool token. Gauge-staked LP is a separate adapter.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<BalancerV3PoolsMeta>,
+    balanceAdapter: 0x<BalancerV3PoolsMeta>,
     amount:        800_000_000,            // 800 USDC pro-rata from wallet BPT
     isDebt:        false,
     protocolId:    keccak256("balancer-v3-pool"),
@@ -436,7 +436,7 @@ PositionBalance({
 // Other legs: Rewards (BAL + extra reward tokens).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<BalancerV3GaugesMeta>,
+    balanceAdapter: 0x<BalancerV3GaugesMeta>,
     amount:        800_000_000,            // 800 USDC pro-rata from staked BPT
     isDebt:        false,
     protocolId:    keccak256("balancer-v3-gauge"),
@@ -451,7 +451,7 @@ PositionBalance({
 // positionId = raw bytes32 poolId (BPT address is poolId's top 20 bytes).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<BalancerV2PoolsMeta>,
+    balanceAdapter: 0x<BalancerV2PoolsMeta>,
     amount:        800_000_000,
     isDebt:        false,
     protocolId:    keccak256("balancer-v2-pool"),
@@ -466,7 +466,7 @@ PositionBalance({
 // Other legs: Rewards (BAL + extra reward tokens).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<BalancerV2GaugesMeta>,
+    balanceAdapter: 0x<BalancerV2GaugesMeta>,
     amount:        800_000_000,
     isDebt:        false,
     protocolId:    keccak256("balancer-v2-gauge"),
@@ -481,7 +481,7 @@ PositionBalance({
 // One Supplied leg per registered pool coin, pro-rata from wallet LP balance.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x<crvUSD>, symbol: "crvUSD", decimals: 18 }),
-    balanceOracle: 0x<CurvePoolsMeta>,
+    balanceAdapter: 0x<CurvePoolsMeta>,
     amount:        1_000e18,               // 1 000 crvUSD pro-rata
     isDebt:        false,
     protocolId:    keccak256("curve-pool"),
@@ -496,7 +496,7 @@ PositionBalance({
 // Other legs: Rewards (CRV lower-bound + extra reward tokens).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x<crvUSD>, symbol: "crvUSD", decimals: 18 }),
-    balanceOracle: 0x<CurveGaugesMeta>,
+    balanceAdapter: 0x<CurveGaugesMeta>,
     amount:        1_000e18,
     isDebt:        false,
     protocolId:    keccak256("curve-gauge"),
@@ -511,7 +511,7 @@ PositionBalance({
 // Staked LP decomposed into pool coins. Other legs: Rewards (CRV, CVX, extras).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x<crvUSD>, symbol: "crvUSD", decimals: 18 }),
-    balanceOracle: 0x<ConvexRewardsMeta>,
+    balanceAdapter: 0x<ConvexRewardsMeta>,
     amount:        1_000e18,
     isDebt:        false,
     protocolId:    keccak256("convex"),
@@ -526,7 +526,7 @@ PositionBalance({
 // Staked BPT decomposed into pool tokens. Other legs: Rewards (BAL, AURA, extras).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<AuraRewardsMeta>,
+    balanceAdapter: 0x<AuraRewardsMeta>,
     amount:        800_000_000,
     isDebt:        false,
     protocolId:    keccak256("aura"),
@@ -542,7 +542,7 @@ PositionBalance({
 // two Fees legs (token0, token1 uncollected fees) — all share this positionId.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<UniswapV3PoolsMeta>,
+    balanceAdapter: 0x<UniswapV3PoolsMeta>,
     amount:        600_000_000,            // 600 USDC in-range liquidity (NFT #12345)
     isDebt:        false,
     protocolId:    keccak256("uniswap-v3"),
@@ -557,7 +557,7 @@ PositionBalance({
 // Two Supplied legs per pair (token0 + token1 pro-rata from wallet LP).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceOracle: 0x<UniswapV2PoolsMeta>,
+    balanceAdapter: 0x<UniswapV2PoolsMeta>,
     amount:        700_000_000,            // 700 USDC from USDC/WETH pair
     isDebt:        false,
     protocolId:    keccak256("uniswap-v2"),
@@ -591,15 +591,15 @@ stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · AURA = $
 
 ### Per-instance adapters
 
-#### `ERC20DefaultOracle` — wallet
+#### `ERC20DefaultAdapter` — wallet
 
 Scenario: account holds USDC, WETH, and DAI.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| USDC  | 1 500  | +1 500      | `Wallet`     | `"Wallet"`   | `""`          |
-| WETH  | 1.0    | +2 500      | `Wallet`     | `"Wallet"`   | `""`          |
-| DAI   | 3 000  | +3 000      | `Wallet`     | `"Wallet"`   | `""`          |
+| USDC  | 1 500  | +1 500      | `Wallet`     | `"Wallet"`   | `"USDC"`      |
+| WETH  | 1.0    | +2 500      | `Wallet`     | `"Wallet"`   | `"WETH"`      |
+| DAI   | 3 000  | +3 000      | `Wallet`     | `"Wallet"`   | `"DAI"`       |
 | **NAV** | | **+7 000** | | | |
 
 #### `SparkLend` — lending
@@ -655,7 +655,7 @@ Scenario: waEthLidoGHO wrapper holding 1 000 GHO equivalent.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `""`          |
+| GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `"vault supply"` |
 
 #### `KelpWithdrawalQueue` — pending unstake
 
@@ -663,7 +663,7 @@ Scenario: 2 stETH pending claim in Kelp queue.
 
 | asset  | amount | value (USD) | positionKind | protocolName | positionLabel |
 |--------|--------|-------------|--------------|--------------|---------------|
-| stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp"`     | `""`          |
+| stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp DAO"` | `"rsETH withdrawal queue"` |
 
 #### `LidoWithdrawalQueue` — pending unstake
 
@@ -671,7 +671,7 @@ Scenario: 1 ETH finalized and waiting to be claimed.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `""`          |
+| ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `"stETH withdrawal queue"` |
 
 #### `MerklRewards` — unclaimed rewards
 
@@ -679,7 +679,7 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `""`          |
+| CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `"claimable rewards"` |
 
 #### `SkySavingsUsds` — sUSDS
 
@@ -687,7 +687,7 @@ Scenario: 5 000 USDS earning yield in sUSDS.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `""`          |
+| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `"USDS savings"` |
 
 #### `StaderWithdrawalQueue` — pending unstake
 
@@ -695,7 +695,7 @@ Scenario: 0.5 WETH pending from ETHx unstake.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
-| WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `""`          |
+| WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `"ETHx withdrawal queue"` |
 
 ---
 
@@ -966,7 +966,7 @@ positions are NOT account-global — each uses `abi.encode(asset)` to identify t
 
 ```solidity
 enum PositionKind {
-    Wallet,     // plain ERC20 / native balance (ERC20DefaultOracle)
+    Wallet,     // plain ERC20 / native balance (ERC20DefaultAdapter)
     Supplied,   // lending supply, vault shares, unstaked LP principal
     Borrowed,   // any debt position (isDebt = true)
     Collateral, // supply locked as collateral (e.g. Aave usageAsCollateralEnabled = true)
@@ -1008,7 +1008,7 @@ const key = keccak256(abi.encode(
 ```
 
 **Excluded from the key by design:**
-- `balanceOracle` — provenance only; redeploying an adapter doesn't change the position
+- `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position
 - `isDebt` — derivable from `positionKind == Borrowed`
 
 ---
@@ -1023,7 +1023,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 
 | Adapter | `protocolId` slug | Legs emitted (`PositionKind`) |
 |---|---|---|
-| `ERC20DefaultOracle` | `wallet` | `Wallet` |
+| `ERC20DefaultAdapter` | `wallet` | `Wallet` |
 | `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `AaveV2InstancesMeta` | `aave-v2-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
@@ -1347,12 +1347,12 @@ struct VerbosePosition {
     string   positionLabel; // e.g. "USDC/crvUSD gauge", "kpk ETH Prime V1 vault"
 }
 
-// Deployment: same address on every chain
+// Deployed alongside the NAVCalculator proxy (one NavLens per chain).
 navLens.getAccountPositionsVerbose(account, quoteAsset)
 navLens.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
 ```
 
-Labels come from each oracle's `IPositionDescribable` implementation. If an oracle doesn't
+Labels come from each adapter's `IPositionDescribable` implementation. If an adapter doesn't
 implement it, both fields are empty strings. **Never use these strings for identity, indexing,
 or reconciliation** — they are display-only and may change as labels evolve.
 

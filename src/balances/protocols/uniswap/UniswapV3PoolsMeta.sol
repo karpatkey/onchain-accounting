@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -18,14 +18,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice One immutable adapter that reports an account's Uniswap V3 LP across *any* pool — both the in-range
 ///         liquidity (`Supplied`) and the unclaimed fees (`Earned`) of the account's NFT positions. The instance
 ///         coordinate is the pool address, widened to bytes32; the active pool set lives on NAVCalculator
-///         (`setMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
+///         (`addMetaInstances`/`removeMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
 ///         constructor. Each NFT position gets its own positionId = abi.encode(npm, tokenId).
 ///         See ADR 0010.
 /// @dev `slot0` is read via the `_slot0` virtual hook so forks with a divergent `slot0()` ABI (PancakeSwap V3)
 ///      override just that read.
 ///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128) —
 ///      combined work is GPL-2.0-or-later (ADR 0008).
-contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
+contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using Strings for uint256;
 
     /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
@@ -45,13 +45,13 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Protocol identifier (e.g. "Uniswap V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address positionManager_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(positionManager_.code.length > 0, "PositionManager must be a contract");
         POSITION_MANAGER = positionManager_;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pool address. For each NFT the account owns in this pool, emits up to 4 legs:
     ///      `Supplied` x2 (in-range liquidity) and `Earned` x2 (unclaimed fees) — dropping zeros and unregistered
     ///      assets, respecting `assetFilter`. Each NFT gets its own positionId = abi.encode(npm, tokenId).
@@ -103,7 +103,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
 
             // positionId is per-NFT: each tokenId is an independently managed position (its own tick
             // range and liquidity), same pattern as Aave V3/V2 per-reserve. _instancePositionId does
-            // not apply here; see MetaBalanceOracle.
+            // not apply here; see MetaBalanceAdapter.
             bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
 
             uint256 liq0;
@@ -144,7 +144,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         address pool = _toAddress(instance);
         assets = new address[](2);
@@ -152,7 +152,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
         assets[1] = IUniswapV3Pool(pool).token1();
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         (, uint256 tokenId) = abi.decode(pid, (address, uint256));
         return string.concat("NFT #", tokenId.toString());
@@ -182,7 +182,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
             protocolId: _protocolId(),

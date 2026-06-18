@@ -221,9 +221,7 @@ contract DeployBridgeAdapters is BaseDeployScript {
         view
         returns (address)
     {
-        string memory a = ConfigReader.readAdapterParam(vm, currentChainId, adapterType, adapterName, "deployed");
-        if (bytes(a).length == 0) return address(0);
-        return vm.parseAddress(a);
+        return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
     }
 
     /// @notice Returns true only if the config has a deployed address and that address has bytecode on the current chain.

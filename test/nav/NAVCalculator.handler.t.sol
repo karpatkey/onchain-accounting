@@ -14,7 +14,7 @@ import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/price_oracles.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
-import "test/mocks/balance_oracles.sol";
+import "test/mocks/balance_adapters.sol";
 
 /// @title NAVCalculator Handler for Stateful Invariant Testing
 /// @notice Handler contract that manages stateful operations for invariant testing
@@ -22,7 +22,7 @@ contract NAVCalculatorHandler is Test {
     NAVCalculator public nav;
     Mock_ERC20[] public tokens;
     Mock_CustomPriceFeed[] public priceOracles;
-    Mock_CustomBalanceOracle[] public balanceOracles;
+    Mock_CustomBalanceAdapter[] public balanceAdapters;
 
     // Actors for testing
     address[] public actors;
@@ -31,12 +31,12 @@ contract NAVCalculatorHandler is Test {
     // Ghost variables for tracking state
     uint256 public ghostTotalNav;
     uint256 public ghostPositionCount;
-    uint256 public ghostOracleCount;
+    uint256 public ghostAdapterCount;
     uint256 public ghostAssetCount;
 
-    // Track registered assets and oracles
+    // Track registered assets and adapters
     mapping(address => bool) public registeredAssets;
-    mapping(address => bool) public registeredOracles;
+    mapping(address => bool) public registeredAdapters;
 
     modifier useActor(uint256 actorSeed) {
         // Bound seed first to prevent issues with very large values
@@ -61,7 +61,7 @@ contract NAVCalculatorHandler is Test {
         }
 
         // Store initial state
-        ghostOracleCount = nav.getOracleCount();
+        ghostAdapterCount = nav.getAdapterCount();
         ghostAssetCount = nav.getAssetCount();
     }
 
@@ -104,63 +104,63 @@ contract NAVCalculatorHandler is Test {
         ghostAssetCount = nav.getAssetCount();
     }
 
-    /// @notice Add a balance oracle
-    function addOracle(uint256 oracleSeed) external useActor(oracleSeed) {
-        // Only manager can add oracles
+    /// @notice Add a balance adapter
+    function addAdapter(uint256 adapterSeed) external useActor(adapterSeed) {
+        // Only manager can add adapters
         if (!nav.hasRole(MANAGER, currentActor)) {
             return;
         }
 
         // Bound seed first to prevent overflow
-        oracleSeed = bound(oracleSeed, 0, type(uint64).max);
+        adapterSeed = bound(adapterSeed, 0, type(uint64).max);
 
-        // Create new oracle
-        Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-        oracle.setBalances(IBalances(address(nav)));
-        balanceOracles.push(oracle);
+        // Create new adapter
+        Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+        adapter.setBalances(IBalances(address(nav)));
+        balanceAdapters.push(adapter);
 
         // Set supported assets (use existing registered assets)
         INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
         if (registered.length > 0) {
-            uint256 assetCount = bound(oracleSeed, 1, registered.length);
+            uint256 assetCount = bound(adapterSeed, 1, registered.length);
             address[] memory supportedAssets = new address[](assetCount);
             for (uint256 i = 0; i < assetCount; i++) {
                 // Use addition instead of multiplication to avoid overflow
-                uint256 assetIndex = bound(oracleSeed + i * 1000, 0, registered.length - 1);
+                uint256 assetIndex = bound(adapterSeed + i * 1000, 0, registered.length - 1);
                 supportedAssets[i] = registered[assetIndex].asset;
             }
-            oracle.setUnderlyingAssetsSupported(supportedAssets);
+            adapter.setUnderlyingAssetsSupported(supportedAssets);
         }
 
-        // Add oracle
-        nav.addBalanceOracle(address(oracle));
-        registeredOracles[address(oracle)] = true;
-        ghostOracleCount = nav.getOracleCount();
+        // Add adapter
+        nav.addBalanceAdapters(aa(address(adapter)));
+        registeredAdapters[address(adapter)] = true;
+        ghostAdapterCount = nav.getAdapterCount();
     }
 
-    /// @notice Remove a balance oracle
-    function removeOracle(uint256 oracleSeed) external useActor(oracleSeed) {
-        // Only manager can remove oracles
+    /// @notice Remove a balance adapter
+    function removeAdapter(uint256 adapterSeed) external useActor(adapterSeed) {
+        // Only manager can remove adapters
         if (!nav.hasRole(MANAGER, currentActor)) {
             return;
         }
 
         // Bound seed first
-        oracleSeed = bound(oracleSeed, 0, type(uint64).max);
+        adapterSeed = bound(adapterSeed, 0, type(uint64).max);
 
-        if (balanceOracles.length == 0) return;
+        if (balanceAdapters.length == 0) return;
 
-        uint256 oracleIndex = bound(oracleSeed, 0, balanceOracles.length - 1);
-        address oracle = address(balanceOracles[oracleIndex]);
+        uint256 adapterIndex = bound(adapterSeed, 0, balanceAdapters.length - 1);
+        address adapter = address(balanceAdapters[adapterIndex]);
 
-        // Cannot remove ERC20DefaultOracle
-        if (oracle == nav.erc20DefaultOracle()) {
+        // Cannot remove ERC20DefaultAdapter
+        if (adapter == nav.erc20DefaultAdapter()) {
             return;
         }
 
-        nav.removeBalanceOracle(oracle);
-        registeredOracles[oracle] = false;
-        ghostOracleCount = nav.getOracleCount();
+        nav.removeBalanceAdapters(aa(adapter));
+        registeredAdapters[adapter] = false;
+        ghostAdapterCount = nav.getAdapterCount();
     }
 
     /// @notice Mint tokens to an actor
@@ -260,6 +260,7 @@ contract NAVCalculatorHandler is Test {
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title NAVCalculator Handler-Based Invariant Tests
 /// @notice Stateful invariant tests using handler contract
@@ -333,8 +334,8 @@ contract NAVCalculatorHandlerTest is SuperTest {
         }
     }
 
-    /// @notice Invariant: Oracle balances aggregate correctly
-    function invariant_oracleAggregation() external view {
+    /// @notice Invariant: Adapter balances aggregate correctly
+    function invariant_adapterAggregation() external view {
         // Test with a few actors
         for (uint256 i = 0; i < 3; i++) {
             address account = handler.actors(i);
@@ -342,17 +343,17 @@ contract NAVCalculatorHandlerTest is SuperTest {
             // Get all positions
             INAVCalculator.Position[] memory allPositions = nav.getAccountPositions(account, address(0));
 
-            // Group by asset and verify no duplicate oracles
+            // Group by asset and verify no duplicate adapters
             for (uint256 j = 0; j < allPositions.length; j++) {
                 address asset = allPositions[j].balanceAsset.asset;
-                address oracle = allPositions[j].balanceOracle;
+                address adapter = allPositions[j].balanceAdapter;
 
-                // Check for duplicate oracles reporting same asset
+                // Check for duplicate adapters reporting same asset
                 for (uint256 k = j + 1; k < allPositions.length; k++) {
                     if (allPositions[k].balanceAsset.asset == asset) {
                         assertTrue(
-                            allPositions[k].balanceOracle != oracle,
-                            "No duplicate oracles should report same asset for same account"
+                            allPositions[k].balanceAdapter != adapter,
+                            "No duplicate adapters should report same asset for same account"
                         );
                     }
                 }
@@ -379,27 +380,27 @@ contract NAVCalculatorHandlerTest is SuperTest {
         }
     }
 
-    /// @notice Invariant: ERC20DefaultOracle always registered
-    function invariant_erc20DefaultOracleAlwaysRegistered() external view {
-        address[] memory allOracles = nav.getAllOracles();
+    /// @notice Invariant: ERC20DefaultAdapter always registered
+    function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
+        address[] memory allAdapters = nav.getAllAdapters();
 
         bool found = false;
-        for (uint256 i = 0; i < allOracles.length; i++) {
-            if (allOracles[i] == nav.erc20DefaultOracle()) {
+        for (uint256 i = 0; i < allAdapters.length; i++) {
+            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
                 found = true;
                 break;
             }
         }
 
-        assertTrue(found, "ERC20DefaultOracle should always be registered");
+        assertTrue(found, "ERC20DefaultAdapter should always be registered");
     }
 
-    /// @notice Invariant: Oracle count matches registry
-    function invariant_oracleCountConsistency() external view {
-        uint256 oracleCount = nav.getOracleCount();
-        address[] memory allOracles = nav.getAllOracles();
+    /// @notice Invariant: Adapter count matches registry
+    function invariant_adapterCountConsistency() external view {
+        uint256 adapterCount = nav.getAdapterCount();
+        address[] memory allAdapters = nav.getAllAdapters();
 
-        assertEq(oracleCount, allOracles.length, "Oracle count should match registry length");
+        assertEq(adapterCount, allAdapters.length, "Adapter count should match registry length");
     }
 
     /// @notice Invariant: Asset count matches registry

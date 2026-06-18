@@ -11,7 +11,7 @@ and `script/deploy/04_DeployBalanceAdapters.s.sol` directly against the dev anvi
 ## Why
 
 - No gas, no real-world side effects.
-- Free to break/replace the NAV interface and balance-oracle interfaces between iterations.
+- Free to break/replace the NAV interface and balance-adapter interfaces between iterations.
 - Persistent state means you pay the slow first-fork cost once, then resume in seconds.
 
 ## Prereqs
@@ -37,9 +37,11 @@ script/development/
 ├── app/
 │   └── sync-app-env.sh     — write app/.env.local pointing at the local forks
 ├── deploy/
-│   ├── 01_DeployNAV.s.sol  — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
-│   ├── register-assets.sh  — Chainlink-asset registrar via cast (forge-script alternative hangs)
-│   └── deploy.sh           — orchestrator: 01_DeployNAV then register-assets per chain
+│   ├── 01_DeployNAV.s.sol       — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
+│   ├── register-assets.sh       — Chainlink-asset registrar via cast (forge-script alternative hangs)
+│   ├── register-custom-assets.sh— custom-feed asset registrar via cast
+│   ├── deploy.sh                — orchestrator: 01_DeployNAV then register-assets per chain
+│   └── deploy-*.sh / *.s.sol    — per-protocol ad-hoc adapter wiring helpers (forge create / forge script + cast send)
 ├── config/
 │   └── chains.json         — chainId → port + RPC env var + native symbol/feed/heartbeat + sequencer feed
 ├── state/                  — anvil state files, PIDs, logs, per-chain deployed addresses (gitignored)
@@ -87,10 +89,10 @@ bash script/development/app/sync-app-env.sh
 
 `reset-state.sh` refuses to run while any anvil is still up — call `stop-forks.sh` first.
 
-You do **not** need to reset to add a new balance oracle or register more assets — those are just
+You do **not** need to reset to add a new balance adapter or register more assets — those are just
 new transactions sent to the running anvils.
 
-## Adding a new balance oracle to the local forks
+## Adding a new balance adapter to the local forks
 
 The verification workstream under `script/development/test/<protocol>/` cherry-picks one holder per
 protocol, pins a block, and ships a strict-equality fork test. To make the dashboard surface those
@@ -98,8 +100,10 @@ positions for visual cross-check vs Debank, you also need the adapter deployed +
 local anvil:
 
 1. **Pre-verification (per-protocol ad-hoc):** small bash deploy script under
-   `script/development/test/<protocol>/deploy-*.sh` that does `forge create` + `cast send addBalanceOracle`
-   per adapter instance. See `script/development/test/uniswapV2/` for the canonical example.
+   `script/development/deploy/deploy-<protocol>.sh` that does `forge create` + `cast send addBalanceAdapters(address[])`
+   (plain adapter) or `cast send addMetaBalanceAdapter(address,bytes32[])` (meta adapter) per adapter instance. See
+   `script/development/deploy/deploy-lido-withdrawal-queue.sh` (plain) and
+   `script/development/deploy/deploy-aave-instances-meta.sh` (meta) for canonical examples.
 2. **Post-verification:** the adapter is appended to `script/deploy/04_DeployBalanceAdapters.s.sol`
    and its chain config goes into `script/config/chains/<id>.json`. The ad-hoc dev script is then
    deleted; dev anvil deploys go through the same prod script with `--rpc-url http://127.0.0.1:<port>`.
@@ -157,8 +161,8 @@ Every dev deploy uses anvil's prefunded account #0:
 - private key: `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
 
 The dev `01_DeployNAV.s.sol` grants this EOA `DEFAULT_ADMIN_ROLE` (via initialize) and `MANAGER`
-(via explicit `grantRole`), so one key can deploy + register assets + manage oracles. No Safe
-handoff in dev (that's prod's `07_HandoffRolesToSafe.s.sol`, which dev skips).
+(via explicit `grantRole`), so one key can deploy + register assets + manage balance adapters. No Safe
+handoff in dev (that's prod's `07_TransferAdminToSecurityCouncil.s.sol`, which dev skips).
 
 To call admin-only functions from `cast` use `--private-key` with the value above.
 
@@ -171,8 +175,8 @@ cat script/development/state/1-addresses.json
 # Block tip
 cast block-number --rpc-url http://127.0.0.1:8545
 
-# All registered balance oracles
-cast call <NAV> "getAllOracles()(address[])" --rpc-url http://127.0.0.1:8545
+# All registered balance adapters
+cast call <NAV> "getAllAdapters()(address[])" --rpc-url http://127.0.0.1:8545
 
 # NAV positions for an account
 cast call <NAV> "getAccountPositions(address,address)" <account> 0x0000000000000000000000000000000000000000 --rpc-url http://127.0.0.1:8545

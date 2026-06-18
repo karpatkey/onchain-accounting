@@ -2,7 +2,7 @@
   "$comment": "Canonical identity strings for each balance adapter family. These are the values to pass as constructor arguments (protocol, positionDetail, positionId) when deploying a new adapter instance. positionDetail is written as a partial JSON string — the deploy script appends the closing brace after adding chain-specific fields. positionId is typically the primary contract address the adapter reads from (e.g. dataProvider for Aave, comet for Compound, pool address for LP adapters). Exception: MorphoMarket derives positionId automatically from marketId and has no positionId constructor parameter.",
   "$positionDetail_convention": "protocol = bare protocol name (matches top-level protocol field). product = functional category (Lending, Staking, LP, Vault, Market, Rewards, Safety Module, Umbrella, Savings). name = human-readable instance label (market name, pool pair, vault name). Per-position fields (appended at emission time, not part of the constructor template): type = sub-classification that varies per emitted leg (e.g. Supply/Borrow/Collateral for lending, stkAAVE/stkABPT/stkABPTv2/stkGHO for Safety Module); token = per-leg token symbol for LP adapters (BalancerV3, Aura, Curve, Convex, PancakeSwapV3). The $perPositionFields key in each entry documents what the adapter appends at runtime.",
 
-  "ERC20DefaultOracle": {
+  "ERC20DefaultAdapter": {
     "$comment": "Hardcoded in Solidity to protocol='wallet'. Not configurable.",
     "protocol": "wallet",
     "positionDetail": { "protocol": "wallet", "product": "Holding" },
@@ -10,7 +10,7 @@
   },
 
   "AaveV2InstancesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V2 instances. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool() instead of getPool()). Constructor takes (protocol, navCalculator). The active instance set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.AaveV2InstancesMeta.metaInstances — instance ProtocolDataProvider addresses). Identity derived on-chain: positionId = abi.encode(LendingPool, reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave genesis market)\"); market id via LendingPool.getAddressesProvider().getMarketId(). Supersedes the per-instance AaveV2Instance adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V2 instances. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool() instead of getPool()). Constructor takes (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV2InstancesMeta.instances — instance ProtocolDataProvider addresses). Identity derived on-chain: positionId = abi.encode(LendingPool, reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave genesis market)\"); market id via LendingPool.getAddressesProvider().getMarketId(). Supersedes the per-instance AaveV2Instance adapter.",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — variable debt only, stable debt not reported)",
     "protocol": "Aave V2",
     "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<derived: \"<reserve symbol> position (<market id>)\">" }
@@ -35,7 +35,7 @@
   },
 
   "AaveV3InstancesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V3 instances. Constructor takes only (protocol, navCalculator). The active instance set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.AaveV3InstancesMeta.metaInstances — each entry is the instance's ProtocolDataProvider address). Reserves within an instance are enumerated trustlessly via getAllReservesTokens(); reserve tokens are NOT separate coordinates. Identity derived on-chain: positionId = abi.encode(instance Pool via ADDRESSES_PROVIDER.getPool(), reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave V3 Lido Ethereum)\"); market id via Pool.ADDRESSES_PROVIDER().getMarketId().",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V3 instances. Constructor takes only (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV3InstancesMeta.instances — each entry is the instance's ProtocolDataProvider address). Reserves within an instance are enumerated trustlessly via getAllReservesTokens(); reserve tokens are NOT separate coordinates. Identity derived on-chain: positionId = abi.encode(instance Pool via ADDRESSES_PROVIDER.getPool(), reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave V3 Lido Ethereum)\"); market id via Pool.ADDRESSES_PROVIDER().getMarketId().",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — same shape as AaveV3Instance).",
     "protocol": "Aave V3",
     "positionDetail": { "protocol": "Aave V3", "product": "Lending", "name": "<derived: \"<reserve symbol> position (<market id>)\">" }
@@ -64,7 +64,7 @@
   },
 
   "CompoundV3CometsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Compound V3 (Comet) markets. Constructor takes (compoundRewards, rewardToken, protocol, navCalculator) — CometRewards + COMP are chain-level constants. The active comet set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CompoundV3CometsMeta.metaInstances — comet addresses). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3Comet adapter. protocol is the canonical 'Compound V3' (not the legacy per-comet 'Compound v3').",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Compound V3 (Comet) markets. Constructor takes (compoundRewards, rewardToken, protocol, navCalculator) — CometRewards + COMP are chain-level constants. The active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under CompoundV3CometsMeta.instances — comet addresses). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3Comet adapter. protocol is the canonical 'Compound V3' (not the legacy per-comet 'Compound v3').",
     "$perPositionFields": "type: Supply | Borrow | Collateral | Rewards (base supply/borrow + per-collateral + COMP)",
     "protocol": "Compound V3",
     "positionDetail": { "protocol": "Compound V3", "product": "Lending", "name": "<derived: comet name()>" },
@@ -89,7 +89,7 @@
   },
 
   "MorphoVaultsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho ERC4626 vaults. Constructor takes only (protocol, navCalculator) — there are no per-vault constructor args. The active vault set lives on NAVCalculator (set via setMetaInstances, configured under balanceAdapters.MorphoVaultsMeta.metaInstances in the chain config). positionDetail and positionId are derived on-chain per instance: positionId = vault address as hex, name = vault.name().",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho ERC4626 vaults. Constructor takes only (protocol, navCalculator) — there are no per-vault constructor args. The active vault set lives on NAVCalculator (set via addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under MorphoVaultsMeta.instances in the chain config). positionDetail and positionId are derived on-chain per instance: positionId = vault address as hex, name = vault.name().",
     "$perPositionFields": "type: Supply",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Vault", "name": "<derived from vault.name()>" },
@@ -98,7 +98,7 @@
 
   "ERC4626Wrap": {
     "$perPositionFields": "type: Supply",
-    "$comment": "Generic ERC-4626 unwrap balance oracle. Constructor checks the wrapper's `asset()` is NAV-registered (reverts otherwise). Reports `convertToAssets(balanceOf(account))` denominated in the underlying. Used for Aave V3 stata-tokens (waEth*), the Aave sGHO savings vault, and any other thin ERC-4626 wrapper where the share price is derivable purely from convertToAssets. Constructor is (wrapper, navCalculator); identity is emitted on-chain (protocolId = ERC4626, positionKind = Supplied, positionId = abi.encode(wrapper)). Of the per-instance chain-config fields, only `wrapper` is read by the deploy scripts; the protocol/positionDetail/positionId strings are legacy reference metadata.",
+    "$comment": "Generic ERC-4626 unwrap balance adapter. Constructor checks the wrapper's `asset()` is NAV-registered (reverts otherwise). Reports `convertToAssets(balanceOf(account))` denominated in the underlying. Used for Aave V3 stata-tokens (waEth*), the Aave sGHO savings vault, and any other thin ERC-4626 wrapper where the share price is derivable purely from convertToAssets. Constructor is (wrapper, navCalculator); identity is emitted on-chain (protocolId = ERC4626, positionKind = Supplied, positionId = abi.encode(wrapper)). Of the per-instance chain-config fields, only `wrapper` is read by the deploy scripts; the protocol/positionDetail/positionId strings are legacy reference metadata.",
     "protocol": "<varies — set per instance>",
     "positionDetail": { "protocol": "<varies>", "product": "<varies>", "name": "<wrap name>" },
     "positionId": "<wrapper address>"
@@ -106,21 +106,21 @@
 
   "MorphoMarket": {
     "$superseded": "Superseded by MorphoMarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
-    "$perPositionFields": "type: Supply | Borrow | Collateral. getOraclePositions emits gross — Supply and Borrow on the loan token are separate rows when both supplyShares > 0 and borrowShares > 0 (up to 3 rows per call: Collateral + Supply + Borrow). The simple getters getOracleBalanceForAsset / getOracleBalances still net the loan token.",
+    "$perPositionFields": "type: Supply | Borrow | Collateral. getAdapterPositions emits gross — Supply and Borrow on the loan token are separate rows when both supplyShares > 0 and borrowShares > 0 (up to 3 rows per call: Collateral + Supply + Borrow). The simple getters getAdapterBalanceForAsset / getAdapterBalances still net the loan token.",
     "$positionIdNote": "positionId is derived automatically from marketId (Strings.toHexString(uint256(marketId), 32)) — not a constructor parameter.",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<collateral/loan pair>" }
   },
 
   "MorphoMarketsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho Blue markets. Constructor takes (morpho, protocol, navCalculator). The active marketId set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.MorphoMarketsMeta.metaInstancesRaw — raw bytes32 marketIds, NOT addresses). Identity is derived on-chain: positionId = marketId hex (Strings.toHexString(uint256(marketId), 32)); name = collateralSymbol/loanSymbol read from the tokens.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Morpho Blue markets. Constructor takes (morpho, protocol, navCalculator). The active marketId set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under MorphoMarketsMeta.instancesRaw — raw bytes32 marketIds, NOT addresses). Identity is derived on-chain: positionId = marketId hex (Strings.toHexString(uint256(marketId), 32)); name = collateralSymbol/loanSymbol read from the tokens.",
     "$perPositionFields": "type: Supply | Borrow | Collateral (up to 3 gross rows per market — same shape as MorphoMarket).",
     "protocol": "Morpho",
     "positionDetail": { "protocol": "Morpho", "product": "Market", "name": "<derived: collateralSym/loanSym>" }
   },
 
   "BalancerV3PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) AMM liquidity of ALL Balancer V3 pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.BalancerV3PoolsMeta.metaInstances — each entry is the pool/BPT address). Identity derived on-chain: positionId = pool address hex; name = BPT token name(). Supersedes the per-pool BalancerV3 adapter's Supply legs.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) AMM liquidity of ALL Balancer V3 pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under BalancerV3PoolsMeta.instances — each entry is the pool/BPT address). Identity derived on-chain: positionId = pool address hex; name = BPT token name(). Supersedes the per-pool BalancerV3 adapter's Supply legs.",
     "$perPositionFields": "type: Supply (one leg per underlying pool token; wallet BPT share only)",
     "protocol": "Balancer V3",
     "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<derived: BPT name()>" },
@@ -128,7 +128,7 @@
   },
 
   "BalancerV3GaugesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + BAL/extra rewards of ALL Balancer V3 gauges. Constructor takes (balancerMinter, protocol, navCalculator). The active gauge set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.BalancerV3GaugesMeta.metaInstances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3 adapter's Staking + rewards legs.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + BAL/extra rewards of ALL Balancer V3 gauges. Constructor takes (balancerMinter, protocol, navCalculator). The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under BalancerV3GaugesMeta.instances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3 adapter's Staking + rewards legs.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from staked BPT share; Rewards=one leg per reward token, BAL via the minter + extra gauge reward tokens)",
     "protocol": "Balancer V3",
     "positionDetail": { "protocol": "Balancer V3", "product": "LP", "name": "<derived: BPT name()>" },
@@ -136,7 +136,7 @@
   },
 
   "BalancerV2PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) AMM liquidity of ALL Balancer V2 pools. Constructor takes (vault, protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstancesRaw, configured under balanceAdapters.BalancerV2PoolsMeta.metaInstancesRaw — each entry is the raw 32-byte poolId, NOT an address; the BPT address is its top 160 bits). Composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply(). Identity derived on-chain: positionId = BPT address hex; name = BPT token name().",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) AMM liquidity of ALL Balancer V2 pools. Constructor takes (vault, protocol, navCalculator). The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstancesRaw, configured in nav-config/meta-balance-adapters under BalancerV2PoolsMeta.instancesRaw — each entry is the raw 32-byte poolId, NOT an address; the BPT address is its top 160 bits). Composable-stable BPT-in-pool token excluded; supply via getActualSupply() when present else totalSupply(). Identity derived on-chain: positionId = BPT address hex; name = BPT token name().",
     "$perPositionFields": "type: Supply (one leg per underlying pool token; wallet BPT share only)",
     "protocol": "Balancer V2",
     "positionDetail": { "protocol": "Balancer V2", "product": "LP", "name": "<derived: BPT name()>" },
@@ -144,7 +144,7 @@
   },
 
   "BalancerV2GaugesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + BAL/extra rewards of ALL Balancer V2 gauges. Constructor takes (vault, balancerMinter, protocol, navCalculator). The active gauge set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.BalancerV2GaugesMeta.metaInstances — each entry is the gauge address). The BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). Identity derived on-chain: positionId = gauge address hex; name = the gauge's lp_token() BPT name(). BAL inflation math identical to BalancerV3GaugesMeta.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + BAL/extra rewards of ALL Balancer V2 gauges. Constructor takes (vault, balancerMinter, protocol, navCalculator). The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under BalancerV2GaugesMeta.instances — each entry is the gauge address). The BPT is read on-chain via gauge.lp_token() and its poolId via getPoolId(). Identity derived on-chain: positionId = gauge address hex; name = the gauge's lp_token() BPT name(). BAL inflation math identical to BalancerV3GaugesMeta.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from staked BPT share; Rewards=one leg per reward token, BAL via the minter + extra gauge reward tokens)",
     "protocol": "Balancer V2",
     "positionDetail": { "protocol": "Balancer V2", "product": "LP", "name": "<derived: BPT name()>" },
@@ -160,7 +160,7 @@
   },
 
   "AuraRewardsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked BPT + BAL/AURA/extra rewards of ALL Aura pools. Constructor takes (booster, balancerV2Vault, protocol, navCalculator); AURA is resolved dynamically via Booster.minter() — do NOT pass an auraToken arg. The active rewarder set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.AuraRewardsMeta.metaInstances — each entry is the Aura BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Aura adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked BPT + BAL/AURA/extra rewards of ALL Aura pools. Constructor takes (booster, balancerV2Vault, protocol, navCalculator); AURA is resolved dynamically via Booster.minter() — do NOT pass an auraToken arg. The active rewarder set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AuraRewardsMeta.instances — each entry is the Aura BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Aura adapter.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked BPT share, decomposed via the Balancer V2 Vault; Rewards=BAL via the cliff schedule + AURA via the mint rate + extra reward tokens)",
     "protocol": "Aura",
     "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<derived: BPT name()>" },
@@ -168,7 +168,7 @@
   },
 
   "CurvePoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) LP of ALL Curve pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CurvePoolsMeta.metaInstances — each entry is the pool/LP-token address). Identity derived on-chain: positionId = pool address hex. Supersedes the per-pool Curve adapter's Supply legs.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) LP of ALL Curve pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under CurvePoolsMeta.instances — each entry is the pool/LP-token address). Identity derived on-chain: positionId = pool address hex. Supersedes the per-pool Curve adapter's Supply legs.",
     "$perPositionFields": "type: Supply (one leg per underlying pool token; wallet LP share only)",
     "protocol": "Curve",
     "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<derived: pool token pair>" },
@@ -176,7 +176,7 @@
   },
 
   "CurveGaugesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + CRV/extra rewards of ALL Curve gauges. Constructor takes (minter, crvToken, protocol, navCalculator); pass minter=address(0) on L2 / RewardsOnlyGauges (no CRV via the Minter). The active gauge set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.CurveGaugesMeta.metaInstances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex. Supersedes the per-pool Curve adapter's Staking + rewards legs.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the gauge-staked LP + CRV/extra rewards of ALL Curve gauges. Constructor takes (minter, crvToken, protocol, navCalculator); pass minter=address(0) on L2 / RewardsOnlyGauges (no CRV via the Minter). The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under CurveGaugesMeta.instances — each entry is the gauge address). Identity derived on-chain: positionId = gauge address hex. Supersedes the per-pool Curve adapter's Staking + rewards legs.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked LP share; Rewards=CRV claimable lower-bound via the Minter + extra gauge reward tokens)",
     "protocol": "Curve",
     "positionDetail": { "protocol": "Curve", "product": "LP", "name": "<derived: pool token pair>" },
@@ -184,7 +184,7 @@
   },
 
   "ConvexRewardsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked LP + CRV/CVX/extra rewards of ALL Convex rewarders. Constructor takes (booster, cvxToken, protocol, navCalculator); the LP is resolved via booster.poolInfo(pid()). The active rewarder set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.ConvexRewardsMeta.metaInstances — each entry is the Convex BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Convex adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked LP + CRV/CVX/extra rewards of ALL Convex rewarders. Constructor takes (booster, cvxToken, protocol, navCalculator); the LP is resolved via booster.poolInfo(pid()). The active rewarder set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under ConvexRewardsMeta.instances — each entry is the Convex BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Convex adapter.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked LP share; Rewards=CRV via earned() + CVX via the cliff schedule + extra reward tokens, unwrapping stash tokens)",
     "protocol": "Convex",
     "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<derived: pool token pair>" },
@@ -216,7 +216,7 @@
   },
 
   "FluidFTokensMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid fTokens (ERC4626 lending vaults). Constructor takes (protocol, navCalculator). The active fToken set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.FluidFTokensMeta.metaInstances — fToken addresses). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken FluidFToken adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid fTokens (ERC4626 lending vaults). Constructor takes (protocol, navCalculator). The active fToken set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under FluidFTokensMeta.instances — fToken addresses). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken FluidFToken adapter.",
     "$perPositionFields": "type: Supply (one leg per fToken in its underlying)",
     "protocol": "Fluid",
     "positionDetail": { "protocol": "Fluid", "product": "Lending", "name": "<derived: fToken symbol()>" },
@@ -224,7 +224,7 @@
   },
 
   "FluidVaultsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid T1 vaults. Constructor takes (vaultResolver, protocol, navCalculator) — VaultResolver is the chain-level constant. The active vault set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.FluidVaultsMeta.metaInstances — T1 vault addresses). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault FluidVault adapter. T1 vaults only.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Fluid T1 vaults. Constructor takes (vaultResolver, protocol, navCalculator) — VaultResolver is the chain-level constant. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under FluidVaultsMeta.instances — T1 vault addresses). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault FluidVault adapter. T1 vaults only.",
     "$perPositionFields": "type: Collateral | Borrow (supply + debt aggregated over the account's NFT positions)",
     "protocol": "Fluid",
     "positionDetail": { "protocol": "Fluid", "product": "Vault", "name": "<derived: collSym/debtSym>" },
@@ -248,7 +248,7 @@
   },
 
   "GearboxMarketsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Gearbox V3 ERC4626 farming pools. Constructor takes (protocol, navCalculator). The active market set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.GearboxMarketsMeta.metaInstances — market addresses). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Gearbox V3 ERC4626 farming pools. Constructor takes (protocol, navCalculator). The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under GearboxMarketsMeta.instances — market addresses). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket adapter.",
     "$perPositionFields": "type: Supply (one leg per market in its underlying)",
     "protocol": "Gearbox",
     "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<derived: market name()>" },
@@ -271,7 +271,7 @@
   },
 
   "StakeWiseV3VaultsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL StakeWise V3 vaults. Constructor takes (underlyingToken, protocol, navCalculator) — underlyingToken is the chain-level staking asset (ETH sentinel on mainnet, GNO on Gnosis). The active vault set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.StakeWiseV3VaultsMeta.metaInstances — vault addresses). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL StakeWise V3 vaults. Constructor takes (underlyingToken, protocol, navCalculator) — underlyingToken is the chain-level staking asset (ETH sentinel on mainnet, GNO on Gnosis). The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under StakeWiseV3VaultsMeta.instances — vault addresses). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault adapter.",
     "$perPositionFields": "type: Staking | Borrow (Staking=vault shares→assets, isDebt=false; Borrow=osToken debt→assets, isDebt=true)",
     "protocol": "StakeWise V3",
     "positionDetail": { "protocol": "StakeWise V3", "product": "Vault", "name": "<derived: vault name()>" },
@@ -315,7 +315,7 @@
   },
 
   "UniswapV3PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V3 pools. Constructor takes (positionManager, protocol, navCalculator). The active pool set lives on NAVCalculator (setMetaInstances, configured under balanceAdapters.UniswapV3PoolsMeta.metaInstances — pool addresses). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier (e.g. WBTC/WETH 0.3%). Supersedes the per-pool UniswapV3Pool adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V3 pools. Constructor takes (positionManager, protocol, navCalculator). The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under UniswapV3PoolsMeta.instances — pool addresses). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier (e.g. WBTC/WETH 0.3%). Supersedes the per-pool UniswapV3Pool adapter.",
     "$perPositionFields": "type: Supply | Fees (up to 4 legs: token0/token1 liquidity + token0/token1 fees)",
     "protocol": "Uniswap V3",
     "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<derived: sym0/sym1 feeTier>" },
@@ -323,7 +323,7 @@
   },
 
   "UniswapV2PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V2 pairs (also serves PancakeSwap V2 via the PancakeSwapV2PoolsMeta thin subclass / a separate deployment with protocol set accordingly). Constructor takes (protocol, navCalculator). The active pair set lives on NAVCalculator (metaInstances — pair addresses). Identity derived on-chain: positionId = pair address; name = sym0/sym1 LP. Supersedes the per-pair UniswapV2 adapter.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Uniswap V2 pairs (also serves PancakeSwap V2 via the PancakeSwapV2PoolsMeta thin subclass / a separate deployment with protocol set accordingly). Constructor takes (protocol, navCalculator). The active pair set lives on NAVCalculator (instances — pair addresses). Identity derived on-chain: positionId = pair address; name = sym0/sym1 LP. Supersedes the per-pair UniswapV2 adapter.",
     "$perPositionFields": "type: Supply (one leg per pool token)",
     "protocol": "Uniswap V2",
     "positionDetail": { "protocol": "Uniswap V2", "product": "LP", "name": "<derived: sym0/sym1 LP>" },
@@ -331,7 +331,7 @@
   },
 
   "PancakeSwapV3PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): subclass of UniswapV3PoolsMeta overriding the slot0 read (uint32 feeProtocol). Constructor takes (positionManager, protocol, navCalculator). Pool set on NAVCalculator (metaInstances).",
+    "$comment": "Meta-adapter (ADR 0010): subclass of UniswapV3PoolsMeta overriding the slot0 read (uint32 feeProtocol). Constructor takes (positionManager, protocol, navCalculator). Pool set on NAVCalculator (instances).",
     "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3PoolsMeta behaviour.",
     "protocol": "PancakeSwap V3",
     "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<derived: sym0/sym1 feeTier>" },
@@ -339,7 +339,7 @@
   },
 
   "PancakeSwapV2PoolsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): thin subclass of UniswapV2PoolsMeta. Constructor takes (protocol, navCalculator). Pair set on NAVCalculator (metaInstances).",
+    "$comment": "Meta-adapter (ADR 0010): thin subclass of UniswapV2PoolsMeta. Constructor takes (protocol, navCalculator). Pair set on NAVCalculator (instances).",
     "$perPositionFields": "type: Supply (one leg per pool token). Inherits UniswapV2PoolsMeta behaviour.",
     "protocol": "PancakeSwap V2",
     "positionDetail": { "protocol": "PancakeSwap V2", "product": "LP", "name": "<derived: sym0/sym1 LP>" },

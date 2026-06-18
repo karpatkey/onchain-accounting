@@ -32,7 +32,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[1] = MAINNET_WBTC;
         assetsList[2] = MAINNET_WETH;
         assetsList[3] = COMP;
-        balances = _deployBalancesForOracle(assetsList);
+        balances = _deployBalancesForAdapter(assetsList);
 
         meta = new CompoundV3CometsMetaBalanceAdapter(COMPOUND_REWARDS, COMP, "Compound V3", address(balances));
     }
@@ -57,7 +57,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
 
     function _assertMetaHasPositions(address user) internal view {
         INAVCalculator.PositionBalance[] memory metaPos =
-            meta.getOraclePositionsForInstances(user, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(user, _instance(), address(0));
         uint256 total;
         for (uint256 a = 0; a < assetsList.length; a++) {
             (uint256 mc, uint256 md) = _sums(metaPos, assetsList[a]);
@@ -84,7 +84,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
 
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(LEND_USER, _instance(), address(0));
+            meta.getAdapterPositionsForInstances(LEND_USER, _instance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, abi.encode(COMET), "positionId = comet address");

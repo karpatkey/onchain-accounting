@@ -22,7 +22,7 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         _setupFork();
-        balances = _deployBalancesForOracle(_assets());
+        balances = _deployBalancesForAdapter(_assets());
         meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
     }
 
@@ -44,7 +44,7 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function _metaToken(address token) internal view returns (uint256 sum) {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), token);
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), token);
         for (uint256 i = 0; i < p.length; i++) {
             sum += p[i].amount;
         }
@@ -58,7 +58,7 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
 
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             (address npm, uint256 tokenId) = abi.decode(p[i].positionId, (address, uint256));

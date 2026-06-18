@@ -26,7 +26,7 @@ interface IV2Bpt {
 /// @notice Proves BalancerV2GaugesMetaBalanceAdapter reproduces the on-chain pro-rata share of a real account's
 ///         gauge-staked BPT for the B-stETH-STABLE gauge on mainnet. Expected per-token amounts are computed
 ///         directly from the Vault's live balances and the BPT supply (`balances[i] * staked / totalSupply`), so
-///         this is a self-consistent oracle test (no per-instance V2 gauge adapter exists to parity against). The
+///         this is a self-consistent adapter test (no per-instance V2 gauge adapter exists to parity against). The
 ///         BAL inflation math is byte-identical to BalancerV3GaugesMeta (real-staker fork-tested there); the
 ///         staked-share decomposition uses the same BalancerV2PoolLib proven in BalancerV2PoolsMeta.fork.t.sol.
 contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
@@ -49,7 +49,7 @@ contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         _setupFork();
-        balances = _deployBalancesForOracle(_supportedAssets());
+        balances = _deployBalancesForAdapter(_supportedAssets());
         adapter = new BalancerV2GaugesMetaBalanceAdapter(VAULT, BALANCER_MINTER, "Balancer V2", address(balances));
     }
 
@@ -79,11 +79,11 @@ contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
         (address[] memory tokens, uint256[] memory bals,) = IBalV2Vault(VAULT).getPoolTokens(poolId);
 
         INAVCalculator.PositionBalance[] memory pos =
-            adapter.getOraclePositionsForInstances(STAKER, _instance(), address(0));
+            adapter.getAdapterPositionsForInstances(STAKER, _instance(), address(0));
 
         uint256 stakingLegs;
         for (uint256 i = 0; i < pos.length; i++) {
-            assertEq(pos[i].balanceOracle, address(adapter));
+            assertEq(pos[i].balanceAdapter, address(adapter));
             assertFalse(pos[i].isDebt);
             assertEq(pos[i].positionId, abi.encode(GAUGE), "positionId = gauge address");
 
@@ -104,7 +104,7 @@ contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
     /// @notice Identity (name + type) is derived on-chain from the gauge's lp_token BPT name.
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory pos =
-            adapter.getOraclePositionsForInstances(STAKER, _instance(), WSTETH);
+            adapter.getAdapterPositionsForInstances(STAKER, _instance(), WSTETH);
         assertEq(pos.length, 1);
     }
 

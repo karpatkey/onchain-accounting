@@ -4,34 +4,34 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
-import {Mock_CustomBalanceOracle} from "test/mocks/balance_oracles.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Gas Benchmark Tests
 /// @notice Tests gas usage for various scenarios to establish performance baselines
 contract BalanceAdapterGasTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultOracle public erc20DefaultOracle;
-    Mock_CustomBalanceOracle[] public customOracles;
+    ERC20DefaultAdapter public erc20DefaultAdapter;
+    Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
     address public alice = makeAddr("alice");
 
     function setUp() public {
         // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultOracle = balances.defaultOracle();
+        erc20DefaultAdapter = balances.defaultAdapter();
     }
 
     /// @notice Helper to generate large asset portfolio
     function generateLargePortfolio(uint256 assetCount) internal {
         // Reset arrays for this iteration
-        delete customOracles;
+        delete customAdapters;
         delete tokens;
-        customOracles = new Mock_CustomBalanceOracle[](0);
+        customAdapters = new Mock_CustomBalanceAdapter[](0);
         tokens = new Mock_ERC20[](0);
 
         for (uint256 i = 0; i < assetCount; i++) {
@@ -39,16 +39,16 @@ contract BalanceAdapterGasTest is Test {
             tokens.push(token);
             balances.addSupportedAssetForTest(address(token));
 
-            Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-            // Note: setBalances is not needed - the mock oracle can work without it
-            // oracle.setBalances(balances);
+            Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+            // Note: setBalances is not needed - the mock adapter can work without it
+            // adapter.setBalances(balances);
             address[] memory assets = new address[](1);
             assets[0] = address(token);
-            oracle.setUnderlyingAssetsSupported(assets);
-            oracle.setBalance(address(token), alice, (i + 1) * 100 * 10 ** 18, false);
-            customOracles.push(oracle);
+            adapter.setUnderlyingAssetsSupported(assets);
+            adapter.setBalance(address(token), alice, (i + 1) * 100 * 10 ** 18, false);
+            customAdapters.push(adapter);
 
-            balances.addBalanceOracleDirect(address(0), address(oracle), IBalances.OracleType.Custom);
+            balances.addBalanceAdapterDirect(address(0), address(adapter), IBalances.AdapterType.Custom);
         }
     }
 
@@ -58,20 +58,20 @@ contract BalanceAdapterGasTest is Test {
         balances.addSupportedAssetForTest(address(token));
 
         // Reset array for this iteration
-        delete customOracles;
-        customOracles = new Mock_CustomBalanceOracle[](0);
+        delete customAdapters;
+        customAdapters = new Mock_CustomBalanceAdapter[](0);
 
         for (uint256 i = 0; i < adapterCount; i++) {
-            Mock_CustomBalanceOracle oracle = new Mock_CustomBalanceOracle();
-            // Note: setBalances is not needed - the mock oracle can work without it
-            // oracle.setBalances(balances);
+            Mock_CustomBalanceAdapter adapter = new Mock_CustomBalanceAdapter();
+            // Note: setBalances is not needed - the mock adapter can work without it
+            // adapter.setBalances(balances);
             address[] memory assets = new address[](1);
             assets[0] = address(token);
-            oracle.setUnderlyingAssetsSupported(assets);
-            oracle.setBalance(address(token), alice, (i + 1) * 100 * 10 ** 6, false);
-            customOracles.push(oracle);
+            adapter.setUnderlyingAssetsSupported(assets);
+            adapter.setBalance(address(token), alice, (i + 1) * 100 * 10 ** 6, false);
+            customAdapters.push(adapter);
 
-            balances.addBalanceOracleDirect(address(0), address(oracle), IBalances.OracleType.Custom);
+            balances.addBalanceAdapterDirect(address(0), address(adapter), IBalances.AdapterType.Custom);
         }
     }
 
@@ -79,28 +79,28 @@ contract BalanceAdapterGasTest is Test {
     // Single Asset Query Benchmarks
     // ============================================
 
-    /// @notice Benchmark gas for getOracleBalanceForAsset
-    function test_gasBenchmark_getOracleBalanceForAsset() public {
+    /// @notice Benchmark gas for getAdapterBalanceForAsset
+    function test_gasBenchmark_getAdapterBalanceForAsset() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         balances.addSupportedAssetForTest(address(usdc));
         usdc.mint(alice, 1000 * 10 ** 6);
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(amount, 0, "Should have positive balance");
         assertGt(gasUsed, 0, "gas measured");
     }
 
-    /// @notice Benchmark gas for getOracleBalanceForAsset with zero balance
-    function test_gasBenchmark_getOracleBalanceForAsset_zeroBalance() public {
+    /// @notice Benchmark gas for getAdapterBalanceForAsset with zero balance
+    function test_gasBenchmark_getAdapterBalanceForAsset_zeroBalance() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         balances.addSupportedAssetForTest(address(usdc));
         // Don't mint tokens (zero balance)
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(amount, 0, "Should have zero balance");
@@ -111,8 +111,8 @@ contract BalanceAdapterGasTest is Test {
     // Multiple Assets Benchmarks
     // ============================================
 
-    /// @notice Benchmark gas for getOracleBalance with varying asset counts
-    function test_gasBenchmark_getOracleBalance_multipleAssets() public {
+    /// @notice Benchmark gas for getAdapterBalance with varying asset counts
+    function test_gasBenchmark_getAdapterBalance_multipleAssets() public {
         // Use smaller asset counts to avoid gas limit issues
         uint256[] memory assetCounts = new uint256[](3);
         assetCounts[0] = 1;
@@ -123,13 +123,13 @@ contract BalanceAdapterGasTest is Test {
             // Generate portfolio
             generateLargePortfolio(assetCounts[i]);
 
-            // Mint tokens to alice for ERC20DefaultOracle
+            // Mint tokens to alice for ERC20DefaultAdapter
             for (uint256 j = 0; j < tokens.length; j++) {
                 tokens[j].mint(alice, 1000 * 10 ** 18);
             }
 
             uint256 gasBefore = gasleft();
-            (address[] memory assets, uint256[] memory amounts,) = erc20DefaultOracle.getOracleBalances(alice);
+            (address[] memory assets, uint256[] memory amounts,) = erc20DefaultAdapter.getAdapterBalances(alice);
             uint256 gasUsed = gasBefore - gasleft();
 
             assertGe(assets.length, assetCounts[i], "Should have at least the new asset count");
@@ -138,7 +138,7 @@ contract BalanceAdapterGasTest is Test {
             assertGt(gasPerAsset, 0, "gas per asset measured");
             // Typically 5k-20k per asset
 
-            // Note: State accumulates across iterations (assets/oracles added to balances)
+            // Note: State accumulates across iterations (assets/adapters added to balances)
             // This is intentional for benchmarking, but may cause gas issues in later iterations
         }
     }
@@ -147,8 +147,8 @@ contract BalanceAdapterGasTest is Test {
     // Position Query Benchmarks
     // ============================================
 
-    /// @notice Benchmark gas for getOraclePositions
-    function test_gasBenchmark_getOraclePositions() public {
+    /// @notice Benchmark gas for getAdapterPositions
+    function test_gasBenchmark_getAdapterPositions() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         Mock_ERC20 dai = new Mock_ERC20("DAI", 18);
         balances.addSupportedAssetForTest(address(usdc));
@@ -158,15 +158,15 @@ contract BalanceAdapterGasTest is Test {
         dai.mint(alice, 2000 * 10 ** 18);
 
         uint256 gasBefore = gasleft();
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultOracle.getOraclePositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(positions.length, 2, "Should have 2 positions");
         assertGt(gasUsed, 0, "gas measured");
     }
 
-    /// @notice Benchmark gas for getOraclePositions with asset filter
-    function test_gasBenchmark_getOraclePositions_withFilter() public {
+    /// @notice Benchmark gas for getAdapterPositions with asset filter
+    function test_gasBenchmark_getAdapterPositions_withFilter() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         Mock_ERC20 dai = new Mock_ERC20("DAI", 18);
         balances.addSupportedAssetForTest(address(usdc));
@@ -176,11 +176,11 @@ contract BalanceAdapterGasTest is Test {
         dai.mint(alice, 2000 * 10 ** 18);
 
         uint256 gasBeforeUnfiltered = gasleft();
-        erc20DefaultOracle.getOraclePositions(alice, address(0));
+        erc20DefaultAdapter.getAdapterPositions(alice, address(0));
         uint256 gasUnfiltered = gasBeforeUnfiltered - gasleft();
 
         uint256 gasBeforeFiltered = gasleft();
-        erc20DefaultOracle.getOraclePositions(alice, address(usdc));
+        erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
         uint256 gasFiltered = gasBeforeFiltered - gasleft();
 
         assertGt(gasUnfiltered, 0, "unfiltered gas measured");
@@ -206,7 +206,7 @@ contract BalanceAdapterGasTest is Test {
         for (uint256 i = 0; i < adapterCounts.length; i++) {
             // Setup adapters
             if (i > 0) {
-                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultOracle already exists
+                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultAdapter already exists
             }
 
             Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
@@ -214,7 +214,7 @@ contract BalanceAdapterGasTest is Test {
             usdc.mint(alice, 1000 * 10 ** 6);
 
             uint256 gasBefore = gasleft();
-            (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+            (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
             uint256 gasUsed = gasBefore - gasleft();
 
             assertGt(amount, 0, "Should have positive balance");
@@ -231,7 +231,7 @@ contract BalanceAdapterGasTest is Test {
         address emptyAccount = makeAddr("empty");
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(emptyAccount, address(0));
+        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(emptyAccount, address(0));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(amount, 0, "Empty account should have zero balance");
@@ -246,7 +246,7 @@ contract BalanceAdapterGasTest is Test {
         usdc.mint(alice, 1000 * 10 ** 6);
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultOracle.getOracleBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(amount, 0, "Should have positive balance");
@@ -260,7 +260,7 @@ contract BalanceAdapterGasTest is Test {
         generateLargePortfolio(20);
 
         uint256 gasBefore = gasleft();
-        address[] memory assets = erc20DefaultOracle.underlyingAssetsSupported();
+        address[] memory assets = erc20DefaultAdapter.underlyingAssetsSupported();
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(assets.length, 0, "Should have supported assets");
@@ -289,13 +289,13 @@ contract BalanceAdapterGasTest is Test {
             }
 
             uint256 gasBefore = gasleft();
-            erc20DefaultOracle.getOracleBalances(alice);
+            erc20DefaultAdapter.getAdapterBalances(alice);
             uint256 gasUsed = gasBefore - gasleft();
 
             uint256 gasPerAsset = gasUsed / assetCounts[i];
             assertGt(gasPerAsset, 0, "gas per asset measured");
 
-            // Note: State accumulates across iterations (assets/oracles added to balances)
+            // Note: State accumulates across iterations (assets/adapters added to balances)
             // This is intentional for benchmarking, but may cause gas issues in later iterations
         }
     }
@@ -317,10 +317,10 @@ contract BalanceAdapterGasTest is Test {
             balances.addSupportedAssetForTest(address(usdc));
             usdc.mint(alice, 1000 * 10 ** 6);
 
-            // Query from first custom oracle if exists
-            if (customOracles.length > 0) {
+            // Query from first custom adapter if exists
+            if (customAdapters.length > 0) {
                 uint256 gasBefore = gasleft();
-                customOracles[0].getOracleBalanceForAsset(alice, address(usdc));
+                customAdapters[0].getAdapterBalanceForAsset(alice, address(usdc));
                 uint256 gasUsed = gasBefore - gasleft();
                 assertGt(gasUsed, 0, "gas measured");
             }

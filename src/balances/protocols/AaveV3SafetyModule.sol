@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -11,7 +11,7 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Aave v3 Safety Module Balance Oracle (multi-token, hardcoded)
+/// @title Aave v3 Safety Module Balance Adapter (multi-token, hardcoded)
 /// @author kpk
 /// @notice Reports balances across every known legacy Aave V3 Safety Module stake token for a given account, currently:
 ///         `stkAAVE`, `stkABPT` (Balancer V1 BPT), `stkABPTv2` (Balancer V2 AAVE/wstETH BPT), and `stkGHO`. The Safety
@@ -25,7 +25,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      no live reads happen during construction. Reward token is AAVE for every entry today; `_records()` keeps a
 ///      per-entry `rewardToken` field so a future stake token with a non-AAVE reward (unlikely but possible) is a
 ///      one-line change.
-contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Constants — Mainnet Safety Module addresses
     //
@@ -111,8 +111,8 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -124,10 +124,10 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the deduplicated union of staked and reward tokens across every Safety Module stake token.
     ///         For the legacy SM specifically: AAVE (reward of all four; also stkAAVE's staked) + GHO + ABPT + ABPT_V2.
     function underlyingAssetsSupported() public pure override returns (address[] memory) {
@@ -139,9 +139,9 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
         return out;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns the **summed** balance for `asset` across every Safety Module stake token.
-    function getOracleBalanceForAsset(address account, address asset)
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
@@ -150,9 +150,9 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
         return (_summedBalance(account, asset), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns deduplicated per-asset summed balances. Skips zero amounts.
-    function getOracleBalances(address account)
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
@@ -185,11 +185,11 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
         }
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns up to two PositionBalances per stake token: one for the staked leg (type "Staking") and one
     ///         for the reward leg (type "Reward"). The underlyingAsset field disambiguates the stake token involved.
     /// @dev For stkAAVE both legs share the same asset (AAVE); they are told apart solely by their type label.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -216,7 +216,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
                     if (stakedAmount != 0) {
                         tmp[count++] = INAVCalculator.PositionBalance({
                             balanceAsset: assetMeta,
-                            balanceOracle: address(this),
+                            balanceAdapter: address(this),
                             amount: stakedAmount,
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
@@ -235,7 +235,7 @@ contract AaveV3SafetyModuleBalanceOracle is IBalanceOracleAdapter, IPositionDesc
                     if (rewards != 0) {
                         tmp[count++] = INAVCalculator.PositionBalance({
                             balanceAsset: assetMeta,
-                            balanceOracle: address(this),
+                            balanceAdapter: address(this),
                             amount: rewards,
                             isDebt: false,
                             protocolId: PROTOCOL_ID,

@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -71,14 +71,15 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     /// @notice The `_slot0` override decodes a `uint32 feeProtocol > 255`: the adapter returns non-zero principal.
     function test_slot0_uint32FeeProtocol_decodes() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertGt(p.length, 0, "override decodes uint32 feeProtocol -> legs emitted");
         uint256 supply;
         for (uint256 i = 0; i < p.length; i++) {
@@ -92,13 +93,15 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
     function test_uniswapBase_revertsOnUint32_isolatedToEmpty() public {
         UniswapV3PoolsMetaBalanceAdapter base =
             new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
-        INAVCalculator.PositionBalance[] memory p = base.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            base.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 0, "uint8 slot0 read reverts on feeProtocol > 255 -> instance isolated to empty");
     }
 
     /// @notice `_protocolId` override: every leg reports `pancakeswap-v3` (not the inherited `uniswap-v3`).
     function test_protocolId_isPancakeswapV3() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "protocolId == pancakeswap-v3");
@@ -108,7 +111,8 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
 
     /// @notice positionId schema + identity are inherited unchanged: abi.encode(npm, tokenId), label "NFT #<id>".
     function test_identity_positionId_andLabel() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertGt(p.length, 0);
         assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
         assertEq(meta.describePosition(abi.encode(address(npm), uint256(1))), "NFT #1");

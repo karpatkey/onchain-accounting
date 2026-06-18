@@ -8,6 +8,7 @@ import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/Compoun
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @notice Minimal interface for Optimism CometRewards.getRewardOwed (state-modifying: accrues account).
 interface ICometRewardsGetOwed {
@@ -75,7 +76,7 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
             console2.log("  index", i);
             console2.log("       value", p.value);
             console2.log("       underlyingAsset.symbol", p.balanceAsset.symbol);
-            console2.log("       balanceOracle", p.balanceOracle);
+            console2.log("       balanceAdapter", p.balanceAdapter);
             console2.log("       amount", p.amount);
             console2.log("       isDebt", p.isDebt);
             console2.log("       quoteAsset.asset", p.quoteAsset.asset);
@@ -93,20 +94,20 @@ contract OptimismForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdOptimism(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
-        nav.addBalanceOracle(address(aaveOracle));
+        aaveAdapter = aaveMeta;
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveAdapter), aaveInstances);
 
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceOracle(address(compoundV3Comet));
+        // Meta-adapters with no instances in this test: register with an empty set.
+        nav.addMetaBalanceAdapter(address(compoundV3Comet), new bytes32[](0));
 
         compoundV3UsdtComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3 USDT", address(nav));
-        nav.addBalanceOracle(address(compoundV3UsdtComet));
+        nav.addMetaBalanceAdapter(address(compoundV3UsdtComet), new bytes32[](0));
     }
 }

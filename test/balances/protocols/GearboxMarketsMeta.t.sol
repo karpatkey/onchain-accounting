@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/protocols/GearboxMarketsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -81,24 +81,25 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
     function test_fanOut_supplyLegsAndIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2);
 
         assertEq(p[0].balanceAsset.asset, address(weth));
         assertEq(p[0].amount, 11e18);
         assertFalse(p[0].isDebt);
-        assertEq(p[0].balanceOracle, address(meta));
+        assertEq(p[0].balanceAdapter, address(meta));
         assertEq(p[0].positionId, abi.encode(address(marketA)));
 
         assertEq(p[1].balanceAsset.asset, address(wsteth));
@@ -108,21 +109,23 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
 
     function test_assetFilter() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(alice, _instances(), address(wsteth));
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(wsteth));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_unregisteredAsset_skipped() public {
         nav.unregisterAssetHelper(address(weth));
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
 
     function test_zeroBalance_skipped() public {
         marketA.setBalance(alice, 0);
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(wsteth));
     }
@@ -131,7 +134,7 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));
         ins[1] = bytes32(uint256(uint160(address(marketB))));
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 1);
         assertEq(p[0].amount, 4e18);
     }

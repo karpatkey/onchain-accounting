@@ -21,12 +21,20 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 
 | Doc | When to read |
 |---|---|
-| [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | Adding a new balance oracle. End-to-end: contract, factory, unit + fork tests, chain config, deploy + register. Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (framework) first. |
+| [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | Adding a new balance adapter. End-to-end: contract, unit + fork tests, chain config, deploy + register. Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (framework) first. |
 | [`howto/add-price-feed.md`](howto/add-price-feed.md) | Adding a new custom price feed. Same recipe shape, framework reference is [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md). |
-| [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain (`chains/<id>.json`, asset registry, deploy steps). |
+| [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain — the per-concern config folders: `chains/<id>.json` (chain meta + roles), `contracts-deployment-config/` (what to deploy), `nav-config/` (assets + adapter registration), plus deploy steps. |
 | [`howto/position-identity-schema.md`](howto/position-identity-schema.md) | **Position identity reference** — `protocolId` slugs, `positionId` ABI-decode schemas per protocol, `PositionKind` enum, stable reconciliation key, TypeScript decode examples, `NavLens` verbose reads. Read when building indexers, frontends, or reconciliation jobs. |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against DeBank. |
 | [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
+
+---
+
+## Reference tables (`docs/reference/`)
+
+| Doc | What it is |
+|---|---|
+| [`reference/position-identity-matrix.md`](reference/position-identity-matrix.md) | Enumerates every position leg each balance adapter can emit — the actual `protocolId` / `positionId` / `PositionKind` value space, verified against `src/balances/` emission code. Companion to [`howto/position-identity-schema.md`](howto/position-identity-schema.md), which defines the schema. |
 
 ---
 
@@ -34,7 +42,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 
 | Doc | Subsystem |
 |---|---|
-| [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) | Balance oracle architecture — `IBalanceOracleAdapter`, `Balances` registry, all implemented adapters. |
+| [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) | Balance adapter architecture — `IBalanceAdapter`, `Balances` registry, all implemented adapters. |
 | [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) | Price feed architecture — `Prices` registry, `IPriceFeedCustom`, all implemented custom feeds. |
 | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md) | Bridge module — `BridgeEscrow` + per-protocol bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis). |
 
@@ -51,7 +59,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0003-integration-test-snapshot-workflow.md`](decisions/0003-integration-test-snapshot-workflow.md) | JSON-driven fork-test snapshots; weekly refresh cron; DeBank cross-check. |
 | [`0004-morpho-projected-vs-stored-balances.md`](decisions/0004-morpho-projected-vs-stored-balances.md) | Morpho projected-share accounting vs stored values. |
 | [`0005-aave-safety-module-hardcoded-immutable.md`](decisions/0005-aave-safety-module-hardcoded-immutable.md) | Aave V3 SM adapter immutability (supersedes 0002). |
-| [`0006-aave-umbrella-balance-oracle.md`](decisions/0006-aave-umbrella-balance-oracle.md) | Aave Umbrella stake-token coverage. |
+| [`0006-aave-umbrella-balance-adapter.md`](decisions/0006-aave-umbrella-balance-adapter.md) | Aave Umbrella stake-token coverage. |
 | [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. |
 | [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
 | [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
@@ -72,7 +80,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | Use |
 |---|---|
-| [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) | Backlog of protocols / position types not yet covered by balance oracles (LST withdrawal queues, restaking primitives, RWA, perps). Pick from here when adding a new adapter. |
+| [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) | Backlog of protocols / position types not yet covered by balance adapters (LST withdrawal queues, restaking primitives, RWA, perps). Pick from here when adding a new adapter. |
 | [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md) | Polish backlog for the `comparison-report.md` generator (drift breakdown lines, Etherscan links, sub-row tables, etc.). |
 
 ---
@@ -82,13 +90,13 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | Doc | When to read |
 |---|---|
 | [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config with a final admin handoff to the security-council Safe, the per-script roles (`01_…` → `07_…`). Read first if new. |
-| [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional oracles to a live chain, registering new assets, rotating roles, validating an existing deployment. |
+| [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional adapters to a live chain, registering new assets, rotating roles, validating an existing deployment. |
 | [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
 | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
-| [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` and `assets.json`. |
+| [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
-| [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `06_…` deploy scripts. |
-| [`script/test/README.md`](../script/test/README.md) | Per-folder index for `script/test/` (snapshot refresh + comparison report). |
+| [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `07_…` deploy scripts. |
+| [`script/test/README.md`](../script/test/README.md) | Reference for the deployment-script tests in `script/test/` (this folder also holds the snapshot-refresh and comparison-report scripts). |
 
 ---
 
@@ -96,7 +104,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | Why kept |
 |---|---|
-| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The v1 → v2 oracle migration plan (PRs #10–#15, completed 2026-04-30). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see `script/NAV_V2_DEPLOYMENT_RUNBOOK.md` for that. |
+| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The NAV v1 → v2 oracle (price + balance) migration plan (PRs #10, #11, #12, completed 2026-04-17). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see `script/NAV_V2_DEPLOYMENT_RUNBOOK.md` for that. |
 
 ---
 

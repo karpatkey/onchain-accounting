@@ -1,6 +1,6 @@
 # Merkl proof-submitter bot — operator's guide
 
-The `MerklRewardsBalanceOracle` adapter (`src/balances/protocols/MerklRewards.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+The `MerklRewardsBalanceAdapter` adapter (`src/balances/protocols/MerklRewards.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
 This document specifies what the bot must do, how often, with what inputs and what failure modes. It does **not** specify the language, framework, or deployment topology — those are operator choices. The bot lives outside this repo; this file is the contract between the on-chain adapter and whatever ops process keeps it fed.
 
@@ -11,7 +11,7 @@ This document specifies what the bot must do, how often, with what inputs and wh
 Exactly two things, every cycle:
 
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof)` triples from Merkl's API.
-2. **Submit each fresh triple to the deployed `MerklRewardsBalanceOracle` on that chain** via `submitProof` or `submitProofBatch`, signed by the contract's owner key.
+2. **Submit each fresh triple to the deployed `MerklRewardsBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by the contract's owner key.
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -24,7 +24,7 @@ The bot needs three pieces of operator-provided configuration:
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
 | **Adapter address per chain** | `script/config/chains/<id>.json` → `balanceAdapters.MerklRewards.deployed` | Read at startup; refresh on redeploy. |
-| **Owner key** | Operator secret store | The key that owns each `MerklRewardsBalanceOracle`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
+| **Owner key** | Operator secret store | The key that owns each `MerklRewardsBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.
 
@@ -85,7 +85,7 @@ Operationally:
 
 ## Submission model
 
-The owner of every deployed `MerklRewardsBalanceOracle` is `chainConfig.admin` — the OIV Safe. The bot must produce signed transactions on behalf of the Safe. Two reasonable shapes:
+The owner of every deployed `MerklRewardsBalanceAdapter` is `chainConfig.admin` — the OIV Safe. The bot must produce signed transactions on behalf of the Safe. Two reasonable shapes:
 
 | Model | How it works | When to pick it |
 |---|---|---|
@@ -94,7 +94,7 @@ The owner of every deployed `MerklRewardsBalanceOracle` is `chainConfig.admin` �
 
 Direct EOA ownership (no Safe) is **not recommended** because the owner key would have to live wherever the bot runs.
 
-The adapter does not care which model is used — `onlyOwner` is the only constraint. Whatever shape the bot uses must end with `msg.sender == oracle.owner()`.
+The adapter does not care which model is used — `onlyOwner` is the only constraint. Whatever shape the bot uses must end with `msg.sender == adapter.owner()`.
 
 ## Failure modes and what to do
 
@@ -105,7 +105,7 @@ The adapter does not care which model is used — `onlyOwner` is the only constr
 | `submitProof` reverts with `AmountRegression` | API returned a value lower than what's cached. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The owner can call `clearAllocation` manually after investigating. |
 | `submitProof` reverts with `OwnableUnauthorizedAccount` | Bot's signer is not the adapter's owner | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
 | Cache reads as 0 even though API shows non-zero `amount` | Cached `root` does not match current `Distributor.getMerkleRoot()`. Bot has not yet run since the last root rotation. | Wait for next bot cycle. If persistent, the bot is stopped — investigate. |
-| Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceOracle` wasn't called | Check `NAVCalculator.isOracleRegistered(adapter)`; if false, register via Safe. |
+| Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapters` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
 
 ## Operator-side bookkeeping
 
@@ -123,10 +123,10 @@ The invariant that makes this work: pre-claim, the reward sits at the Distributo
 
 | Reward shape | Pre-claim | Post-claim | Double count? |
 |---|---|---|---|
-| **Raw ERC20** (MORPHO, ARB, RPL, GEAR, …) | Merkl: `cum - claimed`. Wallet: 0. | Merkl: 0. Wallet: balance picked up by `ERC20DefaultOracle`. | **No** — Merkl pays, wallet receives. |
-| **stkGHO** (Aave SM stake token) | Merkl: `cum - claimed` of stkGHO. SM adapter: `IStakeToken(stkGHO).balanceOf(user)` — does **not** include the unclaimed Merkl bag at the Distributor. | Merkl: 0. SM adapter: now sees the user's increased `balanceOf`. | **No** — `balanceOf` is wallet-resident; Merkl tokens arrive there only after `claim`. |
-| **aTokens** (`aEthRLUSD`, …) | Merkl: `cum - claimed` of the aToken. Aave V3 adapter: `getUserReserveData(user, RLUSD).aTokenBalance` — only the user's existing RLUSD supply on Aave, not Merkl-held aTokens. | Merkl: 0. Aave V3 adapter: increased aToken balance reflects the Merkl reward landing in the user's Aave position. | **No** — aTokens at the Distributor are not user-attributable on Aave's side until claim. |
-| **LP tokens** (Aave-BPT, rETH-waEthWETH LP, …) | Merkl: `cum - claimed` of the LP. Wallet/Balancer/Aura adapters: only count what's in the user's wallet or staked in a known gauge — not what's at the Distributor. | Merkl: 0. The LP either lands in wallet (`ERC20DefaultOracle`) or, if user stakes it, into the BalancerV3/Aura adapter. | **No** — same invariant. |
+| **Raw ERC20** (MORPHO, ARB, RPL, GEAR, …) | Merkl: `cum - claimed`. Wallet: 0. | Merkl: 0. Wallet: balance picked up by `ERC20DefaultAdapter`. | **No** — Merkl pays, wallet receives. |
+| **stkGHO** (Aave SM stake token) | Merkl: `cum - claimed` of stkGHO. SM adapter: `previewRedeem(IStakeToken(stkGHO).balanceOf(user))` (reports the redeemable GHO underlying, not stkGHO itself) — does **not** include the unclaimed Merkl bag at the Distributor. | Merkl: 0. SM adapter: `balanceOf` now reflects the claimed stkGHO. | **No** — `balanceOf` is wallet-resident; Merkl tokens arrive there only after `claim`. |
+| **aTokens** (`aEthRLUSD`, …) | Merkl: `cum - claimed` of the aToken. Aave V3 adapter: `getUserReserveData(RLUSD, user).aTokenBalance` — only the user's existing RLUSD supply on Aave, not Merkl-held aTokens. | Merkl: 0. Aave V3 adapter: increased aToken balance reflects the Merkl reward landing in the user's Aave position. | **No** — aTokens at the Distributor are not user-attributable on Aave's side until claim. |
+| **LP tokens** (Aave-BPT, rETH-waEthWETH LP, …) | Merkl: `cum - claimed` of the LP. Wallet/Balancer/Aura adapters: only count what's in the user's wallet or staked in a known gauge — not what's at the Distributor. | Merkl: 0. The LP either lands in wallet (`ERC20DefaultAdapter`) or, if user stakes it, into the BalancerV3/Aura adapter. | **No** — same invariant. |
 
 Even the **root-rotation edge case** preserves this. If the user partially claims under root N, the bot then re-submits a proof under root N+1 with a higher cumulative, and `claimed[user][token].amount` still reflects the partial claim under N, the math is:
 

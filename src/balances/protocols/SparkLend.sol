@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -9,13 +9,13 @@ import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Spark Lend Balance Oracle
+/// @title Spark Lend Balance Adapter
 /// @author kpk
 /// @notice Reports per-reserve Supply/Collateral and Borrow positions for an account in Spark Lend.
 ///         Reads the reserve list from the Protocol Data Provider and emits up to two legs per
 ///         reserve (aToken balance → Supplied/Collateral, variable debt → Borrowed).
 ///         Stable debt is ignored — Aave/Spark deprecated it; all active debt is variable.
-contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the first element of `positionId`.
     address public immutable POOL;
@@ -32,8 +32,8 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
@@ -46,14 +46,14 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
         return "lending position";
     }
 
-    // ─── IBalanceOracleAdapter ────────────────────────────────────────────────
+    // ─── IBalanceAdapter ────────────────────────────────────────────────
 
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         return _reserveAddresses();
     }
 
     /// @notice Net supply-minus-debt per asset (for callers that want a signed scalar, not split legs).
-    function getOracleBalanceForAsset(address account, address asset)
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
@@ -64,7 +64,7 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     }
 
     /// @notice Net supply-minus-debt for all reserves with non-zero balance.
-    function getOracleBalances(address account)
+    function getAdapterBalances(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebtArr)
@@ -98,7 +98,7 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
     }
 
     /// @notice Separate Supply/Collateral and Borrow legs per reserve (main NAV path).
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
@@ -139,7 +139,7 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
             if (supply > 0) {
                 tmp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: meta,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: supply,
                     isDebt: false,
                     protocolId: ProtocolIds.SPARK_LEND,
@@ -150,7 +150,7 @@ contract SparkLendBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
             if (debt > 0) {
                 tmp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: meta,
-                    balanceOracle: address(this),
+                    balanceAdapter: address(this),
                     amount: debt,
                     isDebt: true,
                     protocolId: ProtocolIds.SPARK_LEND,

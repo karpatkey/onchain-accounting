@@ -26,7 +26,7 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    merkleRoot at the new fork block for diagnostics. Failed proof    │
 │    submissions in step 2 are tolerated (NAV treats them as 0).       │
 ├──────────────────────────────────────────────────────────────────────┤
-│ 2. forge build once (warm cache) → forge script per chain (PARALLEL) │
+│ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
 │    → deploys NAV stack (incl. MerklRewards) at the new fork, replays │
 │    fixture proofs into the cache, reads NAV per enabled account,     │
 │    emits SNAPSHOT|... lines that are applied via jq                  │
@@ -54,17 +54,17 @@ Most test accounts hold positions outside what NAV currently supports — sittin
 The script instead reconstructs a Debank-side total that's restricted to NAV's coverage. Two buckets are summed:
 
 1. **Allowlisted protocols (full value).** `chains.<chainId>.supportedDeBankProtocols` in `accounts.json` is the per-chain allowlist of Debank protocol ids that NAV has a dedicated balance adapter for (e.g. `aave3`, `morphoblue`, `balancer3`, `aura`). NAV's adapter handles the position math (debt netting, projected interest, reward accrual, etc.), so for these protocols we trust Debank's pre-aggregated `portfolio_item_list[].stats.net_usd_value` and sum it in full. Debank uses the bare id on Mainnet (`aave3`) and a chain prefix elsewhere (`arb_aave3`); the script accepts both.
-2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `assets.json` `.tokens.<chainId>` *or* in `script/test/wallet-aggregating-adapters.json` (currently `Cap → cUsd, stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultOracle._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
+2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keyed by symbol) *or* in `script/test/wallet-aggregating-adapters.json` (currently `Cap → cUsd, stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultAdapter._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
 
 > **The `wallet-aggregating-adapters.json` registry.** Some balance adapters (Cap, today) read `balanceOf(token)` for one or more wallet tokens that aren't standalone NAV-registered priceable assets, then aggregate them into a single `PositionBalance` denominated in another asset (Cap reads cUsd + stcUsd → returns USDC). Those wallet tokens still need to count as "covered" in Bucket 2; otherwise the snapshot anchor under-counts vs the live filtered total. The registry maps `adapter_key → [constructor_param_names]`; both `refresh-integration-snapshot.sh` (jq) and `generate-comparison-report.py` (python) read it and union the constructor-arg addresses into the wallet allowlist. Adding a new wallet-aggregating adapter is one line in the JSON; both scripts pick it up.
 
-> **Why we don't walk protocol `asset_token_list` for non-allowlisted protocols.** A natural-looking third bucket — "for any non-allowlisted protocol entry, sum its `asset_token_list[]` filtered to NAV-registered tokens" — *over-counts*. Empirically, the per-protocol `asset_token_list` is synthetic: Kelp DAO reports underlying ETH equivalent (id `eth`, ~$700 worth) of an rsETH position whose actual ERC20 balance shows up correctly in `token_list` (id `0xa129…`); Ethena reports an aggregated USDe count larger than `balanceOf(USDe)`; Lido reports pending rewards that never enter `balanceOf`. Walking these would either double-count Bucket 2 or count value NAV's default oracle never sees. The wallet `token_list` is the only reliable wallet-side source — if a NAV-registered token is on-chain, it's there with the right amount.
+> **Why we don't walk protocol `asset_token_list` for non-allowlisted protocols.** A natural-looking third bucket — "for any non-allowlisted protocol entry, sum its `asset_token_list[]` filtered to NAV-registered tokens" — *over-counts*. Empirically, the per-protocol `asset_token_list` is synthetic: Kelp DAO reports underlying ETH equivalent (id `eth`, ~$700 worth) of an rsETH position whose actual ERC20 balance shows up correctly in `token_list` (id `0xa129…`); Ethena reports an aggregated USDe count larger than `balanceOf(USDe)`; Lido reports pending rewards that never enter `balanceOf`. Walking these would either double-count Bucket 2 or count value NAV's default adapter never sees. The wallet `token_list` is the only reliable wallet-side source — if a NAV-registered token is on-chain, it's there with the right amount.
 
 **When you add a new balance adapter**, ask whether Debank covers the same protocol. If yes, add the Debank short id to `supportedDeBankProtocols` for the relevant chains. If no, add nothing and accept that NAV will exceed filtered-Debank by exactly the value of that adapter's positions for the test accounts (which is usually fine — the drift will be visible in the report). To find a Debank protocol id, browse [debank.com/protocols](https://debank.com/protocols) or grep one of your test accounts' `/v1/user/all_complex_protocol_list` response.
 
-> **When NAV deliberately doesn't track a protocol Debank reports**, leave the Debank id OUT of `supportedDeBankProtocols` AND list it in the chain's `$untracked_by_design` field (see `accounts.json.chains.1.$untracked_by_design`). This documents to reviewers that the ❌ entry in the comparison report is intentional, not an oversight. Concrete cases on chain 1 today: `aave2` (Aave V2 deprecated; Aave V2 SM stkAAVE not implemented), `balancer2`, `sablier`, `acrocc_v2`, `multichain`, `compound` (Compound V2). Wallet tokens with no Chainlink mainnet feed (COW, HEX, POL, CASHW) belong in the same field.
+> **When NAV deliberately doesn't track a protocol Debank reports**, leave the Debank id OUT of `supportedDeBankProtocols` AND list it in the chain's `$untracked_by_design` field (see `accounts.json.chains.1.$untracked_by_design`). This documents to reviewers that the ❌ entry in the comparison report is intentional, not an oversight. Concrete cases on chain 1 today: `balancer2` (no Bal V2 adapter), `sablier`, `acrocc_v2` (Across V2 LP), `multichain` (defunct bridge), `compound` (Compound V2 — only V3 covered). Wallet tokens with no Chainlink mainnet feed (COW, HEX, POL, CASHW, etc.) belong in the same field.
 
-**When you add a new asset** to `script/config/assets.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up new entries via the chain's tokens map.
+**When you add a new asset** to `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (registered via `RegisterAssets.s.sol`), no script change is needed — the filter automatically picks up newly registered assets.
 
 ---
 
@@ -82,17 +82,17 @@ The script instead reconstructs a Debank-side total that's restricted to NAV's c
 ## Run it locally
 
 ```bash
-# Default (Debank cross-check on if DEBANK_API_KEY is set, MAX_PARALLEL=2):
+# Default (Debank cross-check on if DEBANK_API_KEY is set, MAX_PARALLEL=5):
 script/test/refresh-integration-snapshot.sh
 
 # Force-skip Debank even if the key is in the environment:
 DEBANK_API_KEY= script/test/refresh-integration-snapshot.sh
 
-# Override concurrency (default 2; bump to 4 on a runner with more RAM):
-MAX_PARALLEL=4 script/test/refresh-integration-snapshot.sh
+# Override concurrency (default 5; lower to 2 on a runner with less RAM):
+MAX_PARALLEL=2 script/test/refresh-integration-snapshot.sh
 ```
 
-`MAX_PARALLEL` caps the number of concurrent `forge script` invocations in step 2. Each forge fork peaks at ~900MB RSS, so 5 concurrent forks need ~5GB free RAM minimum and trigger OOM-kills on 8GB hosts. Default of 2 is safe everywhere; 4 is comfortable on 16GB+ runners.
+`MAX_PARALLEL` caps the number of concurrent `forge test` invocations in step 2. Each forge fork peaks at ~900MB RSS, so 5 concurrent forks need ~4.5GB free RAM minimum and can trigger OOM-kills on 8GB hosts. The default of 5 runs all chains in parallel on 16GB+ runners; lower it to 2 on an 8GB box.
 
 Output:
 
@@ -128,9 +128,9 @@ Required secrets / repo vars:
 
 | Name | Where | Notes |
 |---|---|---|
-| `KNODE_URL` (var) | repo variables | Existing — same one used by `foundry.yml`. |
+| `KNODE_URL` (var) | repo variables | Used by this workflow to build the per-chain `*_URL` env (`foundry.yml` itself now uses Alchemy). |
 | `KNODE_API_KEY` | repo secrets | Existing. |
-| `ALCHEMY_API_KEY` | repo secrets | Existing fallback. |
+| `ALCHEMY_API_KEY` | repo secrets | Fallback when a chain-specific `*_URL` is unset. |
 | `DEBANK_API_KEY` | repo secrets | New. Used only when the workflow is triggered with `include_debank: true` (default for cron runs). |
 
 ---
@@ -206,7 +206,7 @@ When running with **fresh fork blocks** (i.e., the script just bumped them), dri
 | Mainnet portfolio of mixed volatile assets (ETH, BTC, LSTs, LRTs) | 0.1% – 0.3% |
 | Specific wrapped/synthetic assets where Chainlink ≠ Debank pricing | 1% – 3% |
 
-A persistent ~3% drift on a single Mainnet account with fresh blocks usually means the adapter holds an asset where our oracle stack and Debank's portfolio pricing disagree (most often ETH+, sUSDe under stress, or freshly-onboarded LRTs). Use `nav.getAccountPositions(account, address(0))` against the relevant fork to find the divergent line item before chasing it as a bug.
+A persistent ~3% drift on a single Mainnet account with fresh blocks usually means the adapter holds an asset where our adapter stack and Debank's portfolio pricing disagree (most often ETH+, sUSDe under stress, or freshly-onboarded LRTs). Use `nav.getAccountPositions(account, address(0))` against the relevant fork to find the divergent line item before chasing it as a bug.
 
 ---
 
@@ -279,8 +279,8 @@ Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on
 **4.2 — Debank items in supported protocols with no NAV match**
 
 A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnostic hints per row:
-- *Unregistered token*: the token address isn't in the chain's `tokens` map in `script/config/assets.json`.
-- *Missing price feed*: the token is registered but has no `priceFeeds` entry in `script/config/chains/<chainId>.json`.
+- *Unregistered token*: the token address isn't an asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json`.
+- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
 - *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
 
 **4.3 — NAV adapters available but not deployed on chain** *(surfaced via 4.1 cross-reference)*
@@ -290,7 +290,7 @@ When the reverse-lookup from a 4.1 entry finds a matching adapter Solidity file 
 **To action a 4.1/4.3 row:**
 
 1. Confirm the canonical contract address on the target chain (protocol's docs, Etherscan, or a Debank item's `asset_token_list[].id`).
-2. Add an entry under `balanceAdapters` in `script/config/chains/<chainId>.json` following the same shape as the existing mainnet entry for that adapter.
+2. Add the adapter to `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) for the deploy config, and `script/config/nav-config/balance-adapters/<chainId>.json` or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
 3. If any token the adapter introduces needs a price feed, check `src/prices/protocols/` for an existing feed contract (L2 LST feeds — `wstETH_L2_Price`, `weETH_L2_Price`, etc. — are already shipped). If none exists, flag as a follow-up (no new Solidity in this workflow).
 4. Re-run `refresh-integration-snapshot.sh`. Confirm the gap row clears in Section 4.1.
 
@@ -336,7 +336,7 @@ The `accounts.json` file includes two pre-wired placeholder slots (`ACCOUNT_PLAC
 - `test/integration/IntegrationFromConfigBase.fork.sol` — reads JSON; deploys NAV; asserts.
 - `test/integration/NAV.<Chain>.integration.fork.t.sol` — chain stubs.
 - `test/integration/debank-cache/` — persisted Debank API responses (one file per account/chain, committed).
-- `script/test/RefreshIntegrationSnapshot.s.sol` — forge script that emits `SNAPSHOT|…` lines.
+- `script/test/RefreshIntegrationSnapshot.s.sol` — legacy forge script that emits `SNAPSHOT|…` lines; retained for reference but no longer invoked by the refresh script (which now uses `forge test --match-test test_emitSnapshots` — see "Known issues" below).
 - `script/test/refresh-integration-snapshot.sh` — orchestrator (cast + forge + curl + jq).
 - `script/test/generate-comparison-report.py` — renders `comparison-report.md` (NAV ↔ Debank cross-check, per-adapter detail, coverage gaps). Pass `--from-cache` to regenerate from cached Debank responses without an API key.
 - `script/test/wallet-aggregating-adapters.json` — single-source-of-truth registry of balance adapters that consume wallet tokens via `balanceOf` (e.g. Cap reads cUsd + stcUsd). Both the snapshot script and the comparison report read it; one entry per adapter is enough to keep their allowlists in sync.

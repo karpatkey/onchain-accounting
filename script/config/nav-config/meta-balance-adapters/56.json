@@ -1,0 +1,9 @@
+{
+  "PancakeSwapV2PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V2 pair (one Supply leg per token). The active pair set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pair address; name = sym0/sym1 LP. Supersedes the per-pair PancakeSwapV2_* adapters. Disabled for the same reason as below: COW has no Chainlink feed on BSC, so the COW leg would be silently dropped. Enable once COW is priced.",
+    "instances": [
+      "0x74D4Ee4CA29Ca2FB69B31E9cbd4523b707e64662"
+    ]
+  }
+}

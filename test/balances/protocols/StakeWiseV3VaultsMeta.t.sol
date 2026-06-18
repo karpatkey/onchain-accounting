@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -83,18 +83,19 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
     function test_fanOut_legsAndIdentity() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         // vaultA: Staking(10) + Borrow(2); vaultB: Staking(3) -> 3 legs total
         assertEq(p.length, 3);
 
@@ -102,7 +103,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         assertEq(p[0].balanceAsset.asset, address(underlying));
         assertEq(p[0].amount, 10e18);
         assertFalse(p[0].isDebt);
-        assertEq(p[0].balanceOracle, address(meta));
+        assertEq(p[0].balanceAdapter, address(meta));
         assertEq(p[0].positionId, abi.encode(address(vaultA)));
 
         // vaultA Borrow
@@ -119,27 +120,27 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
         // Filter on the underlying -> both legs of vaultA.
-        assertEq(meta.getOraclePositionsForInstances(alice, one, address(underlying)).length, 2);
+        assertEq(meta.getAdapterPositionsForInstances(alice, one, address(underlying)).length, 2);
         // Filter on a different asset -> empty.
-        assertEq(meta.getOraclePositionsForInstances(alice, one, address(0xdead)).length, 0);
+        assertEq(meta.getAdapterPositionsForInstances(alice, one, address(0xdead)).length, 0);
     }
 
     function test_unregisteredUnderlying_skipped() public {
         nav.unregisterAssetHelper(address(underlying));
-        assertEq(meta.getOraclePositionsForInstances(alice, _instances(), address(0)).length, 0);
+        assertEq(meta.getAdapterPositionsForInstances(alice, _instances(), address(0)).length, 0);
     }
 
     function test_noPosition_empty() public view {
         bytes32[] memory ins = new bytes32[](1);
         ins[0] = bytes32(uint256(uint160(address(vaultB))));
-        assertEq(meta.getOraclePositionsForInstances(address(0xB0B), ins, address(0)).length, 0);
+        assertEq(meta.getAdapterPositionsForInstances(address(0xB0B), ins, address(0)).length, 0);
     }
 
     function test_badInstance_isolated() public view {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead)))); // no code -> reverts internally, isolated
         ins[1] = bytes32(uint256(uint160(address(vaultB))));
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 1, "bad vault isolated, vaultB staking leg returned");
         assertEq(p[0].amount, 3e18);
     }

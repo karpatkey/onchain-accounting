@@ -1,10 +1,10 @@
-# 0006 — Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code
+# 0008 — Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code
 
 **Status:** accepted
 
 ## Context
 
-The Uniswap V3 balance adapter (`src/balances/protocols/uniswap/UniswapV3Pool.sol`) needs three pieces of math from Uniswap to compute principal liquidity and unclaimed fees from a position's `(liquidity, tickLower, tickUpper)` plus the pool's `slot0` and `feeGrowth*` state:
+The Uniswap V3 balance adapter (`src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol`) needs three pieces of math from Uniswap to compute principal liquidity and unclaimed fees from a position's `(liquidity, tickLower, tickUpper)` plus the pool's `slot0` and `feeGrowth*` state:
 
 - `TickMath.getSqrtRatioAtTick(int24)` — exponential-of-tick polynomial with ~40 magic constants.
 - `LiquidityAmounts.getAmountsForLiquidity(...)` — concentrated-liquidity formula.
@@ -22,7 +22,7 @@ Three options were on the table:
 
 ## Decision
 
-Take **option 1**. Place `TickMath.sol`, `LiquidityAmounts.sol`, and `FixedPoint128.sol` under `src/balances/protocols/uniswap/lib/`, each carrying `// SPDX-License-Identifier: GPL-2.0-or-later` (verbatim from upstream) and a short header noting the port (replace `FullMath.mulDiv` with OpenZeppelin's `Math.mulDiv`, wrap `getSqrtRatioAtTick` in `unchecked` to preserve the 0.7 wrapping semantics, drop `getTickAtSqrtRatio` because the adapter doesn't need it). The adapter file itself stays `SPDX-License-Identifier: MIT`.
+Take **option 1**. Place `TickMath.sol`, `LiquidityAmounts.sol`, and `FixedPoint128.sol` under `src/balances/protocols/uniswap/lib/`, each carrying `// SPDX-License-Identifier: GPL-2.0-or-later` (verbatim from upstream) and a short header noting the port (replace `FullMath.mulDiv` with OpenZeppelin's `Math.mulDiv`, wrap `getSqrtRatioAtTick` in `unchecked` to preserve the 0.7 wrapping semantics, drop `getTickAtSqrtRatio` because the adapter doesn't need it). Because the adapter imports and links those libs, the adapter file itself also carries `// SPDX-License-Identifier: GPL-2.0-or-later` — there is no MIT file in this compilation unit.
 
 Rationale:
 
@@ -53,7 +53,7 @@ For *any* future balance adapter that needs to inline upstream math from a non-p
 - Preserve the upstream `SPDX-License-Identifier` verbatim — do not relicense them as MIT.
 - Add a short `@dev` header to each file documenting the port (which functions were copied, which were dropped, what was substituted, and the upstream URL).
 - Reference this ADR.
-- The adapter file itself stays MIT.
+- Mark the adapter file that imports the libs `GPL-2.0-or-later` too: importing and linking GPL math makes the adapter a combined work, so its SPDX header should match (this is what the Uniswap V3 adapter does — `UniswapV3PoolsMeta.sol` is `GPL-2.0-or-later`, not MIT).
 
 If a future situation calls for a different posture (clean-room MIT port, GPL-only adapter, dual-licensed lib, …), write a new ADR rather than amending this one.
 
@@ -61,7 +61,7 @@ If a future situation calls for a different posture (clean-room MIT port, GPL-on
 
 PancakeSwap V3 is a Uniswap V3 fork: same pool view surface, same NPM `positions` struct, same fee-growth math, same `LiquidityAmounts.getAmountsForLiquidity` mapping. The single divergence is that PancakeSwap's `slot0().feeProtocol` is `uint32` (per-token tiers packed into 32 bits) where Uniswap V3's is `uint8` (both tiers packed into 4-bit halves of a single byte). Solidity 0.8's strict ABI decoder rejects a `uint8` read whenever the high bits of the 32-byte word are set, which is the case on every active PancakeSwap V3 pool.
 
-Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, we marked `UniswapV3PoolsMetaBalanceAdapter._slot0()` `virtual` and have PancakeSwap V3 inherit the parent and override only that one read with a local interface declaration containing `uint32 feeProtocol`. The pattern matches `SparkLendBalanceOracle (self-contained, no inheritance)` — note that SparkLend.sol was refactored to a standalone adapter and no longer inherits from an Aave V3 base.
+Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, we marked `UniswapV3PoolsMetaBalanceAdapter._slot0()` `virtual` and have PancakeSwap V3 inherit the parent and override only that one read with a local interface declaration containing `uint32 feeProtocol`. The pattern mirrors the `SparkLendBalanceAdapter is AaveV3InstanceBalanceAdapter` inheritance that this repo formerly used — note that `SparkLend.sol` has since been refactored into a standalone adapter and no longer inherits from an Aave V3 base, so PancakeSwap V3 is now the canonical example of this fork-via-inheritance pattern.
 
 Implications for this ADR:
 

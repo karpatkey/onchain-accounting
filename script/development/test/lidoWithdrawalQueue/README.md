@@ -2,11 +2,11 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/LidoWithdrawalQueue.sol` — the immutable `LidoWithdrawalQueueBalanceOracle`. Constructor: `(withdrawalQueue, underlyingToken, navCalculator)` where `withdrawalQueue = Lido WithdrawalQueueERC721` (`0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1`) and `underlyingToken =` the **native-ETH sentinel** (`0xEeee…eEEeE`). Identity is derived on-chain: `positionId = ""` (account-global — a holder has at most one aggregate queue position), `protocolId = keccak256("lido-withdrawal")`, `positionKind = Supplied`.
+`src/balances/protocols/LidoWithdrawalQueue.sol` — the immutable `LidoWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalQueue, underlyingToken, navCalculator)` where `withdrawalQueue = Lido WithdrawalQueueERC721` (`0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1`) and `underlyingToken =` the **native-ETH sentinel** (`0xEeee…eEEeE`). Identity is derived on-chain: `positionId = ""` (account-global — a holder has at most one aggregate queue position), `protocolId = keccak256("lido-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — `LidoWithdrawalQueueBalanceOracle` implements `IBalanceOracleAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
+- **Inheritance:** none — `LidoWithdrawalQueueBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
 - **Per-chain scope:** Lido's `WithdrawalQueueERC721` is **mainnet-only**. So `chains/1.json` is the only chain config with `LidoWithdrawalQueue`. A single mainnet fork test is sufficient; no per-chain branches.
 - **Denomination — native ETH, not stETH:** when a user requests an unstake, stETH is locked and an ERC721 request id is minted; the claim pays out **native ETH** (the stETH is burned). The adapter denominates the position in ETH and NAV prices it via **ETH/USD**, so a stETH depeg can't mis-value a claim that settles in full ETH. While queued, the value is invisible to wallet/receipt-token oracles — this adapter is the only thing that surfaces it.
 - **Gas bound (anti-DoS):** Lido's queue is **not** `ERC721Enumerable` (no `tokenOfOwnerByIndex`), and `getWithdrawalRequests` returns the *entire* id set. The adapter reads `balanceOf` (O(1)) first and **skips** (returns 0) any account with more than `MAX_REQUESTS_PROBED = 256` open requests, so an attacker can't inflate the id list (by transferring withdrawal NFTs in) to OOG the NAV read — an OOG is **not** caught by NAVCalculator's try/catch. A real account never approaches the cap.
@@ -19,11 +19,11 @@ Two branches, summed across the account's open (un-claimed) requests:
 - **not yet finalized** → `amountOfStETH` (the redemption rate isn't fixed until finalization; never invent one). Equals the ETH paid in the normal case.
 - `isClaimed` requests are skipped.
 
-Registration gating is asymmetric (same as sGHO / Aave Umbrella): `getOraclePositions` drops the leg if native ETH isn't registered on NAVCalculator (registered-asset intersection — the "discard if no price" policy), whereas the balance methods (`getOracleBalanceForAsset` / `getOracleBalances`) do **not** consult the registry and still return the value.
+Registration gating is asymmetric (same as sGHO / Aave Umbrella): `getAdapterPositions` drops the leg if native ETH isn't registered on NAVCalculator (registered-asset intersection — the "discard if no price" policy), whereas the balance methods (`getAdapterBalanceForAsset` / `getAdapterBalances`) do **not** consult the registry and still return the value.
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol` already had `LidoWithdrawalQueueBalanceOracleForkTest` covering **both branches** against the real contract:
+`test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol` already had `LidoWithdrawalQueueBalanceAdapterForkTest` covering **both branches** against the real contract:
 - un-finalized holder `0x7170b89D…` (id 125680, `amountOfStETH = 2.67 ETH`) @ block `25_203_500`.
 - finalized-unclaimed holder `0xF74B44b0…` (`getClaimableEther = 4.871995… ETH`) @ block `25_200_000`.
 - plus empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
@@ -34,7 +34,7 @@ All kept as regression nets.
 
 ## 3. What this case adds
 
-- A **fresh dual-holder pin at the verification block `25_294_574`** (`LidoWithdrawalQueueBalanceOracleForkTest_Fresh`) — augments, doesn't replace. One holder per branch, at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check.
+- A **fresh dual-holder pin at the verification block `25_294_574`** (`LidoWithdrawalQueueBalanceAdapterForkTest_Fresh`) — augments, doesn't replace. One holder per branch, at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check.
 - This evidence pack: README + case JSON + query script + dev deploy helper, bringing Lido WQ up to the same 10-section structure as the other verified protocols.
 
 ## 4. Adapter formula recap
@@ -43,9 +43,9 @@ All kept as regression nets.
 count = WITHDRAWAL_QUEUE.balanceOf(account)          # O(1); skip (return 0) if count == 0 or count > 256
 ids   = WITHDRAWAL_QUEUE.getWithdrawalRequests(account)
 for each request:
-    if isClaimed:                 skip
-    elif isFinalized:             total += getClaimableEther([id], findCheckpointHints([id],1,lastCheckpoint))
-    else (not finalized):         total += amountOfStETH
+    if isClaimed:                          skip
+    elif isFinalized and lastCheckpoint!=0: total += getClaimableEther([id], findCheckpointHints([id],1,lastCheckpoint))
+    else (not finalized):                  total += amountOfStETH
 emit PositionBalance(ETH, total, isDebt=false, Supplied, positionId="")   if total > 0
 ```
 
@@ -66,8 +66,8 @@ emit PositionBalance(ETH, total, isDebt=false, Supplied, positionId="")   if tot
 | WithdrawalQueue | `0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1` |
 | Underlying (native ETH) | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` |
 | Queue state at block | lastRequestId 127194, lastFinalizedRequestId 127171, lastCheckpointIndex 1123 |
-| Adapter under test | `LidoWithdrawalQueueBalanceOracle` |
-| Fork-test contract | `LidoWithdrawalQueueBalanceOracleForkTest_Fresh` in `test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol` |
+| Adapter under test | `LidoWithdrawalQueueBalanceAdapter` |
+| Fork-test contract | `LidoWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -75,7 +75,7 @@ emit PositionBalance(ETH, total, isDebt=false, Supplied, positionId="")   if tot
 |---|---|
 | `case-real-holders-mainnet.json` | Machine-readable evidence pack: both holders, request ids, ETH owed, identity, ground-truth method |
 | `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints both holders' ETH legs for ad-hoc cross-checks |
-| `script/development/deploy/deploy-lido-withdrawal-queue.sh` | Dev-anvil deploy helper: `forge create` the adapter + `addBalanceOracle` on the local NAV |
+| `script/development/deploy/deploy-lido-withdrawal-queue.sh` | Dev-anvil deploy helper: `forge create` the adapter + `addBalanceAdapters([adapter])` on the local NAV |
 
 ## 7. Expected balances
 
@@ -95,7 +95,7 @@ Single leg per holder, denominated in native ETH. Captured at the fork block in 
 | `0x9074212F…` | ETH | `1995928786744414475126` | 1995.928786744414475126 ETH | false |
 | `0x2DE923BE…` | ETH | `54619912948304940018` | 54.619912948304940018 ETH | false |
 
-`getOracleBalanceForAsset(holder, ETH)`, `getOracleBalances(holder)`, and the single `getOraclePositions` entry all return the same ETH value per holder.
+`getAdapterBalanceForAsset(holder, ETH)`, `getAdapterBalances(holder)`, and the single `getAdapterPositions` entry all return the same ETH value per holder.
 
 ## 8. Ground-truth cross-check
 
@@ -103,10 +103,10 @@ The value is a live read of Lido's own WithdrawalQueue — there is no closed-fo
 
 | Holder | Check |
 |---|---|
-| `PRIMARY` (un-finalized) | `oracle == Σ amountOfStETH` over the account's open un-claimed un-finalized requests (`getWithdrawalStatus`). |
-| `SECONDARY` (finalized) | `oracle == getClaimableEther([127164], findCheckpointHints([127164],1,1123))` — the exact ETH Lido would pay on claim. Here it equals `amountOfStETH` (no negative rebase), which is the normal case. |
+| `PRIMARY` (un-finalized) | `adapter == Σ amountOfStETH` over the account's open un-claimed un-finalized requests (`getWithdrawalStatus`). |
+| `SECONDARY` (finalized) | `adapter == getClaimableEther([127164], findCheckpointHints([127164],1,1123))` — the exact ETH Lido would pay on claim. Here it equals `amountOfStETH` (no negative rebase), which is the normal case. |
 
-The **divergent** case (finalized `getClaimableEther < amountOfStETH` after a negative rebase) is exercised with mocks in `test/balances/protocols/LidoWithdrawalQueue.t.sol::test_getOracleBalanceForAsset_finalizedUsesClaimableEth` — a real holder with a haircut can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("lido-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceOracle == address(this)`.
+The **divergent** case (finalized `getClaimableEther < amountOfStETH` after a negative rebase) is exercised with mocks in `test/balances/protocols/LidoWithdrawalQueue.t.sol::test_getAdapterBalanceForAsset_finalizedUsesClaimableEth` — a real holder with a haircut can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("lido-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 

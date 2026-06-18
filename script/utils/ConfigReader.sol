@@ -3,9 +3,27 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {stdJson} from "forge-std/StdJson.sol";
+import {IPrices} from "../../src/prices/IPrices.sol";
 
 /// @title ConfigReader
-/// @notice Utility for reading and parsing per-chain configuration JSON files
+/// @notice Utility for reading/parsing the NAV deployment configuration.
+/// @dev Config is organized by concern, one JSON file per chain (top-level keys; the file *is* the chain). All
+///      paths are under `script/config/`:
+///      - `chains/<id>.json`                                          — chain meta + roles only (no adapter config).
+///      - `contracts-deployment-config/custom-price-feeds/<id>.json`  — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/balance-adapters/<id>.json`    — PLAIN adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/meta-balance-adapters/<id>.json` — META adapters to DEPLOY: `.<name>.{enabled,constructor}`.
+///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,callbackSelector}`.
+///      - `nav-config/assets-and-price-feeds/<id>.json`               — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
+///      - `nav-config/balance-adapters/<id>.json`                     — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
+///      - `nav-config/meta-balance-adapters/<id>.json`                — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
+///      - `deployments/<id>.json`                                     — deployed addresses (state). Top-level for proxies/impls;
+///                                                                      nested `.balanceAdapters/.customPriceFeeds/.bridgeAdapters.<name>`.
+///      The `adapterType` token passed to the adapter readers selects the file: `deployBalanceAdapters` (alias
+///      `balanceAdapters`, spans the plain + meta deploy folders), `deployMetaBalanceAdapters`, `deployPriceFeeds`
+///      (alias `priceFeeds`/`customPriceFeeds`), `navBalanceAdapters`, `navMetaBalanceAdapters`, `bridgeAdapters`.
+///      Deployments-file accessors still take the section token (`balanceAdapters`/`customPriceFeeds`/`bridgeAdapters`);
+///      all deployed balance-adapter addresses (plain + meta) live under `.balanceAdapters`.
 library ConfigReader {
     using stdJson for string;
 
@@ -22,20 +40,110 @@ library ConfigReader {
         address manager;
     }
 
-    struct AdapterConfig {
-        bool enabled;
-        string deployed;
+    // -------------------------------------------------------------------------
+    // File paths
+    // -------------------------------------------------------------------------
+
+    function _chainPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(abi.encodePacked(vm.projectRoot(), "/script/config/chains/", vm.toString(chainId), ".json"));
     }
 
-    /// @notice Reads chain configuration for a specific chain ID from per-chain config file
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID to read config for
-    /// @return config The chain configuration
-    function readChainConfig(Vm vm, uint256 chainId) internal view returns (ChainConfig memory config) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
+    function _navAssetsPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/assets-and-price-feeds/", vm.toString(chainId), ".json"
+            )
+        );
+    }
+
+    function _navBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/balance-adapters/", vm.toString(chainId), ".json"
+            )
+        );
+    }
+
+    function _navMetaBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(), "/script/config/nav-config/meta-balance-adapters/", vm.toString(chainId), ".json"
+            )
+        );
+    }
+
+    function _deployPriceFeedsPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/custom-price-feeds/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/balance-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployMetaBalanceAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/meta-balance-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBridgeAdaptersPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/bridge-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deploymentsPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(abi.encodePacked(vm.projectRoot(), "/script/config/deployments/", vm.toString(chainId), ".json"));
+    }
+
+    /// @dev Reads a file, returning "{}" if it does not exist (deployments files are created lazily).
+    function _readOrEmpty(Vm vm, string memory path) private view returns (string memory) {
         // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
+        try vm.readFile(path) returns (string memory s) {
+            return bytes(s).length == 0 ? "{}" : s;
+        } catch {
+            return "{}";
+        }
+    }
+
+    /// @dev Maps an adapterType to its deployments-file section key (price feeds live under customPriceFeeds).
+    function _deploymentsSection(string memory adapterType) private pure returns (string memory) {
+        if (_equals(adapterType, "priceFeeds") || _equals(adapterType, "customPriceFeeds")) return "customPriceFeeds";
+        return adapterType; // "balanceAdapters" | "bridgeAdapters"
+    }
+
+    // -------------------------------------------------------------------------
+    // Chain meta
+    // -------------------------------------------------------------------------
+
+    /// @notice Reads chain meta + role addresses from `chains/<id>.json`.
+    function readChainConfig(Vm vm, uint256 chainId) internal view returns (ChainConfig memory config) {
+        // forge-lint: disable-next-line(unsafe-cheatcode)
+        string memory json = vm.readFile(_chainPath(vm, chainId));
 
         config.chainId = chainId;
         config.name = json.readString(".name");
@@ -49,69 +157,135 @@ library ConfigReader {
         config.manager = json.readAddress(".addresses.manager");
     }
 
-    /// @notice Reads deployed address from chain config file
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param contractName The contract name to read address for
-    /// @return The deployed contract address, or zero address if not found
+    // -------------------------------------------------------------------------
+    // Deployed addresses (deployments/<id>.json — state)
+    // -------------------------------------------------------------------------
+
+    /// @notice Reads a top-level deployed contract address (e.g. NAVCalculatorProxy). Zero if absent.
     function readDeployedAddress(Vm vm, uint256 chainId, string memory contractName) internal view returns (address) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(abi.encodePacked(".deployed.", contractName));
-
-        // keyExists will tell us if the key is present
-        if (!vm.keyExists(json, jsonPath)) {
-            return address(0);
-        }
-
-        string memory addrStr = json.readString(jsonPath);
-        if (bytes(addrStr).length == 0 || _isPlaceholder(addrStr)) {
-            return address(0);
-        }
-
-        return vm.parseAddress(addrStr);
+        string memory json = _readOrEmpty(vm, _deploymentsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", contractName));
+        return _readAddrOrZero(vm, json, jsonPath);
     }
 
-    /// @notice Writes deployed address to chain config file
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param contractName The contract name
-    /// @param contractAddress The deployed address
+    /// @notice Writes a top-level deployed contract address to the deployments file.
     function writeDeployedAddress(Vm vm, uint256 chainId, string memory contractName, address contractAddress)
         internal
     {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-
-        // Write to deployed.{contractName}
-        string memory jsonPath = string(abi.encodePacked(".deployed.", contractName));
-        vm.writeJson(vm.toString(contractAddress), path, jsonPath);
+        vm.writeJson(
+            vm.toString(contractAddress), _deploymentsPath(vm, chainId), string(abi.encodePacked(".", contractName))
+        );
     }
 
-    /// @notice Reads enabled adapters for a given type from chain config
-    /// @dev Placeholder implementation - returns empty array
-    /// @return names Array of adapter names that are enabled
-    /// @notice Returns every key in `.<adapterType>` of the chain config, excluding `$`-prefixed
-    ///         metadata keys (e.g. `$comment`). Does NOT filter by `enabled`; callers that want
-    ///         only enabled adapters should call `isAdapterEnabled` per key.
-    function getEnabledAdapters(Vm vm, uint256 chainId, string memory adapterType)
+    /// @notice Reads a deployed adapter/feed address from the deployments file. Zero if absent.
+    /// @param adapterType "balanceAdapters" | "priceFeeds"/"customPriceFeeds" | "bridgeAdapters"
+    function readDeployedAdapterAddress(Vm vm, uint256 chainId, string memory adapterType, string memory name)
         internal
         view
-        returns (string[] memory names)
+        returns (address)
     {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(abi.encodePacked(".", adapterType));
-        if (!vm.keyExists(json, jsonPath)) return new string[](0);
+        string memory json = _readOrEmpty(vm, _deploymentsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", _deploymentsSection(adapterType), ".", name));
+        return _readAddrOrZero(vm, json, jsonPath);
+    }
 
-        string[] memory allKeys = vm.parseJsonKeys(json, jsonPath);
+    /// @notice Writes a deployed adapter/feed address to the deployments file.
+    function writeAdapterAddress(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        address deployedAddress
+    ) internal {
+        string memory jsonPath = string(abi.encodePacked(".", _deploymentsSection(adapterType), ".", adapterName));
+        vm.writeJson(vm.toString(deployedAddress), _deploymentsPath(vm, chainId), jsonPath);
+    }
 
-        // Count non-metadata keys first (excludes "$comment", "$foo", etc.).
+    function _readAddrOrZero(Vm vm, string memory json, string memory jsonPath) private view returns (address) {
+        if (!vm.keyExists(json, jsonPath)) return address(0);
+        string memory addrStr = json.readString(jsonPath);
+        if (bytes(addrStr).length == 0 || _isPlaceholder(addrStr)) return address(0);
+        return vm.parseAddress(addrStr);
+    }
+
+    // -------------------------------------------------------------------------
+    // Balance adapters (balance-adapters.json) + bridge adapters (chains/<id>.json)
+    // -------------------------------------------------------------------------
+
+    /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is its own per-chain file with
+    ///      top-level keys (empty prefix). The token selects the file: `deployBalanceAdapters` (alias
+    ///      `balanceAdapters`) and `deployMetaBalanceAdapters` (the deploy config, split plain vs meta the same way
+    ///      nav-config is); `navBalanceAdapters`, `navMetaBalanceAdapters`, `deployPriceFeeds`
+    ///      (aliases `priceFeeds`/`customPriceFeeds`), `bridgeAdapters`. An unrecognized token reverts.
+    ///      NOTE: the `deployBalanceAdapters`/`balanceAdapters` token resolves across BOTH deploy folders (plain +
+    ///      meta) via `_resolveAdapterFile`/`getEnabledAdapters`, so deploy scripts keep using one token; this helper
+    ///      returns only the plain file (the union/fallback is layered on top).
+    function _adapterFileAndPrefix(Vm vm, uint256 chainId, string memory adapterType)
+        private
+        view
+        returns (string memory json, string memory prefix)
+    {
+        if (_equals(adapterType, "deployBalanceAdapters") || _equals(adapterType, "balanceAdapters")) {
+            // "balanceAdapters" is the legacy alias for the deploy-config (plain) file. The NAV-registration side uses
+            // the explicit navBalanceAdapters/navMetaBalanceAdapters tokens.
+            json = _readOrEmpty(vm, _deployBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "deployMetaBalanceAdapters")) {
+            json = _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "navBalanceAdapters")) {
+            json = _readOrEmpty(vm, _navBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "navMetaBalanceAdapters")) {
+            json = _readOrEmpty(vm, _navMetaBalanceAdaptersPath(vm, chainId));
+            prefix = "";
+        } else if (
+            _equals(adapterType, "deployPriceFeeds") || _equals(adapterType, "priceFeeds")
+                || _equals(adapterType, "customPriceFeeds")
+        ) {
+            json = _readOrEmpty(vm, _deployPriceFeedsPath(vm, chainId));
+            prefix = "";
+        } else if (_equals(adapterType, "bridgeAdapters")) {
+            // Bridge adapters (deploy/initialize args + enabled + callbackSelector) live in their own per-chain file.
+            json = _readOrEmpty(vm, _deployBridgeAdaptersPath(vm, chainId));
+            prefix = "";
+        } else {
+            // Every adapter concern now has its own per-chain file; there is no chain-config fallback. Fail fast on an
+            // unrecognized token rather than silently reading an empty/wrong file (which would resolve to absent/false).
+            revert(string(abi.encodePacked("ConfigReader: unknown adapterType '", adapterType, "'")));
+        }
+    }
+
+    /// @dev The parseJsonKeys path for an adapter container: root ("$") for top-level per-chain files, else the prefix.
+    function _containerPath(string memory prefix) private pure returns (string memory) {
+        return bytes(prefix).length == 0 ? "$" : prefix;
+    }
+
+    /// @dev The deploy-balance token spans BOTH deploy-config folders (plain + meta). Deploy scripts read enabled +
+    ///      constructor args via this one token regardless of whether an adapter is plain or meta.
+    function _isDeployBalanceToken(string memory adapterType) private pure returns (bool) {
+        return _equals(adapterType, "deployBalanceAdapters") || _equals(adapterType, "balanceAdapters");
+    }
+
+    /// @dev Resolves the deploy-config file holding `adapterName`: the plain file, or — for the deploy-balance token,
+    ///      when the name is absent from the plain file — the meta deploy file (the two are disjoint). Other tokens
+    ///      resolve to their single file unchanged.
+    function _resolveAdapterFile(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        private
+        view
+        returns (string memory json, string memory prefix)
+    {
+        (json, prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        if (_isDeployBalanceToken(adapterType) && !vm.keyExists(json, string(abi.encodePacked(".", adapterName)))) {
+            string memory metaJson = _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId));
+            if (vm.keyExists(metaJson, string(abi.encodePacked(".", adapterName)))) json = metaJson;
+        }
+    }
+
+    /// @dev Collects the non-`$` keys of an adapter container into `names`.
+    function _namesIn(Vm vm, string memory json) private view returns (string[] memory names) {
+        if (!vm.keyExists(json, "$")) return new string[](0);
+        string[] memory allKeys = vm.parseJsonKeys(json, "$");
         uint256 count;
         for (uint256 i; i < allKeys.length; ++i) {
             if (bytes(allKeys[i]).length > 0 && bytes(allKeys[i])[0] != "$") ++count;
@@ -123,116 +297,65 @@ library ConfigReader {
         }
     }
 
-    /// @notice Reads price feed constructor parameter from assets config (script/config/assets.json)
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param adapterName Price feed adapter name (e.g. "sDAI", "LDO")
-    /// @param paramName Constructor parameter name
-    /// @return The parameter value as a string, or empty if not found
-    function readPriceFeedParam(Vm vm, uint256 chainId, string memory adapterName, string memory paramName)
+    /// @notice Returns every adapter name under a section (excludes `$`-prefixed metadata keys). Does NOT filter by
+    ///         `enabled` — call `isAdapterEnabled` per key for that. The deploy-balance token returns the union of the
+    ///         plain + meta deploy-config folders.
+    function getEnabledAdapters(Vm vm, uint256 chainId, string memory adapterType)
         internal
         view
-        returns (string memory)
+        returns (string[] memory names)
     {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(
-            abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".constructor.", paramName)
-        );
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readString(jsonPath);
+        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        // Non-top-level (bridge, nested-prefix) sections: use parseJsonKeys on the prefix path as before.
+        if (bytes(prefix).length != 0) {
+            string memory jsonPath = _containerPath(prefix);
+            if (!vm.keyExists(json, jsonPath)) return new string[](0);
+            return _filterDollar(vm.parseJsonKeys(json, jsonPath));
         }
-        return "";
+        names = _namesIn(vm, json);
+        if (_isDeployBalanceToken(adapterType)) {
+            // Union with the meta deploy folder (disjoint keys, so a plain concat is dedup-free).
+            string[] memory metaNames = _namesIn(vm, _readOrEmpty(vm, _deployMetaBalanceAdaptersPath(vm, chainId)));
+            string[] memory merged = new string[](names.length + metaNames.length);
+            uint256 k;
+            for (uint256 i; i < names.length; ++i) {
+                merged[k++] = names[i];
+            }
+            for (uint256 i; i < metaNames.length; ++i) {
+                merged[k++] = metaNames[i];
+            }
+            names = merged;
+        }
     }
 
-    /// @notice Returns whether a price feed adapter is enabled for a chain (from assets config)
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param adapterName Price feed adapter name
-    /// @return True if enabled in script/config/assets.json
-    function isPriceFeedEnabled(Vm vm, uint256 chainId, string memory adapterName) internal view returns (bool) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath =
-            string(abi.encodePacked(".priceFeeds.", adapterName, ".", vm.toString(chainId), ".enabled"));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readBool(jsonPath);
+    /// @dev Filters `$`-prefixed metadata keys from a key list.
+    function _filterDollar(string[] memory keys) private pure returns (string[] memory out) {
+        uint256 count;
+        for (uint256 i; i < keys.length; ++i) {
+            if (bytes(keys[i]).length > 0 && bytes(keys[i])[0] != "$") ++count;
         }
+        out = new string[](count);
+        uint256 j;
+        for (uint256 i; i < keys.length; ++i) {
+            if (bytes(keys[i]).length > 0 && bytes(keys[i])[0] != "$") out[j++] = keys[i];
+        }
+    }
+
+    /// @notice Whether an adapter is enabled in its config file (selected by `adapterType`). For the deploy-balance
+    ///         token this resolves across both the plain and meta deploy-config folders.
+    function isAdapterEnabled(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".enabled"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
         return false;
     }
 
-    /// @notice Reads token address from assets config (tokens section)
-    function readTokenAddress(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        return _readTokenField(vm, chainId, symbol, "address");
-    }
-
-    /// @notice Reads token price feed address from assets config (tokens section). Empty if none.
-    /// @dev Prefers "pricefeed" key; falls back to "oracle" for backward compatibility.
-    function readTokenOracle(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        string memory v = _readTokenField(vm, chainId, symbol, "pricefeed");
-        if (bytes(v).length > 0) return v;
-        return _readTokenField(vm, chainId, symbol, "oracle");
-    }
-
-    /// @notice Reads token price type from assets config: "Chainlink", "Custom", or "None"
-    function readTokenType(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        return _readTokenField(vm, chainId, symbol, "type");
-    }
-
-    /// @notice Reads token oracle heartbeat (seconds) from assets config. Returns "3600" if missing.
-    function readTokenHeartbeat(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".heartbeat"));
-        if (vm.keyExists(json, jsonPath)) {
-            return vm.toString(json.readUint(jsonPath));
-        }
-        return "3600";
-    }
-
-    /// @notice True if token has a usable oracle (Chainlink or Custom with non-empty oracle address)
-    function hasTokenOracle(Vm vm, uint256 chainId, string memory symbol) internal view returns (bool) {
-        string memory oracleType = readTokenType(vm, chainId, symbol);
-        if (_equals(oracleType, "None")) return false;
-        string memory oracle = readTokenOracle(vm, chainId, symbol);
-        return bytes(oracle).length > 0 && !_isPlaceholder(oracle);
-    }
-
-    /// @notice Reads optional note for a token from assets config (e.g. "No oracle available").
-    function readTokenNote(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
-        return _readTokenField(vm, chainId, symbol, "note");
-    }
-
-    function _readTokenField(Vm vm, uint256 chainId, string memory symbol, string memory field)
-        private
-        view
-        returns (string memory)
-    {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/assets.json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(abi.encodePacked(".tokens.", vm.toString(chainId), ".", symbol, ".", field));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readString(jsonPath);
-        }
-        return "";
-    }
-
-    /// @notice Reads adapter constructor parameters from chain config (balanceAdapters, bridgeAdapters)
-    ///         or "deployed" for any adapter type from chain config. For price feed constructor params use readPriceFeedParam.
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param adapterType Type of adapter ("priceFeeds", "balanceAdapters", "bridgeAdapters")
-    /// @param adapterName Name of the adapter
-    /// @param paramName Name of the constructor parameter (or "deployed" for price feeds)
-    /// @return The parameter value as a string
+    /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
+    ///         (see `_adapterFileAndPrefix`; deploy-balance spans both plain + meta folders). "" if absent.
     function readAdapterParam(
         Vm vm,
         uint256 chainId,
@@ -240,37 +363,19 @@ library ConfigReader {
         string memory adapterName,
         string memory paramName
     ) internal view returns (string memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
 
-        // priceFeeds constructor params live in assets.json (see readPriceFeedParam). Deployed addresses
-        // are still written to this chain config under .priceFeeds.{adapter}.deployed by writeAdapterAddress;
-        // chain configs should pre-seed a top-level "priceFeeds": {} (or per-adapter sub-objects) so that
-        // vm.writeJson has a parent to write into.
-        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readString(jsonPath);
-        }
-
-        // Try constructor path (for balanceAdapters)
-        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readString(jsonPath);
-        }
-
-        // Try initialize path (for bridgeAdapters)
-        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".initialize.", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readString(jsonPath);
-        }
-
+        string memory base = string(abi.encodePacked(prefix, ".", adapterName));
+        string memory p = string(abi.encodePacked(base, ".", paramName));
+        if (vm.keyExists(json, p)) return json.readString(p);
+        p = string(abi.encodePacked(base, ".constructor.", paramName));
+        if (vm.keyExists(json, p)) return json.readString(p);
+        p = string(abi.encodePacked(base, ".initialize.", paramName));
+        if (vm.keyExists(json, p)) return json.readString(p);
         return "";
     }
 
-    /// @notice Reads an address array adapter param (e.g. a meta-adapter's `metaInstances` vault list).
-    /// @dev Looks under both the bare path and the `.constructor.` path. Returns an empty array if absent.
+    /// @notice Reads an address-array adapter param (e.g. a meta-adapter's `instances`). Empty if absent.
     function readAdapterAddressArray(
         Vm vm,
         uint256 chainId,
@@ -278,24 +383,16 @@ library ConfigReader {
         string memory adapterName,
         string memory paramName
     ) internal view returns (address[] memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-
-        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return vm.parseJsonAddressArray(json, jsonPath);
-        }
-        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return vm.parseJsonAddressArray(json, jsonPath);
-        }
+        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        string memory base = string(abi.encodePacked(prefix, ".", adapterName));
+        string memory p = string(abi.encodePacked(base, ".", paramName));
+        if (vm.keyExists(json, p)) return vm.parseJsonAddressArray(json, p);
+        p = string(abi.encodePacked(base, ".constructor.", paramName));
+        if (vm.keyExists(json, p)) return vm.parseJsonAddressArray(json, p);
         return new address[](0);
     }
 
-    /// @notice Reads a bytes32 array adapter param (e.g. a meta-adapter's `metaInstancesRaw` marketId list).
-    /// @dev Looks under both the bare path and the `.constructor.` path. Returns an empty array if absent.
+    /// @notice Reads a bytes32-array adapter param (e.g. a meta-adapter's `instancesRaw`). Empty if absent.
     function readAdapterBytes32Array(
         Vm vm,
         uint256 chainId,
@@ -303,50 +400,16 @@ library ConfigReader {
         string memory adapterName,
         string memory paramName
     ) internal view returns (bytes32[] memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-
-        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return vm.parseJsonBytes32Array(json, jsonPath);
-        }
-        jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".constructor.", paramName));
-        if (vm.keyExists(json, jsonPath)) {
-            return vm.parseJsonBytes32Array(json, jsonPath);
-        }
+        (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
+        string memory base = string(abi.encodePacked(prefix, ".", adapterName));
+        string memory p = string(abi.encodePacked(base, ".", paramName));
+        if (vm.keyExists(json, p)) return vm.parseJsonBytes32Array(json, p);
+        p = string(abi.encodePacked(base, ".constructor.", paramName));
+        if (vm.keyExists(json, p)) return vm.parseJsonBytes32Array(json, p);
         return new bytes32[](0);
     }
 
-    /// @notice Checks if an adapter is enabled for a chain. For "priceFeeds" reads from assets.json; otherwise from chain config.
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param adapterType Type of adapter ("priceFeeds", "balanceAdapters", "bridgeAdapters")
-    /// @param adapterName Name of the adapter
-    /// @return True if enabled
-    function isAdapterEnabled(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
-        internal
-        view
-        returns (bool)
-    {
-        if (_equals(adapterType, "priceFeeds")) {
-            return isPriceFeedEnabled(vm, chainId, adapterName);
-        }
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-        // forge-lint: disable-next-line(unsafe-cheatcode)
-        string memory json = vm.readFile(path);
-        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".enabled"));
-        if (vm.keyExists(json, jsonPath)) {
-            return json.readBool(jsonPath);
-        }
-        return false;
-    }
-
-    /// @notice Reads optional callback selector for a bridge adapter (e.g. "0x85572ffb").
-    /// @return hasSelector True if config has a non-empty, valid callbackSelector
-    /// @return selector The bytes4 selector, or 0 if missing/invalid
+    /// @notice Reads an optional bridge-adapter callback selector (e.g. "0x85572ffb").
     function readAdapterCallbackSelector(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
         internal
         view
@@ -358,18 +421,165 @@ library ConfigReader {
         return (selector != bytes4(0), selector);
     }
 
-    /// @dev Parses a "0x" + 8 hex char string to bytes4. Returns 0 if invalid.
+    // -------------------------------------------------------------------------
+    // Custom price feeds (contracts-deployment-config/custom-price-feeds/<id>.json → .<name>)
+    // -------------------------------------------------------------------------
+
+    /// @notice Reads a Custom price-feed adapter's constructor param from its deploy-config file. "" if absent.
+    function readPriceFeedParam(Vm vm, uint256 chainId, string memory adapterName, string memory paramName)
+        internal
+        view
+        returns (string memory)
+    {
+        return readAdapterParam(vm, chainId, "deployPriceFeeds", adapterName, paramName);
+    }
+
+    /// @notice Whether a Custom price-feed adapter is enabled for deployment.
+    function isPriceFeedEnabled(Vm vm, uint256 chainId, string memory adapterName) internal view returns (bool) {
+        return isAdapterEnabled(vm, chainId, "deployPriceFeeds", adapterName);
+    }
+
+    // -------------------------------------------------------------------------
+    // Assets + per-asset price-feed list (nav-config/assets-and-price-feeds/<id>.json → .<SYMBOL>)
+    // -------------------------------------------------------------------------
+
+    /// @notice Returns every asset symbol configured for a chain.
+    function getAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory symbols) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        if (!vm.keyExists(json, "$")) return new string[](0);
+        string[] memory all = vm.parseJsonKeys(json, "$");
+        // Skip `$`-prefixed metadata keys (e.g. `$comment`/`$schema`), matching getEnabledAdapters — they are not assets.
+        uint256 count;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") ++count;
+        }
+        symbols = new string[](count);
+        uint256 j;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") symbols[j++] = all[i];
+        }
+    }
+
+    /// @notice Maps feed `i`'s config `type` string to the on-chain PriceType enum. `valid` is false for an empty or
+    ///         unrecognized type. Single source of truth shared by RegisterAssets (production) and the fork harness so
+    ///         the two cannot disagree on which type strings are recognized.
+    function readAssetFeedPriceType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (IPrices.PriceType pt, bool valid)
+    {
+        string memory t = readAssetFeedType(vm, chainId, symbol, i);
+        if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
+        if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
+        if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
+        if (_equals(t, "API3")) return (IPrices.PriceType.API3, true);
+        return (IPrices.PriceType.Chainlink, false);
+    }
+
+    /// @notice Reads an asset's token address ("" if absent).
+    function readAssetAddress(Vm vm, uint256 chainId, string memory symbol) internal view returns (string memory) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", symbol, ".address"));
+        if (vm.keyExists(json, jsonPath)) return json.readString(jsonPath);
+        return "";
+    }
+
+    /// @notice Number of price feeds configured for an asset (length of its `priceFeeds[]`).
+    function assetFeedCount(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256 n) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        // Probe indices until `.priceFeeds[i].type` is absent.
+        while (vm.keyExists(json, _feedPath(vm, symbol, n, "type"))) {
+            ++n;
+        }
+    }
+
+    /// @notice Reads feed `i`'s type ("Chainlink" | "Custom" | "Redstone" | "API3").
+    function readAssetFeedType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "type");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    /// @notice Reads feed `i`'s heartbeat (seconds, as string). Defaults to "3600" if absent. Accepts the heartbeat
+    ///         written either as a JSON number (`3600`) or a quoted string (`"3600"`) — other deploy-config files use
+    ///         quoted numeric strings, so tolerating both avoids a whole-run revert on a string-typed heartbeat.
+    function readAssetFeedHeartbeat(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "heartbeat");
+        if (!vm.keyExists(json, p)) return "3600";
+        // Numeric form first; fall back to reading it as a string if the value was authored quoted.
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return vm.toString(v);
+        } catch {
+            return json.readString(p);
+        }
+    }
+
+    /// @notice Resolves feed `i`'s on-chain address. For `address`-bearing feeds returns it directly; for `Custom`
+    ///         feeds resolves the deployed adapter from `deployments/<id>.json .customPriceFeeds.<feed>`. "" if
+    ///         unresolved (e.g. Custom feed not yet deployed).
+    function readAssetFeedAddress(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory addrPath = _feedPath(vm, symbol, i, "address");
+        if (vm.keyExists(json, addrPath)) return json.readString(addrPath);
+        // Custom feed: resolve the deployed adapter address by name.
+        string memory feedPath = _feedPath(vm, symbol, i, "feed");
+        if (vm.keyExists(json, feedPath)) {
+            address dep = readDeployedAdapterAddress(vm, chainId, "customPriceFeeds", json.readString(feedPath));
+            if (dep != address(0)) return vm.toString(dep);
+        }
+        return "";
+    }
+
+    /// @notice Reads feed `i`'s Custom-feed name (the `feed` field, naming a `customPriceFeeds` entry). "" if absent
+    ///         (i.e. the feed carries a static `address` instead).
+    function readAssetFeedName(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _feedPath(vm, symbol, i, "feed");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    function _feedPath(Vm vm, string memory symbol, uint256 i, string memory field)
+        private
+        view
+        returns (string memory)
+    {
+        return string(abi.encodePacked(".", symbol, ".priceFeeds[", vm.toString(i), "].", field));
+    }
+
+    // -------------------------------------------------------------------------
+    // Misc helpers (unchanged)
+    // -------------------------------------------------------------------------
+
+    function computeSalt(string memory contractName, uint256 version) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(contractName, version));
+    }
+
     function _parseSelectorHex4(Vm vm, string memory s) private view returns (bytes4) {
         bytes memory b = bytes(s);
         if (b.length != 10 || b[0] != "0" || (b[1] != "x" && b[1] != "X")) return bytes4(0);
-        // Pad to 64 hex chars for parseBytes32: 0x + 56 zeros + 8 hex
         string memory padded =
             string.concat("0x", "00000000000000000000000000000000000000000000000000000000", _substring(s, 2, 10));
         bytes32 full = vm.parseBytes32(padded);
         return bytes4(uint32(uint256(full) & 0xffffffff));
     }
 
-    /// @dev Substring (start inclusive, end exclusive)
     function _substring(string memory str, uint256 start, uint256 end) private pure returns (string memory) {
         bytes memory strBytes = bytes(str);
         bytes memory result = new bytes(end - start);
@@ -379,51 +589,17 @@ library ConfigReader {
         return string(result);
     }
 
-    /// @notice Writes adapter deployed address to chain config
-    /// @param vm The Foundry Vm instance
-    /// @param chainId The chain ID
-    /// @param adapterType Type of adapter
-    /// @param adapterName Name of the adapter
-    /// @param deployedAddress The deployed address
-    function writeAdapterAddress(
-        Vm vm,
-        uint256 chainId,
-        string memory adapterType,
-        string memory adapterName,
-        address deployedAddress
-    ) internal {
-        string memory root = vm.projectRoot();
-        string memory path = string(abi.encodePacked(root, "/script/config/chains/", vm.toString(chainId), ".json"));
-
-        string memory jsonPath = string(abi.encodePacked(".", adapterType, ".", adapterName, ".deployed"));
-        vm.writeJson(vm.toString(deployedAddress), path, jsonPath);
-    }
-
-    /// @notice Computes a deterministic salt for CREATE2 deployment
-    /// @param contractName The contract name
-    /// @param version The version number (increment to get new address)
-    /// @return The CREATE2 salt
-    function computeSalt(string memory contractName, uint256 version) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(contractName, version));
-    }
-
-    /// @dev Resolves RPC URL: if value is $ALCHEMY, build from ALCHEMY_API_KEY (or ALCHEMY_APİ_KEY) + chain's Alchemy network (same pattern as TestEnvConfigurator.getAlchemyUrl).
-    ///      Otherwise resolve $VAR_NAME env vars as usual.
     function _resolveRpcUrl(Vm vm, string memory value, uint256 chainId) private view returns (string memory) {
         if (_equals(value, "$ALCHEMY")) {
             string memory network = _alchemyNetworkForChainId(chainId);
             if (bytes(network).length == 0) return "";
             string memory apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
-            if (bytes(apiKey).length == 0) {
-                apiKey = vm.envOr("ALCHEMY_API_KEY", string(""));
-            }
             if (bytes(apiKey).length == 0) return "";
             return string.concat("https://", network, ".g.alchemy.com/v2/", apiKey);
         }
         return _resolveEnvVar(vm, value);
     }
 
-    /// @dev Alchemy network identifier for chain ID (matches TestEnvConfigurator.getAlchemyUrl network names).
     function _alchemyNetworkForChainId(uint256 chainId) private pure returns (string memory) {
         if (chainId == 1) return "eth-mainnet";
         if (chainId == 10) return "opt-mainnet";
@@ -434,23 +610,19 @@ library ConfigReader {
         return "";
     }
 
-    /// @dev Simple string equality (keccak256 comparison).
     function _equals(string memory a, string memory b) private pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
-    /// @dev Resolves environment variables in format $VAR_NAME
     function _resolveEnvVar(Vm vm, string memory value) private view returns (string memory) {
         bytes memory valueBytes = bytes(value);
         if (valueBytes.length > 0 && valueBytes[0] == "$") {
-            // Remove $ prefix and read env var
             string memory varName = substring(value, 1, valueBytes.length);
             return vm.envOr(varName, string(""));
         }
         return value;
     }
 
-    /// @dev Helper to extract substring
     function substring(string memory str, uint256 startIndex, uint256 endIndex) private pure returns (string memory) {
         bytes memory strBytes = bytes(str);
         bytes memory result = new bytes(endIndex - startIndex);
@@ -460,7 +632,6 @@ library ConfigReader {
         return string(result);
     }
 
-    /// @dev Check if a string is a placeholder (contains "YOUR_" or "0x0000...")
     function _isPlaceholder(string memory value) private pure returns (bool) {
         bytes memory valueBytes = bytes(value);
         if (valueBytes.length >= 5) {
@@ -472,12 +643,9 @@ library ConfigReader {
             }
         }
         if (valueBytes.length == 42) {
-            // Check for 0x0000000000000000000000000000000000000000
             bool allZeros = true;
             for (uint256 i = 2; i < valueBytes.length && allZeros; i++) {
-                if (valueBytes[i] != "0") {
-                    allZeros = false;
-                }
+                if (valueBytes[i] != "0") allZeros = false;
             }
             if (allZeros) return true;
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "src/balances/MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -14,13 +14,13 @@ import {CompoundV3CometLib} from "src/balances/protocols/CompoundV3CometLib.sol"
 /// @notice One immutable adapter that reports an account's position in *any* Compound V3 (Comet) market — the
 ///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Earned`
 ///         rewards (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set
-///         lives on NAVCalculator (`setMetaInstances`). The CometRewards contract and reward token (COMP) are the
+///         lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The CometRewards contract and reward token (COMP) are the
 ///         chain-level constants pinned in the constructor. Identity is encoded as `abi.encode(address(comet))`.
 ///         See ADR 0010.
 /// @dev Read math (base accrual, reward accrual, collateral enumeration) is delegated to `CompoundV3CometLib`,
 ///      which mirrors the per-comet `CompoundV3Comet` adapter leg-for-leg (parity fork-tested). Multi-role assets
 ///      (e.g. COMP as both collateral and reward) emit one leg per role, same as the per-comet adapter.
-contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
+contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int256;
 
     bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
@@ -35,7 +35,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Human-readable protocol name (e.g. "Compound V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address compoundRewards_, address rewardToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(compoundRewards_.code.length > 0, "CompoundRewards must be a contract");
         require(rewardToken_ != address(0), "rewardToken=0");
@@ -43,7 +43,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         REWARD_TOKEN = rewardToken_;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the comet address. Emits a base `Supplied`/`Borrowed` leg, a `Collateral` leg per
     ///      collateral, and a `Rewards` leg — dropping zeros and unregistered assets, respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
@@ -93,12 +93,12 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         return CompoundV3CometLib.supportedAssets(_toAddress(instance), REWARD_TOKEN);
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         address comet = abi.decode(pid, (address));
@@ -125,7 +125,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
             protocolId: PROTOCOL_ID,

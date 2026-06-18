@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -13,11 +13,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @title Morpho Markets Meta Balance Adapter
 /// @author kpk
 /// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
-///         markets to query is configured on NAVCalculator (per-oracle, MANAGER-gated) and passed as `bytes32`
+///         markets to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an
 ///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow), matching
 ///         the per-market `MorphoMarket` adapter. See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
-contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
+contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;
 
@@ -30,13 +30,13 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address morpho_, string memory protocolName_, address navCalculator_)
-        MetaBalanceOracle(protocolName_, navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         require(morpho_.code.length > 0, "Morpho must be a contract");
         MORPHO = IMorpho(morpho_);
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the Morpho marketId. Returns up to three rows (each guarded by `> 0`): collateral,
     ///      loan-supplied (credit), loan-borrowed (debt). Skips unregistered assets and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
@@ -86,7 +86,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         return positions;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         MarketParams memory mp = MORPHO.idToMarketParams(Id.wrap(instance));
         assets = new address[](2);
@@ -94,7 +94,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         assets[1] = mp.loanToken;
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";
         bytes32 marketId = abi.decode(pid, (bytes32));
@@ -107,7 +107,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Morpho market instance is a raw bytes32 marketId, not an address.
     function _instancePositionId(bytes32 instance) internal pure override returns (bytes memory) {
         return abi.encode(instance);
@@ -138,7 +138,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceOracle {
     {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
             protocolId: PROTOCOL_ID,

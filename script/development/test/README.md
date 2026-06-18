@@ -11,13 +11,13 @@ Mirrors the original V1-migration verification standard used for Balancer V3 / A
 The verification quality depends on this. Skipping it lets bugs hide where the adapter has chain-specific or inheritance-specific surface area we didn't realise existed. Output of Phase 0 is a short note at the top of `script/development/test/<protocol>/README.md` documenting the inheritance shape, the math branches, the chains in scope, and the resulting test-case count.
 
 **A. Read the adapter source thoroughly.**
-- Class hierarchy: is it a direct `IBalanceOracleAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
-  - `PancakeSwapV2BalanceOracle is UniswapV2BalanceOracle` → constructor-only subclass. Verification: inherited from Uni V2, skip.
-  - `PancakeSwapV3PoolBalanceOracle is UniswapV3PoolBalanceOracle` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim). Verification: minimal test exercising the override only.
-  - `SparkLendBalanceOracle is AaveV3InstanceBalanceOracle` → check the source for overrides; treat accordingly.
+- Class hierarchy: is it a direct `IBalanceAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
+  - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + a `_protocolId()` override returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
+  - `PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim) and `_protocolId()`. Verification: minimal test exercising the overrides only.
+  - `SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable` → a standalone implementer (not an Aave subclass); check the source for the leg-emission branches and treat accordingly.
 - Math branches: enumerate every `if` that affects the returned amount. Each branch needs a test case OR a documented reason it can't be exercised on a real chain. Uni V2 example: `feeTo == 0`, `feeTo != 0 && kLast == 0`, `feeTo != 0 && kLast != 0 && rootK > rootKLast`.
 - Immutable constructor args: pin in setUp + assert in a `test_immutables_*` smoke test (catches deployment-config drift).
-- Multi-leg `getOraclePositions`: enumerate the `type` values the adapter can emit (`Supply`, `Borrow`, `Staking`, `Collateral`, `Rewards`, `Fees`). One leg = one assertion.
+- Multi-leg `getAdapterPositions`: enumerate the `type` values the adapter can emit (`Supply`, `Borrow`, `Staking`, `Collateral`, `Rewards`, `Fees` — the `PositionType` constants). One leg = one assertion.
 
 **B. Read the protocol's docs per chain (our 5 chains).**
 
@@ -42,7 +42,7 @@ Once Phase 0 has produced a scope decision, these five steps **must happen in pa
 |---|---|---|---|
 | 1 | **Find the account.** Cherry-pick one holder with the most complex realistic scenario for this protocol (supplied + staked + rewards, multi-leg debt, multi-pool LP, …). Goal: fewest accounts that exercise all paths. | Claude (with user sign-off on the candidate) | `holder.address` + scenario rationale |
 | 2 | **Write the test folder.** Create `script/development/test/<protocol>/` with `README.md` (case narrative + verification table) + `case-<slug>.json` (machine-readable evidence pack). | Claude | Evidence pack scaffold, populated incrementally |
-| 3 | **Run the app with the base deployments + the balance oracle under test, forked at the SELECTED block.** The dev anvil must pin at exactly the same block the fork test pins at, otherwise the side-channel cross-check vs Debank measures the wrong drift envelope. | Claude (refork helper + per-protocol adapter deploy on the fork) | User can see the holder's positions in the dashboard at the pinned block |
+| 3 | **Run the app with the base deployments + the balance adapter under test, forked at the SELECTED block.** The dev anvil must pin at exactly the same block the fork test pins at, otherwise the side-channel cross-check vs Debank measures the wrong drift envelope. | Claude (refork helper + per-protocol adapter deploy on the fork) | User can see the holder's positions in the dashboard at the pinned block |
 | 4 | **Add the strict-equality test** to `test/balances/protocols/fork/<Adapter>.fork.t.sol`. **Augment**, don't replace — existing fork tests stay. New test contract pinned at the same selected block. | Claude | New test contract with strict-equality assertions per leg |
 | 5 | **Check everything is working as intended; fix drift.** User cross-checks the dev app vs **both Debank and the protocol's own UI** (e.g. the PancakeSwap / Uniswap / Aave app for the same holder) — the protocol UI is the highest-fidelity reference and often surfaces positions Debank aggregates or omits. Claude verifies the test passes with zero drift vs the off-chain ground truth. If any surface diverges, root-cause it (block drift, derivation difference, a position the adapter doesn't cover, or a real adapter bug). | Both, in parallel | Test ✅ + app-vs-(Debank/protocol-UI) gap explained |
 

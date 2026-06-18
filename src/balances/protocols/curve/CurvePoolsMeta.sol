@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {MetaBalanceOracle} from "../../MetaBalanceOracle.sol";
+import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -30,16 +30,18 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      positionId = abi.encode(address pool)
 ///
 ///      Gauge-staked LP and rewards are handled separately by CurveGaugesMetaBalanceAdapter.
-contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
+contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_POOL;
 
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) MetaBalanceOracle(protocolName_, navCalculator_) {}
+    constructor(string memory protocolName_, address navCalculator_)
+        MetaBalanceAdapter(protocolName_, navCalculator_)
+    {}
 
-    // ─── MetaBalanceOracle hooks ──────────────────────────────────────────────
+    // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -77,7 +79,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
 
             tmp[n++] = INAVCalculator.PositionBalance({
                 balanceAsset: assetInfo,
-                balanceOracle: address(this),
+                balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
@@ -92,14 +94,14 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceOracle {
         }
     }
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory) {
         return CurvePoolLib.getCoins(_toAddress(instance));
     }
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceOracle
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns "TOKEN0/TOKEN1/…" derived on-chain from coin symbols.
     function describePosition(bytes calldata pid) external view override returns (string memory) {
         if (pid.length < 32) return "";

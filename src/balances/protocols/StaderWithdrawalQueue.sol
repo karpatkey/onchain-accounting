@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IBalanceOracleAdapter} from "../IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -9,13 +9,13 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Stader Withdrawal Queue Balance Oracle
+/// @title Stader Withdrawal Queue Balance Adapter
 /// @author kpk
 /// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
-///      Until claimed, the value lives as ETH owed by the manager. This oracle sums all of the
+///      Until claimed, the value lives as ETH owed by the manager. This adapter sums all of the
 ///      account's open requests into a single position denominated in `UNDERLYING_TOKEN` (typically WETH).
-contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionDescribable {
+contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Errors
     //
@@ -122,10 +122,10 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
     }
 
     //
-    // IBalanceOracleAdapter
+    // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     function underlyingAssetsSupported() external view override returns (address[] memory) {
         address[] memory assets = new address[](1);
         assets[0] = UNDERLYING_TOKEN;
@@ -134,8 +134,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     function protocolName() external pure returns (string memory) {
@@ -146,8 +146,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
         return "ETHx withdrawal queue";
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalanceForAsset(address account, address asset)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         override
@@ -159,8 +159,8 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
         return (_ethOwed(account), false);
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
-    function getOracleBalances(address account)
+    /// @inheritdoc IBalanceAdapter
+    function getAdapterBalances(address account)
         external
         view
         override
@@ -183,16 +183,16 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
         isDebt[0] = false;
     }
 
-    /// @inheritdoc IBalanceOracleAdapter
+    /// @inheritdoc IBalanceAdapter
     /// @notice Returns balance-only positions for the account's open withdrawal requests.
     /// @dev Single aggregated PositionBalance, dropped if the underlying asset is not registered in NAVCalculator.
-    function getOraclePositions(address account, address assetFilter)
+    function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        // Asset-filter mismatch → no positions for this oracle.
+        // Asset-filter mismatch → no positions for this adapter.
         if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
             return new INAVCalculator.PositionBalance[](0);
         }
@@ -220,7 +220,7 @@ contract StaderWithdrawalQueueBalanceOracle is IBalanceOracleAdapter, IPositionD
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: underlying,
-            balanceOracle: address(this),
+            balanceAdapter: address(this),
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,

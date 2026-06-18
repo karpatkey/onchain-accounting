@@ -8,8 +8,8 @@ import {console2} from "forge-std/console2.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {DaiDsrBalanceOracle} from "src/balances/protocols/DaiDsr.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {DaiDsrBalanceAdapter} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
 
@@ -20,10 +20,10 @@ import "src/constants.sol";
 abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     address public safe = address(0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f);
 
-    IBalanceOracleAdapter public aaveOracle;
-    IBalanceOracleAdapter public compoundV3Comet;
-    IBalanceOracleAdapter public morphoBlueOracle;
-    DaiDsrBalanceOracle public daiDsr;
+    IBalanceAdapter public aaveAdapter;
+    IBalanceAdapter public compoundV3Comet;
+    IBalanceAdapter public morphoBlueAdapter;
+    DaiDsrBalanceAdapter public daiDsr;
     sXDAI_PriceOracle public savingsXdaiPrice;
     sDAI_PriceOracle public sdaiPriceOracle;
 
@@ -67,7 +67,7 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
             console2.log("       underlyingAsset.asset", p.balanceAsset.asset);
             console2.log("       underlyingAsset.symbol", p.balanceAsset.symbol);
             console2.log("       underlyingAsset.decimals", p.balanceAsset.decimals);
-            console2.log("       balanceOracle", p.balanceOracle);
+            console2.log("       balanceAdapter", p.balanceAdapter);
             console2.log("       amount", p.amount);
             console2.log("       isDebt", p.isDebt);
             console2.log("       quoteAsset.asset", p.quoteAsset.asset);
@@ -92,7 +92,7 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715, priceFeedLibImpl.code);
-        vm.etch(0x7BFBA7637aC35D6796a46258EccE9866AFB14Ca9, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         nav = NAVCalculator(
@@ -106,14 +106,14 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
         nav.grantRole(MANAGER, admin);
 
         setupRegisterAssets();
-        setupBalanceOracle();
+        setupBalanceAdapter();
 
         vm.stopPrank();
     }
 
     function setupRegisterAssets() internal virtual {}
 
-    function setupBalanceOracle() internal virtual {}
+    function setupBalanceAdapter() internal virtual {}
 
     function unsafeDeployOpts() internal pure returns (UUPSDeployOptions memory opts) {
         opts.unsafeSkipAllChecks = true;

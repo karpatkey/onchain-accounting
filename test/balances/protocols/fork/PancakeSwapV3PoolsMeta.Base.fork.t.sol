@@ -25,7 +25,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         _setupFork();
-        balances = _deployBalancesForOracle(_assets());
+        balances = _deployBalancesForAdapter(_assets());
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
     }
 
@@ -51,7 +51,7 @@ contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
         uint256 metaWeth;
         uint256 metaCow;
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(HOLDER, _poolInstance(), address(0));
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].balanceAsset.asset == BASE_WETH) metaWeth += p[i].amount;
             if (p[i].balanceAsset.asset == BASE_COW) metaCow += p[i].amount;

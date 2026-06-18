@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetches ERC20DefaultOracle address from existing NAVCalculator proxies (forge cast call)
+# Fetches ERC20DefaultAdapter address from existing NAVCalculator proxies (forge cast call)
 # and updates script/config/chains/<chainId>.json balanceAdapters.ERC20Default.deployed.
 # Requires: cast (foundry), jq. Set ALCHEMY_API_KEY (or chain-specific RPC URLs) in .env or env.
 
@@ -53,9 +53,9 @@ for cid in "${CHAIN_IDS[@]}"; do
   fi
 
   echo -n "Chain $cid ($nav_proxy): "
-  addr=$(cast call "$nav_proxy" "erc20DefaultOracle()(address)" --rpc-url "$url" 2>/dev/null || true)
+  addr=$(cast call "$nav_proxy" "erc20DefaultAdapter()(address)" --rpc-url "$url" 2>/dev/null || true)
   if [[ -z "$addr" || "$addr" == "0x0000000000000000000000000000000000000000" ]]; then
-    echo "no oracle or call failed"
+    echo "no adapter or call failed"
     continue
   fi
 

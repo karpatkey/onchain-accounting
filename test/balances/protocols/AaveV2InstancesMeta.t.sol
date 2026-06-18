@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -79,18 +79,19 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
     function test_legs_andIdentityViaLendingPool() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 2); // USDC Collateral + WETH Borrow
 
         assertEq(p[0].balanceAsset.asset, address(usdc));
@@ -108,20 +109,21 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
     function test_supplyLeg_whenNotCollateral() public {
         dp.setUserData(alice, address(usdc), 1000e6, 0, false); // supply not used as collateral
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(alice, _instances(), address(usdc));
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(usdc));
         assertEq(p.length, 1);
     }
 
     function test_assetFilter() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(alice, _instances(), address(weth));
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(weth));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     function test_unregisteredReserve_skipped() public {
         nav.unregisterAssetHelper(address(weth));
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(usdc));
     }
@@ -130,7 +132,7 @@ contract AaveV2InstancesMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));
         ins[1] = bytes32(uint256(uint160(address(dp))));
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 2, "bad instance isolated, dp legs returned");
     }
 

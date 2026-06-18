@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {IMetaBalanceOracleAdapter} from "src/balances/IMetaBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -58,20 +58,20 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(meta.supportsInterface(type(IMetaBalanceOracleAdapter).interfaceId));
-        assertTrue(meta.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IMetaBalanceAdapter).interfaceId));
+        assertTrue(meta.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
     function test_noArgMethods_returnEmpty() public view {
-        assertEq(meta.getOraclePositions(alice, address(0)).length, 0);
+        assertEq(meta.getAdapterPositions(alice, address(0)).length, 0);
         assertEq(meta.underlyingAssetsSupported().length, 0);
     }
 
     function test_values() public view {
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
         assertEq(p.length, 2, "DAI + WETH supply legs");
         assertEq(p[0].balanceAsset.asset, address(dai));
         assertEq(p[0].amount, 100e18);
@@ -81,7 +81,8 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
     }
 
     function test_fanOut_acrossPairs() public view {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _instances(), address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertEq(p.length, 4, "2 legs per pair");
         assertEq(p[2].balanceAsset.asset, address(usdc));
         assertEq(p[2].amount, 100e18);
@@ -89,7 +90,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
 
     function test_assetFilter() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(alice, _instances(), address(weth));
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(weth));
         assertEq(p.length, 2, "WETH leg from each pair");
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, address(weth));
@@ -100,7 +101,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         nav.unregisterAssetHelper(address(weth));
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, one, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(dai));
     }
@@ -109,14 +110,14 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         pairA.setBalance(alice, 0);
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
-        assertEq(meta.getOraclePositionsForInstances(alice, one, address(0)).length, 0);
+        assertEq(meta.getAdapterPositionsForInstances(alice, one, address(0)).length, 0);
     }
 
     function test_badInstance_isolated() public view {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));
         ins[1] = _instances()[0];
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, ins, address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 2, "bad pair isolated, pairA legs returned");
     }
 

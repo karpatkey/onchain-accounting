@@ -7,6 +7,7 @@ import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3In
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
 contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
     /// @notice Test account for Arbitrum fork (has positions / holdings to exercise NAV)
@@ -74,16 +75,16 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
     }
 
-    function setupBalanceOracle() internal override {
+    function setupBalanceAdapter() internal override {
         AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
-        aaveOracle = aaveMeta;
-        nav.addBalanceOracle(address(aaveOracle));
+        aaveAdapter = aaveMeta;
         bytes32[] memory aaveInstances = new bytes32[](1);
         aaveInstances[0] = bytes32(uint256(uint160(aaveV3DataProvider)));
-        nav.setMetaInstances(address(aaveMeta), aaveInstances);
+        nav.addMetaBalanceAdapter(address(aaveAdapter), aaveInstances);
 
         compoundV3UsdcComet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        nav.addBalanceOracle(address(compoundV3UsdcComet));
+        // Meta-adapter with no instances in this test: register with an empty set.
+        nav.addMetaBalanceAdapter(address(compoundV3UsdcComet), new bytes32[](0));
     }
 }

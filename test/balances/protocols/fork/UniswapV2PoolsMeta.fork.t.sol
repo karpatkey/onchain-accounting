@@ -24,7 +24,7 @@ contract UniswapV2PoolsMetaParityForkTest is BalanceAdapterTestBase {
         _setupFork();
         deal(PAIR, alice, 1e15); // synthetic LP balance
 
-        balances = _deployBalancesForOracle(_assets());
+        balances = _deployBalancesForAdapter(_assets());
         meta = new UniswapV2PoolsMetaBalanceAdapter("Uniswap V2", address(balances));
     }
 
@@ -46,7 +46,7 @@ contract UniswapV2PoolsMetaParityForkTest is BalanceAdapterTestBase {
     }
 
     function _metaToken(address token) internal view returns (uint256 sum) {
-        INAVCalculator.PositionBalance[] memory p = meta.getOraclePositionsForInstances(alice, _pairInstance(), token);
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _pairInstance(), token);
         for (uint256 i = 0; i < p.length; i++) {
             sum += p[i].amount;
         }
@@ -59,7 +59,7 @@ contract UniswapV2PoolsMetaParityForkTest is BalanceAdapterTestBase {
 
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p =
-            meta.getOraclePositionsForInstances(alice, _pairInstance(), address(0));
+            meta.getAdapterPositionsForInstances(alice, _pairInstance(), address(0));
         assertEq(p.length, 2);
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, abi.encode(PAIR), "positionId = pair address");

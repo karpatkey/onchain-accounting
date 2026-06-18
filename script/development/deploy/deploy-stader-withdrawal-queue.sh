@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Deploy + register the Stader ETHx Withdrawal Queue balance oracle on a running dev anvil fork.
+# Deploy + register the Stader ETHx Withdrawal Queue balance adapter on a running dev anvil fork.
 #
 # Usage:  deploy-stader-withdrawal-queue.sh <chainId>
 #   e.g.  deploy-stader-withdrawal-queue.sh 1
 #
-# StaderWithdrawalQueueBalanceOracle is a standalone (non-meta) adapter pointed at Stader's
+# StaderWithdrawalQueueBalanceAdapter is a standalone (non-meta) adapter pointed at Stader's
 # UserWithdrawalManager. It reports the ETH owed across an account's open (un-claimed) withdrawal
 # requests, denominated in WETH (the position is ETH owed by the manager once ETHx is burned; priced
-# via ETH/USD). This helper `forge create`s it and calls addBalanceOracle on the dev NAV. WETH must be
+# via ETH/USD). This helper `forge create`s it and calls addBalanceAdapters on the dev NAV. WETH must be
 # registered on the NAV for the position to render (deploy.sh registers the WETH/USD feed at bootstrap).
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json).
@@ -39,14 +39,14 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy Stader Withdrawal Queue oracle  chain=$CID NAV=$NAV"
+echo "=== deploy Stader Withdrawal Queue adapter  chain=$CID NAV=$NAV"
 echo "    userWithdrawalManager: $USER_WITHDRAWAL_MANAGER"
 echo "    underlyingToken:       $UNDERLYING_TOKEN (WETH)"
 
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/StaderWithdrawalQueue.sol:StaderWithdrawalQueueBalanceOracle \
+  forge create src/balances/protocols/StaderWithdrawalQueue.sol:StaderWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$USER_WITHDRAWAL_MANAGER" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true
@@ -58,9 +58,9 @@ if [ -z "$ADAPTER" ]; then
 fi
 echo "  StaderWithdrawalQueue: $ADAPTER"
 
-cast send "$NAV" "addBalanceOracle(address)" "$ADAPTER" \
+cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
-echo "  registered on NAV (addBalanceOracle)"
+echo "  registered on NAV (addBalanceAdapters)"
 
 jq --arg a "$ADAPTER" '. + {"StaderWithdrawalQueue": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"

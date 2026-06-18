@@ -2,15 +2,15 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {CapBalanceOracle} from "src/balances/protocols/Cap.sol";
+import {CapBalanceAdapter} from "src/balances/protocols/Cap.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title CapBalanceOracle fork tests
+/// @title CapBalanceAdapter fork tests
 /// @notice Tests using real Cap Finance contracts on Ethereum mainnet
-contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
+contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
     // Cap Finance contract addresses (Ethereum mainnet)
     address public constant CUSD = 0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC;
     address public constant STCUSD = 0x88887bE419578051FF9F4eb6C858A951921D8888;
@@ -22,7 +22,7 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // karpatkey Safe with cUSD and stcUSD at fork block
     address public constant SAFE = 0xc84718C87B80b45471Ed274c81399f1095971165;
 
-    // Expected values (from source oracle test at the same block)
+    // Expected values (from source adapter test at the same block)
     uint256 public constant EXPECTED_CUSD_BALANCE = 15_418_901_322_365_792_211_158;
     uint256 public constant EXPECTED_STCUSD_BALANCE = 14_477_229_622_350_858_108_721;
     uint256 public constant EXPECTED_USDC_AMOUNT = 30_554_823_916;
@@ -30,13 +30,13 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // address(0xdead) may hold Cap dust shares — use a deterministic address with no history
     address internal unknownAccount;
 
-    CapBalanceOracle public oracle;
+    CapBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         unknownAccount = makeAddr("unknownAccount");
-        _setupOracle();
+        _setupAdapter();
     }
 
     function _setupFork() internal override {
@@ -45,9 +45,9 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
     }
 
-    function _setupOracle() internal {
-        balances = _deployBalancesForOracle(USDC);
-        oracle = new CapBalanceOracle(CUSD, STCUSD, USDC, address(balances));
+    function _setupAdapter() internal {
+        balances = _deployBalancesForAdapter(USDC);
+        adapter = new CapBalanceAdapter(CUSD, STCUSD, USDC, address(balances));
     }
 
     // ============================================
@@ -55,8 +55,8 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_supportsInterface() public view {
-        assertTrue(oracle.supportsInterface(type(IBalanceOracleAdapter).interfaceId));
-        assertTrue(oracle.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 
     // ============================================
@@ -64,7 +64,7 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // ============================================
 
     function test_underlyingAssetsSupported() public view {
-        address[] memory assets = oracle.underlyingAssetsSupported();
+        address[] memory assets = adapter.underlyingAssetsSupported();
         assertEq(assets.length, 1);
         assertEq(assets[0], USDC);
     }
@@ -73,24 +73,24 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // Real Position Tests
     // ============================================
 
-    function test_getOracleBalanceForAsset_safe() public view {
+    function test_getAdapterBalanceForAsset_safe() public view {
         // Confirm the SAFE holds the expected cUSD and stcUSD at the fork block
         assertEq(IERC20(CUSD).balanceOf(SAFE), EXPECTED_CUSD_BALANCE, "cUSD balance mismatch at fork block");
         assertEq(IERC20(STCUSD).balanceOf(SAFE), EXPECTED_STCUSD_BALANCE, "stcUSD balance mismatch at fork block");
 
-        (uint256 amount, bool isDebt) = oracle.getOracleBalanceForAsset(SAFE, USDC);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(SAFE, USDC);
 
-        assertEq(amount, EXPECTED_USDC_AMOUNT, "Oracle USDC output should match expected");
+        assertEq(amount, EXPECTED_USDC_AMOUNT, "Adapter USDC output should match expected");
         assertFalse(isDebt, "Cap positions are always credit");
     }
 
-    function test_getOracleBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(SAFE, address(0xdead));
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(SAFE, address(0xdead));
         assertEq(amount, 0);
     }
 
-    function test_getOracleBalanceForAsset_unknownAccount() public view {
-        (uint256 amount,) = oracle.getOracleBalanceForAsset(unknownAccount, USDC);
+    function test_getAdapterBalanceForAsset_unknownAccount() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(unknownAccount, USDC);
         assertEq(amount, 0);
     }
 
@@ -98,8 +98,8 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
     // Position Aggregation Tests
     // ============================================
 
-    function test_getOracleBalances() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = oracle.getOracleBalances(SAFE);
+    function test_getAdapterBalances() public view {
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(SAFE);
 
         assertEq(assets.length, 1, "Should have one position");
         assertEq(assets[0], USDC);
@@ -109,13 +109,13 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
         assertEq(assets.length, isDebt.length);
     }
 
-    function test_getOracleBalances_unknownAccount() public view {
-        (address[] memory assets,,) = oracle.getOracleBalances(unknownAccount);
+    function test_getAdapterBalances_unknownAccount() public view {
+        (address[] memory assets,,) = adapter.getAdapterBalances(unknownAccount);
         assertEq(assets.length, 0);
     }
 
-    function test_getOraclePositions() public view {
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE, address(0));
+    function test_getAdapterPositions() public view {
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(SAFE, address(0));
 
         assertEq(positions.length, 1, "Should have one position");
         assertEq(positions[0].balanceAsset.asset, USDC);
@@ -123,14 +123,14 @@ contract CapBalanceOracleForkTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
     }
 
-    function test_getOraclePositions_withAssetFilter() public view {
+    function test_getAdapterPositions_withAssetFilter() public view {
         // Filter by USDC — should return the position
-        INAVCalculator.PositionBalance[] memory positions = oracle.getOraclePositions(SAFE, USDC);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(SAFE, USDC);
         assertEq(positions.length, 1);
         assertEq(positions[0].amount, EXPECTED_USDC_AMOUNT);
 
         // Filter by unrelated asset — should return empty
-        INAVCalculator.PositionBalance[] memory empty = oracle.getOraclePositions(SAFE, address(0xdead));
+        INAVCalculator.PositionBalance[] memory empty = adapter.getAdapterPositions(SAFE, address(0xdead));
         assertEq(empty.length, 0);
     }
 }

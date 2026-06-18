@@ -9,8 +9,8 @@ import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165C
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {Balances} from "src/balances/Balances.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
-import {ERC20DefaultOracle} from "src/balances/protocols/ERC20DefaultOracle.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {NavRegistryLib} from "./NavRegistryLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -24,6 +24,12 @@ import "src/constants.sol";
 /// @title NAV Calculator
 /// @notice NAV Calculator.
 /// @author kpk
+/// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
+///      enforces it). Heavy storage-mutation loops are deliberately delegated to the external `NavRegistryLib`
+///      (DELEGATECALL) to stay under it — see `Balances._addBalanceAdapter`, `_addMetaInstances`,
+///      `getAdaptersForAsset`. When adding code here, watch the margin and prefer moving substantial loops into
+///      `NavRegistryLib`; note that extracting *small* helpers can backfire (the dynamic-array-return call
+///      plumbing can cost more than the inlined body), so measure with a clean `forge build --sizes`.
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // Libraries
@@ -103,11 +109,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Pre-register native address in NAV/Pricing registry
         _registerAsset(NATIVE_ADDRESS);
-        // Deploy ERC20Default oracle with native in inclusion list (constructor avoids callback to proxy during init)
+        // Deploy ERC20Default adapter with native in inclusion list (constructor avoids callback to proxy during init)
         address[] memory initialAssets = new address[](1);
         initialAssets[0] = NATIVE_ADDRESS;
-        ERC20DefaultOracle defaultOracle = new ERC20DefaultOracle(address(this), initialAssets);
-        _setErc20DefaultOracle(address(defaultOracle));
+        ERC20DefaultAdapter defaultAdapter = new ERC20DefaultAdapter(address(this), initialAssets);
+        _setErc20DefaultAdapter(address(defaultAdapter));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -139,8 +145,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Register first price feed as part of asset registration
         _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
 
-        // Add asset to default oracle's inclusion list so wallet balances are reported
-        ERC20DefaultOracle(erc20DefaultOracle).addSupportedAsset(asset);
+        // Add asset to default adapter's inclusion list so wallet balances are reported
+        ERC20DefaultAdapter(erc20DefaultAdapter).addSupportedAsset(asset);
 
         emit AssetRegistered(asset, _getRegisteredAsset(asset).decimals);
     }
@@ -160,13 +166,18 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function addBalanceOracle(address oracle) external {
+    function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
-        if (oracle == address(0)) {
+        _addBalanceAdapters(adapters);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function addMetaBalanceAdapter(address adapter, bytes32[] calldata instances) external {
+        _requireManager();
+        if (adapter == address(0)) {
             revert InvalidArguments();
         }
-
-        _addBalanceOracle(oracle);
+        _addMetaBalanceAdapter(adapter, instances);
     }
 
     /// @inheritdoc INAVCalculator
@@ -184,30 +195,35 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function removeBalanceOracle(address oracle) external {
+    function removeBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
-
-        _removeBalanceOracle(oracle);
+        _removeBalanceAdapters(adapters);
     }
 
     /// @inheritdoc INAVCalculator
-    function setMetaInstances(address oracle, bytes32[] calldata instances) external {
+    function addMetaInstances(address adapter, bytes32[] calldata instances) external {
         _requireManager();
-        _setMetaInstances(oracle, instances);
+        _addMetaInstances(adapter, instances);
     }
 
     /// @inheritdoc INAVCalculator
-    function excludeAssetFromDefaultOracle(address asset) external {
+    function removeMetaInstances(address adapter, bytes32[] calldata instances) external {
+        _requireManager();
+        _removeMetaInstances(adapter, instances);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function excludeAssetFromDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultOracle(erc20DefaultOracle).removeSupportedAsset(asset);
+        ERC20DefaultAdapter(erc20DefaultAdapter).removeSupportedAsset(asset);
     }
 
     /// @inheritdoc INAVCalculator
-    function includeAssetInDefaultOracle(address asset) external {
+    function includeAssetInDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultOracle(erc20DefaultOracle).addSupportedAsset(asset);
+        ERC20DefaultAdapter(erc20DefaultAdapter).addSupportedAsset(asset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -221,8 +237,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _removeAllPriceFeeds(underlyingAsset);
         }
 
-        // Remove from default oracle's inclusion list (idempotent if not present)
-        ERC20DefaultOracle(erc20DefaultOracle).removeSupportedAsset(underlyingAsset);
+        // Remove from default adapter's inclusion list (idempotent if not present)
+        ERC20DefaultAdapter(erc20DefaultAdapter).removeSupportedAsset(underlyingAsset);
 
         // Remove the asset itself
         _unregisterAsset(underlyingAsset);
@@ -330,14 +346,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @notice Calls adapter via interface; returns INAVCalculator.PositionBalance[] (same layout as INAVCalculator structs).
-    /// @dev Meta-oracles (ADR 0010) read their NAV-configured instance set themselves inside getOraclePositions
-    ///      (via getMetaInstances(address(this))), so the call path here is uniform across all oracle types.
-    function _getOraclePositionsView(address oracle, address account, address assetFilter)
+    /// @dev Meta-adapters (ADR 0010) read their NAV-configured instance set themselves inside getAdapterPositions
+    ///      (via getMetaInstances(address(this))), so the call path here is uniform across all adapter types.
+    function _getAdapterPositionsView(address adapter, address account, address assetFilter)
         internal
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        try IBalanceOracleAdapter(oracle).getOraclePositions(account, assetFilter) returns (
+        try IBalanceAdapter(adapter).getAdapterPositions(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
@@ -355,34 +371,34 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        address[] memory allOracles = getAllOracles();
-        uint256 totalOracles = allOracles.length;
+        address[] memory allAdapters = getAllAdapters();
+        uint256 totalAdapters = allAdapters.length;
 
-        // Upper bound on emitted rows. Each oracle/meta-instance can emit at most two legs per registered asset
+        // Upper bound on emitted rows. Each adapter/meta-instance can emit at most two legs per registered asset
         // (a supply/collateral + a borrow on the same reserve — the Aave/Morpho lending shape); single-leg
-        // adapters stay well within this. Budgeting 2·assetCount per oracle and per meta-instance is therefore a
+        // adapters stay well within this. Budgeting 2·assetCount per adapter and per meta-instance is therefore a
         // hard upper bound, so the buffer can never overflow regardless of how a meta-adapter fans out.
-        uint256 maxPositions = 2 * (totalOracles + _metaInstanceTotal) * getAssetCount();
+        uint256 maxPositions = 2 * (totalAdapters + _metaInstanceTotal) * getAssetCount();
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
         uint256 count = 0;
 
-        for (uint256 i = 0; i < totalOracles; i++) {
-            INAVCalculator.PositionBalance[] memory oraclePositions =
-                _getOraclePositionsView(allOracles[i], account, assetFilter);
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            INAVCalculator.PositionBalance[] memory adapterPositions =
+                _getAdapterPositionsView(allAdapters[i], account, assetFilter);
 
-            for (uint256 j = 0; j < oraclePositions.length; j++) {
-                address asset = oraclePositions[j].balanceAsset.asset;
+            for (uint256 j = 0; j < adapterPositions.length; j++) {
+                address asset = adapterPositions[j].balanceAsset.asset;
                 if (!isAssetRegistered(asset)) continue;
                 if (assetFilter != address(0) && asset != assetFilter) continue;
-                temp[count++] = oraclePositions[j];
+                temp[count++] = adapterPositions[j];
             }
         }
 
         positions = _copySlicePositionBalance(temp, count);
     }
 
-    /// @notice Returns all position balances for an account from oracles (registered assets only).
+    /// @notice Returns all position balances for an account from adapters (registered assets only).
     function _getAllPositionBalancesForAccount(address account)
         internal
         view
@@ -522,8 +538,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 temp[count++] = feed.asset;
             }
         }
+        // No dedup needed: `priceFeeds` is always built from `_extractUniqueAssets` output, so its assets — and
+        // hence this stale subset — are already unique.
         address[] memory staleAddrs = ArrayLib.copySliceAddress(temp, count);
-        staleAddrs = ArrayLib.deduplicateAddresses(staleAddrs);
 
         uint256 staleLength = staleAddrs.length;
         staleAssets = new INAVCalculator.Asset[](staleLength);
@@ -557,15 +574,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @return uniqueAssets Array of unique asset addresses
     function _extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)
         internal
-        pure
-        returns (address[] memory uniqueAssets)
+        view
+        returns (address[] memory)
     {
-        uint256 length = positions.length;
-        address[] memory allAssets = new address[](length);
-        for (uint256 i = 0; i < length; i++) {
-            allAssets[i] = positions[i].balanceAsset.asset;
-        }
-        uniqueAssets = ArrayLib.deduplicateAddresses(allAssets);
+        // Delegated to NavRegistryLib (external library) so the O(n^2) dedup leaves NAVCalculator's bytecode
+        // (EIP-170). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is immaterial.
+        return NavRegistryLib.extractUniqueAssets(positions);
     }
 
     /// @inheritdoc INAVCalculator
@@ -671,8 +685,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @inheritdoc INAVCalculator
     /// @dev Reuses `_getAllPositionBalancesForAccount`, which already (a) filters to registered
-    ///      assets and (b) wraps every per-oracle call in try/catch via `_getOraclePositionsView`,
-    ///      so a single reverting oracle cannot DoS the scan (fail-open). This also keeps
+    ///      assets and (b) wraps every per-adapter call in try/catch via `_getAdapterPositionsView`,
+    ///      so a single reverting adapter cannot DoS the scan (fail-open). This also keeps
     ///      `hasPositions` consistent with `getAccountPositions`/`getAssetsWithPositions`, which read
     ///      the same positions path.
     function hasPositions(address account) external view override returns (bool has) {
@@ -824,7 +838,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @notice Enriches a PositionBalance with pricing information to create a Position
-    /// @param balance The balance-only position from an oracle
+    /// @param balance The balance-only position from an adapter
     /// @param priceFeed The cached price feed information for the asset
     /// @param quoteAssetStruct The quote asset struct
     /// @param quoteAssetPrice The price of the quote asset in USD (0 if USD)
@@ -860,7 +874,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         });
         position = INAVCalculator.Position({
             balanceAsset: balanceAsset,
-            balanceOracle: balance.balanceOracle,
+            balanceAdapter: balance.balanceAdapter,
             amount: balance.amount,
             isDebt: balance.isDebt,
             protocolId: balance.protocolId,

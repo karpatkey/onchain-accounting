@@ -5,14 +5,15 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IBalanceOracleAdapter} from "src/balances/IBalanceOracleAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {aa} from "test/helpers/AdapterArray.sol";
 
-/// @title Mock Reverting Balance Oracle
-/// @notice Oracle that reverts on query for testing error handling
-contract Mock_RevertingBalanceOracle is IBalanceOracleAdapter {
+/// @title Mock Reverting Balance Adapter
+/// @notice Adapter that reverts on query for testing error handling
+contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
     bool public shouldRevert = true;
 
     function setShouldRevert(bool _shouldRevert) external {
@@ -20,36 +21,36 @@ contract Mock_RevertingBalanceOracle is IBalanceOracleAdapter {
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceOracleAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    function getOraclePositions(address, address)
+    function getAdapterPositions(address, address)
         external
         view
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
         if (shouldRevert) {
-            revert("Oracle revert");
+            revert("Adapter revert");
         }
         return new INAVCalculator.PositionBalance[](0);
     }
 
-    function getOracleBalances(address)
+    function getAdapterBalances(address)
         external
         view
         override
         returns (address[] memory, uint256[] memory, bool[] memory)
     {
         if (shouldRevert) {
-            revert("Oracle revert");
+            revert("Adapter revert");
         }
         return (new address[](0), new uint256[](0), new bool[](0));
     }
 
-    function getOracleBalanceForAsset(address, address) external view override returns (uint256, bool) {
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
         if (shouldRevert) {
-            revert("Oracle revert");
+            revert("Adapter revert");
         }
         return (0, false);
     }
@@ -111,84 +112,84 @@ contract Mock_MalformedPriceOracle is IPriceFeedCustom {
 /// @title NAVCalculator Error Handling Tests
 /// @notice Tests error scenarios and graceful degradation
 contract NAVCalculatorErrorTest is SuperTest {
-    Mock_RevertingBalanceOracle public revertingOracle;
+    Mock_RevertingBalanceAdapter public revertingAdapter;
 
     function setUp() public {
         setupAll();
-        revertingOracle = new Mock_RevertingBalanceOracle();
+        revertingAdapter = new Mock_RevertingBalanceAdapter();
     }
 
     // ============================================
-    // Oracle Revert Handling
+    // Adapter Revert Handling
     // ============================================
 
-    /// @notice Test that oracle reverts are handled gracefully
-    function test_RevertWhen_oracleReverts_handledGracefully() public {
-        // Add reverting oracle
+    /// @notice Test that adapter reverts are handled gracefully
+    function test_RevertWhen_adapterReverts_handledGracefully() public {
+        // Add reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
-        // Setup other oracles with valid data
+        // Setup other adapters with valid data
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Query should not revert, but skip the reverting oracle
+        // Query should not revert, but skip the reverting adapter
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
 
-        // Should still get NAV from other oracles
-        assertGe(navResult.value, 0, "Should get NAV from non-reverting oracles");
+        // Should still get NAV from other adapters
+        assertGe(navResult.value, 0, "Should get NAV from non-reverting adapters");
 
-        // Get positions - should not include positions from reverting oracle
+        // Get positions - should not include positions from reverting adapter
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
 
-        // Verify no positions from reverting oracle
+        // Verify no positions from reverting adapter
         for (uint256 i = 0; i < positions.length; i++) {
             assertTrue(
-                positions[i].balanceOracle != address(revertingOracle),
-                "Should not have positions from reverting oracle"
+                positions[i].balanceAdapter != address(revertingAdapter),
+                "Should not have positions from reverting adapter"
             );
         }
     }
 
-    /// @notice Test that multiple oracle reverts are handled
-    function test_RevertWhen_multipleOracleReverts_handledGracefully() public {
-        // Add multiple reverting oracles
-        Mock_RevertingBalanceOracle oracle2 = new Mock_RevertingBalanceOracle();
-        Mock_RevertingBalanceOracle oracle3 = new Mock_RevertingBalanceOracle();
+    /// @notice Test that multiple adapter reverts are handled
+    function test_RevertWhen_multipleAdapterReverts_handledGracefully() public {
+        // Add multiple reverting adapters
+        Mock_RevertingBalanceAdapter adapter2 = new Mock_RevertingBalanceAdapter();
+        Mock_RevertingBalanceAdapter adapter3 = new Mock_RevertingBalanceAdapter();
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
-        nav.addBalanceOracle(address(oracle2));
-        nav.addBalanceOracle(address(oracle3));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
+        nav.addBalanceAdapters(aa(address(adapter2)));
+        nav.addBalanceAdapters(aa(address(adapter3)));
         vm.stopPrank();
 
         // Setup valid data
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Should still work with other oracles
+        // Should still work with other adapters
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
-        assertGe(navResult.value, 0, "Should work despite multiple reverting oracles");
+        assertGe(navResult.value, 0, "Should work despite multiple reverting adapters");
     }
 
-    /// @notice Test that oracle can recover from revert
-    function test_RevertWhen_oracleRecoversFromRevert() public {
+    /// @notice Test that adapter can recover from revert
+    function test_RevertWhen_adapterRecoversFromRevert() public {
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // First query - oracle reverts
+        // First query - adapter reverts
         INAVCalculator.NAV memory nav1 = nav.getAccountNav(safe, address(0));
 
-        // Stop oracle from reverting
-        revertingOracle.setShouldRevert(false);
+        // Stop adapter from reverting
+        revertingAdapter.setShouldRevert(false);
 
-        // Second query - oracle should work now
+        // Second query - adapter should work now
         INAVCalculator.NAV memory nav2 = nav.getAccountNav(safe, address(0));
 
-        // NAV should be same or greater (oracle might add positions)
-        assertGe(nav2.value, nav1.value, "NAV should be same or greater after oracle recovery");
+        // NAV should be same or greater (adapter might add positions)
+        assertGe(nav2.value, nav1.value, "NAV should be same or greater after adapter recovery");
     }
 
     // ============================================
@@ -221,12 +222,12 @@ contract NAVCalculatorErrorTest is SuperTest {
     /// @notice Test that malformed price oracle responses are handled
     function test_RevertWhen_malformedPriceOracle() public {
         // Create malformed price oracle (returns zero price)
-        Mock_MalformedPriceOracle malformedOracle = new Mock_MalformedPriceOracle();
+        Mock_MalformedPriceOracle malformedAdapter = new Mock_MalformedPriceOracle();
 
         Mock_ERC20 token = new Mock_ERC20("MALFORMED", 18);
 
         vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(token), address(malformedOracle), IPrices.PriceType.Custom, type(uint256).max);
+        nav.registerAsset(address(token), address(malformedAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         token.mint(safe, 10 ** 18);
@@ -242,22 +243,22 @@ contract NAVCalculatorErrorTest is SuperTest {
     // Interface Mismatch Handling
     // ============================================
 
-    /// @notice Test that invalid oracle interface is rejected
-    function test_RevertWhen_invalidOracleInterface() public {
-        // Try to add a contract that doesn't implement IBalanceOracleAdapter
-        address invalidOracle = address(usdc); // ERC20 doesn't implement IBalanceOracleAdapter
+    /// @notice Test that invalid adapter interface is rejected
+    function test_RevertWhen_invalidAdapterInterface() public {
+        // Try to add a contract that doesn't implement IBalanceAdapter
+        address invalidAdapter = address(usdc); // ERC20 doesn't implement IBalanceAdapter
 
         vm.startPrank(navCalculatorManager);
-        vm.expectRevert(IBalances.InvalidBalanceOracle.selector);
-        nav.addBalanceOracle(invalidOracle);
+        vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
+        nav.addBalanceAdapters(aa(invalidAdapter));
         vm.stopPrank();
     }
 
-    /// @notice Test that zero address oracle is rejected
-    function test_RevertWhen_zeroAddressOracle() public {
+    /// @notice Test that zero address adapter is rejected
+    function test_RevertWhen_zeroAddressAdapter() public {
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
-        nav.addBalanceOracle(address(0));
+        nav.addBalanceAdapters(aa(address(0)));
         vm.stopPrank();
     }
 
@@ -265,11 +266,11 @@ contract NAVCalculatorErrorTest is SuperTest {
     // Concurrent Failures
     // ============================================
 
-    /// @notice Test handling of concurrent oracle and price failures
+    /// @notice Test handling of concurrent adapter and price failures
     function test_RevertWhen_concurrentFailures() public {
-        // Add reverting balance oracle
+        // Add reverting balance adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
 
         // Create token with reverting price oracle
         Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle();
@@ -303,51 +304,51 @@ contract NAVCalculatorErrorTest is SuperTest {
     // Error Recovery
     // ============================================
 
-    /// @notice Test that system recovers after oracle removal
-    function test_RevertWhen_oracleRemovalRecovery() public {
-        // Add reverting oracle
+    /// @notice Test that system recovers after adapter removal
+    function test_RevertWhen_adapterRemovalRecovery() public {
+        // Add reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Query with reverting oracle
+        // Query with reverting adapter
         INAVCalculator.NAV memory nav1 = nav.getAccountNav(safe, address(0));
 
-        // Remove reverting oracle
+        // Remove reverting adapter
         vm.startPrank(navCalculatorManager);
-        nav.removeBalanceOracle(address(revertingOracle));
+        nav.removeBalanceAdapters(aa(address(revertingAdapter)));
         vm.stopPrank();
 
         // Query again - should work normally
         INAVCalculator.NAV memory nav2 = nav.getAccountNav(safe, address(0));
 
         // NAV should be consistent
-        assertEq(nav1.value, nav2.value, "NAV should be consistent after oracle removal");
+        assertEq(nav1.value, nav2.value, "NAV should be consistent after adapter removal");
     }
 
     // ============================================
     // Edge Cases
     // ============================================
 
-    /// @notice Test that all oracles reverting still allows query (returns zero NAV)
-    function test_RevertWhen_allOraclesRevert() public {
-        // Add multiple reverting oracles
-        Mock_RevertingBalanceOracle oracle2 = new Mock_RevertingBalanceOracle();
-        Mock_RevertingBalanceOracle oracle3 = new Mock_RevertingBalanceOracle();
+    /// @notice Test that all adapters reverting still allows query (returns zero NAV)
+    function test_RevertWhen_allAdaptersRevert() public {
+        // Add multiple reverting adapters
+        Mock_RevertingBalanceAdapter adapter2 = new Mock_RevertingBalanceAdapter();
+        Mock_RevertingBalanceAdapter adapter3 = new Mock_RevertingBalanceAdapter();
 
         vm.startPrank(navCalculatorManager);
-        nav.addBalanceOracle(address(revertingOracle));
-        nav.addBalanceOracle(address(oracle2));
-        nav.addBalanceOracle(address(oracle3));
+        nav.addBalanceAdapters(aa(address(revertingAdapter)));
+        nav.addBalanceAdapters(aa(address(adapter2)));
+        nav.addBalanceAdapters(aa(address(adapter3)));
         vm.stopPrank();
 
-        // Don't mint any tokens (so ERC20DefaultOracle has no positions)
+        // Don't mint any tokens (so ERC20DefaultAdapter has no positions)
 
         // Should return zero NAV, not revert
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
-        assertEq(navResult.value, 0, "Should return zero NAV when all oracles revert or have no positions");
+        assertEq(navResult.value, 0, "Should return zero NAV when all adapters revert or have no positions");
     }
 
     /// @notice Test that invalid quote asset is handled

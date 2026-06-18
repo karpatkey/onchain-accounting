@@ -50,7 +50,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
         nav.addPriceFeed(WETH, API3_ETH_USD, IPrices.PriceType.API3, API3_HEARTBEAT);
     }
 
-    function setupBalanceOracle() internal override {}
+    function setupBalanceAdapter() internal override {}
 
     // ─── Registration ──────────────────────────────────────────────────────────
 

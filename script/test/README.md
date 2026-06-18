@@ -17,6 +17,13 @@ Tests for core deployment functionality:
 - ✅ Duplicate salt prevention
 - ✅ Initialization protection
 
+### Test02_DeployProxies.t.sol
+Tests for the `02_DeployProxies` deploy script:
+- ✅ CREATE2 determinism (canonical deployer yields the same proxy address regardless of caller)
+- ✅ AtomicProxyDeployer behavior
+- ✅ Proxy initialization flow
+- ✅ Diverging addresses across different deployers
+
 ### ConfigReaderTest.t.sol
 Tests for configuration system:
 - ✅ Reading chain configurations
@@ -132,7 +139,7 @@ contract MyDeploymentTest is Test {
 These tests should be run in CI/CD pipelines:
 
 ```yaml
-# .github/workflows/test.yml
+# .github/workflows/foundry.yml
 - name: Run deployment tests
   run: forge test --match-path "script/test/*.t.sol"
 ```

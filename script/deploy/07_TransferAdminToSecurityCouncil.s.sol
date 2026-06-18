@@ -15,7 +15,7 @@ import {console2} from "forge-std/console2.sol";
 ///        2. revoke MANAGER from the deployer EOA
 ///        3. renounce DEFAULT_ADMIN_ROLE from the deployer EOA (OZ v5: callerConfirmation must equal msg.sender)
 ///      After this the council Safe is the sole admin/manager and the deployer holds nothing. Run LAST, after all
-///      configuration (assets registered, balance oracles added + meta instances set, bridge adapters authorized).
+///      configuration (assets registered, balance adapters added + meta instances set, bridge adapters authorized).
 ///      Set DEPLOYER_EOA to the deployer account address (same as --account $DEPLOYER_NAME).
 ///      Run with: forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol \
 ///                --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast

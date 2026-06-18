@@ -7,8 +7,8 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title INAVCalculator
 /// @notice Interface for the NAV Calculator contract. Defines the full API for asset registration, price feeds,
-///         balance oracles, and NAV/position queries in one or more quote currencies.
-/// @dev Extends IBalances for oracle registry and IPrices for price feed types. Implementations are typically
+///         balance adapters, and NAV/position queries in one or more quote currencies.
+/// @dev Extends IBalances for adapter registry and IPrices for price feed types. Implementations are typically
 ///      UUPS-upgradeable and use AccessControl (MANAGER for mutations, DEFAULT_ADMIN_ROLE for upgrades).
 /// @author kpk
 interface INAVCalculator is IBalances {
@@ -16,7 +16,7 @@ interface INAVCalculator is IBalances {
     // Structs
     //
 
-    /// @notice Registered asset metadata used by the NAV/Pricing registry and balance oracles.
+    /// @notice Registered asset metadata used by the NAV/Pricing registry and balance adapters.
     /// @param asset Token address (or NATIVE_ADDRESS for chain native token).
     /// @param symbol Display symbol (e.g. "ETH", "USDC").
     /// @param decimals Number of decimals for amounts.
@@ -26,10 +26,10 @@ interface INAVCalculator is IBalances {
         uint8 decimals;
     }
 
-    /// @notice Balance-only position data returned by balance oracles (no pricing).
+    /// @notice Balance-only position data returned by balance adapters (no pricing).
     /// @dev NAVCalculator enriches these with pricing to produce Position structs.
     /// @param balanceAsset Asset metadata (address, symbol, decimals). The token `amount` is denominated in.
-    /// @param balanceOracle Address of the oracle that reported this position. Provenance / audit trail — NOT part of identity.
+    /// @param balanceAdapter Address of the adapter that reported this position. Provenance / audit trail — NOT part of identity.
     /// @param amount Balance magnitude (always positive); sign is implied by isDebt.
     /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV). Canonical NAV-sign signal.
     /// @param protocolId `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`).
@@ -42,7 +42,7 @@ interface INAVCalculator is IBalances {
     ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
     struct PositionBalance {
         Asset balanceAsset;
-        address balanceOracle;
+        address balanceAdapter;
         uint256 amount;
         bool isDebt;
         bytes32 protocolId;
@@ -53,7 +53,7 @@ interface INAVCalculator is IBalances {
     /// @notice Enriched position including pricing and quote-currency value.
     /// @dev Returned by getAccountPositions and getAccountPositionsForAsset.
     /// @param balanceAsset Asset metadata from registry (canonical symbol/decimals).
-    /// @param balanceOracle Oracle that reported the balance.
+    /// @param balanceAdapter Adapter that reported the balance.
     /// @param amount Balance magnitude (positive); sign implied by isDebt.
     /// @param isDebt True if debt, false if credit.
     /// @param quoteAsset Quote currency for value (e.g. USD when address(0)).
@@ -66,7 +66,7 @@ interface INAVCalculator is IBalances {
     /// @param positionKind Semantic discriminator. Copied from PositionBalance.
     struct Position {
         Asset balanceAsset;
-        address balanceOracle;
+        address balanceAdapter;
         uint256 amount;
         bool isDebt;
         Asset quoteAsset;
@@ -176,7 +176,7 @@ interface INAVCalculator is IBalances {
     //
 
     /// @notice Registers an asset and sets its price feed.
-    /// @dev Fetches decimals/symbol from ERC20 or uses native token symbol. Adds asset to default oracle inclusion list.
+    /// @dev Fetches decimals/symbol from ERC20 or uses native token symbol. Adds asset to default adapter inclusion list.
     /// @param asset Asset address to register (cannot be zero).
     /// @param priceFeed Price feed address (cannot be zero).
     /// @param priceType Chainlink or Custom.
@@ -193,10 +193,22 @@ interface INAVCalculator is IBalances {
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Registers a balance oracle in the global registry.
-    /// @dev Reverts with DuplicateBalanceOracle if already registered.
-    /// @param oracle Oracle address (must implement IBalanceOracleAdapter).
-    function addBalanceOracle(address oracle) external;
+    /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
+    /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
+    ///      if any adapter is already registered, and MetaAdapterNotAllowed if any adapter implements
+    ///      IMetaBalanceAdapter (meta-adapters must use addMetaBalanceAdapter). The batch is all-or-nothing.
+    /// @param adapters Adapter addresses (each must implement IBalanceAdapter and NOT IMetaBalanceAdapter).
+    function addBalanceAdapters(address[] calldata adapters) external;
+
+    /// @notice Registers a meta-adapter (ADR 0010) and seeds its instance set atomically, in one MANAGER call.
+    /// @dev The adapter must implement both IBalanceAdapter and IMetaBalanceAdapter (else InvalidBalanceAdapter /
+    ///      NotMetaAdapter). Reverts InvalidArguments on a zero adapter, DuplicateBalanceAdapter if already
+    ///      registered, and DuplicateMetaInstance on a repeated coordinate. An empty instance list is allowed
+    ///      (registers the meta-adapter with no instances yet; seed later via addMetaInstances). Plain adapters use
+    ///      addBalanceAdapters; subsequent instance changes use addMetaInstances / removeMetaInstances.
+    /// @param adapter The meta-adapter address.
+    /// @param instances Instance coordinates to seed (e.g. vault addresses widened to bytes32, or raw bytes32 IDs).
+    function addMetaBalanceAdapter(address adapter, bytes32[] calldata instances) external;
 
     /// @notice Removes the price feed at the given index. Reverts if it is the last feed (CannotRemoveLastFeed).
     /// @param asset Registered asset address.
@@ -208,29 +220,39 @@ interface INAVCalculator is IBalances {
     /// @param priceFeed Feed address to remove.
     function removePriceFeed(address asset, address priceFeed) external;
 
-    /// @notice Removes a balance oracle from the global registry.
-    /// @param oracle Oracle address to remove (cannot be the default ERC20 oracle).
-    function removeBalanceOracle(address oracle) external;
+    /// @notice Removes one or more balance adapters from the global registry in a single call.
+    /// @dev Reverts with InvalidArguments if the list is empty. The batch is all-or-nothing — if any adapter is
+    ///      not registered (or is the default ERC20 adapter) the whole call reverts.
+    /// @param adapters Adapter addresses to remove (none may be the default ERC20 adapter).
+    function removeBalanceAdapters(address[] calldata adapters) external;
 
-    /// @notice Replaces the full set of instance coordinates queried for a registered meta-oracle.
-    /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable. The
-    ///      caller should supply a **deduplicated** list (a duplicate would double-count NAV); the setter does not
-    ///      enforce this — dedup is the MANAGER's responsibility. An **empty** list is accepted and clears the
-    ///      oracle's set. Individual coordinates are not validated here; a malformed/unknown coordinate is isolated
-    ///      per-instance by the adapter's fan-out (it cannot zero out the batch).
-    /// @param oracle Registered meta-oracle address.
-    /// @param instances Instance coordinates (e.g. vault addresses widened to bytes32). May be empty (clears the set).
-    function setMetaInstances(address oracle, bytes32[] calldata instances) external;
+    /// @notice Adds instance coordinates to a registered meta-adapter's queried set.
+    /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable.
+    ///      All-or-nothing: reverts DuplicateMetaInstance if any coordinate is already present or repeated within
+    ///      the batch (a duplicate would double-count NAV), InvalidArguments on an empty list, and NotMetaAdapter
+    ///      if the adapter does not implement IMetaBalanceAdapter. Coordinate values are otherwise not validated; a
+    ///      malformed/unknown coordinate is isolated per-instance by the adapter's fan-out (cannot zero the batch).
+    /// @param adapter Registered meta-adapter address.
+    /// @param instances Instance coordinates to add (e.g. vault addresses widened to bytes32).
+    function addMetaInstances(address adapter, bytes32[] calldata instances) external;
 
-    /// @notice Excludes an asset from the default oracle so wallet balances are not reported for it.
+    /// @notice Removes instance coordinates from a registered meta-adapter's queried set.
+    /// @dev All-or-nothing: reverts MetaInstanceNotFound if any coordinate is not present (a coordinate repeated
+    ///      within the batch also reverts), InvalidArguments on an empty list, and NotMetaAdapter if the adapter
+    ///      does not implement IMetaBalanceAdapter. Order is not preserved.
+    /// @param adapter Registered meta-adapter address.
+    /// @param instances Instance coordinates to remove.
+    function removeMetaInstances(address adapter, bytes32[] calldata instances) external;
+
+    /// @notice Excludes an asset from the default adapter so wallet balances are not reported for it.
     /// @param asset Registered asset address.
-    function excludeAssetFromDefaultOracle(address asset) external;
+    function excludeAssetFromDefaultAdapter(address asset) external;
 
-    /// @notice Includes an asset in the default oracle so wallet balances are reported again.
+    /// @notice Includes an asset in the default adapter so wallet balances are reported again.
     /// @param asset Registered asset address.
-    function includeAssetInDefaultOracle(address asset) external;
+    function includeAssetInDefaultAdapter(address asset) external;
 
-    /// @notice Unregisters an asset: unsets price feed, removes from default oracle list, and removes from registry.
+    /// @notice Unregisters an asset: unsets price feed, removes from default adapter list, and removes from registry.
     /// @param underlyingAsset Asset address to unregister.
     function unregisterAsset(address underlyingAsset) external;
 
@@ -312,7 +334,7 @@ interface INAVCalculator is IBalances {
     /// @return stalePriceAssets Addresses of assets with stale prices.
     function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets);
 
-    /// @notice Returns whether the account has any non-zero balance across oracles and registered assets.
+    /// @notice Returns whether the account has any non-zero balance across adapters and registered assets.
     /// @param account Account address.
     /// @return has True if at least one position has non-zero amount.
     function hasPositions(address account) external view returns (bool has);

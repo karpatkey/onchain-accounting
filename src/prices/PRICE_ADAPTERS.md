@@ -98,9 +98,9 @@ Defined in `IPrices`.
 | Field | Type | Description |
 |---|---|---|
 | `priceFeed` | `address` | Chainlink aggregator, API3/Redstone feed address, or custom contract (`IPriceFeedCustom`). |
-| `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself. |
-| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt >= heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
+| `decimals` | `uint8` | Decimals of the returned price. Pinned at registration from the feed itself (for API3 feeds the 18-dec proxy is stored as `decimals = 8`; see §10.3). |
 | `priceType` | `PriceType` | Enum `{ Chainlink, Redstone, API3, Custom }`. |
+| `chainlinkHeartbeat` | `uint256` | Staleness window in seconds. Required non-zero for all feed types. For **Chainlink / Redstone / API3** feeds: `Prices.sol` checks `block.timestamp − effectiveUpdatedAt >= heartbeat`. For **Custom** feeds: `getLatestPrice().stale` is the primary gate; `latestRoundData().updatedAt` then applies the same heartbeat gate (`updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp). |
 
 ### 3.2 Custom feed return shape
 
@@ -219,7 +219,7 @@ For feeds backed by Reserve Protocol (ETHPlus): set this to the slowest Chainlin
 
 ---
 
-## 7. How NAVCalculator uses prices
+## 6. How NAVCalculator uses prices
 
 For each `PositionBalance` returned by an oracle, NAVCalculator:
 
@@ -232,7 +232,7 @@ So custom feeds are **building blocks** for value computation. Their staleness f
 
 ---
 
-## 8. Implemented custom feeds
+## 7. Implemented custom feeds
 
 All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific variants get a `_L2_` infix.
 
@@ -260,7 +260,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `weETH_Price`, `weETH_L2_Price` | weETH | weETH-per-eETH × eETH/USD chain |
 | `ezETH_Price`, `ezETH_L2_Price` | ezETH | Renzo reporter rate × ETH/USD |
 | `ETHx_Price` | ETHx | Stader `StakePoolsManager.getExchangeRate` × ETH/USD |
-| `osToken_Price` | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultOracle`. |
+| `osToken_Price` | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultAdapter`. |
 
 ### Other derived
 
@@ -274,11 +274,11 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 ---
 
-## 9. How to create a new custom price feed
+## 8. How to create a new custom price feed
 
 Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md). Quick checklist:
 
-### 9.1 Contract layout
+### 8.1 Contract layout
 
 1. Create `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
 2. Implement `IPriceFeedCustom` and `IERC165`.
@@ -293,7 +293,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 7. `decimals()` returns the pinned decimals (typically the Chainlink feed's decimals).
 8. `underlyingAssetSupported()` returns the token address.
 
-### 9.2 Tests
+### 8.2 Tests
 
 - Unit test under `test/prices/protocols/<Asset>_Price.t.sol` with mocked Chainlink + rate provider:
   - Happy path: known inputs → expected output.
@@ -302,35 +302,40 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
   - Zero or negative rate → `(0, true)`.
 - Fork test under `test/prices/protocols/fork/<Asset>_Price.fork.t.sol` against the real feed at a pinned block — assert the price is within a reasonable range and not stale.
 
-### 9.3 Registration
+### 8.3 Registration
 
-Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (MANAGER role). The chain config under `script/config/chains/<chainId>.json` should hold the asset entry; `script/deploy/03_RegisterAssets.s.sol` reads it and calls `registerAsset`.
+Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (MANAGER role). The asset config under `script/config/nav-config/assets-and-price-feeds/<chainId>.json` should hold the asset entry; `script/manage/RegisterAssets.s.sol` reads it and calls `registerAsset` (the first feed) plus `addPriceFeed` (any additional feeds). The custom feed contract itself is deployed earlier by `script/deploy/03_DeployPriceFeeds.s.sol`.
 
 ---
 
-## 10. Configuration and use
+## 9. Configuration and use
 
-### 10.1 Asset registration
+### 9.1 Asset registration
 
-Per-chain config lives at `script/config/chains/<chainId>.json` under the `assets` and `priceFeeds` blocks (see [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) for the schema). For a custom feed, the entry typically looks like:
+Per-chain asset registration config lives at `script/config/nav-config/assets-and-price-feeds/<chainId>.json`, keyed by asset symbol, each carrying the token `address` and an ordered `priceFeeds[]` array (see [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) for the full schema). Each feed entry has a `type` (`Chainlink` / `Redstone` / `API3` / `Custom`), a `heartbeat`, and either an `address` (all types except `Custom`) or a `feed` name (`Custom` only, resolved post-deploy from `script/config/deployments/<chainId>.json` `.customPriceFeeds.<name>`). The `chains/<chainId>.json` file carries only chain metadata and roles — not asset or feed config. For a custom feed, the entry typically looks like:
 
 ```json
 {
-  "address": "0x...sDAI",
-  "symbol": "sDAI",
-  "priceFeed": "0x...sDAI_PriceOracle",
-  "priceType": "Custom",
-  "chainlinkHeartbeat": 86400
+  "wstETH": {
+    "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "wstETH",
+        "heartbeat": 86400
+      }
+    ]
+  }
 }
 ```
 
-`03_RegisterAssets.s.sol` reads these and calls `NAVCalculator.registerAsset`.
+`script/manage/RegisterAssets.s.sol` reads these and calls `NAVCalculator.registerAsset` for the first feed (and `addPriceFeed` for any additional ones).
 
-### 10.2 Adding the same asset on multiple chains
+### 9.2 Adding the same asset on multiple chains
 
 Each chain has its own `priceFeed` deployment. L2 variants use `*_L2_Price` so the L1 rate provider isn't called from the wrong chain. Pick the right variant based on where the rate canonically lives.
 
-### 10.3 Updating a feed / adding redundancy
+### 9.3 Updating a feed / adding redundancy
 
 Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
 
@@ -338,11 +343,11 @@ To add a second (or third) feed for redundancy without removing the existing one
 
 ---
 
-## 11. Discovering and verifying feed addresses
+## 10. Discovering and verifying feed addresses
 
 All known feed addresses are catalogued in [`script/config/price-feeds-catalogue.json`](../../script/config/price-feeds-catalogue.json), organised by chain → token → provider. The sections below describe how to look up and verify addresses from each provider.
 
-### 11.1 Chainlink
+### 10.1 Chainlink
 
 Chainlink maintains a public reference directory for all deployed AggregatorV3 feeds.
 
@@ -353,7 +358,7 @@ Chainlink maintains a public reference directory for all deployed AggregatorV3 f
 https://reference-data-directory.vercel.app/feeds-mainnet.json
 
 # Arbitrum
-https://reference-data-directory.vercel.app/feeds-arbitrum-mainnet.json
+https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-arbitrum-1.json
 
 # Optimism
 https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-optimism-1.json
@@ -368,14 +373,14 @@ https://reference-data-directory.vercel.app/feeds-matic-mainnet.json
 https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json
 
 # Gnosis
-https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-gnosis-1.json
+https://reference-data-directory.vercel.app/feeds-xdai-mainnet.json
 ```
 
 Each JSON entry contains `contractAddress`, `name` (e.g. `"ETH / USD"`), `decimals`, and `heartbeat`. The same addresses are browseable at [docs.chain.link/data-feeds/price-feeds/addresses](https://docs.chain.link/data-feeds/price-feeds/addresses).
 
-**Decimals:** 8 for all USD-denominated feeds (standard). A handful of Chainlink feeds return 18 decimals (e.g. the ETH+/USD feed at `0x66Ab9003...`) — these cannot be registered directly as `PriceType.Chainlink` alongside 8-dec feeds because `L-4` enforces decimal consistency across all feeds for an asset. Note: `PriceType.API3` feeds also return 18 decimals from the proxy but are normalised to 8-dec automatically by `PriceFeedLib` — see §11.3.
+**Decimals:** 8 for all USD-denominated feeds (standard). A handful of Chainlink feeds return 18 decimals (e.g. the ETH+/USD feed at `0x66Ab9003...`) — these cannot be registered directly as `PriceType.Chainlink` alongside 8-dec feeds because `L-4` enforces decimal consistency across all feeds for an asset. Note: `PriceType.API3` feeds also return 18 decimals from the proxy but are normalised to 8-dec automatically by `PriceFeedLib` — see §10.3.
 
-### 11.2 Redstone Classic Push
+### 10.2 Redstone Classic Push
 
 Redstone Classic Push feeds implement `AggregatorV3Interface` and are updated by Redstone's relayer on-chain (same model as Chainlink). The full list is browseable at [app.redstone.finance/push-feeds](https://app.redstone.finance/push-feeds) (requires JavaScript rendering).
 
@@ -392,7 +397,7 @@ Redstone Classic Push feeds implement `AggregatorV3Interface` and are updated by
 
 **Adding new Redstone addresses:** Browse the app or ask Redstone directly, then add the entry under the relevant chain → token in `price-feeds-catalogue.json` with `"Redstone": { "address": "0x...", "pair": "...", "decimals": 8, "heartbeat": <seconds> }`.
 
-### 11.3 API3 dAPI communal proxies
+### 10.3 API3 dAPI communal proxies
 
 API3 dAPIs use a deterministic CREATE2 factory. The communal `Api3ReaderProxyV1` proxy address depends only on the dAPI name (`bytes32`) — it is the **same address on every chain** where the factory is deployed.
 
@@ -436,7 +441,7 @@ nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
 
 **Browse available dAPIs:** [market.api3.org](https://market.api3.org)
 
-### 11.4 Verifying feed liveness
+### 10.4 Verifying feed liveness
 
 A computed API3 address (or any new feed address) must be verified as live before being added to the catalogue or registered on-chain. Use `cast call` from Foundry:
 
@@ -486,7 +491,7 @@ This same `cast call` pattern works for Chainlink and Redstone feeds — if the 
 
 ---
 
-## 12. Quick reference
+## 11. Quick reference
 
 - **Interface:** `src/prices/IPriceFeedCustom.sol`
 - **Registry:** `src/prices/Prices.sol` and `src/prices/IPrices.sol`

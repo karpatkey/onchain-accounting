@@ -88,7 +88,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
-        _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 eVaults (supply leg); instance set on NAV (ADR 0010)
+        _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
 
         // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
         _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO

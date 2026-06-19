@@ -17,17 +17,18 @@ import "src/constants.sol";
 import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 
 /// @title EulerVaultsMetaBalanceAdapter fork tests
-/// @notice One immutable meta-adapter serving every Euler V2 eVault (supply leg, ERC4626 convertToAssets), routed
+/// @notice One immutable meta-adapter serving every Euler V2 vault (EulerEarn aggregators + core eVaults), routed
 ///         through a real NAVCalculator that holds the configured instance set (seeded via addMetaBalanceAdapter).
-///         Uses the two kpk-curated eVaults at a pinned block: KPK_ETH_Term (WETH, with its real holder the KPK DAO
-///         Safe) and kpk_RWA_USDC (USDC, with a position deposited in setUp).
+///         Exercises all three legs at a pinned block: the supply leg on the two kpk-curated EulerEarn vaults
+///         (KPK_ETH_Term WETH / kpk_RWA_USDC USDC, real holders), plus Collateral classification and the borrow
+///         (debtOf) leg on a real core-eVault borrower (eUSDC-2 collateral + eWETH-2 debt).
 contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // External libraries pre-linked at deterministic CREATE2 addresses (foundry.toml). Etch their runtime on the fork
     // so NAVCalculator's pricing/registry DELEGATECALLs succeed.
     address constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
     address constant NAV_REGISTRY_LIB = 0x02F27E28452E6F419b97935f6346381E2b5003B1;
 
-    // kpk-curated Euler V2 eVaults (ERC4626 EVK vaults) on mainnet.
+    // kpk-curated Euler V2 EulerEarn vaults (ERC4626 yield aggregators, not core EVK eVaults) on mainnet.
     IERC4626 public constant KPK_ETH_TERM = IERC4626(0xB6D6D89ad4b4D61C15a293e28b74f77F6817fF48); // WETH
     IERC4626 public constant KPK_RWA_USDC = IERC4626(0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245); // USDC
     IERC20 public constant WETH = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);

@@ -103,7 +103,8 @@ contract MockToken {
 
 /// @title EulerVaultsMetaBalanceAdapter unit tests (no fork)
 /// @notice Mirrors the MorphoVaultsMeta unit suite — same MetaBalanceAdapter base + ERC4626 convertToAssets shape —
-///         plus Euler-specific identity asserts (protocolId = euler-vaults, positionKind = Supplied).
+///         plus Euler-specific asserts (protocolId = euler-vaults; positionKind Supplied / Collateral when EVC-enabled /
+///         Borrowed for the debt leg).
 contract EulerVaultsMetaBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     EulerVaultsMetaBalanceAdapter adapter;

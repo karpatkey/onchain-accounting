@@ -57,7 +57,7 @@
       "type": "EOA",
       "notes": [
         "Real Euler V2 borrower — supplies ~61,718 USDC collateral in core eVault eUSDC-2 and borrows ~6.363 WETH from core eVault eWETH-2 (both are strategies KPK_ETH_Term itself allocates to).",
-        "Position is still open live, so the same account is used for the live Euler-app/Debank cross-check (README §9). The earlier dust borrower 0x5c95…e820 has since closed its position live.",
+        "Position is still open live, so the same account is used for both the pinned strict-equality fork test and the live Euler-app/Debank cross-check (README §9).",
         "Test (test_realBorrower_earnLendBorrow) also seeds a 5 WETH EulerEarn deposit into KPK_ETH_Term so one account shows earn + lend + borrow.",
         "test_navNetsEulerDebt confirms the borrow leg prices to a negative value through NAV."
       ],
@@ -72,7 +72,7 @@
     "method": "direct-onchain-read + partial-redeem cross-check + real-borrower debtOf",
     "delta": 0,
     "notes": [
-      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 14/14 pass — supply/borrow/asset-filter/registration/zero branches against mocks (core-eVault mock with debtOf + Earn mock without it).",
+      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 16/16 pass — supply/collateral/borrow/asset-filter/registration/zero branches against mocks (core-eVault mock with debtOf + EVC for collateral classification, Earn mock without debtOf).",
       "Fork suite (test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol): 9/9 pass — EulerEarn aggregation, NAV routing, identity, asset filter, describePosition, redemption cross-check, real earn+lend+borrow account, and NAV debt-netting.",
       "convertToAssets and ERC4626 redeem both round down, so realized WETH equals convertToAssets(redeemedShares) exactly (delta 0)."
     ]

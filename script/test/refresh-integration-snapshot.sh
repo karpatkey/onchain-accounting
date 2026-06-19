@@ -477,7 +477,7 @@ if [[ "$debank_active" == "true" ]]; then
         --slurpfile chain "$chain_cfg" \
         --slurpfile reg "$WALLET_AGGREGATING_REGISTRY" \
         '
-          ([($assets // {}) | to_entries[] | .value.address | ascii_downcase])
+          ([($assets // {}) | to_entries[] | select(.key | startswith("$") | not) | .value.address | ascii_downcase])
           +
           [
             $reg[0]

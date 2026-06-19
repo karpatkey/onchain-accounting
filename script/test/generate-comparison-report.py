@@ -1426,9 +1426,12 @@ def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
             continue
         with open(assets_path) as f:
             tokens = json.load(f)
-        registered[cid] = {v["address"].lower() for v in tokens.values()}
+        # Skip `$`-prefixed metadata keys (e.g. `$comment`/`$schema`), matching
+        # ConfigReader.getAssetSymbols — they are not assets.
+        assets = {k: v for k, v in tokens.items() if not k.startswith("$")}
+        registered[cid] = {v["address"].lower() for v in assets.values()}
         priced[cid] = {
-            v["address"].lower() for v in tokens.values() if v.get("priceFeeds")
+            v["address"].lower() for v in assets.values() if v.get("priceFeeds")
         }
 
     # Load NAV position detail files

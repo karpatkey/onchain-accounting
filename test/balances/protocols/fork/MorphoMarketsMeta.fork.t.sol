@@ -19,7 +19,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 ///         the account holds all three legs (supply + borrow + collateral), and asserts parity with the
 ///         per-market MorphoMarket adapter.
 contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
-    address constant PRICE_FEED_LIB = 0x8195da38faE93f0a221146f0aD7E6a5D1594db97;
+    address constant PRICE_FEED_LIB = 0x4D19204c82bac5677Dc06C80E7a95df8232D1988;
 
     address public constant MORPHO = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
 

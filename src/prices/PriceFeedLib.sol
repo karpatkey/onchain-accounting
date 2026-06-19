@@ -21,11 +21,12 @@ import "src/constants.sol";
 ///         positions, health, value), extracted to keep NAVCalculator under the 24 576-byte EIP-170 limit.
 /// @dev All functions are `external` so the library compiles as a separate artifact and is invoked via
 ///      DELEGATECALL — running in NAVCalculator's storage context through the passed `storage` references.
-///      The read/compute entrypoints (computeNav / computeAccountPositions / hasPositions /
-///      getAssetsWithPositions / healthCheck / calculateValue) build and consume the heavy
-///      PositionBalance[]/Position[] arrays entirely inside the library, so those arrays never cross the
-///      NAV↔library ABI boundary (which is what makes piecemeal helper extraction counter-productive under
-///      `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is immaterial.
+///      The read/compute entrypoints are computeNav / computeAccountPositions / hasPositions /
+///      getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
+///      build and consume the heavy PositionBalance[]/Position[] arrays entirely inside the library, so those
+///      arrays never cross the NAV↔library ABI boundary (which is what makes piecemeal helper extraction
+///      counter-productive under `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is
+///      immaterial.
 ///      Pre-linked at a deterministic CREATE2 address (see `foundry.toml`).
 library PriceFeedLib {
     using ERC165Checker for address;
@@ -391,7 +392,8 @@ library PriceFeedLib {
         uint256 staleCount = 0;
         for (uint256 i = 0; i < totalAssets; i++) {
             address assetAddr = registeredAssets[i].asset;
-            if (priceOracles[assetAddr].length == 0) revert PriceFeedNotSet(assetAddr);
+            // _selectFeedCore reverts PriceFeedNotSet(assetAddr) when the asset has no feeds (same selector as the
+            // former explicit _requirePriceFeedExists guard), so no separate length check is needed here.
             (,, bool stale,,) = _selectFeedCore(priceOracles, assetAddr);
             if (stale) staleAssetsTemp[staleCount++] = assetAddr;
         }
@@ -412,10 +414,9 @@ library PriceFeedLib {
         if (assetAddresses.length != amounts.length) {
             revert ArrayLengthMismatch();
         }
-        if (quoteAsset != address(0)) {
-            if (assetIndex[quoteAsset] == 0) revert AssetNotFound();
-            if (priceOracles[quoteAsset].length == 0) revert PriceFeedNotSet(quoteAsset);
-        }
+        // For a non-USD quote, require it is registered; its feed-existence check is handled by _getQuoteAssetInfo
+        // below (which reverts PriceFeedNotSet(quoteAsset) via its own guard / _selectFeedCore).
+        if (quoteAsset != address(0) && assetIndex[quoteAsset] == 0) revert AssetNotFound();
 
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
@@ -427,8 +428,9 @@ library PriceFeedLib {
 
             address asset = assetAddresses[i];
             if (assetIndex[asset] == 0) revert AssetNotFound();
-            if (priceOracles[asset].length == 0) revert PriceFeedNotSet(asset);
             uint8 assetDecimals = _getRegisteredAsset(assetIndex, registeredAssets, asset).decimals;
+            // _selectFeedCore reverts PriceFeedNotSet(asset) when the asset has no feeds (same selector as the
+            // former explicit guard), so no separate length check is needed.
             (int256 usdRate, uint8 usdRateDecimals,,,) = _selectFeedCore(priceOracles, asset);
             value += _priceConversion(
                 amount,

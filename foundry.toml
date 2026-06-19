@@ -19,19 +19,25 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
-# Pin the compiler AND strip the appended source-metadata hash so the external-library bytecode —
-# and therefore the deterministic CREATE2 addresses the `libraries` array below pins — are stable
-# and reproducible. Two independent axes shift that bytecode if left unpinned:
+# Pin the compiler, EVM target AND strip the appended source-metadata hash so the external-library
+# bytecode — and therefore the deterministic CREATE2 addresses the `libraries` array below pins — are
+# stable and reproducible. Three independent axes shift that bytecode if left unpinned:
 #   - solc_version: forge otherwise selects the latest pragma-compatible solc, whose codegen +
 #     metadata differ, moving the CREATE2 address.
+#   - evm_version: forge otherwise applies a version-dependent default (e.g. forge 1.7.1 → "osaka"),
+#     so the same source compiles to different bytecode on a machine/CI whose forge defaults differ —
+#     which silently moves the CREATE2 address. Pin "cancun": the highest EVM version supported across
+#     all target chains (Ethereum, Gnosis, Base, Optimism, Arbitrum). MUST match the forge version
+#     pinned in .github/workflows (foundry-toolchain `version:`) so local == CI.
 #   - bytecode_hash: the default ("ipfs") appends a hash of ALL source in the contract's import graph
 #     (comments included), so an unrelated doc/comment edit to e.g. PositionKind.sol — pulled in
 #     transitively by NavRegistryLib via INAVCalculator — would shift the library address. "none"
 #     drops that trailer, so the address tracks only the actual compiled code + compiler.
-# Either drift leaves NAVCalculator linked to an address with no code → init reverts on a fresh
+# Any drift leaves NAVCalculator linked to an address with no code → init reverts on a fresh
 # deploy. CI's LibraryPinConsistency test re-derives both pins from current bytecode and fails if
 # they ever drift again. See docs/decisions/0010-meta-balance-adapters.md (EIP-170 library split).
 solc_version = "0.8.34"
+evm_version = "cancun"
 bytecode_hash = "none"
 
 # Pre-link the external libraries at their deterministic CREATE2 addresses so type(NAVCalculator).creationCode

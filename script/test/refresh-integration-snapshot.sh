@@ -18,8 +18,9 @@
 #        (a) full net_usd_value of every protocol in chains[chainId].supportedDeBankProtocols
 #            — NAV has its own balance adapter for each, so its accounting (debt netting,
 #            interest, rewards) is the apples-to-apples reference;
-#        (b) wallet token_list filtered to NAV-registered assets in script/config/assets.json
-#            (`.tokens.<chainId>`), plus the native sentinel via the chain id when registered.
+#        (b) wallet token_list filtered to NAV-registered assets in
+#            script/config/nav-config/assets-and-price-feeds/<chainId>.json (keyed by symbol →
+#            {address, priceFeeds}), plus the native sentinel via the chain id when registered.
 #            This mirrors `IERC20.balanceOf(account)` exactly and so is what NAV's default
 #            ERC20 adapter reads (USDC, USDT, GHO, stETH, rsETH, native ETH, …).
 #      The filter is what makes the comparison apples-to-apples: many accounts hold positions
@@ -43,7 +44,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
 ACCOUNTS_JSON="test/integration/accounts.json"
-ASSETS_JSON="script/config/assets.json"
+NAV_ASSETS_DIR="script/config/nav-config/assets-and-price-feeds"
 CHAINS_CONFIG_DIR="script/config/chains"
 WALLET_AGGREGATING_REGISTRY="script/test/wallet-aggregating-adapters.json"
 MERKL_PROOFS_JSON="test/integration/merkl-proofs.json"
@@ -66,8 +67,8 @@ if [[ ! -f "$ACCOUNTS_JSON" ]]; then
   echo "missing $ACCOUNTS_JSON" >&2
   exit 1
 fi
-if [[ ! -f "$ASSETS_JSON" ]]; then
-  echo "missing $ASSETS_JSON" >&2
+if [[ ! -d "$NAV_ASSETS_DIR" ]]; then
+  echo "missing $NAV_ASSETS_DIR (per-chain asset+feed config)" >&2
   exit 1
 fi
 
@@ -417,7 +418,8 @@ fi
 # ─── 3. Refresh DeBank reference per (chain × account) ─────────────────────────
 # Filtered comparison: sum only the DeBank protocols whose ids appear in the chain's
 # `supportedDeBankProtocols` allowlist, plus only the wallet tokens whose addresses are
-# registered as NAV assets in `script/config/assets.json`. This is what makes drift
+# registered as NAV assets in `script/config/nav-config/assets-and-price-feeds/<chainId>.json`.
+# This is what makes drift
 # meaningful — without filtering, any account holding a position outside NAV's coverage
 # would always show NAV < DeBank.
 #
@@ -461,19 +463,21 @@ if [[ "$debank_active" == "true" ]]; then
 
       # Build NAV-registered asset address allowlist for this chain (lowercased).
       # Union of two sources, matching generate-comparison-report.py's `all_covered`:
-      #   1. assets.json.tokens[chain] — standalone priceable assets in the NAV registry.
+      #   1. nav-config/assets-and-price-feeds/<chain>.json — standalone priceable assets in the
+      #      NAV registry (keyed by symbol → {address, priceFeeds}). Missing file ⇒ {} (no assets).
       #   2. wallet-aggregating-adapters.json — tokens NOT in (1) but consumed by an
       #      enabled adapter via balanceOf (e.g. Cap reads cUsd + stcUsd via constructor
       #      args in chains/<cid>.json). Without this, accounts holding cUsd/stcUsd would
       #      have an anchor that disagrees with the report's rendered total.
       chain_cfg="$CHAINS_CONFIG_DIR/${chain_id}.json"
+      assets_file="$NAV_ASSETS_DIR/${chain_id}.json"
+      chain_assets=$([[ -f "$assets_file" ]] && cat "$assets_file" || echo '{}')
       asset_allowlist=$(jq -c -n \
-        --slurpfile assets "$ASSETS_JSON" \
+        --argjson assets "$chain_assets" \
         --slurpfile chain "$chain_cfg" \
         --slurpfile reg "$WALLET_AGGREGATING_REGISTRY" \
-        --arg c "$chain_id" \
         '
-          ([($assets[0].tokens[$c] // {}) | to_entries[] | .value.address | ascii_downcase])
+          ([($assets // {}) | to_entries[] | select(.key | startswith("$") | not) | .value.address | ascii_downcase])
           +
           [
             $reg[0]

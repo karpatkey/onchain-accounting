@@ -26,7 +26,7 @@ if [ "$#" -ge 2 ] && [ -n "${2:-}" ]; then
   VAULTS="$2"
 else
   [ -f "$NAV_CONFIG" ] || { echo "error: $NAV_CONFIG not found and no eVaults passed" >&2; exit 1; }
-  VAULTS=$(jq -r '.EulerVaultsMeta.instances | join(",")' "$NAV_CONFIG")
+  VAULTS=$(jq -r '(.EulerVaultsMeta.instances // []) | join(",")' "$NAV_CONFIG")
 fi
 [ -n "$VAULTS" ] && [ "$VAULTS" != "null" ] || { echo "error: no eVault instances resolved" >&2; exit 1; }
 

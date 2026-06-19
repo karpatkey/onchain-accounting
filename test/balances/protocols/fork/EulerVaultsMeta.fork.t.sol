@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {EulerVaultsMetaBalanceAdapter, IEulerEVaultDebt} from "src/balances/protocols/EulerVaultsMeta.sol";
+import {EulerVaultsMetaBalanceAdapter, IEulerEVault} from "src/balances/protocols/EulerVaultsMeta.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -234,7 +234,8 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
                 lend = pos[i].amount;
                 fl = true;
                 assertEq(pos[i].balanceAsset.asset, address(USDC));
-                assertTrue(pos[i].positionKind == PositionKind.Supplied);
+                // eUSDC-2 is enabled as EVC collateral for this borrower, so the supply leg classifies as Collateral.
+                assertTrue(pos[i].positionKind == PositionKind.Collateral);
             } else if (id == keccak256(abi.encode(address(E_WETH2))) && pos[i].isDebt) {
                 borrow = pos[i].amount;
                 fb = true;
@@ -247,7 +248,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Strict equality vs on-chain.
         assertEq(earn, KPK_ETH_TERM.convertToAssets(KPK_ETH_TERM.balanceOf(BORROWER)), "earn == convertToAssets");
         assertEq(lend, E_USDC2.convertToAssets(E_USDC2.balanceOf(BORROWER)), "lend == convertToAssets");
-        assertEq(borrow, IEulerEVaultDebt(address(E_WETH2)).debtOf(BORROWER), "borrow == debtOf");
+        assertEq(borrow, IEulerEVault(address(E_WETH2)).debtOf(BORROWER), "borrow == debtOf");
         assertGt(borrow, 0, "real debt present");
     }
 

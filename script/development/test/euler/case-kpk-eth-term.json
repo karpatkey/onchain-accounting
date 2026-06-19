@@ -26,8 +26,8 @@
   "identity": {
     "protocolId": "keccak256('euler-vaults') = ProtocolIds.EULER_VAULTS",
     "positionId": "abi.encode(address vault) — shared by both legs",
-    "positionKinds": ["Supplied (convertToAssets, isDebt=false)", "Borrowed (debtOf, isDebt=true, core eVaults only)"],
-    "note": "Up to two legs per vault. Supply via convertToAssets(balanceOf) for EulerEarn earn + core-eVault lend/collateral. Borrow via debtOf(account) for core eVaults (read under try/catch; EulerEarn lacks it). EVC-collateral supply is reported as Supplied (value identical; not labelled Collateral)."
+    "positionKinds": ["Supplied (convertToAssets, isDebt=false)", "Collateral (convertToAssets when EVC-enabled as collateral)", "Borrowed (debtOf, isDebt=true, core eVaults only)"],
+    "note": "Up to two legs per vault. Supply via convertToAssets(balanceOf); the leg is Collateral when the account has enabled the vault as EVC collateral (vault.EVC() -> EVC.getCollaterals membership, under try/catch), else Supplied (EulerEarn earn deposits, or core-eVault supply not enabled as collateral). Borrow via debtOf(account) for core eVaults (read under try/catch; EulerEarn lacks it)."
   },
   "holders": [
     {
@@ -63,7 +63,7 @@
       ],
       "legs_at_fork_block": [
         { "instance": "KPK_ETH_Term (EulerEarn)", "asset": "WETH", "kind": "Supplied (earn)", "isDebt": false, "ground_truth": "convertToAssets(balanceOf) after a 5 WETH in-test deposit" },
-        { "instance": "eUSDC-2 (core eVault 0x797D…48a9)", "asset": "USDC", "kind": "Supplied (lend/collateral)", "isDebt": false, "amount_raw": "61718714865", "amount_humanised": "61,718.714865 USDC", "ground_truth": "eUSDC2.convertToAssets(balanceOf) — real collateral" },
+        { "instance": "eUSDC-2 (core eVault 0x797D…48a9)", "asset": "USDC", "kind": "Collateral (EVC-enabled)", "isDebt": false, "amount_raw": "61718714865", "amount_humanised": "61,718.714865 USDC", "ground_truth": "eUSDC2.convertToAssets(balanceOf); positionKind = Collateral because EVC.getCollaterals(account) includes eUSDC-2" },
         { "instance": "eWETH-2 (core eVault 0xD8b2…84C2)", "asset": "WETH", "kind": "Borrowed", "isDebt": true, "amount_raw": "6363243813055516579", "amount_humanised": "6.363243813055516579 WETH", "ground_truth": "eWETH2.debtOf(account) — real debt" }
       ]
     }

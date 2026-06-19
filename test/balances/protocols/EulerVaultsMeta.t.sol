@@ -37,12 +37,26 @@ contract MockEVault {
     }
 }
 
-/// @notice Core-eVault-shaped mock: ERC4626 + a `debtOf` borrow accessor (which EulerEarn vaults lack), so the
-///         adapter emits a Borrowed leg alongside the Supplied leg.
+/// @notice Mock Ethereum Vault Connector — returns a settable per-account collateral list.
+contract MockEVC {
+    mapping(address => address[]) private _collaterals;
+
+    function setCollaterals(address account, address[] calldata vaults) external {
+        _collaterals[account] = vaults;
+    }
+
+    function getCollaterals(address account) external view returns (address[] memory) {
+        return _collaterals[account];
+    }
+}
+
+/// @notice Core-eVault-shaped mock: ERC4626 + a `debtOf` borrow accessor (which EulerEarn vaults lack) + an `EVC()`
+///         pointer, so the adapter emits a Borrowed leg and can classify supply as Collateral vs Supplied.
 contract MockCoreEVault {
     string public name;
     address private _asset;
     uint256 private _rate; // assets per share, 1e18-scaled
+    address public EVC;
     mapping(address => uint256) public balanceOf;
     mapping(address => uint256) private _debt;
 
@@ -70,6 +84,10 @@ contract MockCoreEVault {
 
     function debtOf(address account) external view returns (uint256) {
         return _debt[account];
+    }
+
+    function setEVC(address evc) external {
+        EVC = evc;
     }
 }
 
@@ -285,6 +303,40 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos.length, 1, "supply leg survives a vault without debtOf");
         assertFalse(pos[0].isDebt);
         assertTrue(pos[0].positionKind == PositionKind.Supplied);
+    }
+
+    function test_supplyKind_collateralWhenEvcEnabled() public {
+        MockEVC evc = new MockEVC();
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        core.setEVC(address(evc));
+        core.setBalance(alice, 1_000_000); // 1 USDC supplied
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+
+        // Not enabled as collateral → Supplied.
+        INAVCalculator.PositionBalance[] memory s = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(s.length, 1);
+        assertTrue(s[0].positionKind == PositionKind.Supplied, "unencumbered supply is Supplied");
+
+        // Enabled as collateral on the EVC → Collateral.
+        address[] memory cols = new address[](1);
+        cols[0] = address(core);
+        evc.setCollaterals(alice, cols);
+        INAVCalculator.PositionBalance[] memory c = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(c.length, 1);
+        assertTrue(c[0].positionKind == PositionKind.Collateral, "EVC-enabled supply is Collateral");
+        assertFalse(c[0].isDebt);
+    }
+
+    function test_supplyKind_earnVaultWithoutEvc_isSupplied() public {
+        // vaultA (EulerEarn-shaped mock) has no EVC() → _supplyKind try/catch → Supplied.
+        vaultA.setBalance(alice, 1_000_000);
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(vaultA))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1);
+        assertTrue(pos[0].positionKind == PositionKind.Supplied, "vault without EVC() degrades to Supplied");
     }
 
     function test_debtLeg_respectsAssetFilter() public {

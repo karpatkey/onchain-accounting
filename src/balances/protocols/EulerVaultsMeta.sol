@@ -7,11 +7,20 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @notice Minimal interface for the Euler V2 core-eVault (EVK) borrow accessor. EulerEarn aggregator vaults do NOT
-///         implement this, so the adapter calls it under try/catch and treats a revert as "no debt".
-interface IEulerEVaultDebt {
+/// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
+///         exposed by both core eVaults and EulerEarn vaults. Both are read under try/catch so a vault lacking them
+///         (or a non-Euler ERC4626) degrades gracefully.
+interface IEulerEVault {
     /// @return The account's current debt in the vault's underlying asset (interest-accrued), 0 if none.
     function debtOf(address account) external view returns (uint256);
+    /// @return The Ethereum Vault Connector this vault is bound to.
+    function EVC() external view returns (address);
+}
+
+/// @notice Ethereum Vault Connector — used to distinguish a collateral-enabled supply (Collateral) from a plain one.
+interface IEVC {
+    /// @return The vaults the account has enabled as collateral.
+    function getCollaterals(address account) external view returns (address[] memory);
 }
 
 /// @title Euler Vaults Meta Balance Adapter
@@ -28,8 +37,9 @@ interface IEulerEVaultDebt {
 ///          vaults do not implement `debtOf`, so it is read under try/catch and a revert means "no debt leg".
 ///      Both legs share the same `positionId` (`abi.encode(address(vault))`) and are distinguished by `positionKind`,
 ///      matching the multi-leg convention used by the lending adapters (Aave/Spark supply vs borrow on one reserve).
-///      Supply that is enabled as EVC collateral is still reported as `Supplied` (its NAV value is identical; the
-///      Supplied-vs-Collateral label is not distinguished, which would require an EVC collateral lookup).
+///      A supply the account has enabled as EVC collateral is reported as `Collateral`; an unencumbered supply
+///      (EulerEarn earn deposits, or core-eVault supply not enabled as collateral) is `Supplied` — determined via an
+///      EVC `getCollaterals` lookup (under try/catch, so non-Euler/EulerEarn vaults degrade to `Supplied`).
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER_VAULTS;
 
@@ -68,7 +78,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         // Debt leg: only core eVaults (EVK) implement debtOf; EulerEarn aggregators do not, so guard with try/catch
         // — a revert there must not drop the supply leg.
         uint256 debt = 0;
-        try IEulerEVaultDebt(vaultAddr).debtOf(account) returns (uint256 d) {
+        try IEulerEVault(vaultAddr).debtOf(account) returns (uint256 d) {
             debt = d;
         } catch {}
 
@@ -88,7 +98,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
-                positionKind: PositionKind.Supplied
+                positionKind: _supplyKind(account, vaultAddr)
             });
         }
         if (debt > 0) {
@@ -103,6 +113,23 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             });
         }
         return positions;
+    }
+
+    /// @dev Classifies a supply leg: `Collateral` if the account has enabled this vault as EVC collateral, else
+    ///      `Supplied`. Read under try/catch so a vault without `EVC()`/`getCollaterals` (EulerEarn aggregators —
+    ///      never usable as collateral — or a non-Euler ERC4626) degrades to `Supplied`. EVC caps the collateral
+    ///      list at a small length, so the membership scan is bounded.
+    function _supplyKind(address account, address vaultAddr) private view returns (PositionKind) {
+        try IEulerEVault(vaultAddr).EVC() returns (address evc) {
+            if (evc != address(0)) {
+                try IEVC(evc).getCollaterals(account) returns (address[] memory collaterals) {
+                    for (uint256 j = 0; j < collaterals.length; j++) {
+                        if (collaterals[j] == vaultAddr) return PositionKind.Collateral;
+                    }
+                } catch {}
+            }
+        } catch {}
+        return PositionKind.Supplied;
     }
 
     /// @inheritdoc MetaBalanceAdapter

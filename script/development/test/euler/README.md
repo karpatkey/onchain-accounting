@@ -20,10 +20,10 @@ Per instance, up to two legs:
 
 - **filter** — `assetFilter != 0 && assetFilter != vault.asset()` → empty (both legs share the asset).
 - **registration** — `vault.asset()` not registered on NAVCalculator → empty (registered-asset intersection).
-- **Supply leg** — `supplied = convertToAssets(balanceOf(account))`; emit a `Supplied` leg (`isDebt = false`) iff `> 0`. Covers EulerEarn earn deposits and core-eVault lend/collateral supply.
+- **Supply leg** — `supplied = convertToAssets(balanceOf(account))`; emit a supply leg (`isDebt = false`) iff `> 0`. Its `positionKind` is **`Collateral`** when the account has enabled the vault as EVC collateral (`vault.EVC()` → `EVC.getCollaterals(account)` membership, under try/catch), else **`Supplied`** (EulerEarn earn deposits, or core-eVault supply not enabled as collateral).
 - **Borrow leg** — `debt = debtOf(account)` read under `try/catch` (EulerEarn vaults don't implement `debtOf` → revert caught → `debt = 0`, and the supply leg is unaffected); emit a `Borrowed` leg (`isDebt = true`) iff `> 0`. Core eVaults only.
 
-EVC-collateral supply is reported as `Supplied`, not `Collateral` (NAV value is identical; distinguishing the label would require an EVC `getCollaterals` lookup).
+The EVC lookup is under try/catch, so a vault without `EVC()`/`getCollaterals` (EulerEarn aggregators — never usable as collateral — or a non-Euler ERC4626) degrades to `Supplied`. NAV value is identical either way; the `Supplied`/`Collateral` split is the reconciliation label (matching the Aave convention).
 
 ## 2. Existing test coverage
 
@@ -93,7 +93,7 @@ emit Borrowed(asset, debt,     isDebt=true)   if debt > 0           # core-eVaul
 |---|---|---|---|---|---|---|
 | `KPK_DAO` | KPK_ETH_Term | Supplied | WETH | 269786002840662469182 shares | `270079931934549902985` | 270.079931934549902985 WETH |
 | `KPK_FOUNDATION` | kpk_RWA_USDC | Supplied | USDC | 1000000000000 shares | `1008788399329` | 1,008,788.399329 USDC |
-| `BORROWER` | eUSDC-2 | Supplied | USDC | `convertToAssets(balanceOf)` | `61718714865` | 61,718.714865 USDC (real collateral) |
+| `BORROWER` | eUSDC-2 | **Collateral** | USDC | `convertToAssets(balanceOf)` | `61718714865` | 61,718.714865 USDC (EVC-enabled collateral) |
 | `BORROWER` | eWETH-2 | Borrowed | WETH | `debtOf` | `6363243813055516579` | 6.363243813055516579 WETH (real debt) |
 | `BORROWER` | KPK_ETH_Term | Supplied | WETH | seeded in-test (5 WETH deposit) | = `convertToAssets(balanceOf)` | ≈ 5 WETH (earn) |
 
@@ -162,13 +162,14 @@ cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
 | EulerEarn supply leg = `convertToAssets(balanceOf)` (two real holders) | ✅ (exact) |
 | Redemption cross-check (maxRedeem slice realises the same rate) | ✅ (delta 0) |
 | Core-eVault borrow leg = `debtOf`, `isDebt`, `Borrowed` (real borrower) | ✅ (exact) |
+| Supply classified `Collateral` when EVC-enabled, else `Supplied` (`getCollaterals` lookup) | ✅ (unit + fork: borrower's eUSDC-2 → Collateral) |
 | earn + lend + borrow in one account | ✅ (real borrower + seeded earn) |
 | NAV nets the borrow leg to a negative value | ✅ |
-| Borrow leg guarded by try/catch (EulerEarn without `debtOf` keeps its supply leg) | ✅ (unit + fork) |
-| Identity: `protocolId == euler-vaults`, `positionId == abi.encode(vault)`, `Supplied`/`Borrowed` | ✅ |
+| Borrow + collateral lookups guarded by try/catch (EulerEarn without `debtOf`/usable-collateral keeps its supply leg as `Supplied`) | ✅ (unit + fork) |
+| Identity: `protocolId == euler-vaults`, `positionId == abi.encode(vault)`, `Supplied`/`Collateral`/`Borrowed` | ✅ |
 | Mainnet-only scope | ✅ |
 
-**Mainnet: Euler fork suite (9) + unit suite (14) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.
+**Mainnet: Euler fork suite (9) + unit suite (16) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply/collateral + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.
 
 Run via:
 

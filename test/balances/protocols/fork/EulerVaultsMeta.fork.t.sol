@@ -25,7 +25,7 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // External libraries pre-linked at deterministic CREATE2 addresses (foundry.toml). Etch their runtime on the fork
     // so NAVCalculator's pricing/registry DELEGATECALLs succeed.
-    address constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
+    address constant PRICE_FEED_LIB = 0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B;
     address constant NAV_REGISTRY_LIB = 0x02F27E28452E6F419b97935f6346381E2b5003B1;
 
     // kpk-curated Euler V2 EulerEarn vaults (ERC4626 yield aggregators, not core EVK eVaults) on mainnet.

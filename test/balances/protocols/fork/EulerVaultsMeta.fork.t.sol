@@ -39,10 +39,11 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // KPK Foundation Safe — the dominant holder of kpk_RWA_USDC (~1,000,000 of ~1,005,018 total shares).
     address public constant USDC_HOLDER = 0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7;
 
-    // A real Euler V2 borrower at the fork block: supplies USDC collateral in eUSDC-2 and borrows WETH from eWETH-2
-    // (both are core EVK eVaults — the underlying strategies KPK_ETH_Term itself allocates to). Used to exercise the
-    // borrow (debt) leg + the earn/lend/borrow combination on a single account.
-    address public constant BORROWER = 0x5c950F946F02F3AcBa1F9e68A3CCDb7DD148e820;
+    // A real Euler V2 borrower at the fork block (position still open live, so the same account is used for the live
+    // dashboard / Debank cross-check): ~61,718 USDC collateral in eUSDC-2 and ~6.363 WETH debt in eWETH-2 (both are
+    // core EVK eVaults — underlying strategies KPK_ETH_Term itself allocates to). Exercises the borrow (debt) leg +
+    // the earn/lend/borrow combination on one account.
+    address public constant BORROWER = 0xb220f968e2f89C8f2372478CC28ff6384F3FC342;
     IERC4626 public constant E_USDC2 = IERC4626(0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9); // core eVault, USDC
     IERC4626 public constant E_WETH2 = IERC4626(0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2); // core eVault, WETH
 

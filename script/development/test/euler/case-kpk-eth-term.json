@@ -53,17 +53,18 @@
     },
     {
       "label": "EARN_LEND_BORROW (case 2 — debt leg)",
-      "address": "0x5c950F946F02F3AcBa1F9e68A3CCDb7DD148e820",
+      "address": "0xb220f968e2f89C8f2372478CC28ff6384F3FC342",
       "type": "EOA",
       "notes": [
-        "Real Euler V2 borrower at the fork block — supplies USDC collateral in core eVault eUSDC-2 and borrows WETH from core eVault eWETH-2 (both are strategies KPK_ETH_Term itself allocates to).",
+        "Real Euler V2 borrower — supplies ~61,718 USDC collateral in core eVault eUSDC-2 and borrows ~6.363 WETH from core eVault eWETH-2 (both are strategies KPK_ETH_Term itself allocates to).",
+        "Position is still open live, so the same account is used for the live Euler-app/Debank cross-check (README §9). The earlier dust borrower 0x5c95…e820 has since closed its position live.",
         "Test (test_realBorrower_earnLendBorrow) also seeds a 5 WETH EulerEarn deposit into KPK_ETH_Term so one account shows earn + lend + borrow.",
         "test_navNetsEulerDebt confirms the borrow leg prices to a negative value through NAV."
       ],
       "legs_at_fork_block": [
         { "instance": "KPK_ETH_Term (EulerEarn)", "asset": "WETH", "kind": "Supplied (earn)", "isDebt": false, "ground_truth": "convertToAssets(balanceOf) after a 5 WETH in-test deposit" },
-        { "instance": "eUSDC-2 (core eVault 0x797D…48a9)", "asset": "USDC", "kind": "Supplied (lend/collateral)", "isDebt": false, "ground_truth": "eUSDC2.convertToAssets(balanceOf) — real collateral" },
-        { "instance": "eWETH-2 (core eVault 0xD8b2…84C2)", "asset": "WETH", "kind": "Borrowed", "isDebt": true, "ground_truth": "eWETH2.debtOf(account) — real debt" }
+        { "instance": "eUSDC-2 (core eVault 0x797D…48a9)", "asset": "USDC", "kind": "Supplied (lend/collateral)", "isDebt": false, "amount_raw": "61718714865", "amount_humanised": "61,718.714865 USDC", "ground_truth": "eUSDC2.convertToAssets(balanceOf) — real collateral" },
+        { "instance": "eWETH-2 (core eVault 0xD8b2…84C2)", "asset": "WETH", "kind": "Borrowed", "isDebt": true, "amount_raw": "6363243813055516579", "amount_humanised": "6.363243813055516579 WETH", "ground_truth": "eWETH2.debtOf(account) — real debt" }
       ]
     }
   ],

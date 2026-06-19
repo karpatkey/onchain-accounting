@@ -10,7 +10,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @notice Minimal ERC4626-shaped eVault mock with a configurable share→asset rate and an on-chain name.
 contract MockEVault {
@@ -88,8 +87,6 @@ contract MockToken {
 /// @notice Mirrors the MorphoVaultsMeta unit suite — same MetaBalanceAdapter base + ERC4626 convertToAssets shape —
 ///         plus Euler-specific identity asserts (protocolId = euler-vaults, positionKind = Supplied).
 contract EulerVaultsMetaBalanceAdapterTest is Test {
-    using Strings for address;
-
     Mock_NAVCalculator nav;
     EulerVaultsMetaBalanceAdapter adapter;
 

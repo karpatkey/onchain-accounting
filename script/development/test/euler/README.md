@@ -1,107 +1,178 @@
-# Euler V2 vaults — `EulerVaultsMetaBalanceAdapter` verification
+# Euler V2 vaults — balance-adapter verification
 
-Evidence pack for the strict-equality fork test at
-`test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol` (augments, does not replace).
+## 1. Adapter under test
 
-## Euler V2 product map (what the adapter covers)
+`src/balances/protocols/EulerVaultsMeta.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Borrowed}`, `name = vault.name()`.
 
-Euler V2 has three products, all ERC4626 on the EVK+EVC:
-- **Earn** — EulerEarn aggregator vaults (MetaMorpho fork: `curator`/`guardian`/`supplyQueue`/`withdrawQueue`).
-  No borrow. **Both KPK-held vaults are this kind** (KPK_ETH_Term, KPK USDC Prime RWA).
-- **Lend** — supplying to a core eVault (EVK Credit Vault). Same supply leg.
-- **Borrow** — borrowing the underlying from a core eVault against collateral; tracked by `debtOf(account)`.
+### Inheritance + per-chain scope (Phase 0)
 
-The adapter treats any of these as an ERC4626 vault and emits, **per instance**, up to two legs: a **Supply**
-leg (`convertToAssets(balanceOf)`, for Earn deposits or Lend/collateral supply) and a **Borrow** leg
-(`debtOf`, core eVaults only, read under try/catch since EulerEarn lacks it). KPK only supplies today
-(no EVC controllers on-chain; policy permits no borrow), but the borrow leg makes the adapter future-proof.
+- **Inheritance:** `EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter`. Overrides only `_instancePositions`, `_instanceAssets`, `describePosition`. The `…ForInstances` fan-out, ERC165, no-arg base methods returning empty, and bad-instance isolation are inherited from `MetaBalanceAdapter` (covered by its base tests + the Morpho-vaults suite). Mirrors `MorphoVaultsMetaBalanceAdapter`.
+- **Per-chain scope:** both KPK-held vaults are **mainnet-only** (chainId 1) — see `script/config/nav-config/meta-balance-adapters/1.json` and `…/contracts-deployment-config/meta-balance-adapters/1.json`. Euler V2 runs on other chains, but the held instances are on mainnet, so a single mainnet fork test suffices; the ERC4626 ABI is standard across EulerEarn + EVK on every chain (no per-chain shim like PancakeSwap V3's `feeProtocol`).
+- **Two Euler V2 products, one adapter.** Euler V2 vaults are all ERC4626 on the EVK+EVC:
+  - **EulerEarn** (the "Earn" product) — MetaMorpho-fork yield aggregators (`curator`/`guardian`/`supplyQueue`/`withdrawQueue`). No borrow. **Both KPK-held vaults are this kind.**
+  - **core eVaults** (EVK, the "Lend/Borrow" product) — supply to lend/collateralise; borrow the underlying against collateral, tracked by `debtOf`.
+  The adapter treats either as an ERC4626 vault. KPK supplies only today (no EVC controllers enabled on-chain; the Zodiac policy permits no borrow), but the borrow leg makes the adapter future-proof.
+- **Euler V1 is out of scope** — deprecated (post-2023-exploit), uses non-ERC4626 eTokens, and KPK holds nothing there.
 
-## Phase 0 — pre-test audit
+### Math branches (`_instancePositions`)
 
-**A. Adapter source (`src/balances/protocols/EulerVaultsMeta.sol`).**
-- Class shape: `EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter` (ADR 0010 meta pattern, mirrors
-  `MorphoVaultsMetaBalanceAdapter`). Overrides only `_instancePositions`, `_instanceAssets`,
-  `describePosition`. Everything else (the `…ForInstances` fan-out, ERC165, no-arg base methods returning
-  empty, bad-instance isolation) is inherited from `MetaBalanceAdapter` and transitively covered by that
-  base's tests + the Morpho-vaults suite.
-- Math branches in `_instancePositions` (each is a test case):
-  1. `assetFilter != 0 && assetFilter != asset` → empty array (both legs share the asset).
-  2. asset not registered on NAV → empty array.
-  3. supply = `convertToAssets(balanceOf)`; emit a **Supplied** leg iff `> 0` (`isDebt=false`).
-  4. debt = `debtOf(account)` under try/catch (EulerEarn reverts → 0); emit a **Borrowed** leg iff `> 0`
-     (`isDebt=true`). 0/1/2 legs per instance; both legs share `positionId = abi.encode(address(vault))`
-     and `protocolId = euler-vaults`, distinguished by `positionKind`.
-- Supply enabled as EVC collateral is reported as **Supplied** (NAV value identical; the Supplied-vs-Collateral
-  label is not distinguished — would need an EVC `getCollaterals` lookup).
-- Immutable args: `(protocolName, navCalculator)` via the `MetaBalanceAdapter` constructor.
+Per instance, up to two legs:
 
-**B. Chains.** Both kpk-held vaults are mainnet-only (chain 1). Euler V2 is also live on other chains, but the
-KPK-held instances are on mainnet, so one chain is in scope. ERC4626 ABI is standard across EulerEarn + EVK
-on every chain — no per-chain ABI shim (unlike PancakeSwap V3's `feeProtocol`).
+- **filter** — `assetFilter != 0 && assetFilter != vault.asset()` → empty (both legs share the asset).
+- **registration** — `vault.asset()` not registered on NAVCalculator → empty (registered-asset intersection).
+- **Supply leg** — `supplied = convertToAssets(balanceOf(account))`; emit a `Supplied` leg (`isDebt = false`) iff `> 0`. Covers EulerEarn earn deposits and core-eVault lend/collateral supply.
+- **Borrow leg** — `debt = debtOf(account)` read under `try/catch` (EulerEarn vaults don't implement `debtOf` → revert caught → `debt = 0`, and the supply leg is unaffected); emit a `Borrowed` leg (`isDebt = true`) iff `> 0`. Core eVaults only.
 
-**C. Siblings / ADRs / identity.**
-- Sibling: `MorphoVaultsMeta` (same base, same ERC4626 convert-to-assets math) — its fork + unit suites are
-  the template here.
-- ADR 0010 (meta balance adapters) governs the instance-set-on-NAV model.
-- Identity: `ProtocolIds.EULER_VAULTS = keccak256("euler-vaults")`; `positionId = abi.encode(address vault)`
-  (the `…/ GEARBOX_V3 / EULER_VAULTS / CAP / ERC4626 / …` vault-address group in `ProtocolIds`).
+EVC-collateral supply is reported as `Supplied`, not `Collateral` (NAV value is identical; distinguishing the label would require an EVC `getCollaterals` lookup).
 
-**D. Scope.** Supply + borrow legs × filter/registration/zero branches, on one chain. The unit suite
-(`test/balances/protocols/EulerVaultsMeta.t.sol`, **14 cases**) covers every branch against mocks — including a
-core-eVault mock with `debtOf` for the supply+borrow and borrow-only legs, and an Earn-shaped mock without
-`debtOf` to prove the try/catch keeps the supply leg. The fork suite (**9 cases**) re-checks against real
-vaults: the two kpk EulerEarn vaults (supply + redemption cross-check) and a real core-eVault borrower
-exercising earn+lend+borrow + NAV debt-netting.
+## 2. Existing test coverage
 
-## Case 1 — `case-kpk-eth-term.json` (EulerEarn supply, KPK DAO)
+Unit (`test/balances/protocols/EulerVaultsMeta.t.sol`, **14 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `describePosition`, plus the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter) and an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg.
 
-| | |
-|---|---|
-| Holder | **KPK DAO Safe** `0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C` |
-| Why | Dominant holder of **KPK_ETH_Term** (`0xB6D6…Ff48`, WETH eVault) — 269.79 of 269.84 total shares (~99.98%). Realistic, material supply position. |
-| Chain / block | mainnet (1) @ **25346929** (ts 1781815607) |
-| Second instance | **kpk_RWA_USDC** (`0x2B47…e245`, USDC EulerEarn vault). KPK DAO holds none at the block, so the test deposits 2,000 USDC on its behalf to exercise multi-instance aggregation (mirrors the Morpho-vaults pattern). |
+Fork (`test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `describePosition`, and the strict-equality redemption cross-check (§8).
 
-### Strict-equality verification
+All kept as regression nets.
 
-The eVault lends deposits out, so only `maxRedeem` (≈ 29.9 of 269.79 shares, ~30 WETH) is instantly
-redeemable. The adapter correctly reports the **full** position value (`convertToAssets` of all shares — the
-NAV value of the position, not the instantly-withdrawable slice). The test verifies both halves with `delta = 0`:
+## 3. What this case adds
 
-1. `adapter.amount == KPK_ETH_TERM.convertToAssets(balanceOf(SAFE))` — full position value.
-2. redeem the `maxRedeem` portion and assert realized WETH `== convertToAssets(redeemedShares)` — proves the
-   conversion is faithful to real money, not just a stored number.
+The supply path is proven by the two KPK EulerEarn holders (real shares → `convertToAssets`, with a real-redemption cross-check). This case additionally exercises, against the real contracts:
 
-| Quantity @ block 25346929 | Value |
-|---|---|
-| KPK_ETH_Term shares (SAFE) | 269786002840662469182 |
-| `convertToAssets(shares)` (WETH) | 270079931934549902985 (≈ 270.0799 WETH) |
-| Adapter reported `amount` (WETH) | 270079931934549902985 — **delta 0** |
-| `maxRedeem` (shares) | 29916347505082562162 |
-| Realized WETH on redeem vs `convertToAssets` | equal — **delta 0** |
+- **The borrow (debt) leg** — a real Euler borrower whose `debtOf` surfaces as a `Borrowed`/`isDebt` leg.
+- **earn + lend + borrow in one account** — `test_realBorrower_earnLendBorrow` seeds an EulerEarn deposit on the same real borrower so one query returns an Earn supply leg, a core-eVault lend/collateral supply leg, and a core-eVault borrow leg.
+- **NAV debt-netting** — `test_navNetsEulerDebt` routes the core eVaults through NAV and confirms the borrow leg prices to a **negative** `value`.
 
-## Case 2 — real earn + lend + borrow account (the debt leg)
-
-| | |
-|---|---|
-| Account | **`0x5c950F946F02F3AcBa1F9e68A3CCDb7DD148e820`** — a real Euler V2 borrower at the fork block |
-| Why | Exercises all three Euler shapes in one query, with the **borrow leg** against a real `debtOf`. |
-| Legs | **earn**: EulerEarn `KPK_ETH_Term` (WETH) — seeded with a 5 WETH deposit in-test → `Supplied`. **lend**: real USDC collateral in core eVault **eUSDC-2** (`0x797D…48a9`) → `Supplied` (`convertToAssets(balanceOf)`). **borrow**: real WETH debt in core eVault **eWETH-2** (`0xD8b2…84C2`) → `Borrowed`/`isDebt` (`debtOf`). |
-| Asserts | each leg strict-equal to its on-chain source; `test_navNetsEulerDebt` registers the core eVaults on NAV and confirms the borrow leg prices to a **negative** `value` (debt is netted). |
-
-> eUSDC-2 / eWETH-2 are two of the four core eVaults that `KPK_ETH_Term` itself allocates to (its
-> `withdrawQueue`), so the debt-leg test runs against the same real EVK vaults underpinning the kpk Earn vault.
-
-## Reproduce
+## 4. Adapter formula recap
 
 ```
-# fork test (strict equality)
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol"
-# unit test (mocks)
+asset = vault.asset()
+if assetFilter != 0 and assetFilter != asset:        return []      # filter
+if asset not registered on NAV:                      return []      # registered-asset intersection
+supplied = vault.convertToAssets(vault.balanceOf(account))
+try    debt = vault.debtOf(account)                                 # core eVaults only
+catch  debt = 0                                                     # EulerEarn lacks debtOf
+emit Supplied(asset, supplied, isDebt=false)  if supplied > 0       # earn / lend / collateral
+emit Borrowed(asset, debt,     isDebt=true)   if debt > 0           # core-eVault borrow
+# both legs: positionId = abi.encode(vault), protocolId = keccak256("euler-vaults")
+```
+
+## 5. Cherry-picked accounts
+
+| Holder | Address | Vault(s) | Leg(s) | Rationale |
+|---|---|---|---|---|
+| `KPK_DAO` | `0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C` | KPK_ETH_Term (EulerEarn, WETH) | Supplied | Dominant holder — 269.79 of 269.84 total shares (~99.98%). Material real earn position + the redemption cross-check (§8). |
+| `KPK_FOUNDATION` | `0x17bC2E773d4b4e32002eDAaa54Ce756F523b44b7` | kpk_RWA_USDC (EulerEarn, USDC) | Supplied | Dominant holder — ~1,000,000 of ~1,005,018 shares. Second EulerEarn vault, verified against a real holder. |
+| `BORROWER` | `0xb220f968e2f89C8f2372478CC28ff6384F3FC342` | eUSDC-2 (core, USDC) + eWETH-2 (core, WETH) [+ KPK_ETH_Term seeded] | Supplied + Borrowed | Real Euler borrower: ~61,718 USDC collateral in eUSDC-2 and ~6.363 WETH debt in eWETH-2 (two of the four core eVaults KPK_ETH_Term itself allocates to). Exercises the borrow leg + earn/lend/borrow + NAV debt-netting. **Position still open live**, so the same account serves the live Euler-app/Debank cross-check (§9). |
+
+### Setup
+
+| Field | Value |
+|---|---|
+| Chain | Ethereum mainnet (chainId 1) |
+| Block | **25,346,929** |
+| Block timestamp | 1781815607 |
+| KPK_ETH_Term (EulerEarn, WETH) | `0xB6D6D89ad4b4D61C15a293e28b74f77F6817fF48` |
+| kpk_RWA_USDC (EulerEarn, USDC) | `0x2B47c128b35DDDcB66Ce2FA5B33c95314a7de245` |
+| eUSDC-2 (core eVault, USDC) | `0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9` |
+| eWETH-2 (core eVault, WETH) | `0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2` |
+| EVC | `0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383` |
+| Adapter under test | `EulerVaultsMetaBalanceAdapter` |
+| Fork-test contract | `EulerVaultsMetaBalanceAdapterForkTest` in `test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol` |
+
+## 6. Case files in this folder
+
+| File | Purpose |
+|---|---|
+| `case-kpk-eth-term.json` | Machine-readable evidence pack: holders, vaults, identity, legs, ground-truth method |
+| `script/development/deploy/deploy-euler-vaults-meta.sh` | Dev-anvil deploy helper: `forge script` the adapter + `addMetaBalanceAdapter(adapter, instances)` on the local NAV |
+
+## 7. Expected balances
+
+### 7a. Per-leg detail (@ block 25,346,929)
+
+| Holder | Vault | Leg | Token | Shares / source | Amount (raw) | Amount (humanised) |
+|---|---|---|---|---|---|---|
+| `KPK_DAO` | KPK_ETH_Term | Supplied | WETH | 269786002840662469182 shares | `270079931934549902985` | 270.079931934549902985 WETH |
+| `KPK_FOUNDATION` | kpk_RWA_USDC | Supplied | USDC | 1000000000000 shares | `1008788399329` | 1,008,788.399329 USDC |
+| `BORROWER` | eUSDC-2 | Supplied | USDC | `convertToAssets(balanceOf)` | `61718714865` | 61,718.714865 USDC (real collateral) |
+| `BORROWER` | eWETH-2 | Borrowed | WETH | `debtOf` | `6363243813055516579` | 6.363243813055516579 WETH (real debt) |
+| `BORROWER` | KPK_ETH_Term | Supplied | WETH | seeded in-test (5 WETH deposit) | = `convertToAssets(balanceOf)` | ≈ 5 WETH (earn) |
+
+### 7b. Per-asset summary
+
+| Holder | Token | Net (raw) | isDebt |
+|---|---|---|---|
+| `KPK_DAO` | WETH | `270079931934549902985` | false |
+| `KPK_FOUNDATION` | USDC | `1008788399329` | false |
+| `BORROWER` | USDC | `75991` (eUSDC-2 supply) | false |
+| `BORROWER` | WETH | `25457159822804` (eWETH-2 debt) | **true** |
+
+`getAdapterPositionsForInstances` returns one leg per (vault, kind); the Supply and Borrow legs on the same vault share `positionId` and differ only by `positionKind`/`isDebt`.
+
+## 8. Ground-truth cross-check
+
+The position value is a live read of each vault's ERC4626 / EVK accounting; the strongest ground truth is the vault's own settlement view.
+
+| Holder | Check |
+|---|---|
+| `KPK_DAO` | `adapter.amount == KPK_ETH_TERM.convertToAssets(balanceOf(SAFE))`. The eVault lends out, so `maxRedeem` (~29.9 of 269.79 shares) is the instantly-redeemable slice — redeeming it realises WETH `== convertToAssets(redeemedShares)` exactly (delta 0), proving the conversion is faithful to real money while the adapter still reports the full position value. |
+| `KPK_FOUNDATION` | `adapter.amount == kpk_RWA_USDC.convertToAssets(balanceOf(holder))`. |
+| `BORROWER` (lend) | `adapter.amount == eUSDC-2.convertToAssets(balanceOf(account))`. |
+| `BORROWER` (borrow) | `adapter.amount == eWETH-2.debtOf(account)` with `isDebt = true`; routed through NAV, the leg prices to a **negative** `value` (debt is netted). |
+
+Identity is asserted in both suites: `protocolId == keccak256("euler-vaults")`, `positionId == abi.encode(vault)`, `Supplied`/`Borrowed`, `balanceAdapter == address(this)`.
+
+## 9. Wiring the live dev-anvil dashboard
+
+`deploy-euler-vaults-meta.sh` deploys + registers the adapter (with the two KPK EulerEarn instances) on the local mainnet anvil. WETH + USDC are registered on the NAV at bootstrap (`deploy.sh` registers the Chainlink feeds), so no extra asset registration is needed. To pin the dev anvil at the verification block (so the dashboard matches §7):
+
+```bash
+anvil --fork-url <MAINNET_URL> --fork-block-number 25346929 --chain-id 1 --port 8545 \
+      --state script/development/state/1.json --state-interval 60 &
+bash script/development/deploy/deploy.sh 1                       # NAV + Chainlink assets (incl. WETH, USDC)
+bash script/development/deploy/deploy-euler-vaults-meta.sh 1     # adapter + the two KPK EulerEarn instances
+bash script/development/app/sync-app-env.sh 1
+# then start the Next.js dev server in app/
+```
+
+The KPK EulerEarn positions render under **Euler** as a single **Supplied** leg each:
+- `KPK_DAO` (`0x58e6…9E1C`) → 270.08 WETH (KPK_ETH_Term).
+- `KPK_FOUNDATION` (`0x17bC…44b7`) → ~1,008,788 USDC (kpk_RWA_USDC).
+
+To also demo the **borrow (debt) leg** on the dashboard, add the two core eVaults as instances:
+
+```bash
+NAV=$(jq -r .NAVCalculatorProxy script/development/state/1-addresses.json)
+ADAPTER=$(jq -r .EulerVaultsMeta   script/development/state/1-addresses.json)
+PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80   # deployer (holds MANAGER)
+cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
+  "[$(cast to-uint256 0x797DD80692c3b2dAdabCe8e30C07fDE5307D48a9),$(cast to-uint256 0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2)]" \
+  --rpc-url http://127.0.0.1:8545 --private-key $PK
+```
+
+**Live cross-check account (currently active):** `0xb220f968e2f89c8F2372478Cc28FF6384F3fc342` — at block 25,346,929 it holds **~61,719 USDC** collateral in eUSDC-2 (**Supplied**) and **6.363 WETH** debt in eWETH-2 (**Borrowed**, negative value). The position is materially identical live, so the dev app can be cross-checked against the **Euler app** (`app.euler.finance`) and **Debank** for the same address right now.
+
+> The fork-test borrower `0x5c95…e820` (§5) is the holder pinned in the strict-equality test at block 25,346,929 (real dust collateral + debt there), but its live position has since closed — so use `0xb220…c342` for a live Euler-app/Debank cross-check. The featured holders are arbitrary on-chain accounts; their NAV *totals* include unrelated positions, so cross-check the **Euler legs** specifically, not the account total.
+
+> ⚠ **Freshness:** EulerEarn supply positions accrue slowly and are stable; a borrower's debt/collateral are live values. Re-confirm holders on-chain right before a live cross-check if material time has passed since `25,346,929`.
+
+## 10. Test verdict
+
+| Aspect | Status |
+|---|---|
+| EulerEarn supply leg = `convertToAssets(balanceOf)` (two real holders) | ✅ (exact) |
+| Redemption cross-check (maxRedeem slice realises the same rate) | ✅ (delta 0) |
+| Core-eVault borrow leg = `debtOf`, `isDebt`, `Borrowed` (real borrower) | ✅ (exact) |
+| earn + lend + borrow in one account | ✅ (real borrower + seeded earn) |
+| NAV nets the borrow leg to a negative value | ✅ |
+| Borrow leg guarded by try/catch (EulerEarn without `debtOf` keeps its supply leg) | ✅ (unit + fork) |
+| Identity: `protocolId == euler-vaults`, `positionId == abi.encode(vault)`, `Supplied`/`Borrowed` | ✅ |
+| Mainnet-only scope | ✅ |
+
+**Mainnet: Euler fork suite (9) + unit suite (14) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.
+
+Run via:
+
+```
 forge test --match-path "test/balances/protocols/EulerVaultsMeta.t.sol"
-# dev app at the same block (dashboard cross-check vs Debank + the Euler app):
-script/development/anvil/start-forks.sh 1 && script/development/deploy/deploy.sh 1 \
-  && script/development/deploy/deploy-euler-vaults-meta.sh 1 \
-  && script/development/app/sync-app-env.sh 1
-# then open http://localhost:3000 and enter 0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol" -vv
 ```

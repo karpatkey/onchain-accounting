@@ -258,6 +258,11 @@ library NavRegistryLib {
     /// @notice Returns the de-duplicated set of assets referenced by a list of position balances. Extracted from
     ///         NAVCalculator (hot read path) to keep it under EIP-170; NAV reads are off-chain eth_call so the
     ///         DELEGATECALL overhead is immaterial.
+    /// @dev    Currently UNCALLED: PR #73 moved NAVCalculator's read engine into `PriceFeedLib`, which does its
+    ///         own dedup (`PriceFeedLib._extractUniqueAssets`). Retained here rather than removed because deleting
+    ///         it would change `NavRegistryLib`'s bytecode and force a second CREATE2-pin regeneration (foundry.toml
+    ///         + LibraryPins + ~15 etch sites) for no functional gain; safe to drop in any future change that
+    ///         already touches `NavRegistryLib`.
     /// @param positions The position balances to scan
     /// @return uniqueAssets The distinct asset addresses
     function extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)

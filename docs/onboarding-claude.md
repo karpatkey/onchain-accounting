@@ -135,7 +135,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 | What does this protocol's adapter actually return? | The adapter source under `src/balances/protocols/<protocol>/` and its fork test. |
 | What is registered on chain X today? | Deployed addresses: `script/config/deployments/<X>.json`. Registered assets: `script/config/nav-config/assets-and-price-feeds/<X>.json`. Balance adapters on NAV: `script/config/nav-config/{balance-adapters,meta-balance-adapters}/<X>.json` (deploy config under `contracts-deployment-config/`). |
 | Why is the framework structured this way? | [`./decisions/`](./decisions/) ADRs. |
-| How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + `NAVCalculator._readPositionsWithQuote`. |
+| How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + §6 (`NAVCalculator.getAccountNav` → `PriceFeedLib.computeNav`). |
 | Why is the Merkl rewards adapter mutable while every other adapter is immutable? | [`./decisions/0007-merkl-trust-minimized-cache.md`](./decisions/0007-merkl-trust-minimized-cache.md). The Aave Safety Module was previously the documented exception (ADR 0002) but is now fully immutable per ADR 0005. |
 | Bridge invoice lifecycle? | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). |
 | How are integration-test fork blocks and expected NAVs kept current? | [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). |

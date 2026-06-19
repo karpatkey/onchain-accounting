@@ -9,10 +9,12 @@ pragma solidity ^0.8;
 ///         constant (it's TOML), so it is cross-checked instead: LibraryPinConsistencyTest
 ///         .test_navCalculator_creationCodeLinkedAgainstPins() asserts the addresses forge links into
 ///         NAVCalculator.creationCode (from foundry.toml) match PRICE_FEED_LIB / NAV_REGISTRY_LIB below. Both the
-///         deploy guard (01_2_DeployNAVImplementation) and the CI guard import these, so a pin regeneration
-///         updates exactly two places: this file and foundry.toml.
+///         deploy guard (01_2_DeployNAVImplementation) and the CI guard import these. A pin regeneration updates
+///         this file and foundry.toml (the two canonical copies), plus any test that hardcodes the raw address
+///         for `vm.etch` (grep the old address: SuperTest, the integration base, the NAV/Morpho/Aave fork tests,
+///         Prices.t, ERC20DefaultAdapter.t).
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715;
+    address internal constant PRICE_FEED_LIB = 0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B;
     address internal constant NAV_REGISTRY_LIB = 0x02F27E28452E6F419b97935f6346381E2b5003B1;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a

@@ -7,17 +7,50 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {IPriceFeedCustom} from "./IPriceFeedCustom.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {ArrayLib} from "src/utils/ArrayLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 
 /// @title PriceFeedLib
-/// @notice External library for price feed selection and management, extracted to stay within EIP-170.
-/// @dev All functions are `external` so they compile as a separate artifact and are called via DELEGATECALL
-/// from Prices, keeping the inlined bytecode of NAVCalculator under the 24 576-byte limit.
+/// @notice External library hosting NAVCalculator's price-feed management AND its read/compute engine (NAV,
+///         positions, health, value), extracted to keep NAVCalculator under the 24 576-byte EIP-170 limit.
+/// @dev All functions are `external` so the library compiles as a separate artifact and is invoked via
+///      DELEGATECALL — running in NAVCalculator's storage context through the passed `storage` references.
+///      The read/compute entrypoints are computeNav / computeAccountPositions / hasPositions /
+///      getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
+///      build and consume the heavy PositionBalance[]/Position[] arrays entirely inside the library, so those
+///      arrays never cross the NAV↔library ABI boundary (which is what makes piecemeal helper extraction
+///      counter-productive under `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is
+///      immaterial.
+///      Pre-linked at a deterministic CREATE2 address (see `foundry.toml`).
 library PriceFeedLib {
     using ERC165Checker for address;
     using SafeCast for uint256;
+
+    /// @notice Native-asset sentinel (mirrors Balances.NATIVE_ADDRESS).
+    address private constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+
+    /// @notice Cached selected-feed price data for an asset (NAV read path).
+    struct PriceFeedCache {
+        address asset;
+        int256 price;
+        uint8 decimals;
+        bool stale;
+    }
+
+    /// @notice Quote-asset info (struct + price data); address(0) = USD.
+    struct QuoteAssetInfo {
+        INAVCalculator.Asset assetStruct;
+        int256 price;
+        uint8 priceDecimals;
+        uint8 assetDecimals;
+        bool stale;
+    }
 
     // -------------------------------------------------------------------------
     // Feed selection
@@ -27,6 +60,16 @@ library PriceFeedLib {
     /// @dev Mirrors Prices._selectFeed — see that function's NatSpec for full semantics.
     function selectFeed(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
         external
+        view
+        returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
+    {
+        return _selectFeedCore(priceOracles, token);
+    }
+
+    /// @notice Feed-selection core, shared by the external `selectFeed` wrapper and `buildPriceData` so the latter
+    ///         reuses the logic via an internal jump rather than a second DELEGATECALL.
+    function _selectFeedCore(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
+        private
         view
         returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
     {
@@ -131,6 +174,510 @@ library PriceFeedLib {
             uint256 effectiveStartedAt = startedAt > block.timestamp ? block.timestamp : startedAt;
             if (block.timestamp - effectiveStartedAt <= gracePeriod) stale = true;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Price-data view (extracted from NAVCalculator.getPriceData to stay under EIP-170)
+    // -------------------------------------------------------------------------
+
+    /// @notice Builds the full PriceFeedData view for an asset: selects the freshest feed, reports that feed's
+    ///         config, folds in sequencer status, and fetches `updatedAt` for AggregatorV3-shaped feeds.
+    /// @dev Mirrors the body of the former NAVCalculator.getPriceData. The caller is expected to have already
+    ///      validated that the asset is registered and has at least one feed; `sequencerDown` is computed by the
+    ///      caller (it depends on the caller's sequencer-feed config). When all feeds are stale the selected
+    ///      winner index is sentinel `type(uint256).max`; this falls back to feed 0 for the reported config.
+    /// @param priceOracles The per-asset feed-config storage map (caller's storage via DELEGATECALL).
+    /// @param asset The asset to report.
+    /// @param sequencerDown Whether the L2 sequencer is currently down/in grace (false on L1).
+    /// @return priceFeedData The assembled price-feed view.
+    function buildPriceData(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        address asset,
+        bool sequencerDown
+    ) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
+            _selectFeedCore(priceOracles, asset);
+
+        // Report the selected (freshest non-stale) feed's config.
+        // When all feeds are stale winnerIdx == type(uint256).max; fall back to the first feed for config.
+        uint256 configIdx = winnerIdx == type(uint256).max ? 0 : winnerIdx;
+        IPrices.PriceFeedConfig storage config = priceOracles[asset][configIdx];
+
+        priceFeedData.priceFeed = config.priceFeed;
+        priceFeedData.priceType = config.priceType;
+        priceFeedData.price = price;
+        priceFeedData.decimals = decimals;
+        priceFeedData.chainlinkHeartbeat = config.chainlinkHeartbeat;
+        priceFeedData.stale = stale || sequencerDown;
+        priceFeedData.healthyFeedCount = healthyFeedCount;
+
+        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
+        if (config.priceType != IPrices.PriceType.Custom) {
+            try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
+                uint80, int256, uint256, uint256 roundUpdatedAt, uint80
+            ) {
+                priceFeedData.updatedAt = roundUpdatedAt;
+            } catch {} // updatedAt stays 0 if the feed reverts
+        }
+
+        priceFeedData.sequencerDown = sequencerDown;
+    }
+
+    // -------------------------------------------------------------------------
+    // NAV read / compute engine (extracted from NAVCalculator to stay under EIP-170)
+    // -------------------------------------------------------------------------
+
+    /// @notice Computes the full NAV snapshot for an account in a quote currency (address(0) = USD).
+    /// @dev Mirrors the former NAVCalculator.getAccountNav + _readPositionsWithQuote. The caller validates the
+    ///      quote asset and computes `sequencerDown` (it depends on the caller's sequencer-feed config) before
+    ///      calling. All position arrays are built and consumed here, never crossing the ABI boundary.
+    function computeNav(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        address account,
+        address quoteAsset,
+        bool sequencerDown,
+        string memory nativeTokenSymbol
+    ) external view returns (INAVCalculator.NAV memory nav) {
+        nav.timestamp = uint64(block.timestamp);
+        QuoteAssetInfo memory quoteInfo =
+            _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        nav.quoteAsset = quoteInfo.assetStruct;
+        nav.quoteAssetStale = quoteInfo.stale;
+
+        uint256 assetCount = registeredAssets.length;
+        if (assetCount == 0) {
+            nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            return nav; // value 0, sequencerDown false (no assets registered)
+        }
+
+        INAVCalculator.PositionBalance[] memory allPositions =
+            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+
+        nav.sequencerDown = sequencerDown;
+        if (allPositions.length == 0) {
+            nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            return nav; // value 0
+        }
+
+        address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
+        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+
+        int256 totalValue = 0;
+        uint256 positionsLength = allPositions.length;
+        for (uint256 i = 0; i < positionsLength; i++) {
+            INAVCalculator.PositionBalance memory pos = allPositions[i];
+            address asset = pos.balanceAsset.asset;
+            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
+            uint8 canonicalDecimals = _getRegisteredAsset(assetIndex, registeredAssets, asset).decimals;
+            totalValue += _priceConversion(
+                pos.amount,
+                pos.isDebt,
+                canonicalDecimals,
+                feed.price,
+                feed.decimals,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.assetDecimals
+            );
+        }
+        nav.value = totalValue;
+    }
+
+    /// @notice Computes enriched positions for an account, optionally filtered by a single asset
+    ///         (assetFilter == address(0) means all assets). Mirrors NAVCalculator._getAccountPositionsInternal.
+    /// @dev The caller validates the quote asset and (when set) the asset filter before calling.
+    function computeAccountPositions(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        address account,
+        address assetFilter,
+        address quoteAsset,
+        string memory nativeTokenSymbol
+    ) external view returns (INAVCalculator.Position[] memory positions) {
+        uint256 assetCount = registeredAssets.length;
+        INAVCalculator.PositionBalance[] memory positionBalances;
+        address[] memory assetsWithPositions;
+
+        if (assetFilter == address(0)) {
+            positionBalances =
+                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            assetsWithPositions = _extractUniqueAssets(positionBalances);
+        } else {
+            positionBalances =
+                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, assetFilter);
+            if (positionBalances.length == 0) {
+                return new INAVCalculator.Position[](0);
+            }
+            assetsWithPositions = new address[](1);
+            assetsWithPositions[0] = assetFilter;
+        }
+
+        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        QuoteAssetInfo memory quoteInfo =
+            _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+
+        uint256 length = positionBalances.length;
+        positions = new INAVCalculator.Position[](length);
+        for (uint256 i = 0; i < length; i++) {
+            INAVCalculator.PositionBalance memory balance = positionBalances[i];
+            address asset = balance.balanceAsset.asset;
+            INAVCalculator.Asset memory registered = _getRegisteredAsset(assetIndex, registeredAssets, asset);
+            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, asset);
+            positions[i] = _enrichPosition(
+                balance,
+                feed,
+                quoteInfo.assetStruct,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.assetDecimals,
+                registered.decimals,
+                registered.symbol
+            );
+        }
+    }
+
+    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via
+    ///         the per-adapter try/catch in `_getPositionBalances`).
+    function hasPositions(
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        mapping(address => uint256) storage assetIndex,
+        uint256 assetCount,
+        address account
+    ) external view returns (bool) {
+        INAVCalculator.PositionBalance[] memory positions = _getPositionBalances(
+            allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0)
+        );
+        for (uint256 i = 0; i < positions.length; i++) {
+            if (positions[i].amount != 0) return true;
+        }
+        return false;
+    }
+
+    /// @notice The distinct registered assets the account holds positions in. Mirrors
+    ///         NAVCalculator.getAssetsWithPositions.
+    function getAssetsWithPositions(
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        mapping(address => uint256) storage assetIndex,
+        uint256 assetCount,
+        address account
+    ) external view returns (address[] memory) {
+        return _extractUniqueAssets(
+            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0))
+        );
+    }
+
+    /// @notice Returns sequencer status and the registered assets whose price is currently stale. Mirrors
+    ///         NAVCalculator.healthCheck; `sequencerDown` is computed by the caller and echoed back.
+    function healthCheck(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        INAVCalculator.Asset[] storage registeredAssets,
+        bool sequencerDown
+    ) external view returns (bool, address[] memory stalePriceAssets) {
+        uint256 totalAssets = registeredAssets.length;
+        if (totalAssets == 0) {
+            return (sequencerDown, new address[](0));
+        }
+
+        address[] memory staleAssetsTemp = new address[](totalAssets);
+        uint256 staleCount = 0;
+        for (uint256 i = 0; i < totalAssets; i++) {
+            address assetAddr = registeredAssets[i].asset;
+            // _selectFeedCore reverts PriceFeedNotSet(assetAddr) when the asset has no feeds (same selector as the
+            // former explicit _requirePriceFeedExists guard), so no separate length check is needed here.
+            (,, bool stale,,) = _selectFeedCore(priceOracles, assetAddr);
+            if (stale) staleAssetsTemp[staleCount++] = assetAddr;
+        }
+        stalePriceAssets = ArrayLib.copySliceAddress(staleAssetsTemp, staleCount);
+        return (sequencerDown, stalePriceAssets);
+    }
+
+    /// @notice Values explicit (asset, amount) pairs in a quote currency. Mirrors NAVCalculator.calculateValue.
+    function calculateValue(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory assetAddresses,
+        uint256[] memory amounts,
+        address quoteAsset,
+        string memory nativeTokenSymbol
+    ) external view returns (int256 value) {
+        if (assetAddresses.length != amounts.length) {
+            revert ArrayLengthMismatch();
+        }
+        // For a non-USD quote, require it is registered; its feed-existence check is handled by _getQuoteAssetInfo
+        // below (which reverts PriceFeedNotSet(quoteAsset) via its own guard / _selectFeedCore).
+        if (quoteAsset != address(0) && assetIndex[quoteAsset] == 0) revert AssetNotFound();
+
+        QuoteAssetInfo memory quoteInfo =
+            _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+
+        value = 0;
+        for (uint256 i = 0; i < assetAddresses.length; i++) {
+            uint256 amount = amounts[i];
+            if (amount == 0) continue;
+
+            address asset = assetAddresses[i];
+            if (assetIndex[asset] == 0) revert AssetNotFound();
+            uint8 assetDecimals = _getRegisteredAsset(assetIndex, registeredAssets, asset).decimals;
+            // _selectFeedCore reverts PriceFeedNotSet(asset) when the asset has no feeds (same selector as the
+            // former explicit guard), so no separate length check is needed.
+            (int256 usdRate, uint8 usdRateDecimals,,,) = _selectFeedCore(priceOracles, asset);
+            value += _priceConversion(
+                amount,
+                false,
+                assetDecimals,
+                usdRate,
+                usdRateDecimals,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.assetDecimals
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Read-engine internals (private; shared by the compute entrypoints above)
+    // -------------------------------------------------------------------------
+
+    /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
+    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
+    ///         NAVCalculator._getPositionBalances; the 2·(adapters+metaInstances)·assetCount buffer is a hard upper
+    ///         bound on emitted rows.
+    function _getPositionBalances(
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        mapping(address => uint256) storage assetIndex,
+        uint256 assetCount,
+        address account,
+        address assetFilter
+    ) private view returns (INAVCalculator.PositionBalance[] memory positions) {
+        uint256 totalAdapters = allAdapters.length;
+        uint256 maxPositions = 2 * (totalAdapters + metaInstanceTotal) * assetCount;
+
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            INAVCalculator.PositionBalance[] memory adapterPositions =
+                _getAdapterPositions(allAdapters[i], account, assetFilter);
+
+            for (uint256 j = 0; j < adapterPositions.length; j++) {
+                address asset = adapterPositions[j].balanceAsset.asset;
+                if (assetIndex[asset] == 0) continue;
+                if (assetFilter != address(0) && asset != assetFilter) continue;
+                temp[count++] = adapterPositions[j];
+            }
+        }
+
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i = 0; i < count; i++) {
+            positions[i] = temp[i];
+        }
+    }
+
+    /// @notice Calls an adapter's getAdapterPositions in a try/catch (fail-open: returns empty on revert). Meta
+    ///         adapters read their NAV-configured instance set themselves, so the call path is uniform.
+    function _getAdapterPositions(address adapter, address account, address assetFilter)
+        private
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        try IBalanceAdapter(adapter).getAdapterPositions(account, assetFilter) returns (
+            INAVCalculator.PositionBalance[] memory pos
+        ) {
+            return pos;
+        } catch {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+    }
+
+    /// @notice The de-duplicated set of assets referenced by a list of position balances.
+    function _extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)
+        private
+        pure
+        returns (address[] memory)
+    {
+        uint256 length = positions.length;
+        address[] memory allAssets = new address[](length);
+        for (uint256 i = 0; i < length; i++) {
+            allAssets[i] = positions[i].balanceAsset.asset;
+        }
+        return ArrayLib.deduplicateAddresses(allAssets);
+    }
+
+    /// @notice Builds the selected-feed price cache for a list of assets.
+    function _buildPriceFeedCache(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        address[] memory assets
+    ) private view returns (PriceFeedCache[] memory priceFeeds) {
+        uint256 length = assets.length;
+        priceFeeds = new PriceFeedCache[](length);
+        for (uint256 i = 0; i < length; i++) {
+            address asset = assets[i];
+            (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
+            priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale});
+        }
+    }
+
+    /// @notice Finds an asset's cached feed in the cache array; reverts AssetNotFound if absent.
+    function _findPriceFeed(PriceFeedCache[] memory priceFeeds, address asset)
+        private
+        pure
+        returns (PriceFeedCache memory priceFeed)
+    {
+        uint256 length = priceFeeds.length;
+        for (uint256 i = 0; i < length; i++) {
+            priceFeed = priceFeeds[i];
+            if (priceFeed.asset == asset) return priceFeed;
+        }
+        revert AssetNotFound();
+    }
+
+    /// @notice Builds the stale-price Asset[] from the cache (the cache assets are already unique).
+    function _buildStaleAssets(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view returns (INAVCalculator.Asset[] memory staleAssets) {
+        uint256 feedsLength = priceFeeds.length;
+        address[] memory temp = new address[](feedsLength);
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedsLength; i++) {
+            if (priceFeeds[i].stale) temp[count++] = priceFeeds[i].asset;
+        }
+        address[] memory staleAddrs = ArrayLib.copySliceAddress(temp, count);
+
+        uint256 staleLength = staleAddrs.length;
+        staleAssets = new INAVCalculator.Asset[](staleLength);
+        for (uint256 i = 0; i < staleLength; i++) {
+            staleAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, staleAddrs[i]);
+        }
+    }
+
+    /// @notice Assembles quote-asset info (struct + price data); address(0) = USD.
+    function _getQuoteAssetInfo(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address quoteAsset,
+        string memory nativeTokenSymbol
+    ) private view returns (QuoteAssetInfo memory info) {
+        if (quoteAsset == address(0)) {
+            info.assetStruct = INAVCalculator.Asset({asset: address(0), symbol: "USD", decimals: NAV_DECIMALS});
+            info.price = 0;
+            info.priceDecimals = 0;
+            info.assetDecimals = NAV_DECIMALS;
+        } else {
+            // _selectFeedCore reverts PriceFeedNotSet(quoteAsset) when the quote asset has no feeds (same selector
+            // as a separate guard would), so no extra length check is needed here.
+            (info.price, info.priceDecimals, info.stale,,) = _selectFeedCore(priceOracles, quoteAsset);
+            INAVCalculator.Asset memory reg = _getRegisteredAsset(assetIndex, registeredAssets, quoteAsset);
+            info.assetStruct = INAVCalculator.Asset({
+                asset: quoteAsset,
+                symbol: quoteAsset == NATIVE_ADDRESS ? nativeTokenSymbol : reg.symbol,
+                decimals: reg.decimals
+            });
+            info.assetDecimals = reg.decimals;
+        }
+    }
+
+    /// @notice Returns the registered Asset struct (decimals + symbol) for `asset`; reverts AssetNotFound if absent.
+    function _getRegisteredAsset(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address asset
+    ) private view returns (INAVCalculator.Asset memory) {
+        uint256 idx = assetIndex[asset];
+        if (idx == 0) revert AssetNotFound();
+        return registeredAssets[idx - 1];
+    }
+
+    /// @notice Enriches a balance-only position with pricing to create a full Position. Mirrors the former
+    ///         NAVCalculator._enrichPositionWithPricing.
+    function _enrichPosition(
+        INAVCalculator.PositionBalance memory balance,
+        PriceFeedCache memory priceFeed,
+        INAVCalculator.Asset memory quoteAssetStruct,
+        int256 quoteAssetPrice,
+        uint8 quoteAssetPriceDecimals,
+        uint8 quoteAssetDecimals,
+        uint8 canonicalDecimals,
+        string memory canonicalSymbol
+    ) private pure returns (INAVCalculator.Position memory position) {
+        int256 value = _priceConversion(
+            balance.amount,
+            balance.isDebt,
+            canonicalDecimals,
+            priceFeed.price,
+            priceFeed.decimals,
+            quoteAssetPrice,
+            quoteAssetPriceDecimals,
+            quoteAssetDecimals
+        );
+
+        INAVCalculator.Asset memory balanceAsset = INAVCalculator.Asset({
+            asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
+        });
+        position = INAVCalculator.Position({
+            balanceAsset: balanceAsset,
+            balanceAdapter: balance.balanceAdapter,
+            amount: balance.amount,
+            isDebt: balance.isDebt,
+            protocolId: balance.protocolId,
+            positionId: balance.positionId,
+            positionKind: balance.positionKind,
+            quoteAsset: quoteAssetStruct,
+            value: value,
+            price: priceFeed.price,
+            priceDecimals: priceFeed.decimals,
+            stale: priceFeed.stale
+        });
+    }
+
+    /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is 0). Mirrors the former
+    ///         NAVCalculator._priceConversion.
+    function _priceConversion(
+        uint256 amount,
+        bool isDebt,
+        uint8 assetDecimals,
+        int256 assetPrice,
+        uint256 assetPriceDecimals,
+        int256 quotePrice,
+        uint8 quotePriceDecimals,
+        uint8 quoteDecimals
+    ) private pure returns (int256 value) {
+        if (assetDecimals + assetPriceDecimals < NAV_DECIMALS) {
+            revert InvalidAssetDecimals();
+        }
+        uint256 denom1 = assetDecimals + assetPriceDecimals - NAV_DECIMALS;
+        if (denom1 > MAX_DECIMAL_EXPONENT || denom1 > MAX_DECIMAL_EXPONENT_INT256) {
+            revert InvalidDecimalExponent();
+        }
+
+        int256 signedAmount = isDebt ? -SafeCast.toInt256(amount) : SafeCast.toInt256(amount);
+        int256 usdValue = (signedAmount * assetPrice) / SafeCast.toInt256(10 ** denom1);
+
+        if (quotePrice <= 0) {
+            return usdValue; // USD (NAV_DECIMALS)
+        }
+
+        uint256 totalDecimals = uint256(quoteDecimals) + uint256(quotePriceDecimals);
+        if (totalDecimals > MAX_DECIMAL_EXPONENT || totalDecimals > MAX_DECIMAL_EXPONENT_INT256) {
+            revert InvalidDecimalExponent();
+        }
+        int256 numerator = usdValue * SafeCast.toInt256(10 ** totalDecimals);
+        int256 denom2 = quotePrice * SafeCast.toInt256(10 ** NAV_DECIMALS);
+        return numerator / denom2;
     }
 
     // -------------------------------------------------------------------------

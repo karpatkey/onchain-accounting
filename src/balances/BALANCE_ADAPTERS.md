@@ -169,15 +169,14 @@ Every balance adapter must implement this interface and ERC165.
 
 ## 6. How NAVCalculator uses adapters
 
-- **getAccountNav(account, quoteAsset):** Validates the quote asset, then (if any assets are registered) calls `_readPositionsWithQuote(account, quoteAsset)`.
-- **_readPositionsWithQuote:**
-  - Calls `getAllAdapters()`, then for each adapter: `getAdapterPositions(account, address(0))` (with try/catch).
-  - Filters: keep only positions with `isAssetRegistered(asset)`.
+- **getAccountNav(account, quoteAsset):** Validates the quote asset, computes sequencer status, then delegates the whole read/compute path to `PriceFeedLib.computeNav(...)` (passing the price-oracle/registry storage refs, `getAllAdapters()`, `_metaInstanceTotal`, and the native-token symbol). The read/compute engine lives in `PriceFeedLib` to keep `NAVCalculator` under EIP-170 — see [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md). `computeNav`:
+  - For each adapter in `getAllAdapters()`: `getAdapterPositions(account, address(0))` (with try/catch).
+  - Filters: keep only positions with a registered asset.
   - Fetches prices for all assets that appear in the filtered positions; marks stale.
   - For each position: value = amount × price, sign by `isDebt`; sum to total USD then convert to quote asset if needed.
-  - Returns `(totalValue, stalePriceAssets, sequencerDown)` and NAV is built from that.
+  - Returns the full `NAV` (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`, `quoteAssetStale`).
 
-Other APIs (e.g. `getAccountPositions`, `getAccountPositionsForAsset`) follow the same pattern: same adapter list, same `getAdapterPositions`, with additional filtering (single asset for the per-asset variant).
+Other APIs (`getAccountPositions`, `getAccountPositionsForAsset`, `hasPositions`, `getAssetsWithPositions`, `calculateValue`) are likewise thin `NAVCalculator` wrappers over `PriceFeedLib` entrypoints, following the same pattern: same adapter list, same `getAdapterPositions`, with additional filtering (single asset for the per-asset variant). The heavy `PositionBalance[]`/`Position[]` arrays are built and consumed inside the library and never cross the ABI boundary.
 
 ### 6.1 Meta-adapters (multi-instance) — `IMetaBalanceAdapter`
 

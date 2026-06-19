@@ -39,11 +39,12 @@ bytecode_hash = "none"
 # canonical CREATE2 factory (0x4e59...956C) with salt keccak256("<LibName>" ++ uint256(1)).
 # Deploy script 01_2_DeployNAVImplementation.s.sol deploys both libraries to these addresses before deploying
 # NAVCalculator, so the Safe TX batch is self-contained.
-#   - PriceFeedLib   : price-feed selection/management (extracted from Prices).
+#   - PriceFeedLib   : price-feed selection/management (from Prices) PLUS NAVCalculator's read/compute engine
+#                      (NAV, positions, health, value) — see ADR 0010.
 #   - NavRegistryLib : asset-registry + balance-oracle-registry storage mutations (extracted from NAVCalculator /
 #                      Balances) to keep NAVCalculator under EIP-170. See ADR 0010.
 libraries = [
-  "src/prices/PriceFeedLib.sol:PriceFeedLib:0x6F0C6f68728Ec474FecB4DE7cdd72E28C2D42715",
+  "src/prices/PriceFeedLib.sol:PriceFeedLib:0x8195da38faE93f0a221146f0aD7E6a5D1594db97",
   "src/nav/NavRegistryLib.sol:NavRegistryLib:0x02F27E28452E6F419b97935f6346381E2b5003B1",
 ]
 

@@ -1119,7 +1119,7 @@ A balance adapter returned a `PositionBalance` for an underlying asset that isn'
 
 ### Chainlink feed shows `answer <= 0`
 
-NAV v2 skips any feed whose answer is ≤ 0 during feed selection (`src/prices/PriceFeedLib.sol:78` — `if (answer <= 0) continue;`). If an asset has another non-stale feed, that one is used; if every registered feed fails the gate, the price is flagged stale and the asset contributes 0 to NAV. Usually indicates a broken feed or one that just reverted; check `latestRoundData()` directly and contact the adapter provider.
+NAV v2 skips any feed whose answer is ≤ 0 during feed selection (`PriceFeedLib._selectFeedCore` — `if (answer <= 0) continue;`). If an asset has another non-stale feed, that one is used; if every registered feed fails the gate, the price is flagged stale and the asset contributes 0 to NAV. Usually indicates a broken feed or one that just reverted; check `latestRoundData()` directly and contact the adapter provider.
 
 ### `forge script` fails with `vm.writeJson: no such key`
 

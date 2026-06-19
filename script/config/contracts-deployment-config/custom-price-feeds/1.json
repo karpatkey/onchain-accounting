@@ -137,7 +137,7 @@
   },
   "NXM": {
     "enabled": true,
-    "$comment": "NXM/USD = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD. RAMM resolved from Nexus master code 'RA'. Prices member NXM book value; wNXM not priced here.",
+    "$comment": "NXM/USD = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD. RAMM resolved from Nexus master code 'RA'. Prices member NXM book value; wNXM is priced separately via its own entry below (same RAMM book value, token=wNXM).",
     "constructor": {
       "token": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
       "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",

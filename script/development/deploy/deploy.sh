@@ -84,7 +84,7 @@ for cid in $CHAIN_IDS; do
       DEV_SEQUENCER_FEED="$sequencer" \
       DEV_NATIVE_FEED="$native_feed" \
       DEV_NATIVE_HEARTBEAT="$native_heartbeat" \
-      FOUNDRY_PROFILE=dev \
+      FOUNDRY_PROFILE=default \
       forge script "$DEPLOY_DIR/01_DeployNAV.s.sol:DeployNAV" \
         --rpc-url "$rpc" \
         --private-key "$DEV_PRIVATE_KEY" \

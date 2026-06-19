@@ -52,6 +52,8 @@ import {syrupUSDC_PriceOracle} from "src/prices/protocols/syrupUSDC_Price.sol";
 import {wstETH_PriceOracle} from "src/prices/protocols/wstETH_Price.sol";
 import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRate_Price.sol";
 import {rETH_PriceOracle} from "src/prices/protocols/rETH_Price.sol";
+import {ankrETH_PriceOracle} from "src/prices/protocols/ankrETH_Price.sol";
+import {NXM_PriceOracle} from "src/prices/protocols/NXM_Price.sol";
 import {osToken_PriceOracle} from "src/prices/protocols/osToken_Price.sol";
 import {cbETH_PriceOracle} from "src/prices/protocols/cbETH_Price.sol";
 import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
@@ -210,6 +212,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("ezETH", _deployEzEth);
             _tryDeployPriceFeed("ETHx", _deployEthx);
             _tryDeployPriceFeed("osETH", _deployOsEth);
+            _tryDeployPriceFeed("OETH", _deployOeth);
+            _tryDeployPriceFeed("ankrETH", _deployAnkrEth);
+            _tryDeployPriceFeed("NXM", _deployNxm);
+            _tryDeployPriceFeed("wNXM", _deployWnxm);
         } else if (_chainId == 42161) {
             _tryDeployPriceFeed("wstETH_L2", _deployWstEthL2);
             _tryDeployPriceFeed("weETH_L2", _deployWeEthL2);
@@ -317,6 +323,43 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkHeartbeat"));
         return address(new rETH_PriceOracle(rEth, ethUsd, ethUsdHb));
+    }
+
+    function _deployOeth() internal returns (address) {
+        // OETH reuses the generic CrossRatePriceAdapter: OETH/USD = (ETH/USD) x (OETH/ETH).
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "underlyingAsset"));
+        address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdFeed"));
+        address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXFeed"));
+        uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdHeartbeat"));
+        uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXHeartbeat"));
+        return address(new CrossRatePriceAdapter(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+    }
+
+    function _deployAnkrEth() internal returns (address) {
+        address ankrEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ankrEth"));
+        address ethUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkHeartbeat"));
+        return address(new ankrETH_PriceOracle(ankrEth, ethUsd, ethUsdHb));
+    }
+
+    function _deployNxm() internal returns (address) {
+        return _deployNxmLike("NXM");
+    }
+
+    function _deployWnxm() internal returns (address) {
+        return _deployNxmLike("wNXM");
+    }
+
+    /// @dev NXM and wNXM share one feed shape (RAMM book value); `name` selects the config + priced token.
+    function _deployNxmLike(string memory name) internal returns (address) {
+        address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "token"));
+        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ramm"));
+        address ethUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkHeartbeat"));
+        return address(new NXM_PriceOracle(token, ramm, ethUsd, ethUsdHb));
     }
 
     function _deployOsEth() internal returns (address) {

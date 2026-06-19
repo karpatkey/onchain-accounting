@@ -16,6 +16,7 @@ import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/Morph
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {ERC4626WrapBalanceAdapter} from "../../src/balances/protocols/ERC4626Wrap.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMeta.sol";
+import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/protocols/EulerVaultsMeta.sol";
 import {CapBalanceAdapter} from "../../src/balances/protocols/Cap.sol";
 import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMeta.sol";
 import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMeta.sol";
@@ -87,6 +88,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
+        _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
 
         // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
         _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO
@@ -236,6 +238,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Morpho Vaults meta-adapter (per-instance adapters removed — superseded by MorphoVaultsMeta)
         if (_equals(adapterName, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
+        }
+
+        // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
+        if (_equals(adapterName, "EulerVaultsMeta")) {
+            return _deployEulerVaultsMeta(adapterName, navCalculator);
         }
 
         // ERC-4626 wrap adapters (generic contract; one instance per wrapper, prefix-dispatched)
@@ -428,6 +435,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
         MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(protocol, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployEulerVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        string memory protocol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
+
+        EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 

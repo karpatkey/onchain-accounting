@@ -10,7 +10,7 @@ pragma solidity ^0.8;
 ///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
-///        MORPHO_VAULTS / GEARBOX_V3 / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
+///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        SKY_SAVINGS                     → (address savingsContract)
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
@@ -55,6 +55,9 @@ library ProtocolIds {
 
     // Gearbox
     bytes32 internal constant GEARBOX_V3 = keccak256("gearbox-v3");
+
+    // Euler
+    bytes32 internal constant EULER_VAULTS = keccak256("euler-vaults");
 
     // Compound
     bytes32 internal constant COMPOUND_V3 = keccak256("compound-v3");

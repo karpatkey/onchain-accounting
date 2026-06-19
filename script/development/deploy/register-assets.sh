@@ -4,9 +4,13 @@
 # no atomic-all-or-nothing rollback, easy to see exactly which asset failed.
 #
 # Usage:  register-assets.sh <chainId>
-# Reads asset list + Chainlink feed addresses from script/config/assets.json.
-# Skips Custom-type assets — those are deployed via prod's script/deploy/03_DeployPriceFeeds.s.sol
-# against the dev anvil RPC (no dev-specific custom-feed deploy script exists; see development/README.md).
+# Reads asset list + Chainlink feed addresses from
+#   script/config/nav-config/assets-and-price-feeds/<chainId>.json
+# (the per-chain config introduced by the PR #70 config split, which deleted the old
+# monolithic script/config/assets.json). Each symbol entry is { address, priceFeeds: [
+# { type, address, heartbeat }, ... ] }. Only entries whose FIRST price feed is type
+# "Chainlink" are registered here; Custom-type assets are deployed via prod's
+# script/deploy/03_DeployPriceFeeds.s.sol against the dev anvil RPC (see development/README.md).
 set -euo pipefail
 
 CID=${1:?chainId required}
@@ -14,8 +18,10 @@ CID=${1:?chainId required}
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_DIR="$REPO_ROOT/script/development"
 STATE_DIR="$DEV_DIR/state"
-ASSETS_JSON="$REPO_ROOT/script/config/assets.json"
+ASSETS_JSON="$REPO_ROOT/script/config/nav-config/assets-and-price-feeds/$CID.json"
 CHAINS_CFG="$DEV_DIR/config/chains.json"
+
+[ -f "$ASSETS_JSON" ] || { echo "error: $ASSETS_JSON not found" >&2; exit 1; }
 
 PORT=$(jq -r ".\"$CID\".port" "$CHAINS_CFG")
 RPC="http://127.0.0.1:$PORT"
@@ -28,25 +34,20 @@ if ! command -v cast >/dev/null 2>&1; then
   export PATH="$HOME/.foundry/bin:$PATH"
 fi
 
-declare -A SYMBOLS
-SYMBOLS[1]="ETH WETH wstETH eETH weETH rETH ETH+ ezETH rsETH MORPHO USDC BAL AURA RPL GEAR stETH CRV CVX USDS USDT DAI GHO USDe sUSDe RLUSD crvUSD sUSDS syrupUSDC COMP WBTC AAVE osETH EIGEN ETHx EURC"
-SYMBOLS[10]="ETH WETH wstETH USDC USDT COMP"
-SYMBOLS[100]="xDAI WXDAI WETH wstETH USDCe sDAI GHO"
-SYMBOLS[42161]="ETH WETH wstETH weETH ezETH rsETH MORPHO USDC USDT GHO syrupUSDC COMP"
-SYMBOLS[8453]="ETH WETH wstETH weETH cbETH MORPHO USDC GHO COMP"
-
-LIST="${SYMBOLS[$CID]:-}"
+# Every symbol in the per-chain config (native ETH/xDAI included — it is skipped below
+# because 01_DeployNAV already registered NATIVE_ADDRESS + wired its feed).
+LIST=$(jq -r 'keys[]' "$ASSETS_JSON")
 [ -z "$LIST" ] && { echo "no symbols for chainId $CID"; exit 0; }
 
 echo "=== register-assets.sh chain=$CID NAV=$NAV"
 
 ok=0; fail=0; skip=0
 for sym in $LIST; do
-  jq_path=".tokens.\"$CID\".\"$sym\""
-  TYPE=$(jq -r "${jq_path}.type // \"\"" "$ASSETS_JSON")
+  jq_path=".\"$sym\""
   ADDR=$(jq -r "${jq_path}.address // \"\"" "$ASSETS_JSON")
-  FEED=$(jq -r "${jq_path}.pricefeed // \"\"" "$ASSETS_JSON")
-  HB=$(jq -r "${jq_path}.heartbeat // 0" "$ASSETS_JSON")
+  TYPE=$(jq -r "${jq_path}.priceFeeds[0].type // \"\"" "$ASSETS_JSON")
+  FEED=$(jq -r "${jq_path}.priceFeeds[0].address // \"\"" "$ASSETS_JSON")
+  HB=$(jq -r "${jq_path}.priceFeeds[0].heartbeat // 0" "$ASSETS_JSON")
 
   if [ "$TYPE" != "Chainlink" ]; then
     printf "  skip   %-12s type=%s\n" "$sym" "$TYPE"

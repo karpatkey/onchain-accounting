@@ -45,7 +45,7 @@ from typing import Optional
 DEBANK_API_KEY = os.environ.get("DEBANK_API_KEY", "")
 DEBANK_BASE = "https://pro-openapi.debank.com"
 ACCOUNTS_JSON = "test/integration/accounts.json"
-ASSETS_JSON = "script/config/assets.json"
+NAV_ASSETS_PATTERN = "script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
 CHAINS_CONFIG_DIR = "script/config/chains"
 NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 DEBANK_CACHE_DIR = "test/integration/debank-cache"
@@ -1405,23 +1405,30 @@ def render_coverage_gap_section(
 def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
     with open(ACCOUNTS_JSON) as f:
         data = json.load(f)
-    with open(ASSETS_JSON) as f:
-        assets = json.load(f)
 
     chains_cfg = data["chains"]
     accounts = data["accounts"]
     tolerance = data["tolerance"]
 
-    # Build registered-token address sets: chain_id -> {lowercase_address}
+    # Build registered-token address sets: chain_id -> {lowercase_address}.
+    # Source: per-chain nav-config/assets-and-price-feeds/<chainId>.json (keyed by symbol →
+    # {address, priceFeeds:[{type,address,heartbeat}]}). Replaces the old single
+    # script/config/assets.json (.tokens.<chainId>), removed in the #70 config split.
     registered: dict[str, set[str]] = {}
-    # priced: subset of registered that actually have a working price feed.
+    # priced: subset of registered that actually have a working price feed (non-empty priceFeeds).
     # Used to detect items whose tokens are known but unpriced (→ untracked, not a coverage gap).
     priced: dict[str, set[str]] = {}
-    for cid, tokens in assets.get("tokens", {}).items():
+    for cid in chains_cfg:
+        assets_path = NAV_ASSETS_PATTERN.format(chain_id=cid)
+        if not os.path.exists(assets_path):
+            registered[cid] = set()
+            priced[cid] = set()
+            continue
+        with open(assets_path) as f:
+            tokens = json.load(f)
         registered[cid] = {v["address"].lower() for v in tokens.values()}
         priced[cid] = {
-            v["address"].lower() for v in tokens.values()
-            if v.get("pricefeed") and v.get("type", "None") not in ("None", "none", "")
+            v["address"].lower() for v in tokens.values() if v.get("priceFeeds")
         }
 
     # Load NAV position detail files

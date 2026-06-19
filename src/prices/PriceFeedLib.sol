@@ -578,7 +578,8 @@ library PriceFeedLib {
             info.priceDecimals = 0;
             info.assetDecimals = NAV_DECIMALS;
         } else {
-            if (priceOracles[quoteAsset].length == 0) revert PriceFeedNotSet(quoteAsset);
+            // _selectFeedCore reverts PriceFeedNotSet(quoteAsset) when the quote asset has no feeds (same selector
+            // as a separate guard would), so no extra length check is needed here.
             (info.price, info.priceDecimals, info.stale,,) = _selectFeedCore(priceOracles, quoteAsset);
             INAVCalculator.Asset memory reg = _getRegisteredAsset(assetIndex, registeredAssets, quoteAsset);
             info.assetStruct = INAVCalculator.Asset({

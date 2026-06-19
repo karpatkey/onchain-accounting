@@ -36,7 +36,7 @@ contract ERC20DefaultAdapterTest is Test {
         // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
-        vm.etch(0x4D19204c82bac5677Dc06C80E7a95df8232D1988, priceFeedLibImpl.code);
+        vm.etch(0xC24Ab894277c63e97166395647c4A537A78edb41, priceFeedLibImpl.code);
         vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Set up tokens

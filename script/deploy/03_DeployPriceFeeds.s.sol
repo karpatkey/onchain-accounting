@@ -34,6 +34,8 @@ import {syrupUSDC_L2_PriceOracle} from "../../src/prices/protocols/syrupUSDC_L2_
 import {ETHPlus_PriceOracle} from "../../src/prices/protocols/ETHPlus_Price.sol";
 
 import {CrossRatePriceAdapter} from "../../src/prices/protocols/CrossRate_Price.sol";
+import {ankrETH_PriceOracle} from "../../src/prices/protocols/ankrETH_Price.sol";
+import {NXM_PriceOracle} from "../../src/prices/protocols/NXM_Price.sol";
 
 /// @title DeployPriceFeeds
 /// @notice Deploys custom price feed adapters for NAVCalculator
@@ -167,6 +169,24 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osGNO")) {
             _deployOsToken("osGNO");
+        }
+
+        // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "OETH")) {
+            _deployOeth();
+        }
+
+        // Deploy ankrETH Price Oracle (ankrETH/USD = ETH/USD * 1e18 / ratio)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ankrETH")) {
+            _deployAnkrEth();
+        }
+
+        // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "NXM")) {
+            _deployNxm("NXM");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wNXM")) {
+            _deployNxm("wNXM");
         }
 
         vm.stopBroadcast();
@@ -385,6 +405,67 @@ contract DeployPriceFeeds is BaseDeployScript {
             new osToken_PriceOracle(osToken, osTokenVaultController, underlyingUsdOracle, heartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
         console2.log("osToken_PriceOracle deployed at:", address(adapter));
+    }
+
+    function _deployOeth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "OETH");
+        if (deployed != address(0)) {
+            console2.log("OETH CrossRatePriceAdapter already deployed at:", deployed);
+            return;
+        }
+
+        // CrossRate: Y/USD = (X/USD) * (Y/X). For OETH: Y = OETH, X = ETH.
+        address oeth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "underlyingAsset"));
+        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "xToUsdFeed"));
+        address oethEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "xToUsdHeartbeat"));
+        uint256 oethEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXHeartbeat"));
+
+        CrossRatePriceAdapter oethAdapter =
+            new CrossRatePriceAdapter(oeth, ethUsdFeed, oethEthFeed, ethUsdHeartbeat, oethEthHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "OETH", address(oethAdapter));
+        console2.log("OETH CrossRatePriceAdapter deployed at:", address(oethAdapter));
+    }
+
+    function _deployAnkrEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "ankrETH");
+        if (deployed != address(0)) {
+            console2.log("ankrETH_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address ankrEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ankrEth"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ethToUsdChainlinkHeartbeat"));
+
+        ankrETH_PriceOracle ankrEthAdapter = new ankrETH_PriceOracle(ankrEth, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ankrETH", address(ankrEthAdapter));
+        console2.log("ankrETH_PriceOracle deployed at:", address(ankrEthAdapter));
+    }
+
+    /// @notice Deploys the NXM_PriceOracle for the given config name ("NXM" or "wNXM"). Both price the same RAMM
+    ///         book value; the `token` constructor arg sets which token the feed reports as its underlying.
+    function _deployNxm(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("NXM_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "token"));
+        address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ramm"));
+        address ethUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkOracle"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkHeartbeat"));
+
+        NXM_PriceOracle nxmAdapter = new NXM_PriceOracle(token, ramm, ethUsdOracle, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(nxmAdapter));
+        console2.log("NXM_PriceOracle deployed at:", address(nxmAdapter));
     }
 
     function _deployCbEth() internal {

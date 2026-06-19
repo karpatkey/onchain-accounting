@@ -261,6 +261,8 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `ezETH_Price`, `ezETH_L2_Price` | ezETH | Renzo reporter rate × ETH/USD |
 | `ETHx_Price` | ETHx | Stader `StakePoolsManager.getExchangeRate` × ETH/USD |
 | `osToken_Price` | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultAdapter`. |
+| `ankrETH_Price` | ankrETH (Mainnet) | ETH/USD × 1e18 / `ratio()` (ankrETH's `ratio()` is ankrETH-per-ETH, so ETH-per-ankrETH = 1e18/ratio) |
+| `CrossRate_Price` (OETH instance) | OETH (Mainnet) | ETH/USD × OETH/ETH (Chainlink) — Origin OETH rebases ~1:1 to ETH; priced off the Chainlink OETH/ETH feed |
 
 ### Other derived
 
@@ -269,6 +271,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `LDO_Price` | LDO | Composite (cross-rate) |
 | `ETHPlus_Price` | ETH+ | Reserve Protocol RToken. Price = (basketsNeeded / totalSupply) × basketPrice(low). Returns stale if `IBasketHandler.status() != SOUND` (catches IFFY — lagging oracle — as well as DISABLED) or if `block.timestamp − min(IAsset.lastSave()) > RESERVE_PROTOCOL_HEARTBEAT`. `latestRoundData()` returns `updatedAt = min(IAsset.lastSave())` across prime basket components for external observability. |
 | `CrossRate_Price` | generic | Generic helper: A/B × B/C from two Chainlink feeds (used when no direct A/USD feed exists, or to keep a shared feed cancelling — e.g. the stETH instance prices stETH as ETH/USD × stETH/ETH) |
+| `NXM_Price` | NXM, wNXM (Mainnet) | Nexus Mutual RAMM `getInternalPrice()` (ETH-per-NXM, manipulation-resistant TWAP) × ETH/USD. NXM has no external market oracle by design. One instance per priced token: NXM, and wNXM (the 1:1 wrapper a Nexus member can unwrap to NXM, so book value is realizable — matches how aggregators price wNXM). |
 
 `_L2_` variants exist for assets where the canonical rate lives on L1. They typically read a Chainlink-secured rate feed on the L2 (rather than calling the L1 rate-provider directly) and inherit the L2 sequencer check via `Prices`.
 

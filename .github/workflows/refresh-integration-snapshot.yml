@@ -18,6 +18,8 @@ permissions:
 
 env:
   FOUNDRY_PROFILE: slow
+  # Pinned Foundry version (keeps forge/via_ir bytecode + library pins reproducible — see foundry.toml).
+  FOUNDRY_VERSION: v1.7.1
   ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
   MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
   ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
@@ -38,7 +40,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - name: Install jq + curl

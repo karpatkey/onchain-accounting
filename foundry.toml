@@ -29,9 +29,11 @@ via_ir = true
 #     which silently moves the CREATE2 address. Pin "cancun": the highest EVM version supported across
 #     all target chains (Ethereum, Gnosis, Base, Optimism, Arbitrum).
 #   - forge version: forge's `via_ir` codegen is version-specific, so the library bytecode (and pins)
-#     differ between forge releases. CI pins `foundry-toolchain` to `version: v1.7.1` (.github/workflows),
-#     and the LibraryPins addresses are generated under that exact version. To reproduce the pins locally,
-#     install the same: `foundryup --install 1.7.1`. A different local forge will compute different pins.
+#     differ between forge releases. CI pins `foundry-toolchain` to `version: v1.7.1` (.github/workflows,
+#     via the FOUNDRY_VERSION env var), and the LibraryPins addresses are generated under that exact
+#     version. The workflow tag `v1.7.1` and the foundryup arg `1.7.1` are the SAME Foundry release
+#     (forge 1.7.1) — to reproduce the pins locally, install it: `foundryup --install 1.7.1`. A different
+#     local forge will compute different pins.
 #   - bytecode_hash: the default ("ipfs") appends a hash of ALL source in the contract's import graph
 #     (comments included), so an unrelated doc/comment edit to e.g. PositionKind.sol — pulled in
 #     transitively by NavRegistryLib via INAVCalculator — would shift the library address. "none"

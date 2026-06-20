@@ -13,6 +13,9 @@ permissions:
 
 env:
   FOUNDRY_PROFILE: default
+  # Single source of truth for the pinned Foundry version (forge's via_ir codegen is version-specific, so this
+  # fixes the deterministic CREATE2 library pins — see foundry.toml). Bump here only; every job references it.
+  FOUNDRY_VERSION: v1.7.1
   # Fork + integration tests resolve RPC via getAlchemyUrl() in test/TestEnvConfigurator.sol.
   # With no chain-specific *_URL vars set, it builds https://<network>.g.alchemy.com/v2/<key>.
   ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
@@ -29,7 +32,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - name: Build
@@ -56,7 +59,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - uses: actions/download-artifact@v4
@@ -78,7 +81,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - uses: actions/download-artifact@v4
@@ -102,7 +105,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - uses: actions/download-artifact@v4
@@ -125,7 +128,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.7.1
+          version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
       - run: forge fmt --check

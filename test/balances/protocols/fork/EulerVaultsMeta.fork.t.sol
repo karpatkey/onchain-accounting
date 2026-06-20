@@ -26,7 +26,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // External libraries pre-linked at deterministic CREATE2 addresses (foundry.toml). Etch their runtime on the fork
     // so NAVCalculator's pricing/registry DELEGATECALLs succeed.
     address constant PRICE_FEED_LIB = 0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B;
-    address constant NAV_REGISTRY_LIB = 0x02F27E28452E6F419b97935f6346381E2b5003B1;
+    address constant NAV_REGISTRY_LIB = 0x598D86380907a78ceE1AC81f55354Bc8871A3802;
 
     // kpk-curated Euler V2 EulerEarn vaults (ERC4626 yield aggregators, not core EVK eVaults) on mainnet.
     IERC4626 public constant KPK_ETH_TERM = IERC4626(0xB6D6D89ad4b4D61C15a293e28b74f77F6817fF48); // WETH

@@ -140,7 +140,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B, priceFeedLibImpl.code);
-        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x598D86380907a78ceE1AC81f55354Bc8871A3802, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);

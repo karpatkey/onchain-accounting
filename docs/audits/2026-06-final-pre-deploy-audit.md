@@ -21,14 +21,14 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 | # | Sev | Contract | Finding | Status |
 |---|-----|----------|---------|--------|
 | 1 | **High** | ERC20DefaultAdapter | Assembly `balanceOf` reads stale calldata as a phantom balance on short/empty returndata | **Fixed** |
-| 2 | **High** | UniswapV3PoolsMeta | LP principal/fees valued from manipulable `slot0` spot, not an oracle | **Recommended** (design decision) |
+| 2 | **High** | UniswapV3PoolsMeta | LP principal/fees valued from manipulable `slot0` spot, not an oracle | **Fixed** |
 | 3 | Medium | ETHPlus_Price | Heartbeat checks the configured *prime* basket, not the active reference basket | **Fixed** |
 | 4 | Medium | AaveV2InstancesMeta | Aave V2 **stable-rate debt silently dropped** → understates debt, overstates NAV | **Fixed** |
 | 5 | Medium | StakeWiseV3VaultsMeta | osToken debt leg converted through the staking-vault rate (wrong rate object) | **Fixed** |
 | 6 | Medium | BalancerV3PoolLib | Duplicate-underlying pool tokens double-counted / mis-counted | **Fixed** |
 | 7 | Low | NavLens | `try/catch` doesn't catch return-data decode failures (fail-open bypass) | **Fixed** |
 | 8 | Low | PriceFeedLib | Registered-but-feedless asset reverts the entire NAV/positions/health read | **Fixed** |
-| 9 | Low | PriceFeedLib | Stale non-USD quote feed silently returns NAV in USD instead of the quote currency | **Recommended** (design decision) |
+| 9 | Low | PriceFeedLib | Stale non-USD quote feed silently returns NAV in USD instead of the quote currency | **Fixed** |
 | 10 | Low | AuraRewardsMeta | V3 boosted pools with two ERC4626 wrappers over the same underlying mis-counted | **Fixed** |
 | 11 | Low | ERC20DefaultAdapter | Constructor `initialAssets` added without registry-membership check | Acknowledged |
 | 12 | Low | StaderWithdrawalQueue | `MAX_REQUESTS_PROBED` cap can silently undercount (claimed ids never compacted) | Acknowledged |
@@ -129,38 +129,34 @@ overrides to `(8, 17, 8)`), threaded into `UniswapV2PairLib.pairAmounts`.
 
 ---
 
-## Recommended (fix + validate as follow-up / team decision)
+## Design decisions resolved with the team (also fixed in this PR)
 
-The two findings below are genuine **design decisions** baked into immutable / core-pricing contracts
-(a manipulation-resistance strategy and a NAV-unit semantic). Rather than unilaterally hard-code a
-threshold / behavior, they are flagged for an explicit team call before deploy.
+These two were genuine **design decisions** baked into immutable / core-pricing contracts. Rather than
+hard-code a strategy unilaterally, the approach was chosen with the team and then implemented here.
 
-### [2] High — `UniswapV3PoolsMeta`: LP value from manipulable `slot0`
-`slot0` (`sqrtPriceX96`, `tick`) feeds both the in-range liquidity split (`getAmountsForLiquidity`) and
-the fee-growth branch — so the reported per-token **amounts** are a function of the instantaneous AMM
-spot, while NAV prices them with fixed Chainlink feeds. An attacker who atomically moves the pool price
-(swap / flash-loan round-trip / read-only-reentrancy desync) diverges reported value from true value.
-No `observe()`/TWAP, no deviation guard, no cross-check against the registered feeds anywhere in
-`src/balances/protocols/uniswap/` — a direct violation of the repo's "never trust an AMM spot price"
-rule. Held at High (not Critical): exploitability needs an *on-chain* consumer reading NAV atomically
-within the manipulating tx (an assumption about the not-yet-shipped sub/redeem layer), and cost scales
-with pool depth. **Recommendation:** derive the split from a TWAP-implied `sqrtPrice`, or cross-check
-the `slot0`-implied price against the ratio of the two registered feeds and clamp/revert on deviation,
-or reconstruct the implied price from the registered oracle prices. The same scrutiny applies to the
-other pool/reserve-reading adapters (UniswapV2/PancakeSwap V2 reserves, Balancer, Curve) — evaluate
-them under the same lens before relying on NAV on-chain.
+### [2] High — `UniswapV3PoolsMeta`: reconstruct the price from oracle feeds (no `slot0`)
+Previously `slot0` (`sqrtPriceX96`, `tick`) fed both the in-range liquidity split
+(`getAmountsForLiquidity`) and the fee-growth branch, so the reported per-token **amounts** tracked the
+instantaneous AMM spot — an attacker who atomically moved the pool price (swap / flash-loan round-trip /
+read-only-reentrancy desync) could diverge the reported value, violating the repo's "never trust an AMM
+spot price" rule. **Fix (chosen approach: reconstruct from feeds):** the adapter no longer reads `slot0`
+at all. It fetches both pool tokens' registered prices via `NAV_CALCULATOR.getPriceData` and reconstructs
+the implied `sqrtPriceX96` (`UniswapV3PoolLib.sqrtPriceX96FromOraclePrices`, two-sqrt split, clamped to
+the valid range), then drives **both** the split and the fee-growth branch (via a sqrt-ratio comparison
+against the tick boundaries) off that oracle-implied price. Reported amounts are now a pure function of
+the same oracles NAV prices with, so the value is manipulation-proof. A position whose tokens are
+unregistered/unpriced/stale is dropped (no legs) rather than valued off a manipulable spot. Trade-off the
+team accepted: per-token **amounts** are now fair-value (oracle-implied) amounts rather than the exact
+current on-chain withdrawable split — identical when the oracle agrees with spot, so the ground-truth
+fork tests now assert approximate (0.01%) rather than exact parity. Because `slot0` is no longer read,
+the PancakeSwap V3 subclass no longer needs its `_slot0`/`uint32 feeProtocol` override (removed).
 
-### [9] Low / S2 — `PriceFeedLib`: stale non-USD quote silently returns USD
-When the quote asset's feed is stale, `_getQuoteAssetInfo` returns `price=0` and `_priceConversion`
-falls back to returning the NAV in **USD (8 decimals)** rather than the requested quote currency. The
-`getNav` path already exposes this via `nav.quoteAssetStale`, but `calculateValue` (which returns a bare
-`int256`) and the per-`Position` path give no signal — a caller asking for a non-USD quote can silently
-receive a USD figure. **Decision needed:** either (a) revert when the quote feed is stale, or (b) extend
-the `Position` struct / `calculateValue` return to carry a `quoteAssetStale` flag. Both are
-interface/behavior changes to a core contract, hence deferred for a team call rather than hard-coded
-here. **Why deferred:** it is the safe direction operationally — the value is still a real USD figure and
-`getNav` already flags it — and changing the `Position` ABI or making `calculateValue` revert affects
-every downstream consumer.
+### [9] Low / S2 — `PriceFeedLib`: surface `quoteAssetStale` on `Position` / `calculateValue`
+When the quote asset's feed is stale, the value falls back to USD instead of the requested quote
+currency. `getNav` already flagged this via `nav.quoteAssetStale`; the gap was `calculateValue` (a bare
+`int256`) and the per-`Position` path. **Fix (chosen approach: add the flag):** `Position` gains a
+`bool quoteAssetStale` and `calculateValue` now returns `(int256 value, bool quoteAssetStale)`, so a
+caller requesting a non-USD quote can detect the USD fallback rather than silently receiving a USD figure.
 
 ---
 
@@ -203,17 +199,13 @@ rather than left optional:
 
 ## Disposition for deployment
 
-- **Fixed in this PR (18 of 20 findings + S1 documented):** [1], [3], [4], [5], [6]/[13], [7], [8], [10],
-  [14], [17], [20]. All compile clean; the full unit suite and the affected fork/integration tests pass;
-  the mainnet integration NAV snapshot was refreshed for the two accounts whose value moved as a direct,
-  verified consequence of [5] (osToken debt) and the [6]/[10] index refactor (≤few-wei rounding).
-- **Decide on [2]** — the `slot0` LP-valuation manipulation is the most consequential design question; it is
-  latent until an on-chain consumer reads NAV atomically, but should be resolved (oracle cross-check / TWAP /
-  reconstruct-from-feeds) before any on-chain NAV consumer ships. Deferred for a team call on the
-  manipulation-resistance strategy + deviation band rather than hard-coding a threshold into an immutable
-  adapter.
-- **Decide on [9]/S2** — whether `calculateValue` / `Position` should revert or carry a `quoteAssetStale`
-  flag on a stale non-USD quote. `getNav` already surfaces it; the change touches a core ABI, so deferred.
+- **Fixed in this PR (all 20 findings + S1/S2 addressed):** [1], [2], [3], [4], [5], [6]/[13], [7], [8],
+  [9], [10], [14], [17], [20]. The two design-decision findings ([2] reconstruct-from-feeds, [9]/S2 add the
+  `quoteAssetStale` flag) were resolved with the team and implemented. All compile clean; the unit suite and
+  the affected fork/integration tests pass; the mainnet integration NAV snapshot was refreshed for the two
+  accounts whose value moved as a direct, verified consequence of [5] (osToken debt) and the [6]/[10] index
+  refactor (≤few-wei rounding); the V3 ground-truth fork tests were relaxed to 0.01% approximate parity to
+  reflect [2]'s oracle-implied (vs exact on-chain) amounts.
 - **By-design / Acknowledged:** [11], [12], [15], [16], [18], [19], S3, S4 — safe to deploy as-is with the
   noted monitoring; [11] is now documented in-code.
 - **Library pins:** the audit edits changed `PriceFeedLib`/`NavRegistryLib` bytecode (and, via the `via_ir`

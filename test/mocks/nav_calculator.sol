@@ -148,7 +148,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function calculateValue(address[] memory, uint256[] memory, address) external pure override returns (int256) {
+    function calculateValue(address[] memory, uint256[] memory, address) external pure override returns (int256, bool) {
         revert("Not implemented in mock");
     }
 

@@ -82,6 +82,33 @@ library UniswapV3PoolLib {
     /// @notice Bounded iteration limit for position discovery (matches the per-instance adapter).
     uint256 internal constant MAX_POSITIONS = 256;
 
+    /// @notice Reconstructs the Uniswap V3 `sqrtPriceX96` implied by two external oracle prices, so LP valuation
+    ///         never reads the manipulable pool `slot0`. The encoded price is token1/token0 in *raw* units:
+    ///         `price = (p0 · 10^(dec1+pdec1)) / (p1 · 10^(dec0+pdec0))`, and `sqrtPriceX96 = sqrt(price) · 2^96`.
+    /// @dev Computed as `mulDiv(sqrt(numerator), 2^96, sqrt(denominator))` — the two-sqrt split keeps both the
+    ///      intermediate operands and the result inside uint256 across the full `[MIN_SQRT_RATIO, MAX_SQRT_RATIO]`
+    ///      range (a single `price · 2^192` would overflow for high-price pools). Truncation is ~1 ulp on operands
+    ///      ~1e22, i.e. ~1e-22 relative — far below the oracle-vs-spot gap. Result is clamped to the valid sqrt
+    ///      range so `LiquidityAmounts`/`TickMath` consumers never see an out-of-range input. Callers must pass
+    ///      strictly-positive prices.
+    /// @param price0 Oracle price of token0 (must be > 0). @param priceDecimals0 Its decimals. @param tokenDecimals0 token0 ERC20 decimals.
+    /// @param price1 Oracle price of token1 (must be > 0). @param priceDecimals1 Its decimals. @param tokenDecimals1 token1 ERC20 decimals.
+    function sqrtPriceX96FromOraclePrices(
+        uint256 price0,
+        uint8 priceDecimals0,
+        uint8 tokenDecimals0,
+        uint256 price1,
+        uint8 priceDecimals1,
+        uint8 tokenDecimals1
+    ) internal pure returns (uint160 sqrtPriceX96) {
+        uint256 numerator = price0 * (10 ** (uint256(tokenDecimals1) + uint256(priceDecimals1)));
+        uint256 denominator = price1 * (10 ** (uint256(tokenDecimals0) + uint256(priceDecimals0)));
+        uint256 s = Math.mulDiv(Math.sqrt(numerator), 1 << 96, Math.sqrt(denominator));
+        if (s < TickMath.MIN_SQRT_RATIO) return TickMath.MIN_SQRT_RATIO;
+        if (s > TickMath.MAX_SQRT_RATIO) return TickMath.MAX_SQRT_RATIO;
+        return uint160(s);
+    }
+
     /// @dev In-memory snapshot of the NFT-position fields we use.
     struct Position {
         address token0;

@@ -338,6 +338,7 @@ library PriceFeedLib {
                 quoteInfo.price,
                 quoteInfo.priceDecimals,
                 quoteInfo.assetDecimals,
+                quoteInfo.stale,
                 registered.decimals,
                 registered.symbol
             );
@@ -410,7 +411,7 @@ library PriceFeedLib {
         uint256[] memory amounts,
         address quoteAsset,
         string memory nativeTokenSymbol
-    ) external view returns (int256 value) {
+    ) external view returns (int256 value, bool quoteAssetStale) {
         if (assetAddresses.length != amounts.length) {
             revert ArrayLengthMismatch();
         }
@@ -420,6 +421,9 @@ library PriceFeedLib {
 
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        // [9]/S2: surface that a stale non-USD quote made `_priceConversion` fall back to USD, instead of a
+        // silent unit switch. (quoteInfo.stale is always false for a USD quote.)
+        quoteAssetStale = quoteInfo.stale;
 
         value = 0;
         for (uint256 i = 0; i < assetAddresses.length; i++) {
@@ -649,6 +653,7 @@ library PriceFeedLib {
         int256 quoteAssetPrice,
         uint8 quoteAssetPriceDecimals,
         uint8 quoteAssetDecimals,
+        bool quoteAssetStale,
         uint8 canonicalDecimals,
         string memory canonicalSymbol
     ) private pure returns (INAVCalculator.Position memory position) {
@@ -678,7 +683,8 @@ library PriceFeedLib {
             value: value,
             price: priceFeed.price,
             priceDecimals: priceFeed.decimals,
-            stale: priceFeed.stale
+            stale: priceFeed.stale,
+            quoteAssetStale: quoteAssetStale
         });
     }
 

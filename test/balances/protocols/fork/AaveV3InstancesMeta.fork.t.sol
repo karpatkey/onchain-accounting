@@ -19,7 +19,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 ///         configured DataProvider set (seeded via addMetaBalanceAdapter). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
 contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
-    address constant PRICE_FEED_LIB = 0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B;
+    address constant PRICE_FEED_LIB = 0x478b41eb67b1462Fe084515d27A92aFcf8f7bcF4;
 
     // Aave V3 Core (mainnet) ProtocolDataProvider — the instance coordinate.
     address public constant CORE_DATA_PROVIDER = 0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3;

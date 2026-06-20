@@ -71,7 +71,7 @@ contract PricesTest is Test {
         // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
-        vm.etch(0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B, priceFeedLibImpl.code);
+        vm.etch(0x478b41eb67b1462Fe084515d27A92aFcf8f7bcF4, priceFeedLibImpl.code);
         vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         oracleusdc = new Mock_CustomPriceFeed("usdc", address(usdc), 100_000_000, 8);

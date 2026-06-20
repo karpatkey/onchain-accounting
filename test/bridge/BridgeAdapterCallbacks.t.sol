@@ -20,11 +20,17 @@ import "test/bridge/mocks/MockBridgeProtocols.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title BridgeAdapterCallbacksTest
-/// @notice Tests that each bridge adapter's protocol callback (ccipReceive, lzReceive, handleAcrossMessage, onTokenTransfer)
-///         works when invoked via BridgeEscrow fallback and reverts when invoked directly on the adapter.
+/// @notice ADR 0012 removed the BridgeEscrow callback dispatcher (no `fallback()`), so completion can no
+///         longer be driven THROUGH the escrow via a protocol callback selector. These tests now drive
+///         completion via the MANAGER path `adapter.completeBridge(messagePayload, protocolData)` (which
+///         the base re-validates through `releaseByInvoiceId`) and keep the assertions that each adapter's
+///         protocol callback reverts when called directly (it still requires `msg.sender == bridgeEscrow`).
+///         TODO(PR2): provenance-checked protocol callback re-adds a direct destination-receiver path.
 contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
     uint64 public constant SOURCE_CHAIN_SELECTOR = 5009297550715157269;
     uint64 public constant DEST_CHAIN_SELECTOR = 3734403246176062136;
@@ -82,8 +88,9 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
 
     // ============ CCIP callback tests ============
 
-    /// @notice CCIP: callback via escrow fallback releases funds to account
-    function test_ccip_callback_releasesFundsWhenCalledViaEscrow() public {
+    /// @notice CCIP: MANAGER completeBridge releases funds to account (escrow dispatcher removed, ADR 0012)
+    /// @dev TODO(PR2): provenance-checked protocol callback (ccipReceive direct receiver) re-adds.
+    function test_ccip_managerCompleteBridgeReleasesFunds() public {
         assertEq(
             CcipBridgeAdapter.ccipReceive.selector,
             EXPECTED_CCIP_CALLBACK_SELECTOR,
@@ -109,13 +116,22 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         destEscrow.authorizeAdapter(destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
         vm.stopPrank();
-        _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
+
+        // Tokens have arrived at the escrow (funded pass-through); MANAGER drives completion.
+        usdc.mint(address(destEscrow), amount);
+        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
+            messageId: bytes32(uint256(1)),
+            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
+            sender: abi.encode(destAdapterProxy),
+            data: messagePayload,
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
 
         uint256 balanceBefore = usdc.balanceOf(account);
-        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow));
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -153,8 +169,9 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
 
     // ============ Across callback tests ============
 
-    /// @notice Across: callback via escrow fallback releases funds to account
-    function test_across_callback_releasesFundsWhenCalledViaEscrow() public {
+    /// @notice Across: MANAGER completeBridge releases funds to account (escrow dispatcher removed, ADR 0012)
+    /// @dev TODO(PR2): provenance-checked protocol callback (handleV3AcrossMessage direct receiver) re-adds.
+    function test_across_managerCompleteBridgeReleasesFunds() public {
         assertEq(
             AcrossBridgeAdapter.handleAcrossMessage.selector,
             EXPECTED_ACROSS_CALLBACK_SELECTOR,
@@ -177,14 +194,17 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
                 )
             )
         );
-        vm.prank(admin);
+        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(payable(destAdapterProxy));
+        vm.startPrank(admin);
         destEscrow.authorizeAdapter(destAdapterProxy);
-        _registerCallbackModule(destEscrow, AcrossBridgeAdapter.handleAcrossMessage.selector, destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
+        vm.stopPrank();
+
+        usdc.mint(address(destEscrow), amount);
 
         uint256 balanceBefore = usdc.balanceOf(account);
-        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destEscrow), messagePayload);
-        usdc.mint(address(destSpokePool), amount);
-        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(uint32(123), SOURCE_CHAIN_ID));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -218,8 +238,9 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
 
     // ============ Stargate callback tests ============
 
-    /// @notice Stargate: callback via escrow fallback releases funds to account
-    function test_stargate_callback_releasesFundsWhenCalledViaEscrow() public {
+    /// @notice Stargate: MANAGER completeBridge releases funds to account (escrow dispatcher removed, ADR 0012)
+    /// @dev TODO(PR2): provenance-checked protocol callback (sgReceive/lzCompose direct receiver) re-adds.
+    function test_stargate_managerCompleteBridgeReleasesFunds() public {
         assertEq(
             StargateBridgeAdapter.lzReceive.selector,
             EXPECTED_STARGATE_CALLBACK_SELECTOR,
@@ -249,13 +270,14 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
         destEscrow.authorizeAdapter(destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
         vm.stopPrank();
-        _registerCallbackModule(destEscrow, StargateBridgeAdapter.lzReceive.selector, destAdapterProxy);
+
+        usdc.mint(address(destEscrow), amount);
 
         uint256 balanceBefore = usdc.balanceOf(account);
-        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow), address(usdc), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(uint16(SOURCE_LZ_CHAIN_ID)));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -288,8 +310,9 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
 
     // ============ Gnosis callback tests ============
 
-    /// @notice Gnosis: callback via escrow fallback releases funds to account
-    function test_gnosis_callback_releasesFundsWhenCalledViaEscrow() public {
+    /// @notice Gnosis: MANAGER completeBridge releases funds to account (escrow dispatcher removed, ADR 0012)
+    /// @dev TODO(PR2): provenance-checked protocol callback (onTokenTransfer + AMB sender check) re-adds.
+    function test_gnosis_managerCompleteBridgeReleasesFunds() public {
         assertEq(
             GnosisBridgeAdapter.onTokenTransfer.selector,
             EXPECTED_GNOSIS_CALLBACK_SELECTOR,
@@ -313,13 +336,17 @@ contract BridgeAdapterCallbacksTest is BridgeScenarioHelper {
                 )
             )
         );
-        vm.prank(admin);
+        GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(payable(destAdapterProxy));
+        vm.startPrank(admin);
         destEscrow.authorizeAdapter(destAdapterProxy);
-        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
+        vm.stopPrank();
+
+        usdc.mint(address(destEscrow), amount);
 
         uint256 balanceBefore = usdc.balanceOf(account);
-        usdc.mint(address(destOmnibridge), amount);
-        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, "");
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");

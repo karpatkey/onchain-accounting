@@ -183,7 +183,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
     }
 
-    /// @notice Full round-trip: depositAndBridge on source → payload from omnibridge → deliver only via deliverTokens → completeBridge
+    /// @notice Full round-trip: depositAndBridge on source → payload from omnibridge → MANAGER completeBridge on destination
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaGnosis() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -219,10 +219,11 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destBridgeEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
-
-        usdc.mint(address(destOmnibridge), amount);
-        destOmnibridge.deliverTokens(address(usdc), address(destBridgeEscrow), amount, messagePayload);
+        // TODO(PR2): provenance-checked protocol callback
+        // MANAGER completion path: tokens already delivered to the destination escrow; manager releases them.
+        usdc.mint(address(destBridgeEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, "");
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -318,16 +319,18 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             ));
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
-
-        usdc.mint(address(destOmnibridge), amount);
-        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
+        // TODO(PR2): provenance-checked protocol callback
+        // MANAGER completion path: tokens already at escrow; completeBridge stores the payload and releases.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, "");
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completion");
     }
 
     function test_onTokenTransfer_storesTransactionHash() public {
@@ -353,13 +356,15 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             ));
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
-
-        usdc.mint(address(destOmnibridge), amount);
-        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
+        // TODO(PR2): provenance-checked protocol callback
+        // MANAGER completion path: tokens already at escrow; completeBridge records the AMB tx hash and releases.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, "");
 
         assertEq(
             destAdapter.getTransactionHashByInvoiceId(invoiceData.invoiceId),
@@ -442,12 +447,15 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
             ));
         GnosisBridgeAdapter destAdapter = GnosisBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
-        _registerCallbackModule(destEscrow, GnosisBridgeAdapter.onTokenTransfer.selector, address(destAdapter));
         vm.stopPrank();
 
-        usdc.mint(address(destOmnibridge), amount);
-        destOmnibridge.deliverTokens(address(usdc), address(destEscrow), amount, messagePayload);
+        // TODO(PR2): provenance-checked protocol callback
+        // MANAGER completion path: tokens already at escrow; completeBridge stores the payload and releases.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, "");
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");

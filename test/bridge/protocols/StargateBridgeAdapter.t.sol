@@ -228,7 +228,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
     }
 
-    /// @notice Full round-trip: depositAndBridge on source → payload from router → deliver only via deliverMessage (to escrow)
+    /// @notice Full round-trip: depositAndBridge on source → payload from router → MANAGER completeBridge on destination
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaStargate() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -268,11 +268,11 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destBridgeEscrow, StargateBridgeAdapter.lzReceive.selector, address(destAdapter));
-
-        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destBridgeEscrow), address(usdc), amount);
+        // TODO(PR2): provenance-checked protocol callback
+        // Completion now goes through the MANAGER path: tokens already at escrow, manager drives completeBridge.
+        usdc.mint(address(destBridgeEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -349,9 +349,9 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    // ============ LayerZero Receiver Tests (delivery goes to escrow → module → adapter) ============
+    // ============ LayerZero Receiver Tests ============
 
-    /// @notice When delivery goes to escrow, escrow fallback forwards lzReceive to adapter; adapter stores payload
+    /// @notice Completion via the MANAGER path (completeBridge) stores the message payload on the adapter
     function test_lzReceive_storesNonceMapping() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
@@ -378,15 +378,17 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
         destEscrow.authorizeAdapter(destAdapterProxy);
-        _registerCallbackModule(destEscrow, StargateBridgeAdapter.lzReceive.selector, destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
-        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow), address(usdc), amount);
+        // TODO(PR2): provenance-checked protocol callback
+        // Completion now goes through the MANAGER path: tokens already at escrow, completeBridge stores the payload.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completion");
     }
 
     function test_lzReceive_revertsIfNotEndpoint() public {
@@ -517,12 +519,14 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
         destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
         destEscrow.authorizeAdapter(destAdapterProxy);
-        _registerCallbackModule(destEscrow, StargateBridgeAdapter.lzReceive.selector, destAdapterProxy);
+        destAdapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
-        uint64 msgId = destRouter.addSwapForDelivery(messagePayload);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow), address(usdc), amount);
+        // TODO(PR2): provenance-checked protocol callback
+        // Completion now goes through the MANAGER path: tokens already at escrow, completeBridge stores the payload.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");

@@ -141,39 +141,9 @@ contract ManageAdapters is BaseDeployScript {
         console2.log("Bridge adapter to authorize:", adapter);
     }
 
-    /// @notice Authorizes a bridge adapter with callback in BridgeEscrow
-    /// @param adapter The bridge adapter address
-    /// @param selector The callback function selector
-    function _authorizeBridgeAdapterWithCallback(address adapter, bytes4 selector) internal {
-        address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
-        require(bridgeProxy != address(0), "BridgeEscrow not deployed");
-
-        SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
-        transactions[0] = SafeTxBuilder.call(
-            bridgeProxy, 0, abi.encodeCall(BridgeEscrow.authorizeAdapterWithCallback, (adapter, selector))
-        );
-
-        string memory filename =
-            string(abi.encodePacked(vm.toString(currentChainId), "-authorize-bridge-adapter-callback.json"));
-
-        writeSafeTx(
-            filename,
-            "Authorize Bridge Adapter with Callback",
-            string(
-                abi.encodePacked(
-                    "Authorizes bridge adapter with callback: ",
-                    vm.toString(adapter),
-                    " selector: ",
-                    vm.toString(uint32(selector))
-                )
-            ),
-            transactions
-        );
-
-        console2.log("Safe transaction generated:", filename);
-        console2.log("Bridge adapter:", adapter);
-        console2.log("Callback selector:", vm.toString(uint32(selector)));
-    }
+    // NOTE: The escrow callback dispatcher was removed in ADR 0012. Adapters receive protocol callbacks
+    // directly and authenticate them; trusted remote adapters are set via BridgeAdapter.setTrustedRemoteAdapter.
+    // The former `_authorizeBridgeAdapterWithCallback` helper has been removed accordingly.
 
     /// @notice Revokes a bridge adapter from BridgeEscrow
     /// @param adapter The bridge adapter address to revoke

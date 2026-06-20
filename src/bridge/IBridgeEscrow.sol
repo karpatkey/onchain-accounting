@@ -5,11 +5,14 @@ pragma solidity ^0.8;
 /// @notice Interface for BridgeEscrow contract
 /// @author kpk
 /// @dev Contract Invariants:
-///      - `_inTransitBalances[safe][asset]` should equal the sum of amounts from all BRIDGING invoices for that safe and asset
-///      - `_inTransitBalancesAllSafes[asset]` should equal the sum of `_inTransitBalances[safe][asset]` across all safes
-///      - `_activeInvoices[safe]` should only contain invoice hashes with status BRIDGING
-///      - `completedInvoices[invoiceHash]` should only be true for valid invoice hashes that have been released
-///      - All invoices in `_activeInvoices` must have a corresponding entry in `invoices` mapping
+///      - `_inTransitBalances[safe][asset]` equals the sum of amounts from all BRIDGING invoices for that safe and asset
+///      - `_inTransitBalancesAllAccounts[asset]` equals the sum of `_inTransitBalances[safe][asset]` across all safes
+///      - `_activeInvoices[safe]` only contains invoice hashes with status BRIDGING
+///      - `completedInvoices[invoiceHash]` is only true for valid invoice hashes that have been released
+///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
+///      - Destination-side release is a funded pass-through: `releaseByInvoiceId` pays the account strictly
+///        from funds the calling adapter provides in the same call (ADR 0012); the destination escrow holds
+///        no standing per-asset pool, so a release can never be paid from another invoice's funds.
 interface IBridgeEscrow {
     //
     // Errors
@@ -53,13 +56,16 @@ interface IBridgeEscrow {
     /// @param current The current timestamp
     error InvalidTimestamp(uint64 provided, uint64 current);
 
-    /// @notice Thrown when attempting to unregister an asset with active invoices
+    /// @notice Thrown when attempting to unregister or repoint an asset with active invoices
     /// @param symbol The asset symbol (string)
     error AssetHasActiveInvoices(string symbol);
 
     /// @notice Thrown when attempting to unregister a symbol that was never registered
     /// @param symbol The asset symbol (string)
     error AssetNotRegistered(string symbol);
+
+    /// @notice Thrown when the native value sent does not match the funded release/deposit amount
+    error InvalidValue();
 
     //
     // Types
@@ -71,18 +77,23 @@ interface IBridgeEscrow {
         CANCELLED // Invoice cancelled (e.g., bridge failure recovery)
     }
 
-    /// @notice Invoice structure tracking a bridge operation
+    /// @notice Invoice structure tracking a bridge operation (source-chain ledger)
     struct Invoice {
-        bytes32 invoiceId; // Unique identifier (32 bytes, excludes amount)
+        bytes32 invoiceId; // Route+account+symbol identity (32 bytes, excludes amount and nonce)
         uint64 sourceChainId; // Chain ID where assets originate
         uint64 destinationChainId; // Chain ID where assets are destined
         address account; // Account address
         address asset; // Token address (address(0) for native)
         uint256 amount; // Amount being bridged
+        uint256 nonce; // Per-account monotonic nonce (unique per operation)
         uint256 timestamp; // Block timestamp when invoice created
         InvoiceStatus status; // Current status of the invoice
-        address adapter; // Adapter address used for this invoice (for tracking and revocation handling)
+        address adapter; // Adapter address used for this invoice
     }
+
+    //
+    // Events
+    //
 
     /// @notice Event emitted when a new invoice is created
     event InvoiceCreated(
@@ -117,9 +128,6 @@ interface IBridgeEscrow {
     /// @notice Event emitted when an adapter is revoked
     event AdapterRevoked(address indexed adapter);
 
-    /// @notice Event emitted when an adapter's callback config is updated
-    event AdapterCallbackConfigUpdated(address indexed adapter, bytes4 selector, address module);
-
     /// @notice Event emitted when an asset is registered
     event AssetRegistered(bytes6 indexed symbol, address indexed asset);
 
@@ -132,128 +140,97 @@ interface IBridgeEscrow {
     /// @notice Event emitted when an invoice is completed (before assets are released)
     event InvoiceCompleted(bytes32 indexed invoiceHash, bytes32 indexed invoiceId);
 
-    /// @notice Event emitted when tokens are transferred from adapter to escrow
-    event TokensTransferredToEscrow(bytes32 indexed invoiceId, address indexed asset, uint256 amount);
-
     /// @notice Event emitted when emergency withdrawal is performed
     event EmergencyWithdrawal(address indexed asset, uint256 amount, address indexed to);
+
+    //
+    // Core
+    //
 
     /// @notice Deposits assets from an account and immediately bridges them
     /// @param destinationChainId The destination chain ID
     /// @param assetSymbol The asset symbol as string (e.g. "USDC" or "WETH"; max 6 chars)
     /// @param amount The amount to bridge
     /// @param adapter The bridge adapter address to use
-    /// @return invoiceHash The hashed invoice identifier (checksum: invoiceId + amount + timestamp)
+    /// @return invoiceHash The hashed invoice identifier (checksum: invoiceId + amount + timestamp + nonce)
     function depositAndBridge(uint64 destinationChainId, string calldata assetSymbol, uint256 amount, address adapter)
         external
         payable
         returns (bytes32 invoiceHash);
 
-    /// @notice Releases funds based on invoice ID extracted from messagePayload
-    /// @param messagePayload The message payload containing invoiceId, amount, timestamp, and checksum
-    /// @dev Extracts these fields, validates checksum, and releases funds
-    /// @dev This is the ONLY way to release funds - checksum validation is mandatory
-    function releaseByInvoiceId(bytes memory messagePayload) external;
+    /// @notice Releases funds to the account named by the invoice. Callable only by an authorized adapter.
+    /// @param messagePayload The message payload (invoiceId, amount, nonce, meta)
+    /// @dev Destination-side release (ADR 0012). There is no fallback dispatcher and MANAGER cannot call this
+    ///      directly, so the release path is unreachable to an attacker (C1 fixed). Validates checksum
+    ///      (incl. nonce), destination chain, authorized account and replay before transferring.
+    function releaseByInvoiceId(bytes calldata messagePayload) external;
 
-    /// @notice Cancels an invoice and returns assets (if still in escrow)
+    /// @notice Cancels an invoice and returns assets (source chain, bridge-failure recovery)
     /// @param invoiceHash The hashed invoice ID (checksum) to cancel
     function cancelInvoice(bytes32 invoiceHash) external;
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
     /// @param invoiceHashes Array of hashed invoice IDs to mark as completed
-    /// @dev This function should be called by a manager after assets have been released on the destination chain.
-    ///      It updates the invoice status on the source chain for bookkeeping purposes only.
     function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external;
 
+    //
+    // Views
+    //
+
     /// @notice Gets an invoice by its hashed ID
-    /// @param invoiceHash The hashed invoice ID (checksum)
-    /// @return The invoice struct
     function getInvoice(bytes32 invoiceHash) external view returns (Invoice memory);
 
+    /// @notice Returns the current (next) bridge nonce for an account
+    function bridgeNonce(address account) external view returns (uint256);
+
     /// @notice Decodes a 32-byte invoice ID into its components
-    /// @param invoiceId The 32-byte invoice ID (excludes amount)
-    /// @return sourceChainId Source chain ID
-    /// @return destinationChainId Destination chain ID
-    /// @return account Account address (full 20 bytes)
-    /// @return assetSymbol Asset symbol as string (trimmed)
     function decodeInvoiceId(bytes32 invoiceId)
         external
         pure
         returns (uint24 sourceChainId, uint24 destinationChainId, address account, string memory assetSymbol);
 
-    /// @notice Validates invoiceId + amount + timestamp checksum from messagePayload
-    /// @param invoiceId The 32-byte invoice ID (excludes amount)
-    /// @param amount The amount being bridged
-    /// @param timestamp The timestamp (uint64)
-    /// @param checksum24 The 24-byte checksum from messagePayload (first 24 bytes of keccak256 hash)
-    /// @return True if checksum is valid
-    function validateInvoiceIdChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp, bytes24 checksum24)
-        external
-        pure
-        returns (bool);
+    /// @notice Validates the (invoiceId, amount, timestamp, nonce) checksum
+    function validateInvoiceIdChecksum(
+        bytes32 invoiceId,
+        uint256 amount,
+        uint64 timestamp,
+        uint256 nonce,
+        bytes24 checksum24
+    ) external pure returns (bool);
 
     /// @notice Gets all active invoices for an account
-    /// @param account The account address
-    /// @return Array of active Invoice structs (includes destination chain and all invoice details)
     function getActiveInvoices(address account) external view returns (Invoice[] memory);
 
-    /// @notice Calculates the total in-transit balance for an asset by summing all active invoice amounts
-    /// @param asset The asset address to calculate balance for
-    /// @param account Optional account address to filter by. If address(0), sums across all accounts
-    /// @return The total amount in transit for this asset (optionally filtered by account)
+    /// @notice Total in-transit balance for an asset (optionally filtered by account; address(0) = all)
     function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256);
 
     /// @notice Checks if an account is authorized
-    /// @param safe The account address
-    /// @return True if authorized
     function isAuthorizedAccount(address safe) external view returns (bool);
 
     /// @notice Checks if an adapter is authorized
-    /// @param adapter The adapter address
-    /// @return True if authorized
     function isAuthorizedAdapter(address adapter) external view returns (bool);
 
     /// @notice Checks if an invoice (by hash) has been completed
-    /// @param invoiceHash The hashed invoice ID
-    /// @return True if completed
     function isInvoiceCompleted(bytes32 invoiceHash) external view returns (bool);
 
     /// @notice Gets the asset address for a given asset symbol
-    /// @param symbol The asset symbol as string (max 6 chars)
-    /// @return The asset address, or address(0) if not registered
     function assetRegistry(string calldata symbol) external view returns (address);
 
-    /// @notice Returns all registered asset symbol–address pairs
-    /// @return symbols Array of registered asset symbols as strings (converted from bytes6)
-    /// @return assets Array of asset addresses (same length as symbols; address(0) for native)
+    /// @notice Returns all registered asset symbol-address pairs
     function registeredAssets() external view returns (string[] memory symbols, address[] memory assets);
 
     /// @notice Returns all assets in-transit for a specific account with their amounts
-    /// @param account The account address
-    /// @return assets Array of asset addresses
-    /// @return amounts Array of amounts corresponding to each asset
     function getInTransitBalancesForAccount(address account)
         external
         view
         returns (address[] memory assets, uint256[] memory amounts);
 
     /// @notice Gets the completion status for an array of invoices
-    /// @param invoiceHashes Array of invoice hashes to check
-    /// @return isCompleted Array of booleans indicating completion status (indexed by input array)
     function getInvoicesCompletionStatus(bytes32[] calldata invoiceHashes)
         external
         view
         returns (bool[] memory isCompleted);
 
-    /// @notice Returns the adapter registered for a callback selector
-    function getCallbackAdapter(bytes4 selector) external view returns (address);
-
-    /// @notice Returns all authorized adapters and their callback selectors
-    /// @return adapters Array of authorized adapter addresses
-    /// @return callbacks Array of callback selectors (bytes4(0) if adapter has no callback)
-    function getAuthorizedAdaptersWithCallbacks()
-        external
-        view
-        returns (address[] memory adapters, bytes4[] memory callbacks);
+    /// @notice Returns all authorized adapters
+    function getAuthorizedAdapters() external view returns (address[] memory adapters);
 }
-

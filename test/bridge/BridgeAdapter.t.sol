@@ -90,20 +90,24 @@ contract BridgeAdapterTest is BridgeTestBase {
 
     // ============ recoverStuckAssets ============
 
+    // ADR 0012 (H11): recoverStuckAssets `to` MUST be the escrow or an escrow-authorized account.
+    // `account` is authorized in setUp; use it as the recovery recipient.
+
     function test_recoverStuckAssets_erc20Success() public {
         usdc.mint(address(adapter), 5000e6);
-        address to = makeAddr("recoveryTo");
+        address to = account; // escrow-authorized recipient
+        uint256 toBalanceBefore = usdc.balanceOf(to);
 
         vm.prank(manager);
         adapter.recoverStuckAssets(address(usdc), 5000e6, to);
 
-        assertEq(usdc.balanceOf(to), 5000e6, "Recipient should receive tokens");
+        assertEq(usdc.balanceOf(to), toBalanceBefore + 5000e6, "Recipient should receive tokens");
         assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have zero balance");
     }
 
     function test_recoverStuckAssets_nativeSuccess() public {
         vm.deal(address(adapter), 2 ether);
-        address to = makeAddr("recoveryTo");
+        address to = account; // escrow-authorized recipient
         uint256 toBalanceBefore = to.balance;
 
         vm.prank(manager);
@@ -113,30 +117,49 @@ contract BridgeAdapterTest is BridgeTestBase {
         assertEq(address(adapter).balance, 0, "Adapter should have zero ETH");
     }
 
+    function test_recoverStuckAssets_toEscrowSucceeds() public {
+        usdc.mint(address(adapter), 1000e6);
+        uint256 escrowBefore = usdc.balanceOf(address(bridgeEscrow));
+
+        vm.prank(manager);
+        adapter.recoverStuckAssets(address(usdc), 1000e6, address(bridgeEscrow));
+
+        assertEq(usdc.balanceOf(address(bridgeEscrow)), escrowBefore + 1000e6, "Escrow should receive tokens");
+    }
+
     function test_RevertWhen_recoverStuckAssets_notManager() public {
         usdc.mint(address(adapter), 1000e6);
         vm.prank(unauthorized);
         vm.expectRevert();
-        adapter.recoverStuckAssets(address(usdc), 1000e6, makeAddr("to"));
+        adapter.recoverStuckAssets(address(usdc), 1000e6, account);
+    }
+
+    /// @notice ADR 0012 (H11): recovering to an arbitrary (non-authorized) address reverts NotAuthorized.
+    function test_RevertWhen_recoverStuckAssets_toUnauthorizedRecipient() public {
+        usdc.mint(address(adapter), 1000e6);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
+        adapter.recoverStuckAssets(address(usdc), 1000e6, makeAddr("arbitrary"));
     }
 
     function test_RevertWhen_recoverStuckAssets_toZero() public {
+        // address(0) is not an authorized account, so the H11 recipient check rejects it.
         vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
         adapter.recoverStuckAssets(address(usdc), 1, address(0));
     }
 
     function test_RevertWhen_recoverStuckAssets_amountZero() public {
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
-        adapter.recoverStuckAssets(address(usdc), 0, makeAddr("to"));
+        adapter.recoverStuckAssets(address(usdc), 0, account);
     }
 
     function test_RevertWhen_recoverStuckAssets_insufficientBalance() public {
         usdc.mint(address(adapter), 100e6);
         vm.prank(manager);
         vm.expectRevert(); // InsufficientBalance
-        adapter.recoverStuckAssets(address(usdc), 200e6, makeAddr("to"));
+        adapter.recoverStuckAssets(address(usdc), 200e6, account);
     }
 
     // ============ View / ERC165 ============
@@ -162,12 +185,13 @@ contract BridgeAdapterTest is BridgeTestBase {
     function testFuzz_recoverStuckAssets_erc20(uint96 amount) public {
         amount = uint96(bound(amount, 1, type(uint96).max / 2));
         usdc.mint(address(adapter), amount);
-        address to = makeAddr("recoveryTo");
+        address to = account; // ADR 0012 (H11): recipient must be escrow-authorized
+        uint256 toBalanceBefore = usdc.balanceOf(to);
 
         vm.prank(manager);
         adapter.recoverStuckAssets(address(usdc), amount, to);
 
-        assertEq(usdc.balanceOf(to), amount, "Recipient should receive full amount");
+        assertEq(usdc.balanceOf(to), toBalanceBefore + amount, "Recipient should receive full amount");
         assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter balance should be zero");
     }
 }

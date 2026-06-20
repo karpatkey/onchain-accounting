@@ -15,12 +15,13 @@ import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
-/// @notice PoC: BridgeEscrow.fallback() is callable by anyone, and the protocol callback functions on the
-///         registered adapters check `msg.sender == bridgeEscrow`. As a result an attacker can fabricate
-///         a fully valid messagePayload (the checksum is keccak256 of public data — no signing key) and
-///         pass it through escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId, releasing
-///         arbitrary amounts of any registered asset out of the escrow to an authorized account on the
-///         destination chain — with NO bridge transfer ever arriving on-chain.
+/// @notice REGRESSION (ADR 0012, C1 fixed): the escrow no longer has a `fallback()` dispatcher, and
+///         `releaseByInvoiceId` is callable only by an authorized adapter (never reachable through a
+///         public fallback). The original exploit fabricated a valid messagePayload (the checksum is
+///         keccak256 of public data — no signing key) and pushed it through
+///         escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId to drain the escrow with no
+///         real bridge delivery. This test asserts that exact attack now FAILS: the raw call to the escrow
+///         does not drain it, balances are unchanged, and the forged invoice is NOT marked completed.
 contract Poc_BridgeEscrowFallbackSpoof is Test {
     address public admin = makeAddr("admin");
     address public manager = makeAddr("manager");
@@ -67,24 +68,28 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         );
         destAdapter = StargateBridgeAdapter(payable(adapterProxy));
 
+        // ADR 0012: adapters are authorized only via authorizeAdapter (no callback registration exists).
         vm.startPrank(admin);
-        destEscrow.authorizeAdapterWithCallback(adapterProxy, StargateBridgeAdapter.lzReceive.selector);
+        destEscrow.authorizeAdapter(adapterProxy);
         vm.stopPrank();
 
         // Seed the escrow with USDC the attacker wants to drain
         usdc.mint(address(destEscrow), 1_000_000e6);
     }
 
-    /// @notice Attacker drains the escrow with a forged payload that never crossed any bridge.
-    function test_exploit_drainEscrowViaFallbackSpoof() public {
+    /// @notice REGRESSION: the original drain attack now fails. With the fallback dispatcher removed, the
+    ///         attacker's raw call to the escrow reaches no release path: the escrow balance is unchanged,
+    ///         the account receives nothing, and the forged invoice is NOT marked completed.
+    function test_regression_fallbackSpoofNoLongerDrains() public {
         uint256 stolen = 750_000e6;
         uint256 escrowBefore = usdc.balanceOf(address(destEscrow));
         uint256 accountBefore = usdc.balanceOf(account);
 
-        // 1. Attacker fabricates a perfectly valid invoice payload — no key required.
+        // 1. Attacker fabricates a valid-looking invoice payload — no key required (checksum is public data).
         bytes32 invoiceId = _packInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
         uint64 ts = uint64(block.timestamp);
-        bytes24 checksum24 = bytes24(keccak256(abi.encodePacked(invoiceId, stolen, ts)));
+        uint256 nonce = 0;
+        bytes24 checksum24 = InvoiceDataLib.calculateChecksum(invoiceId, stolen, ts, nonce);
         InvoiceDataLib.InvoiceData memory fake = InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
             sourceChainId: SafeCast.toUint24(SOURCE_CHAIN_ID),
@@ -92,43 +97,42 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
             account: account,
             assetSymbol: USDC_SYMBOL_BYTES6,
             amount: stolen,
+            nonce: nonce,
             timestamp: ts,
             checksum24: checksum24
         });
         bytes memory payload = InvoiceDataLib.encode(fake);
 
-        // 2. Encode an lzReceive call. The escrow.fallback() will receive it, look up the registered
-        //    adapter for lzReceive's selector and forward via .call.
+        // 2. Encode the old lzReceive dispatch attempt. Previously the escrow.fallback() would have looked up
+        //    a registered adapter for this selector and forwarded via .call. There is no fallback anymore.
         bytes memory lzReceiveCalldata = abi.encodeWithSelector(
             StargateBridgeAdapter.lzReceive.selector,
-            uint16(101), // _srcChainId — ignored by adapter
+            uint16(101), // _srcChainId
             bytes(""), // _srcAddress
             uint64(0), // _nonce
-            payload // _payload (used)
+            payload // _payload
         );
 
-        // 3. Anyone (the attacker) calls the escrow with this data. There is no auth on fallback.
+        // 3. Anyone (the attacker) calls the escrow with this data. With no fallback dispatcher, the call
+        //    cannot be coaxed into reaching releaseByInvoiceId.
         vm.prank(attacker);
         (bool success,) = address(destEscrow).call(lzReceiveCalldata);
-        assertTrue(success, "fallback dispatch must succeed");
+        assertFalse(success, "no fallback dispatcher: the spoof call must not succeed");
 
-        // 4. Funds are released out of the escrow even though no bridge message ever arrived.
+        // 4. Nothing left the escrow; the account received nothing.
         uint256 escrowAfter = usdc.balanceOf(address(destEscrow));
         uint256 accountAfter = usdc.balanceOf(account);
         console.log("escrow USDC before:", escrowBefore);
         console.log("escrow USDC after :", escrowAfter);
         console.log("account USDC before:", accountBefore);
         console.log("account USDC after :", accountAfter);
-        console.log("amount drained from escrow:", escrowBefore - escrowAfter);
 
-        assertEq(escrowAfter, escrowBefore - stolen, "escrow drained by attacker-forged payload");
-        assertEq(accountAfter, accountBefore + stolen, "stolen funds sent to authorized account");
+        assertEq(escrowAfter, escrowBefore, "escrow balance unchanged (no drain)");
+        assertEq(accountAfter, accountBefore, "account balance unchanged (no payout)");
 
-        // 5. The forged invoice is now marked completed on the destination — locking out any *real*
-        //    bridge delivery for that (invoiceId, amount, timestamp). On the source chain the matching
-        //    BRIDGING invoice (if it ever exists) is permanently stuck.
+        // 5. The forged invoice was never marked completed on the destination.
         bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "forged invoice marked completed");
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "forged invoice must NOT be marked completed");
     }
 
     function _packInvoiceId(uint64 srcId, uint64 dstId, address acct, bytes6 sym) internal pure returns (bytes32) {

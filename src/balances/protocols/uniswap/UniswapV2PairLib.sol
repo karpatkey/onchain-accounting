@@ -50,13 +50,11 @@ library UniswapV2PairLib {
     /// @param numFactor Numerator multiplier on `(√k − √kLast)`.
     /// @param rootKCoeff Coefficient on `√k` in the denominator.
     /// @param rootKLastCoeff Coefficient on `√kLast` in the denominator.
-    function pairAmounts(
-        address pair,
-        address account,
-        uint256 numFactor,
-        uint256 rootKCoeff,
-        uint256 rootKLastCoeff
-    ) internal view returns (address token0, address token1, uint256 amount0, uint256 amount1) {
+    function pairAmounts(address pair, address account, uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff)
+        internal
+        view
+        returns (address token0, address token1, uint256 amount0, uint256 amount1)
+    {
         token0 = IUniswapV2Pair(pair).token0();
         token1 = IUniswapV2Pair(pair).token1();
 
@@ -71,7 +69,14 @@ library UniswapV2PairLib {
         (uint112 reserve0, uint112 reserve1,) = IUniswapV2Pair(pair).getReserves();
         uint256 effectiveSupply = totalSupply
             + _pendingProtocolMint(
-                pair, IUniswapV2Pair(pair).factory(), reserve0, reserve1, totalSupply, numFactor, rootKCoeff, rootKLastCoeff
+                pair,
+                IUniswapV2Pair(pair).factory(),
+                reserve0,
+                reserve1,
+                totalSupply,
+                numFactor,
+                rootKCoeff,
+                rootKLastCoeff
             );
 
         amount0 = reserve0 == 0 ? 0 : (balance * uint256(reserve0)) / effectiveSupply;

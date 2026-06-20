@@ -29,7 +29,12 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///         the pair would mint to `feeTo` on the next burn. Uniswap V2 captures 1/6 of fee growth → `(1, 5, 1)`.
     ///         `virtual` so a fork whose protocol-fee fraction differs (PancakeSwap V2 → `(8, 17, 8)`) reports the
     ///         correct burn-equivalent reserve share. SushiSwap shares Uniswap's constants and needs no override.
-    function _mintFeeConstants() internal pure virtual returns (uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff) {
+    function _mintFeeConstants()
+        internal
+        pure
+        virtual
+        returns (uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff)
+    {
         return (1, 5, 1);
     }
 

@@ -816,9 +816,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
         );
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(
-            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr)
-        );
+        return
+            address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
 
     function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {

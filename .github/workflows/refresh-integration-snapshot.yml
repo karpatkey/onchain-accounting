@@ -38,6 +38,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
+          version: v1.7.1
           cache: true
 
       - name: Install jq + curl

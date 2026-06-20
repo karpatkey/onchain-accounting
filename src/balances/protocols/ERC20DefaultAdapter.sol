@@ -285,7 +285,10 @@ contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
             let ptr := mload(0x40)
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address) selector
             mstore(add(ptr, 0x04), account)
-            let outPtr := add(ptr, 0x24)
+            // Output goes in a separate, 32-byte-aligned scratch word at ptr+0x40 (clear of the 0x24-byte
+            // calldata at ptr..ptr+0x24). The free-memory pointer is advanced to ptr+0x60 — kept 32-byte
+            // aligned so later Solidity allocations in this call (e.g. _buildPositions arrays) are not corrupted.
+            let outPtr := add(ptr, 0x40)
             mstore(outPtr, 0) // zero the output word so a short/empty return reads as 0, never stale memory
             mstore(0x40, add(outPtr, 0x20))
 

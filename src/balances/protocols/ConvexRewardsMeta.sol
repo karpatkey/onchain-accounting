@@ -295,7 +295,12 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
         // a short return, which leaves result == 0 — indistinguishable from a genuine pid 0.)
         (bool pidOk, bytes memory ret) = rewarder.staticcall(abi.encodeWithSignature("pid()"));
         if (!pidOk || ret.length < 32) return address(0);
-        uint256 pid = abi.decode(ret, (uint256));
+        // Read the first word directly: abi.decode(ret, (uint256)) can revert on a non-32-multiple length
+        // (e.g. 33 bytes), which would defeat the fail-open intent for a malformed rewarder.
+        uint256 pid;
+        assembly {
+            pid := mload(add(ret, 0x20))
+        }
         try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {
             return lptoken;
         } catch {

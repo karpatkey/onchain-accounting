@@ -86,11 +86,18 @@ library UniswapV3PoolLib {
     ///         never reads the manipulable pool `slot0`. The encoded price is token1/token0 in *raw* units:
     ///         `price = (p0 · 10^(dec1+pdec1)) / (p1 · 10^(dec0+pdec0))`, and `sqrtPriceX96 = sqrt(price) · 2^96`.
     /// @dev Computed as `mulDiv(sqrt(numerator), 2^96, sqrt(denominator))` — the two-sqrt split keeps both the
-    ///      intermediate operands and the result inside uint256 across the full `[MIN_SQRT_RATIO, MAX_SQRT_RATIO]`
-    ///      range (a single `price · 2^192` would overflow for high-price pools). Truncation is ~1 ulp on operands
-    ///      ~1e22, i.e. ~1e-22 relative — far below the oracle-vs-spot gap. Result is clamped to the valid sqrt
-    ///      range so `LiquidityAmounts`/`TickMath` consumers never see an out-of-range input. Callers must pass
-    ///      strictly-positive prices.
+    ///      intermediate operands and the result inside uint256 (a single `price · 2^192` would overflow for
+    ///      high-price pools). Truncation is ~1 ulp on operands ~1e22, i.e. ~1e-22 relative — far below the
+    ///      oracle-vs-spot gap. Result is clamped to the valid sqrt range so `LiquidityAmounts`/`TickMath`
+    ///      consumers never see an out-of-range input. Callers must pass strictly-positive prices.
+    ///
+    ///      Overflow: the shared power of ten in `numerator`/`denominator` is cancelled first, so the surviving
+    ///      `10 ** e` exponent is only the *difference* `|(dec1+pdec1) - (dec0+pdec0)|`. For real registered
+    ///      assets (ERC20 decimals ≤ 18, validated 8-dp USD feeds) that difference is ≤ ~36 and the
+    ///      `price · 10^e` products sit well inside uint256, so this does not revert. A pathological asset config
+    ///      (e.g. a >60-decimal token) could still overflow `10 ** e`; that is not reachable for validated assets,
+    ///      and is in any case fail-safe — the caller invokes this inside the meta-adapter's per-instance
+    ///      try/catch, so an overflow drops only that one pool's leg rather than the whole read.
     /// @param price0 Oracle price of token0 (must be > 0). @param priceDecimals0 Its decimals. @param tokenDecimals0 token0 ERC20 decimals.
     /// @param price1 Oracle price of token1 (must be > 0). @param priceDecimals1 Its decimals. @param tokenDecimals1 token1 ERC20 decimals.
     function sqrtPriceX96FromOraclePrices(
@@ -101,8 +108,13 @@ library UniswapV3PoolLib {
         uint8 priceDecimals1,
         uint8 tokenDecimals1
     ) internal pure returns (uint160 sqrtPriceX96) {
-        uint256 numerator = price0 * (10 ** (uint256(tokenDecimals1) + uint256(priceDecimals1)));
-        uint256 denominator = price1 * (10 ** (uint256(tokenDecimals0) + uint256(priceDecimals0)));
+        uint256 eNum = uint256(tokenDecimals1) + uint256(priceDecimals1);
+        uint256 eDen = uint256(tokenDecimals0) + uint256(priceDecimals0);
+        // Cancel the shared power of ten so only the net exponent difference is materialised (keeps `10 ** e`
+        // and the `price · 10^e` products bounded for realistic asset configs — see overflow note above).
+        uint256 common = eNum < eDen ? eNum : eDen;
+        uint256 numerator = price0 * (10 ** (eNum - common));
+        uint256 denominator = price1 * (10 ** (eDen - common));
         uint256 s = Math.mulDiv(Math.sqrt(numerator), 1 << 96, Math.sqrt(denominator));
         if (s < TickMath.MIN_SQRT_RATIO) return TickMath.MIN_SQRT_RATIO;
         if (s > TickMath.MAX_SQRT_RATIO) return TickMath.MAX_SQRT_RATIO;

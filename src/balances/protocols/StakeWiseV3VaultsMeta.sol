@@ -15,8 +15,15 @@ interface IStakeWiseVault {
     /// @notice Gets the amount of vault shares owned by an account
     function getShares(address account) external view returns (uint256);
 
-    /// @notice Gets the amount of osTokens minted against an account's position
+    /// @notice Gets the amount of osTokens minted against an account's position (in osToken SHARES).
     function osTokenPositions(address account) external view returns (uint256);
+}
+
+/// @notice StakeWise OsTokenVaultController — converts osToken shares to the underlying asset amount. The osToken
+///         debt is denominated in osToken shares whose exchange rate is governed here, NOT by the staking vault's
+///         share→asset rate (a different object), so the Borrowed leg must convert through this controller.
+interface IOsTokenVaultController {
+    function convertToAssets(uint256 shares) external view returns (uint256);
 }
 
 /// @title StakeWise V3 Vaults Meta Balance Adapter
@@ -36,14 +43,23 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
 
+    /// @notice StakeWise OsTokenVaultController for this chain — converts osToken-debt shares to the underlying.
+    IOsTokenVaultController public immutable OS_TOKEN_VAULT_CONTROLLER;
+
     /// @param underlyingToken_ The underlying staking asset (e.g. ETH sentinel on mainnet, GNO on Gnosis).
+    /// @param osTokenVaultController_ The chain's StakeWise OsTokenVaultController (same one osToken_PriceOracle uses).
     /// @param protocolName_ Human-readable protocol name (e.g. "StakeWise V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address underlyingToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(
+        address underlyingToken_,
+        address osTokenVaultController_,
+        string memory protocolName_,
+        address navCalculator_
+    ) MetaBalanceAdapter(protocolName_, navCalculator_) {
         require(underlyingToken_ != address(0), "underlyingToken=0");
+        require(osTokenVaultController_.code.length > 0, "osTokenVaultController not a contract");
         UNDERLYING_TOKEN = underlyingToken_;
+        OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);
     }
 
     /// @inheritdoc MetaBalanceAdapter
@@ -63,8 +79,11 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (!found) return new INAVCalculator.PositionBalance[](0);
 
         IStakeWiseVault vault = IStakeWiseVault(_toAddress(instance));
+        // Staking leg: vault shares → underlying via the vault's own rate.
         uint256 vaultAssets = vault.convertToAssets(vault.getShares(account));
-        uint256 mintedOs = vault.convertToAssets(vault.osTokenPositions(account));
+        // Borrow leg: osToken debt is in osToken SHARES → convert via the OsTokenVaultController's rate, NOT the
+        // vault's share rate (different exchange-rate object), or the debt is mis-scaled.
+        uint256 mintedOs = OS_TOKEN_VAULT_CONTROLLER.convertToAssets(vault.osTokenPositions(account));
 
         bytes memory pid = _instancePositionId(instance);
 

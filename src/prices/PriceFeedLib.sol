@@ -549,6 +549,19 @@ library PriceFeedLib {
         priceFeeds = new PriceFeedCache[](length);
         for (uint256 i = 0; i < length; i++) {
             address asset = assets[i];
+            // [8]/S1 — A feedless asset that still has a live position must NOT revert the whole NAV/positions
+            // read. `_selectFeedCore` reverts PriceFeedNotSet when len == 0; here in the value-aggregation path we
+            // instead treat it exactly like the all-feeds-stale case: price 0, stale = true. The asset is then
+            // surfaced in `nav.stalePriceAssets` and summed as a zero-value (stale) leg rather than DoS-reverting
+            // the entire read. The explicit query paths (selectFeed/buildPriceData/calculateValue) keep reverting
+            // PriceFeedNotSet so MANAGER tooling still sees the misconfiguration.
+            if (priceOracles[asset].length == 0) {
+                // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
+                // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
+                // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
+                priceFeeds[i] = PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true});
+                continue;
+            }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
             priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale});
         }

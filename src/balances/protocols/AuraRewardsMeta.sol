@@ -136,7 +136,7 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     if (assetFilter != address(0) && tok != assetFilter) continue;
                     (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
                     if (!found) continue;
-                    uint256 amount = BalancerV3PoolLib.poolBalanceOf(pool, stakedBpt, tok);
+                    uint256 amount = BalancerV3PoolLib.poolBalanceOfIndexed(pool, stakedBpt, i);
                     if (amount == 0) continue;
                     tmp[n++] = INAVCalculator.PositionBalance({
                         balanceAsset: info,

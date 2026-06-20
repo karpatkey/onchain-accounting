@@ -6,11 +6,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title PancakeSwap V2 Pools Meta Balance Adapter
 /// @author kpk
-/// @notice Meta-adapter for PancakeSwap V2 pairs. PancakeSwap V2 is a byte-for-byte Uniswap V2 fork (same
-///         Pair/Factory ABI, same `_mintFee` formula), so this is a thin subclass of the Uniswap V2 pools
-///         meta-adapter with no behavioural change — it exists for block-explorer visibility and dispatch
-///         clarity, reporting the same positions. The protocol identifier (e.g.
-///         "PancakeSwap V2") is set per deployment.
+/// @notice Meta-adapter for PancakeSwap V2 pairs. PancakeSwap V2 shares the Uniswap V2 Pair/Factory ABI and
+///         pro-rata math, so this is a thin subclass of the Uniswap V2 pools meta-adapter. It differs in ONE
+///         respect: PancakeSwap's protocol-fee fraction is not Uniswap's, so its `_mintFee` mints a different
+///         amount of dilution LP to `feeTo` — overridden via `_mintFeeConstants` below. The protocol identifier
+///         (e.g. "PancakeSwap V2") is set per deployment.
 contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter {
     /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V2").
     /// @param navCalculator_ NAVCalculator contract address.
@@ -23,5 +23,18 @@ contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapte
     ///      distinguishes PancakeSwap V2 LP from Uniswap V2 LP. Same positionId schema (address pair).
     function _protocolId() internal pure override returns (bytes32) {
         return ProtocolIds.PANCAKESWAP_V2;
+    }
+
+    /// @inheritdoc UniswapV2PoolsMetaBalanceAdapter
+    /// @dev PancakeSwap V2's `_mintFee` uses `liquidity = ts·(√k−√kLast)·8 / (17·√k + 8·√kLast)` — a larger
+    ///      protocol-fee fraction than Uniswap's `(1, 5, 1)`. Using Uniswap's constants would understate the
+    ///      dilution LP and slightly overstate the holder's reserve share whenever PancakeSwap's `feeTo` is set.
+    function _mintFeeConstants()
+        internal
+        pure
+        override
+        returns (uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff)
+    {
+        return (8, 17, 8);
     }
 }

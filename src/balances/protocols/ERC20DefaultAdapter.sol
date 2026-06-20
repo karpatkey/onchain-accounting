@@ -38,6 +38,13 @@ contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
     constructor(address navCalculator_, address[] memory initialAssets) {
         require(navCalculator_ != address(0), "NAVCalculator cannot be zero address");
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        // The seed list is NOT registry-checked here: this constructor is invoked by
+        // NavRegistryLib.deployDefaultAdapter *during NAVCalculator.initialize*, which runs inside the proxy's
+        // own constructor — at that point the proxy has no deployed code yet, so an external
+        // NAV_CALCULATOR.isAssetRegistered(...) callback would revert with "call to non-contract". The only
+        // caller seeds exactly [NATIVE_ADDRESS], which initialize registers one line before deploying this
+        // adapter, so a misconfigured seed is not reachable. Post-deploy entries go through addSupportedAsset,
+        // which does enforce isAssetRegistered.
         for (uint256 i = 0; i < initialAssets.length; i++) {
             _supportedAssets.add(initialAssets[i]);
         }
@@ -265,33 +272,29 @@ contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
             return account.balance;
         }
 
-        // Try to call balanceOf using low-level staticcall
-        // This works for real contracts and won't revert for non-contracts
+        // Read balanceOf(account) via low-level staticcall so a non-standard/non-contract asset cannot revert
+        // the NAV scan. IMPORTANT: a staticcall to a code-less address (or a token whose balanceOf returns
+        // void/short data) returns success=true with returndatasize() < 32 — the EVM then leaves the output
+        // region untouched. We therefore (a) write the return into a FRESH, zeroed scratch word distinct from
+        // the calldata buffer, and (b) only treat it as a balance when a full 32-byte word was actually
+        // returned. Without this, the leftover calldata (the balanceOf selector word) would be misread as a
+        // huge phantom balance, corrupting NAV.
         uint256 tokenBalance;
         bool success;
         assembly {
-            // Prepare calldata for balanceOf(account)
             let ptr := mload(0x40)
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000) // balanceOf(address) selector
             mstore(add(ptr, 0x04), account)
-            mstore(0x40, add(ptr, 0x24))
+            let outPtr := add(ptr, 0x24)
+            mstore(outPtr, 0) // zero the output word so a short/empty return reads as 0, never stale memory
+            mstore(0x40, add(outPtr, 0x20))
 
-            // Make staticcall - returns false for non-contracts, doesn't revert
-            success := staticcall(gas(), asset, ptr, 0x24, ptr, 0x20)
+            success := staticcall(gas(), asset, ptr, 0x24, outPtr, 0x20)
 
-            if success {
-                tokenBalance := mload(ptr)
-            }
+            // Only a full-word return is a real balance; code-less/void/short returns stay 0.
+            if and(success, gt(returndatasize(), 0x1f)) { tokenBalance := mload(outPtr) }
         }
 
-        // Only return balance if staticcall succeeded
-        // For non-contracts or failed calls, return 0
-        // Note: This means deal() won't work for non-contract addresses,
-        // but that's acceptable as tests should use mock contracts
-        if (success) {
-            return tokenBalance;
-        }
-
-        return 0;
+        return tokenBalance;
     }
 }

@@ -20,7 +20,7 @@ import "src/errors.sol";
 ///      yet — the value is non-zero but not trustworthy. Without this check, an IFFY basket
 ///      would be silently accepted as fresh.
 ///
-///      Heartbeat check: min(IAsset.lastSave()) across all prime basket components must be within
+///      Heartbeat check: min(IAsset.lastSave()) across all *active* basket components must be within
 ///      RESERVE_PROTOCOL_HEARTBEAT. lastSave() is updated each time a keeper calls refresh() on
 ///      a collateral plugin — that call is what reads the underlying Chainlink oracle. If the
 ///      minimum falls behind RESERVE_PROTOCOL_HEARTBEAT, the basket price is considered stale.
@@ -84,7 +84,7 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     }
 
     /// @inheritdoc IPriceFeedCustom
-    /// @dev updatedAt = min(IAsset.lastSave()) across all prime basket components — the
+    /// @dev updatedAt = min(IAsset.lastSave()) across all active basket components — the
     ///      worst-case oracle refresh age. roundId, startedAt, answeredInRound are zero
     ///      (Reserve Protocol has no round concept). Exposed for external observability;
     ///      staleness is handled internally in getLatestPrice().
@@ -98,13 +98,18 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
         return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
-    /// @notice Returns the minimum lastSave() timestamp across all prime basket components.
+    /// @notice Returns the minimum lastSave() timestamp across all components of the *active* reference basket.
+    /// @dev Drives freshness off `basketTokens()` (the live basket that `price()`/`basketsNeeded()` actually
+    ///      reflect), NOT `getPrimeBasket()` (the governance-configured target). After a collateral default swaps
+    ///      in backup collateral and the basket re-collateralizes to SOUND, the active backups differ from prime;
+    ///      checking the prime set would skip the backups' oracle freshness — the unsafe direction (stale accepted
+    ///      as fresh). `basketTokens()` always matches the set being priced.
     function _minBasketLastSave(IMain main, IBasketHandler basketHandler) internal view returns (uint48 minLastSave) {
         IAssetRegistry registry = main.assetRegistry();
-        (IERC20[] memory erc20s,,) = basketHandler.getPrimeBasket();
+        address[] memory erc20s = basketHandler.basketTokens();
         minLastSave = type(uint48).max;
         for (uint256 i = 0; i < erc20s.length; i++) {
-            uint48 save = registry.toAsset(erc20s[i]).lastSave();
+            uint48 save = registry.toAsset(IERC20(erc20s[i])).lastSave();
             if (save < minLastSave) minLastSave = save;
         }
         if (minLastSave == type(uint48).max) minLastSave = 0;
@@ -154,10 +159,9 @@ interface IMain {
 interface IBasketHandler {
     function price() external view returns (uint192 low, uint192 high);
     function status() external view returns (CollateralStatus);
-    function getPrimeBasket()
-        external
-        view
-        returns (IERC20[] memory erc20s, bytes32[] memory targetNames, uint192[] memory targetAmts);
+    /// @notice ERC20s of the *active* reference basket (reflects backup collateral after a default + refresh) —
+    ///         the same set `price()`/`quote()` are computed over. Used for the freshness gate.
+    function basketTokens() external view returns (address[] memory erc20s);
 }
 
 interface IAssetRegistry {

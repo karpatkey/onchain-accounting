@@ -25,6 +25,14 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return ProtocolIds.UNISWAP_V2;
     }
 
+    /// @notice `_mintFee` dilution coefficients `(numFactor, rootKCoeff, rootKLastCoeff)` for the protocol-fee LP
+    ///         the pair would mint to `feeTo` on the next burn. Uniswap V2 captures 1/6 of fee growth → `(1, 5, 1)`.
+    ///         `virtual` so a fork whose protocol-fee fraction differs (PancakeSwap V2 → `(8, 17, 8)`) reports the
+    ///         correct burn-equivalent reserve share. SushiSwap shares Uniswap's constants and needs no override.
+    function _mintFeeConstants() internal pure virtual returns (uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff) {
+        return (1, 5, 1);
+    }
+
     /// @param protocolName_ Human-readable protocol name (e.g. "Uniswap V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -42,7 +50,9 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         address pair = _toAddress(instance);
         bytes memory pid = _instancePositionId(instance);
-        (address token0, address token1, uint256 amount0, uint256 amount1) = UniswapV2PairLib.pairAmounts(pair, account);
+        (uint256 numFactor, uint256 rootKCoeff, uint256 rootKLastCoeff) = _mintFeeConstants();
+        (address token0, address token1, uint256 amount0, uint256 amount1) =
+            UniswapV2PairLib.pairAmounts(pair, account, numFactor, rootKCoeff, rootKLastCoeff);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;

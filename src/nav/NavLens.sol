@@ -87,8 +87,14 @@ contract NavLens {
             offset := mload(add(ret, 0x20))
             strLen := mload(add(ret, 0x40))
         }
-        // canonical ABI-encoded string has offset == 0x20 and the declared length must fit the returned bytes
-        if (offset != 0x20 || ret.length < 64 + strLen) return "";
+        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
+        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
+        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
+        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
+        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
+        if (offset != 0x20 || strLen > ret.length) return "";
+        uint256 padded = (strLen + 31) & ~uint256(31);
+        if (ret.length < 64 + padded) return "";
         return abi.decode(ret, (string));
     }
 }

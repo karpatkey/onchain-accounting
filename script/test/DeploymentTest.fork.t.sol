@@ -29,7 +29,7 @@ contract DeploymentTest is TestEnvConfigurator {
         // NavRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
         // NAVCalculator during initialize() (registerAsset for the native asset). Etch its runtime code there so the
         // proxy-init tests below find it (mirrors how the other NAVCalculator tests etch the pre-linked libraries).
-        vm.etch(0x02F27E28452E6F419b97935f6346381E2b5003B1, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x598D86380907a78ceE1AC81f55354Bc8871A3802, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
     }
 
     /// @notice Test Create2Deployer deployment

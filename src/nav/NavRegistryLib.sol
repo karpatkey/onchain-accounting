@@ -8,6 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -25,6 +26,25 @@ library NavRegistryLib {
 
     /// @notice Native-asset sentinel (mirrors Balances.NATIVE_ADDRESS).
     address private constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+
+    // -------------------------------------------------------------------------
+    // ERC20Default adapter factory
+    // -------------------------------------------------------------------------
+
+    /// @notice Deploys a fresh ERC20DefaultAdapter bound to the calling NAVCalculator and returns it.
+    /// @dev This function does NOT enforce single-deploy semantics — each call deploys a new adapter. The
+    ///      one-adapter invariant is enforced by the caller: NAVCalculator.initialize calls this exactly once and
+    ///      passes the result to `_setErc20DefaultAdapter`, which reverts if the default adapter is already set.
+    ///      Called via DELEGATECALL, so `address(this)` is the NAV proxy — the adapter's
+    ///      immutable NAV_CALCULATOR is pinned to it and the proxy is the CREATE deployer. Housed here so the
+    ///      adapter's ~5 KB creation bytecode is embedded in THIS external library rather than NAVCalculator's
+    ///      runtime code, keeping NAVCalculator well under EIP-170. `initialAssets` seeds the inclusion list
+    ///      (e.g. NATIVE_ADDRESS) at construction without a callback to the still-initializing proxy.
+    /// @param initialAssets Assets to pre-add to the adapter's inclusion list.
+    /// @return adapter The deployed ERC20DefaultAdapter address.
+    function deployDefaultAdapter(address[] memory initialAssets) external returns (address adapter) {
+        return address(new ERC20DefaultAdapter(address(this), initialAssets));
+    }
 
     // -------------------------------------------------------------------------
     // Asset registry

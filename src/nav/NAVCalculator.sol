@@ -67,11 +67,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // Pre-register native address in NAV/Pricing registry
         _registerAsset(NATIVE_ADDRESS);
-        // Deploy ERC20Default adapter with native in inclusion list (constructor avoids callback to proxy during init)
+        // Deploy ERC20Default adapter with native in inclusion list (constructor avoids callback to proxy during init).
+        // The `new` lives in NavRegistryLib (DELEGATECALL: address(this) is this proxy) so the adapter's creation
+        // bytecode is embedded in that external library, not NAVCalculator's runtime — see ADR + deployDefaultAdapter.
         address[] memory initialAssets = new address[](1);
         initialAssets[0] = NATIVE_ADDRESS;
-        ERC20DefaultAdapter defaultAdapter = new ERC20DefaultAdapter(address(this), initialAssets);
-        _setErc20DefaultAdapter(address(defaultAdapter));
+        _setErc20DefaultAdapter(NavRegistryLib.deployDefaultAdapter(initialAssets));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }

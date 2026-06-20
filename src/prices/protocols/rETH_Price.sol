@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 
 /// @title rETH Custom Price Oracle
-/// @notice USD price of rETH = `rETH.getExchangeRate()` (rETH/ETH, 18 dec) × Chainlink ETH/USD.
+/// @notice USD price of rETH = `rETH.getExchangeRate()` (ETH per rETH, 18 dec) × Chainlink ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the rETH exchange rate via `_rate()`.
 /// @author kpk

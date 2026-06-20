@@ -12,7 +12,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice Shared skeleton for the "exchange-rate × Chainlink-base" custom price feeds: it reads a base Chainlink
 ///         feed (typically ETH/USD, 8 decimals), applies the standard staleness gate, multiplies by a
 ///         protocol-supplied 18-decimal exchange rate, and returns the result in the base feed's decimals.
-///         Concrete feeds implement only `_rate()` (the protocol's token-per-base rate, 18 decimals).
+///         Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal base-token
+///         units per 1 `UNDERLYING` (e.g. ETH per rETH), i.e. the same orientation the multiply expects.
 /// @dev The 5 `IPriceFeedCustom` thunks, the immutables, the constructor validation, and the
 ///      read/staleness/normalize math live here once, instead of being copy-pasted into ~17 feeds. The math is
 ///      identical to the former per-feed `_compute()`: `price = rate · baseAnswer / 1e18` (Math.Rounding.Floor),
@@ -73,7 +74,7 @@ abstract contract BaseCustomPriceFeed is IPriceFeedCustom {
         }
         uint256 rate = _rate();
         if (rate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        // rate is 18 decimals, base feed is 8 decimals → result is 8 decimals.
+        // rate is 18 decimals; result is in the base feed's own decimals (8 for the usual ETH/USD feed).
         price = rate.mulDiv(uint256(baseAnswer), 1e18, Math.Rounding.Floor);
     }
 

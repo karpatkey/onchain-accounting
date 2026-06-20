@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 
 /// @title cbETH Custom Price Oracle
-/// @notice USD price of cbETH = `cbETH.exchangeRate()` (cbETH/ETH, 18 dec) × Chainlink ETH/USD.
+/// @notice USD price of cbETH = `cbETH.exchangeRate()` (ETH per cbETH, 18 dec) × Chainlink ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the cbETH exchange rate via `_rate()`.
 /// @author kpk

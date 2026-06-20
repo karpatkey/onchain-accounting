@@ -7,7 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title ezETH Custom Price Oracle
-/// @notice USD price of Renzo's ezETH = (RestakeManager TVL / ezETH supply) (ezETH/ETH, 18 dec) × Chainlink ETH/USD.
+/// @notice USD price of Renzo's ezETH = (RestakeManager TVL / ezETH supply) (ETH per ezETH, 18 dec) × Chainlink ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; `_rate()` derives the ezETH/ETH rate from Renzo and returns 0 (→ stale) if
 ///      `calculateTVLs()` reverts or supply is 0.

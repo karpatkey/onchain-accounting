@@ -5,7 +5,7 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 
 /// @title rsETH Custom Price Oracle
-/// @notice USD price of Kelp DAO's rsETH = `RsETHRateProvider.getLatestRate()` (rsETH/ETH, 18 dec) × Chainlink
+/// @notice USD price of Kelp DAO's rsETH = `RsETHRateProvider.getLatestRate()` (ETH per rsETH, 18 dec) × Chainlink
 ///         ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the rsETH rate via `_rate()`.

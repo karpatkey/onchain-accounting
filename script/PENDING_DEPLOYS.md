@@ -29,7 +29,7 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 
 ### 1.1 Pending price feeds
 
-ETHx was the only custom feed in the *original incremental gap* (below). In the NAV v2 from-scratch redeploy **every** enabled custom feed is TBD — `03_DeployPriceFeeds.s.sol` deploys all entries with `enabled: true` in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (13 on mainnet, plus 3 on Gnosis, 3 on Base, 5 on Arbitrum at the time of writing). Re-run §6 for the live count.
+ETHx was the only custom feed in the *original incremental gap* (below). In the NAV v2 from-scratch redeploy **every** enabled custom feed is TBD — `03_DeployPriceFeeds.s.sol` deploys all entries with `enabled: true` in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (17 on mainnet, plus 3 on Gnosis, 3 on Base, 5 on Arbitrum at the time of writing). Re-run §6 for the live count.
 
 | Chain | Adapter key | Contract | Constructor params (in `contracts-deployment-config/custom-price-feeds/<chainId>.json` `<key>.constructor`) |
 |---|---|---|---|

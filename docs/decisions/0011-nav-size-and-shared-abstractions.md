@@ -1,6 +1,6 @@
 # 0011 — NAVCalculator size headroom + shared adapter/feed abstractions
 
-Status: accepted (introduced with PR A — the ERC20DefaultAdapter externalization; PRs B/C are follow-ups)
+Status: accepted (introduced with PR A — the ERC20DefaultAdapter externalization; PRs B/C are follow-ups, now partially landed — `BaseCustomPriceFeed`, `StaticCallLib`, and `ArrayLib` have shipped, the `BalanceAdapter` base has not)
 
 ## Context
 

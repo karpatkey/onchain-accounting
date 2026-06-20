@@ -141,13 +141,13 @@ Use this section for the from-scratch redeploy: all past deployments have been w
 
 **Fresh implementations + fresh proxies (new bytecode).** This is a from-scratch redeploy: deploy new NAVCalculator and BridgeEscrow implementations (Phase 1 / `01_DeployImplementations.s.sol`), then new proxies pointing at them. All past deployments have been wiped from the configs; the new addresses are written to `deployments/<chainId>.json`.
 
-> **CREATE2 collision avoidance.** Proxies and the placeholder are CREATE2-deployed with `generateSalt("NAVCalculatorProxy", <ver>)` / `("BridgeEscrowProxy", <ver>)` / `("ProxyPlaceholderImpl", <ver>)` (the trailing integer is a salt version). CREATE2 cannot redeploy at an address still occupied on-chain — so if a prior proxy at the current salt version is still live, bump the salt version in `script/deploy/02_DeployProxies.s.sol` (lines 32, 39, 43) to derive fresh addresses. If the prior on-chain proxies are gone (or never existed on this chain), the existing salt values can be reused as-is.
+> **CREATE2 collision avoidance.** Proxies and the placeholder are CREATE2-deployed with `generateSalt("NAVCalculatorProxy", <ver>)` / `("BridgeEscrowProxy", <ver>)` / `("ProxyPlaceholderImpl", <ver>)` (the trailing integer is a salt version, sourced from the `DeploySalts` constants). CREATE2 cannot redeploy at an address still occupied on-chain — so if a prior proxy at the current salt version is still live, bump the relevant version constant in `script/deploy/DeploySalts.sol` (`PLACEHOLDER_IMPL`, `NAV_PROXY`, `BRIDGE_PROXY`) to derive fresh addresses. That single file is the source of truth, shared by `02_DeployProxies.s.sol`, `02_2_DeployNAVProxy.s.sol`, and both atomic deployers, so one edit updates every deriving site at once. If the prior on-chain proxies are gone (or never existed on this chain), the existing salt values can be reused as-is.
 
 ### R.1 Prerequisites
 
 - [ ] **Confirm target Safe address.** This Safe will hold `DEFAULT_ADMIN_ROLE` + `MANAGER` on both proxies after the redeploy. Ideally the same Safe address on all 5 chains (Safe Protocol's `SafeProxyFactory.createProxyWithNonce(...)` with a deterministic nonce + initializer can give matching addresses; coordinate with the Safe deploy team if not yet provisioned). Verify per chain with `cast call <SafeAddr> "getThreshold()(uint256)" --rpc-url <RPC>` — should return a positive integer (and code present).
 - [ ] **Decide which Safe address goes in `chainConfig.admin` vs `chainConfig.manager`.** Recommended: same Safe in both, per the runbook's steady-state convention.
-- [ ] **Salt version checked against on-chain state.** The salt version lives in `script/deploy/02_DeployProxies.s.sol:32,39,43`, `script/deploy/AtomicProxyDeployer.sol:53,57,61`, `script/deploy/02_2_DeployNAVProxy.s.sol:33,38`, and `script/deploy/AtomicNAVProxyDeployer.sol:27,31`. If a prior proxy at the current salt version is still live on a target chain, broadcasting will hit a CREATE2 collision — the atomic deployer's `code.length == 0` guards will skip the deploys, and the subsequent `upgradeToAndCall` will revert. In that case, bump the salt version consistently across all 4 files before R.2 step 4. If the prior on-chain proxies are gone, keep the existing salt values.
+- [ ] **Salt version checked against on-chain state.** The salt versions are centralized in `script/deploy/DeploySalts.sol` (the `PLACEHOLDER_IMPL` / `NAV_PROXY` / `BRIDGE_PROXY` / `NAV_IMPL` constants); `02_DeployProxies.s.sol`, `02_2_DeployNAVProxy.s.sol`, `AtomicProxyDeployer.sol`, and `AtomicNAVProxyDeployer.sol` all derive their salts from those constants. If a prior proxy at the current salt version is still live on a target chain, broadcasting will hit a CREATE2 collision — the atomic deployer's `code.length == 0` guards will skip the deploys, and the subsequent `upgradeToAndCall` will revert. In that case, bump the relevant constant in `DeploySalts.sol` before R.2 step 4 (one edit covers every deriving site). If the prior on-chain proxies are gone, keep the existing salt values.
 - [ ] **MANAGER-grant bug** — already fixed in commit `d513f27` (atomic path grants MANAGER + self-renounces admin inside `AtomicProxyDeployer`'s constructor). No workaround needed for tonight's redeploy. Legacy path (`USE_LEGACY_DEPLOY=1`) still requires a Safe TX from the admin to grant MANAGER; if you need legacy, plan that handoff separately.
 - [ ] **Deployer EOA gas funded on all 5 chains.** Rule of thumb: 0.05 ETH on Mainnet, 0.01 ETH-equivalent on each L2/Gnosis. `02` uses CREATE2 + UUPS upgrade-and-init, ~600k gas per chain.
 - [ ] **Per-chain `.env` keys present:** `ALCHEMY_API_KEY`, `DEPLOYER_NAME` (Foundry keystore account name; import once with `cast wallet import $DEPLOYER_NAME --interactive`). For Path B (EOA-then-handoff) also `DEPLOYER_EOA` (= `cast wallet address --account $DEPLOYER_NAME`).
@@ -163,15 +163,16 @@ If you're reading historical PR comments or older PR #14 versions that describe 
 
 ### R.2 Step-by-step
 
-1. **Check the salt version (bump only if colliding).** In `script/deploy/02_DeployProxies.s.sol`:
+1. **Check the salt version (bump only if colliding).** The versions live in `script/deploy/DeploySalts.sol`:
    ```solidity
-   bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", <ver>);
-   ...
-   bytes32 saltNavProxy    = generateSalt("NAVCalculatorProxy",    <ver>);
-   ...
-   bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy",     <ver>);
+   library DeploySalts {
+       uint256 internal constant PLACEHOLDER_IMPL = 3;
+       uint256 internal constant NAV_PROXY        = 3;
+       uint256 internal constant BRIDGE_PROXY     = 3;
+       uint256 internal constant NAV_IMPL         = 2;
+   }
    ```
-   Keep the existing salt values unless a prior proxy at that version is still live on a target chain (CREATE2 collision) — in which case bump `<ver>` consistently across the 4 files listed in R.1. Compute the resulting addresses locally (`forge script` prints them in dry-run before broadcasting) — these are the **canonical proxy addresses** going forward.
+   `02_DeployProxies.s.sol` derives its salts as `generateSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL)` / `generateSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY)` / `generateSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY)`. Keep the existing values unless a prior proxy at that version is still live on a target chain (CREATE2 collision) — in which case bump the relevant constant in `DeploySalts.sol` (one edit propagates to every deriving site). Compute the resulting addresses locally (`forge script` prints them in dry-run before broadcasting) — these are the **canonical proxy addresses** going forward.
 
 2. ~~Patch the MANAGER-grant bug~~ — already fixed in `d513f27`. Verify the atomic path is current by checking `AtomicProxyDeployer.sol` constructor signature includes `address managerToGrant`; if so, no patch needed.
 
@@ -453,9 +454,9 @@ Authoritative source: the `_deploy<Chain>PriceAdapters` functions in `03_DeployP
 | `rsETH_L2` | Arbitrum | `rsETH_L2_Price.sol` | |
 | `ezETH_L2` | Arbitrum | `ezETH_L2_Price.sol` | Uses `xRenzoDeposit.getRate()`, different from Mainnet `ezETH` |
 | `syrupUSDC_L2` | Arbitrum | `syrupUSDC_L2_Price.sol` | |
-| `sXDAI` | Gnosis | `sDAI_Price.sol` (aliased as `sXDAI_PriceOracle` — constructor is re-used) | |
+| `sXDAI` | Gnosis | `sXDAI_Price.sol` (its `sDAI_PriceOracle` contract is imported aliased as `sXDAI_PriceOracle` to dodge the name clash with mainnet `sDAI_Price.sol`) | |
 | `ezETH` | Mainnet | `ezETH_Price.sol` | Uses `restakeManager.calculateTVLs()` |
-| `ETHPlus` | **not deployed** | `ETHPlus_Price.sol` | The adapter contract exists and is unit + fork tested, but no `_deployIfEnabled("ETHPlus")` call is wired because ETH Alpha uses a Chainlink feed for ETHPlus on mainnet. Leave it that way unless a fund starts relying on the Custom path. |
+| `ETHPlus` | Mainnet | `ETHPlus_Price.sol` | Wired in `_deployMainnetPriceAdapters()` via `_deployEthPlus()`, gated by `ConfigReader.isAdapterEnabled(..., "priceFeeds", "ETHPlus")`. Currently `enabled: true` in `custom-price-feeds/1.json`. Flip it to `enabled: false` if ETH Alpha switches ETHPlus to a Chainlink feed and you no longer want the Custom path. |
 
 **Optimism has no Custom price adapters.** Alpha funds on OP use Chainlink feeds exclusively (`wstethToUsdChainlink`, `usdcToUsdChainlink`, `usdtToUsdChainlink`). `_deployOptimismPriceAdapters()` is an intentional no-op; if a future fund needs a Custom adapter on OP, add it there.
 
@@ -555,7 +556,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 30 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 31 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
@@ -675,7 +676,7 @@ Deployed adapter addresses are auto-saved to `script/config/deployments/<chainId
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:178` (and 23 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
+> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:180` (and 26 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
 
 ### 4.1 Mainnet
 

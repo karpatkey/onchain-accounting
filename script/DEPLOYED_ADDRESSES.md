@@ -24,7 +24,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|---|
 | NAVCalculator implementation (salt v2) | `TBD` | UUPS impl, immutable post-deploy. |
 | NAVCalculator proxy (salt v3) | `TBD` | UUPS proxy, points at the impl above. The address every consumer should use. |
-| ERC20Default balance adapter | `TBD` | Auto-deployed inside `NAVCalculator.initialize()`. Reports wallet balances for every registered ERC20 + the native sentinel. |
+| ERC20Default balance adapter | `TBD` | Auto-deployed inside `NAVCalculator.initialize()` via `NavRegistryLib.deployDefaultAdapter` (plain CREATE from the proxy, not CREATE2 — but identical across chains because the proxy address and its deploy nonce match everywhere). Reports wallet balances for every registered ERC20 + the native sentinel. |
 | `UUPSPlaceholder` impl (salt v3) | `TBD` | Used during atomic deploy as the temporary impl before `upgradeToAndCall(navImpl, initialize(...))`. Holds no state, no role. |
 
 ---
@@ -50,12 +50,15 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | ERC20Default balance adapter | `TBD` |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://etherscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
-**Custom price-feed adapters** (13)
+**Custom price-feed adapters** (17)
 
 | Adapter | Address |
 |---|---|
 | `ETHPlus` | `TBD` |
 | `ETHx` | `TBD` |
+| `NXM` | `TBD` |
+| `OETH` | `TBD` |
+| `ankrETH` | `TBD` |
 | `eETH` | `TBD` |
 | `ezETH` | `TBD` |
 | `osETH` | `TBD` |
@@ -65,48 +68,47 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `sUSDe` | `TBD` |
 | `stETH` | `TBD` |
 | `syrupUSDC` | `TBD` |
+| `wNXM` | `TBD` |
 | `weETH` | `TBD` |
 | `wstETH` | `TBD` |
 
-**Balance adapters** (35 excluding ERC20Default)
+**Balance adapters** (26 excluding ERC20Default: 9 plain + 17 meta-adapters)
+
+Plain (single-instance) adapters:
 
 | Adapter | Address |
 |---|---|
-| `AaveV3SafetyModule_stkGHO` | `TBD` |
-| `AaveV3_Core` | `TBD` |
-| `AaveV3_Prime` | `TBD` |
-| `Aura_GHO_USDT_USDC` | `TBD` |
-| `Aura_rETH_WETH` | `TBD` |
-| `BalancerV3_GHO_USDT_USDC` | `TBD` |
-| `BalancerV3_rETH_WETH` | `TBD` |
+| `AaveUmbrella` | `TBD` |
+| `AaveV3SafetyModule` | `TBD` |
 | `Cap` | `TBD` |
-| `Convex_RLUSD_USDC` | `TBD` |
-| `Convex_crvUSD_USDC` | `TBD` |
-| `Convex_crvUSD_USDT` | `TBD` |
-| `Convex_weETH_WETH` | `TBD` |
-| `Curve_RLUSD_USDC` | `TBD` |
-| `Curve_crvUSD_USDC` | `TBD` |
-| `Curve_crvUSD_USDT` | `TBD` |
-| `Curve_weETH_WETH` | `TBD` |
-| `GearboxMarket_kpkWETH` | `TBD` |
-| `GearboxMarket_kpkwstETH` | `TBD` |
-| `MorphoMarket_ETHPlus_USDC` | `TBD` |
-| `MorphoMarket_ETHPlus_WETH` | `TBD` |
-| `MorphoMarket_RLP_USDC` | `TBD` |
-| `MorphoMarket_WBTC_USDC` | `TBD` |
-| `MorphoMarket_cbBTC_USDC` | `TBD` |
-| `MorphoMarket_rsETH_WETH` | `TBD` |
-| `MorphoMarket_sUSDS_USDT` | `TBD` |
-| `MorphoMarket_syrupUSDC_USDC` | `TBD` |
-| `MorphoMarket_weETH_WETH` | `TBD` |
-| `MorphoMarket_wstETH_USDC` | `TBD` |
-| `MorphoMarket_wstETH_WETH` | `TBD` |
-| `MorphoMarket_wstUSR_USDC` | `TBD` |
-| `MorphoVault_kpkETHPrime_V1` | `TBD` |
-| `MorphoVault_kpkETHPrime_V2` | `TBD` |
-| `MorphoVault_kpkUSDCPrime_V1` | `TBD` |
-| `MorphoVault_kpkUSDCPrime_V2` | `TBD` |
+| `ERC4626Wrap_sGHO` | `TBD` |
+| `ERC4626Wrap_waEthLidoGHO` | `TBD` |
+| `KelpWithdrawalQueue` | `TBD` |
+| `LidoWithdrawalQueue` | `TBD` |
 | `SparkLend` | `TBD` |
+| `StaderWithdrawalQueue` | `TBD` |
+
+Meta-adapters (one immutable contract per protocol class; active instances governed on `NAVCalculator` — see ADR 0010):
+
+| Adapter | Address |
+|---|---|
+| `AaveV2InstancesMeta` | `TBD` |
+| `AaveV3InstancesMeta` | `TBD` |
+| `AuraRewardsMeta` | `TBD` |
+| `BalancerV3GaugesMeta` | `TBD` |
+| `BalancerV3PoolsMeta` | `TBD` |
+| `CompoundV3CometsMeta` | `TBD` |
+| `ConvexRewardsMeta` | `TBD` |
+| `CurveGaugesMeta` | `TBD` |
+| `CurvePoolsMeta` | `TBD` |
+| `EulerVaultsMeta` | `TBD` |
+| `FluidFTokensMeta` | `TBD` |
+| `FluidVaultsMeta` | `TBD` |
+| `GearboxMarketsMeta` | `TBD` |
+| `MorphoMarketsMeta` | `TBD` |
+| `MorphoVaultsMeta` | `TBD` |
+| `StakeWiseV3VaultsMeta` | `TBD` |
+| `UniswapV3PoolsMeta` | `TBD` |
 
 ---
 
@@ -131,16 +133,18 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `weETH_L2` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (6 excluding ERC20Default)
+**Balance adapters** (8 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
-| `AaveV3_Arbitrum` | `TBD` |
-| `Aura_GHO_USDC_USDT` | `TBD` |
-| `BalancerV3_GHO_USDC_USDT` | `TBD` |
-| `MorphoMarket_sUSDS_USDC` | `TBD` |
-| `MorphoMarket_syrupUSDC_USDC` | `TBD` |
-| `MorphoVault_kpkUSDCYieldV1` | `TBD` |
+| `AaveV3InstancesMeta` | `TBD` |
+| `AuraRewardsMeta` | `TBD` |
+| `BalancerV3GaugesMeta` | `TBD` |
+| `BalancerV3PoolsMeta` | `TBD` |
+| `CompoundV3CometsMeta` | `TBD` |
+| `FluidFTokensMeta` | `TBD` |
+| `MorphoMarketsMeta` | `TBD` |
+| `MorphoVaultsMeta` | `TBD` |
 
 ---
 
@@ -163,17 +167,17 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `weETH_L2` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (7 excluding ERC20Default)
+**Balance adapters** (7 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
-| `AaveV3_Base` | `TBD` |
-| `Aura_GHO_USDC` | `TBD` |
-| `BalancerV3_GHO_USDC` | `TBD` |
-| `MorphoMarket_cbBTC_USDC` | `TBD` |
-| `MorphoMarket_cbETH_USDC` | `TBD` |
-| `MorphoMarket_weETH_WETH` | `TBD` |
-| `MorphoMarket_wstETH_WETH` | `TBD` |
+| `AaveV3InstancesMeta` | `TBD` |
+| `AuraRewardsMeta` | `TBD` |
+| `BalancerV3GaugesMeta` | `TBD` |
+| `BalancerV3PoolsMeta` | `TBD` |
+| `CompoundV3CometsMeta` | `TBD` |
+| `FluidFTokensMeta` | `TBD` |
+| `MorphoMarketsMeta` | `TBD` |
 
 ---
 
@@ -192,11 +196,12 @@ These contracts have identical bytecode + constructor input on every chain, so C
 
 None — this chain uses Chainlink price feeds exclusively for Alpha-fund assets.
 
-**Balance adapters** (1 excluding ERC20Default)
+**Balance adapters** (2 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
-| `AaveV3_Optimism` | `TBD` |
+| `AaveV3InstancesMeta` | `TBD` |
+| `CompoundV3CometsMeta` | `TBD` |
 
 ---
 
@@ -219,11 +224,11 @@ None — this chain uses Chainlink price feeds exclusively for Alpha-fund assets
 | `sXDAI` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (1 excluding ERC20Default)
+**Balance adapters** (1 excluding ERC20Default: meta-adapter)
 
 | Adapter | Address |
 |---|---|
-| `AaveV3_Gnosis` | `TBD` |
+| `AaveV3InstancesMeta` | `TBD` |
 
 ---
 

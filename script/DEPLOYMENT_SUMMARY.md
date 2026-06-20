@@ -247,7 +247,7 @@ To deploy on another chain (e.g. Arbitrum after Mainnet):
 2. Set **addresses** in that file (council Safe and roles can be the same or different).
 3. **Step 4** (implementations) is once for all chains; run **Step 5** (`02_DeployProxies`) per chain with that chain's RPC and `--broadcast --account`, then **Step 6** (verify) for that chain.
 
-Adapter deployment (price feeds, balance adapters, bridge adapters) and configuration come **after** NAVCalculator and BridgeEscrow are deployed; see “Phase 3” and “Phase 4” in the deployment workflow above.
+Adapter deployment (price feeds, balance adapters, bridge adapters) and configuration come **after** NAVCalculator and BridgeEscrow are deployed; see “Phase 3” and “Phase 4” in the deployment workflow below.
 
 ---
 

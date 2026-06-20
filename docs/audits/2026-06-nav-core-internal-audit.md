@@ -10,8 +10,9 @@ per-family passes over the adapters (lending / meta, AMM / LP, staking / rewards
 queues). Every candidate finding was independently adversarially verified (default-refute)
 before inclusion. 12 raw candidates → **6 confirmed**.
 
-All 6 are fixed in this PR. None affect funds directly (this layer is read-only
-accounting), but one is a denial-of-service on the core NAV read path.
+Five are fixed in this PR; the sixth (#5) is a deprecated opt-in deploy path and is
+documented rather than code-changed (see its note). None affect funds directly (this layer
+is read-only accounting), but one is a denial-of-service on the core NAV read path.
 
 | # | Severity | Area | Status |
 |---|----------|------|--------|
@@ -24,7 +25,7 @@ accounting), but one is a denial-of-service on the core NAV read path.
 
 ---
 
-## 1 — High — NAV read buffer overflow bricks `getNAV` for an account
+## 1 — High — NAV read buffer overflow bricks `getAccountNav` for an account
 
 **Files:** `src/prices/PriceFeedLib.sol` (`_getPositionBalances`),
 `src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol`,
@@ -44,17 +45,20 @@ per-instance try/catch in `MetaBalanceAdapter` nor the per-adapter try/catch in
 loop (`temp[count++]`), outside any try/catch: once `count` reaches `maxPositions` the
 write triggers `Panic(0x32)` and the whole call reverts.
 
-**Impact:** `getAccountNav`, `getAccountPositions`, `hasPositions`, and `totalValue` revert
+**Impact:** `getAccountNav`, `getAccountPositions`, `hasPositions`, and `getAssetsWithPositions` revert
 (hard, uncatchable) for any account whose emitted rows exceed the global budget — a heavy
 V3 LP hits this naturally, and an external party can push a victim account over the edge by
 transferring in-range LP NFTs (ERC-721). The buffer is per-call with `account` as a
 parameter, so other accounts are unaffected (hence High, not Critical), but NAV is the
 accounting primitive downstream sub/redeem layers read.
 
-**Fix:** Size the buffer from the **actual** summed lengths the adapters return. A first
-pass queries each adapter once, retains its array, and sums `adapterPositions.length`; the
-copy buffer is then allocated to that exact total. Each adapter is still called exactly
-once. The bound is now exact and overflow-proof regardless of per-instance leg count.
+**Fix:** Size the buffer from the **actual** rows the adapters return. A first pass queries
+each adapter once and retains its array; a second in-memory pass counts exactly the rows
+that survive the registered-asset + `assetFilter` predicate (`_isCounted`); the copy buffer
+is then allocated to that exact count. Counting only the surviving rows — rather than the
+raw sum of `adapterPositions.length` — also avoids over-allocating when rows are filtered
+out. Each adapter is still called exactly once. The bound is now exact and overflow-proof
+regardless of per-instance leg count.
 
 ## 2 — Medium — `SparkLend` per-asset filter only checks the first reserve
 

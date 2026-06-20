@@ -239,7 +239,7 @@ ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", "AaveV3_USDC", 
 
 ### ✅ Selective Deployment
 Enable/disable adapters per chain in `contracts-deployment-config/balance-adapters/{chainId}.json`:
-```json
+```jsonc
 // In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable DAI DSR
 "DaiDsr": {
   "enabled": true

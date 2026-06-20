@@ -9,7 +9,7 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 ## When to run it
 
 - After adding a new balance adapter, price feed, or asset that meaningfully changes NAV for an existing account.
-- After adding a **new test account** (also a JSON edit; see §5 below).
+- After adding a **new test account** (also a JSON edit; see "Adding a new test account" below).
 - On a routine cadence so the fixture doesn't drift more than ~tolerance off reality. The repo includes a weekly cron in [`.github/workflows/refresh-integration-snapshot.yml`](../../.github/workflows/refresh-integration-snapshot.yml).
 - Before bumping a release branch.
 
@@ -237,7 +237,7 @@ The bump script regenerates the JSON; the tests just consume it.
 
 ## Per-adapter detail and coverage-gap report (Sections 3 and 4)
 
-`comparison-report.md` contains two sections beyond the account-level summary.
+`comparison-report.md` has six sections; beyond the account-level drift summary (Section 1) and protocol-level pairing (Section 2), the two most useful for triage are the per-adapter detail (Section 3) and coverage-gap detection (Section 4). (Sections 5 and 6 cover the untracked-by-design footer and stale-price/sequencer flags.)
 
 ### Section 3 — Per-adapter granular detail
 
@@ -266,15 +266,15 @@ Severity hint prefix on drift cells: `OK` (≤1%), `WARN` (1–5%), `FAIL` (>5%)
 - Both small but `Δ USD %` non-trivial → rounding or precision loss in the NAV computation (rare).
 - Both large → investigate adapter first (wrong amount usually explains the rest).
 
-Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) appear with `n/a` in the DB columns. Debank items with no NAV match appear in Section 4.2 instead.
+Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) appear with `—` in the DB columns. Debank items with no NAV match appear in Section 4.2 instead.
 
 ### Section 4 — Coverage gap detection
 
-Three sub-sections:
+Two sub-sections:
 
 **4.1 — Debank protocols held but not in `supportedDeBankProtocols`**
 
-Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on a given chain but are absent from the chain's allowlist. Each row shows `(account, debank_id, item label, USD)` and whether an adapter for that protocol already exists in `src/balances/protocols/`. If an adapter exists and isn't wired, this row is the signal to add a config entry (see "Actioning a 4.3 row" below). If no adapter exists, the row is informational — open a backlog item in `docs/roadmap/balance-adapter-coverage.md`.
+Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on a given chain but are absent from the chain's allowlist. Each row shows `Chain | Account | Protocol | DeBank ID | Value | NAV adapter?` — the `NAV adapter?` column reports whether a NAV protocol maps to that Debank id (via the script's `_DEBANK_ID_TO_NAV_PROTOCOLS` table). If an adapter exists and isn't wired, this row is the signal to add a config entry (see "Actioning a 4.1 row" below). If no adapter exists, the row is informational — open a backlog item in `docs/roadmap/balance-adapter-coverage.md`.
 
 **4.2 — Debank items in supported protocols with no NAV match**
 
@@ -283,11 +283,7 @@ A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnosti
 - *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
 - *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
 
-**4.3 — NAV adapters available but not deployed on chain** *(surfaced via 4.1 cross-reference)*
-
-When the reverse-lookup from a 4.1 entry finds a matching adapter Solidity file but no config entry for the chain, it appears as an actionable wiring opportunity.
-
-**To action a 4.1/4.3 row:**
+**To action a 4.1 row:**
 
 1. Confirm the canonical contract address on the target chain (protocol's docs, Etherscan, or a Debank item's `asset_token_list[].id`).
 2. Add the adapter to `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) for the deploy config, and `script/config/nav-config/balance-adapters/<chainId>.json` or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
@@ -336,7 +332,7 @@ The `accounts.json` file includes two pre-wired placeholder slots (`ACCOUNT_PLAC
 - `test/integration/IntegrationFromConfigBase.fork.sol` — reads JSON; deploys NAV; asserts.
 - `test/integration/NAV.<Chain>.integration.fork.t.sol` — chain stubs.
 - `test/integration/debank-cache/` — persisted Debank API responses (one file per account/chain, committed).
-- `script/test/RefreshIntegrationSnapshot.s.sol` — legacy forge script that emits `SNAPSHOT|…` lines; retained for reference but no longer invoked by the refresh script (which now uses `forge test --match-test test_emitSnapshots` — see "Known issues" below).
+- `script/test/RefreshIntegrationSnapshot.s.sol` — legacy forge script that emits `SNAPSHOT|…` lines; retained for reference but no longer invoked by the refresh script (which now uses `forge test --match-test test_emitSnapshots` — see "Known issues" above).
 - `script/test/refresh-integration-snapshot.sh` — orchestrator (cast + forge + curl + jq).
 - `script/test/generate-comparison-report.py` — renders `comparison-report.md` (NAV ↔ Debank cross-check, per-adapter detail, coverage gaps). Pass `--from-cache` to regenerate from cached Debank responses without an API key.
 - `script/test/wallet-aggregating-adapters.json` — single-source-of-truth registry of balance adapters that consume wallet tokens via `balanceOf` (e.g. Cap reads cUsd + stcUsd). Both the snapshot script and the comparison report read it; one entry per adapter is enough to keep their allowlists in sync.

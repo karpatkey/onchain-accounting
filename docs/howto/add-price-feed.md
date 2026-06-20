@@ -111,7 +111,9 @@ Copy the closest match and rename. Don't deviate from the structure unless you n
 
 File: `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
 
-Skeleton (yield-bearing pattern; adjust for LST/LRT or cross-rate):
+For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_Price`) stay bespoke and follow the self-contained skeleton below.
+
+Skeleton (bespoke yield-bearing pattern, à la `sDAI_Price.sol`; adjust for LST/LRT or cross-rate):
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -283,15 +285,13 @@ There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` an
 
 Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`. The script dispatches per chain (`_deployMainnetPriceAdapters`, `_deployArbitrumPriceAdapters`, etc.), and within each dispatch calls a hardcoded `_deploy<Asset>()` helper gated by `ConfigReader.isAdapterEnabled(vm, chainId, "priceFeeds", "<name>")` — so you must add a `_deploy<Asset>()` function and wire it into the relevant chain's dispatch block (and import the contract) before your entry from §B.4 is picked up. Each helper reads its constructor params via `ConfigReader.readPriceFeedParam` and writes the deployed feed address into `deployments/<chainId>.json .customPriceFeeds.<name>` via `ConfigReader.writeAdapterAddress`. The asset's `Custom` entry then references the feed by `feed: "<name>"`, and `RegisterAssets.s.sol` (below) resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
-After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
+After deploy, register the asset on `NAVCalculator` (MANAGER-gated) by running `RegisterAssets.s.sol`:
 
 ```bash
-forge script script/manage/RegisterAssets.s.sol \
-  --rpc-url <RPC> \
-  --sig 'run()'
+forge script script/manage/RegisterAssets.s.sol --rpc-url <RPC>
 ```
 
-This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (first feed) or `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for pre-registered assets needing only a feed added. Owners sign and execute on the chain's admin Safe.
+This plans `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (first feed) plus `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for any additional feeds (or for a pre-registered asset that only needs a feed added). It writes a Safe-TX batch to `safe-transactions/<chainId>-register-assets.json`; during the initial deploy flow the deployer EOA (which still holds `MANAGER`) broadcasts it directly with `--broadcast`, while after handoff the same batch is signed and executed on the security-council Safe.
 
 Verify:
 

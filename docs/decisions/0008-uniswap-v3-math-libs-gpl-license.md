@@ -6,7 +6,7 @@
 
 The Uniswap V3 balance adapter (`src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol`) needs three pieces of math from Uniswap to compute principal liquidity and unclaimed fees from a position's `(liquidity, tickLower, tickUpper)` plus the pool's `slot0` and `feeGrowth*` state:
 
-- `TickMath.getSqrtRatioAtTick(int24)` — exponential-of-tick polynomial with ~40 magic constants.
+- `TickMath.getSqrtRatioAtTick(int24)` — exponential-of-tick polynomial with ~20 magic constants.
 - `LiquidityAmounts.getAmountsForLiquidity(...)` — concentrated-liquidity formula.
 - `FixedPoint128.Q128` — a single fixed-point constant (`2^128`).
 

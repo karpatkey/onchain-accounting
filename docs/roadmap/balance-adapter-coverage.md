@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura — 21 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura, Euler V2 — 22 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
@@ -83,7 +83,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
 - **Gearbox**: ✅ covered — `GearboxMarketsMeta` (meta-adapter, ADR 0010).
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).
-- **Euler V2**: cluster-based lending; per-vault EVK accounting.
+- **Euler V2**: ✅ covered — `EulerVaultsMeta` (meta-adapter, ADR 0010): one adapter for both EulerEarn aggregator vaults and core eVaults (EVK), reporting `Supplied`/`Collateral` and `Borrowed` legs.
 - **Ajna**: pool-based lending; inflation-bearing buckets.
 
 ### RWA / off-chain backed
@@ -109,7 +109,7 @@ These are not queues but represent value that lives outside the wallet and is no
 1. Pick a row whose protocol kpk **actually uses or imminently will**.
 2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
 3. Mirror `StaderWithdrawalQueue.sol` (queue family) or whichever existing adapter is closest in shape.
-4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + deploy-config entry (`script/config/chains/<chainId>.json` under `balanceAdapters`) + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + a NAV-registration entry in the chain's `script/config/nav-config/balance-adapters/<chainId>.json` (plain) or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta), which `06_Configure.s.sol` reads to register the adapter.
+4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + deploy-config entry (`script/config/contracts-deployment-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` for meta-adapters) + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + a NAV-registration entry in the chain's `script/config/nav-config/balance-adapters/<chainId>.json` (plain) or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta), which `06_Configure.s.sol` reads to register the adapter.
 5. Update this file: cross off the row or add caveats discovered during implementation.
 
 When a row turns out to be irrelevant (e.g. RPL queue, Coinbase off-chain unwrap), strike it through with a one-line reason rather than deleting — future contributors should see it was considered.

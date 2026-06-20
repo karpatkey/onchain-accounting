@@ -5,9 +5,14 @@ pragma solidity ^0.8;
 /// @author kpk
 /// @notice Best-effort view-call helpers for reading from possibly-noncompliant external contracts: a staticcall
 ///         that decodes a uint256/address and never reverts on a failed/short call.
-/// @dev Centralizes the staticcall+decode wrappers that were copy-pasted — and had begun to drift — across
-///      AuraRewardsMeta, ConvexRewardsMeta, and UniswapV2PairLib. Internal library: inlined into each caller (no
-///      separate deployment, no DELEGATECALL), so this is a maintainability/consistency change, not a size one.
+/// @dev Consolidates the staticcall+decode wrappers that were copy-pasted — and had begun to drift — across
+///      AuraRewardsMeta, ConvexRewardsMeta, and UniswapV2PairLib (the three call sites migrated so far).
+///      NOTE: this is NOT yet the repo-wide single source of truth — other hand-rolled copies remain and do
+///      not route through this library: CurvePoolLib, FluidVaultLib, CompoundV3CometLib, and AaveUmbrella.
+///      Some even differ subtly (e.g. CurvePoolLib gates on `returndata.length == 32` where this library uses
+///      `>= 32`), so migrating them is a behavior-sensitive follow-up, not a no-op. Internal library: inlined
+///      into each caller (no separate deployment, no DELEGATECALL), so this is a maintainability change, not a
+///      size one.
 ///      IMPORTANT: `ok` is the raw `staticcall` success flag only — it does NOT incorporate the returndata-length
 ///      check. A call can return `ok == true` with `result == 0` if the callee returned fewer than 32 bytes
 ///      (decoding is skipped in that case). Callers that must distinguish "call succeeded but gave no usable

@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 /// @notice Minimal Uniswap V2 pair interface.
 interface IUniswapV2Pair {
@@ -84,14 +85,10 @@ library UniswapV2PairLib {
     }
 
     function _safeCallUint(address target, bytes memory data) private view returns (bool success, uint256 result) {
-        bytes memory returnData;
-        (success, returnData) = target.staticcall(data);
-        if (success && returnData.length >= 32) result = abi.decode(returnData, (uint256));
+        return StaticCallLib.safeUint(target, data);
     }
 
     function _safeCallAddress(address target, bytes memory data) private view returns (bool success, address result) {
-        bytes memory returnData;
-        (success, returnData) = target.staticcall(data);
-        if (success && returnData.length >= 32) result = abi.decode(returnData, (address));
+        return StaticCallLib.safeAddr(target, data);
     }
 }

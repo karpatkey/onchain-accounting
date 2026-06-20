@@ -451,38 +451,63 @@ library PriceFeedLib {
 
     /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
     ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
-    ///         NAVCalculator._getPositionBalances; the 2·(adapters+metaInstances)·assetCount buffer is a hard upper
-    ///         bound on emitted rows.
+    ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
+    ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
+    ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg meta-adapter
+    ///         (e.g. Uniswap / PancakeSwap V3, up to 4 legs per LP NFT) could overflow, and not the
+    ///         sum-of-all-returned-rows, which would over-allocate when rows are filtered out. `metaInstanceTotal`
+    ///         and `assetCount` are retained in the signature for caller compatibility but no longer size the output.
     function _getPositionBalances(
         address[] memory allAdapters,
-        uint256 metaInstanceTotal,
+        uint256, /* metaInstanceTotal */
         mapping(address => uint256) storage assetIndex,
-        uint256 assetCount,
+        uint256, /* assetCount */
         address account,
         address assetFilter
     ) private view returns (INAVCalculator.PositionBalance[] memory positions) {
         uint256 totalAdapters = allAdapters.length;
-        uint256 maxPositions = 2 * (totalAdapters + metaInstanceTotal) * assetCount;
 
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
-        uint256 count = 0;
-
+        // First pass: query each adapter once (the only external calls) and retain its returned rows.
+        INAVCalculator.PositionBalance[][] memory perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
         for (uint256 i = 0; i < totalAdapters; i++) {
-            INAVCalculator.PositionBalance[] memory adapterPositions =
-                _getAdapterPositions(allAdapters[i], account, assetFilter);
+            perAdapter[i] = _getAdapterPositions(allAdapters[i], account, assetFilter);
+        }
 
+        // Second pass (in-memory, no external calls): count exactly the rows that survive the
+        // registered-asset + assetFilter predicate, so `positions` is allocated to the precise size — no
+        // over-allocation from filtered-out rows, and no fixed-heuristic under-allocation that a multi-leg
+        // meta-adapter (e.g. Uniswap/PancakeSwap V3) could overflow.
+        uint256 count;
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            INAVCalculator.PositionBalance[] memory adapterPositions = perAdapter[i];
             for (uint256 j = 0; j < adapterPositions.length; j++) {
-                address asset = adapterPositions[j].balanceAsset.asset;
-                if (assetIndex[asset] == 0) continue;
-                if (assetFilter != address(0) && asset != assetFilter) continue;
-                temp[count++] = adapterPositions[j];
+                if (_isCounted(assetIndex, adapterPositions[j].balanceAsset.asset, assetFilter)) ++count;
             }
         }
 
+        // Third pass (in-memory): copy the surviving rows into the exactly-sized output.
         positions = new INAVCalculator.PositionBalance[](count);
-        for (uint256 i = 0; i < count; i++) {
-            positions[i] = temp[i];
+        uint256 k;
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            INAVCalculator.PositionBalance[] memory adapterPositions = perAdapter[i];
+            for (uint256 j = 0; j < adapterPositions.length; j++) {
+                if (_isCounted(assetIndex, adapterPositions[j].balanceAsset.asset, assetFilter)) {
+                    positions[k++] = adapterPositions[j];
+                }
+            }
         }
+    }
+
+    /// @notice Whether a position row is kept: its asset must be registered, and (when an `assetFilter` is set)
+    ///         must equal it. Single predicate so the count and copy passes can never diverge.
+    function _isCounted(mapping(address => uint256) storage assetIndex, address asset, address assetFilter)
+        private
+        view
+        returns (bool)
+    {
+        if (assetIndex[asset] == 0) return false;
+        if (assetFilter != address(0) && asset != assetFilter) return false;
+        return true;
     }
 
     /// @notice Calls an adapter's getAdapterPositions in a try/catch (fail-open: returns empty on revert). Meta

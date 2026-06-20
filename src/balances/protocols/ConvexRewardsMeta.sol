@@ -240,8 +240,10 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                 address tok = (wOk && ul != address(0)) ? ul : raw;
                 bool dup;
                 for (uint256 j; j < rn; ++j) {
-                    if (rewards[j] == tok) dup = true;
-                    break;
+                    if (rewards[j] == tok) {
+                        dup = true;
+                        break;
+                    }
                 }
                 if (!dup) rewards[rn++] = tok;
             }

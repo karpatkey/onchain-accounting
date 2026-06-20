@@ -79,9 +79,12 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             if (supply == 0 && debt == 0) continue;
             uint256 net;
             bool d;
-            if (supply >= debt) net = supply - debt;
-            else net = debt - supply;
-            d = true;
+            if (supply >= debt) {
+                net = supply - debt;
+            } else {
+                net = debt - supply;
+                d = true;
+            }
             tmpA[n] = reserves[i];
             tmpV[n] = net;
             tmpD[n] = d;
@@ -118,8 +121,10 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (assetFilter != address(0)) {
             bool found;
             for (uint256 i; i < active.length; ++i) {
-                if (active[i] == assetFilter) found = true;
-                break;
+                if (active[i] == assetFilter) {
+                    found = true;
+                    break;
+                }
             }
             if (!found) return new INAVCalculator.PositionBalance[](0);
             active = new address[](1);

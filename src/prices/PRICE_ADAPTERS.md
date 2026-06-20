@@ -146,6 +146,14 @@ Every custom feed must implement this interface (and ERC165).
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |
 | `supportsInterface(bytes4)` | Must return `true` for `type(IPriceFeedCustom).interfaceId` and `IERC165`. |
 
+### 5.0 `BaseCustomPriceFeed` — the "rate × Chainlink-base" skeleton
+
+Most liquid-staking feeds follow the same shape: read a base Chainlink feed (typically ETH/USD), apply the standard staleness gate, multiply by an 18-decimal on-chain exchange rate, and return the result in the base feed's decimals. That boilerplate — the five `IPriceFeedCustom` thunks, the immutables, the constructor validation, and the read/staleness/normalize math — lives once in [`src/prices/BaseCustomPriceFeed.sol`](BaseCustomPriceFeed.sol) (introduced by [ADR 0011](../../docs/decisions/0011-nav-size-and-shared-abstractions.md)).
+
+A concrete feed extends `BaseCustomPriceFeed`, passes `(underlying, baseOracle, baseHeartbeat)` to the constructor, and implements **only** `_rate()` — the protocol's exchange rate as 18-decimal base-token units per 1 underlying (e.g. ETH per rETH). The base computes `price = rate · baseAnswer / 1e18` (`Math.Rounding.Floor`) and marks the price stale when the base answer is non-positive, the base feed is past its heartbeat, or `_rate()` returns 0.
+
+Six feeds have been migrated to this base and collapse to ~10–25 LOC each: `rETH_Price`, `cbETH_Price`, `ETHx_Price`, `rsETH_Price`, `ezETH_Price`, and `osToken_Price`. Feeds whose rate is itself a Chainlink feed use the generic `CrossRatePriceAdapter` instead; feeds with no single Chainlink base (e.g. `ETHPlus_Price`), a derived two-feed rate (e.g. `eETH_Price`), or a non-standard `latestRoundData` shape (e.g. `wstETH_Price`'s two-Chainlink-leg `min(updatedAt)`) stay bespoke and implement the interface directly. The `_L2_` variants are not (yet) migrated.
+
 Conventions:
 
 - **Always favor an existing Chainlink feed for the dollar leg** of the price (e.g., DAI/USD, ETH/USD, USDC/USD). Don't roll your own dollar oracle.
@@ -234,7 +242,7 @@ So custom feeds are **building blocks** for value computation. Their staleness f
 
 ## 7. Implemented custom feeds
 
-All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific variants get a `_L2_` infix.
+All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific variants get a `_L2_` infix. Feeds marked **(base)** below extend `BaseCustomPriceFeed` and implement only `_rate()` (see §5.0); the rest implement `IPriceFeedCustom` directly.
 
 ### Yield-bearing stable wrappers (rate × USD-feed)
 
@@ -250,17 +258,17 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 | Feed | Asset | Underlying inputs |
 |---|---|---|
-| `cbETH_Price`, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD |
+| `cbETH_Price` **(base)**, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD |
 | `CrossRate_Price` (stETH instance) | stETH (Mainnet) | ETH/USD × stETH/ETH — replaces the raw STETH/USD Chainlink feed so ETH/USD cancels when NAV is quoted in ETH |
 | `wstETH_Price` | wstETH (Mainnet) | `stEthPerToken` × stETH/ETH × ETH/USD — ETH/USD cancels when NAV is quoted in ETH (uses the real stETH/ETH rate, no 1:1 assumption) |
 | `wstETH_L2_Price` | wstETH (Arbitrum/Base/Gnosis) | wstETH/ETH rate × ETH/USD |
-| `rETH_Price` | rETH | `getExchangeRate` × ETH/USD |
-| `rsETH_Price`, `rsETH_L2_Price` | rsETH | rsETH-per-ETH rate × ETH/USD |
+| `rETH_Price` **(base)** | rETH | `getExchangeRate` × ETH/USD |
+| `rsETH_Price` **(base)**, `rsETH_L2_Price` | rsETH | rsETH-per-ETH rate × ETH/USD |
 | `eETH_Price` | eETH | eETH-per-ETH × ETH/USD |
 | `weETH_Price`, `weETH_L2_Price` | weETH | weETH-per-eETH × eETH/USD chain |
-| `ezETH_Price`, `ezETH_L2_Price` | ezETH | Renzo reporter rate × ETH/USD |
-| `ETHx_Price` | ETHx | Stader `StakePoolsManager.getExchangeRate` × ETH/USD |
-| `osToken_Price` | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultAdapter`. |
+| `ezETH_Price` **(base)**, `ezETH_L2_Price` | ezETH | Renzo reporter rate × ETH/USD |
+| `ETHx_Price` **(base)** | ETHx | Stader `StakePoolsManager.getExchangeRate` × ETH/USD |
+| `osToken_Price` **(base)** | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultAdapter`. |
 | `ankrETH_Price` | ankrETH (Mainnet) | ETH/USD × 1e18 / `ratio()` (ankrETH's `ratio()` is ankrETH-per-ETH, so ETH-per-ankrETH = 1e18/ratio) |
 | `CrossRate_Price` (OETH instance) | OETH (Mainnet) | ETH/USD × OETH/ETH (Chainlink) — Origin OETH rebases ~1:1 to ETH; priced off the Chainlink OETH/ETH feed |
 
@@ -282,6 +290,8 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/add-price-feed.md). Quick checklist:
 
 ### 8.1 Contract layout
+
+**If your feed is just `rate × ETH/USD` (a single Chainlink base feed times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, baseOracle, baseHeartbeat)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). The full checklist below applies to bespoke feeds that don't fit that shape (multiple Chainlink feeds, derived rates, no Chainlink base, or a non-standard `latestRoundData`).
 
 1. Create `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
 2. Implement `IPriceFeedCustom` and `IERC165`.

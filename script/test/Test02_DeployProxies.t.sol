@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {TestEnvConfigurator} from "../../test/TestEnvConfigurator.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
+import {DeploySalts} from "../deploy/DeploySalts.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
@@ -63,11 +64,11 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev Proxy bytecode uses placeholder impl (same on all chains), not real NAV/Bridge impl.
     function test_DifferentEOAsDeploySameAddresses() public pure {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address expectedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
@@ -108,12 +109,12 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev 02a uses placeholder in bytecode; this verifies the same formula.
     function test_ScriptAddressComputationMatchesDeployment() public view {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 navProxyBytecodeHash = keccak256(navProxyBytecode);
         address computedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bytes32 bridgeProxyBytecodeHash = keccak256(bridgeProxyBytecode);
         address computedBridgeProxy =
@@ -188,10 +189,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
             // Proxy bytecode uses placeholder (same on all chains), not real impl address
             address placeholder = _getPlaceholderAddress();
-            bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+            bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
             bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
-            bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+            bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
             bytes memory bridgeProxyBytecode =
                 abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
@@ -243,9 +244,9 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev CREATE2 address = f(deployer, salt, bytecodeHash). Same salt+bytecode with different deployer => different address.
     function test_DifferentDeployersLeadToDivergingProxyAddresses() public pure {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
         address withCanonicalNav = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
@@ -276,27 +277,27 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @notice Test that AtomicProxyDeployer uses the same address formula as the script (canonical CREATE2 + same salts).
     /// @dev Verifies ConfigReader.computeSalt matches AtomicProxyDeployer's salt formula so script and AtomicProxyDeployer yield identical proxy addresses.
     function test_AtomicProxyDeployerProducesSameAddressesAsScript() public pure {
-        // Salts must match AtomicProxyDeployer (keccak256(abi.encodePacked(name, uint256(2))))
+        // Salts must match AtomicProxyDeployer (keccak256(abi.encodePacked(name, version)) with version from DeploySalts)
         assertEq(
-            ConfigReader.computeSalt("ProxyPlaceholderImpl", 2),
-            keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2))),
+            ConfigReader.computeSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL),
+            keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL)),
             "Placeholder salt mismatch"
         );
         assertEq(
-            ConfigReader.computeSalt("NAVCalculatorProxy", 2),
-            keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(2))),
+            ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY),
+            keccak256(abi.encodePacked("NAVCalculatorProxy", DeploySalts.NAV_PROXY)),
             "NAV proxy salt mismatch"
         );
         assertEq(
-            ConfigReader.computeSalt("BridgeEscrowProxy", 2),
-            keccak256(abi.encodePacked("BridgeEscrowProxy", uint256(2))),
+            ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY),
+            keccak256(abi.encodePacked("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY)),
             "Bridge proxy salt mismatch"
         );
 
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
         address expectedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
@@ -315,9 +316,9 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev Skips when proxies already exist at expected addresses (e.g. mainnet fork); otherwise deploys and asserts init.
     function test_AtomicProxyDeployerFullFlowWhenProxiesEmpty() public {
         address placeholder = _getPlaceholderAddress();
-        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", 2);
+        bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
-        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = ConfigReader.computeSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
 
         address navProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
@@ -715,7 +716,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         // If not in records, compute expected addresses using the real Safe address (as in production)
         if (recordedNavImpl == address(0)) {
-            bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", 1);
+            bytes32 saltNavImpl = ConfigReader.computeSalt("NAVCalculatorImplementation", DeploySalts.NAV_IMPL);
             navImpl = _computeCreate2Address(chainConfig.securityCouncil, saltNavImpl, type(NAVCalculator).creationCode);
         } else {
             navImpl = recordedNavImpl;
@@ -747,7 +748,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, UUPSPlaceholder)
     function _getPlaceholderAddress() internal pure returns (address) {
-        bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", 2);
+        bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL);
         return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(UUPSPlaceholder).creationCode);
     }
 

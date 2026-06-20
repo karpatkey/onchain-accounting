@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
+import {DeploySalts} from "../deploy/DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title VerifyEtherscan
@@ -250,7 +251,7 @@ contract VerifyEtherscan is BaseDeployScript {
     }
 
     function _placeholderAddress() internal pure returns (address) {
-        bytes32 salt = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2)));
+        bytes32 salt = keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL));
         bytes memory creationCode = type(UUPSPlaceholder).creationCode;
         return address(
             uint160(

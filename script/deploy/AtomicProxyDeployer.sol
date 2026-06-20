@@ -8,6 +8,7 @@ import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {MANAGER} from "../../src/constants.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 
 /// @title AtomicProxyDeployer
 /// @notice Deploys placeholder + NAV + Bridge proxies and upgrades them in a single transaction.
@@ -50,15 +51,15 @@ contract AtomicProxyDeployer {
     /// @dev Deploys the placeholder, NAV proxy, and Bridge proxy via CREATE2 (idempotent).
     ///      Extracted into a helper to keep the constructor stack depth below the 16-slot EVM limit.
     function _deployProxies() private returns (address navProxy, address bridgeProxy) {
-        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(2)));
+        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL));
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
-        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(2)));
+        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", DeploySalts.NAV_PROXY));
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         navProxy = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = keccak256(abi.encodePacked("BridgeEscrowProxy", uint256(2)));
+        bytes32 saltBridgeProxy = keccak256(abi.encodePacked("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY));
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         bridgeProxy = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 

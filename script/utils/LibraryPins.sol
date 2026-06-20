@@ -15,7 +15,7 @@ pragma solidity ^0.8;
 ///         Prices.t, ERC20DefaultAdapter.t).
 library LibraryPins {
     address internal constant PRICE_FEED_LIB = 0xf668F0D1341e89B78903c9D3fe18340175085C6C;
-    address internal constant NAV_REGISTRY_LIB = 0x02F27E28452E6F419b97935f6346381E2b5003B1;
+    address internal constant NAV_REGISTRY_LIB = 0x598D86380907a78ceE1AC81f55354Bc8871A3802;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a
     ///      pinned library's address directly in the linked creation bytecode.

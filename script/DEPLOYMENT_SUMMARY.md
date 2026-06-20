@@ -12,7 +12,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 
 #### 1. **Create2Deployer** (`src/deployment/Create2Deployer.sol`)
 - Stateless CREATE2 deployment contract for Safe delegatecall (when Safe delegatecalls it, `address(this)` = Safe, so Safe becomes the deployer)
-- **Not used by the current EOA-only flow** — the `01`–`07` scripts deploy via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA. This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
+- **Not used by the current EOA-only flow** — the impl/library/proxy layer (`01`/`02`) is deployed via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA, while adapters (`03`–`05`) use plain `new ...` (CREATE). This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
 
 #### 2. **Utility Contracts** (`script/utils/`)
 - **BaseDeployScript.sol** - Base contract with common deployment utilities
@@ -61,13 +61,13 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 
 | File / Path | Purpose |
 |-------------|---------|
-| `chains/{chainId}.json` | Per-chain config: RPC, explorer, Safe, roles, `addresses` block, adapter enable flags |
+| `chains/{chainId}.json` | Per-chain config: chain metadata (RPC, explorer, sequencer feed, native symbol) + role `addresses` block only (`securityCouncil`, `admin`, `manager`). Adapter enable flags now live under `contracts-deployment-config/`. |
 | `nav-config/assets-and-price-feeds/{chainId}.json` | Asset registry: each asset's `address` + `priceFeeds[]` (the assets to register on NAVCalculator) |
 | `contracts-deployment-config/custom-price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
 | `contracts-deployment-config/balance-adapters/{chainId}.json` & `contracts-deployment-config/meta-balance-adapters/{chainId}.json` | Plain / meta balance adapters to deploy (`enabled` + `constructor`) |
 | `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
 | `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land. Broadcast logs are no longer committed. For the NAV v2 from-scratch redeploy every field here starts **TBD** (empty). |
-| (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (`addresses` + adapter flags) plus the per-concern `contracts-deployment-config/` and `nav-config/` files above |
+| (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (role `addresses`) plus the per-concern `contracts-deployment-config/` (with the `enabled` adapter flags) and `nav-config/` files above |
 
 ## Deployment Workflow
 
@@ -340,6 +340,8 @@ script/verify/verify-all.sh
 - `CompoundV3CometsMetaBalanceAdapter` - Compound V3 (Comet) base + collateral + rewards
 - `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions
 - `MorphoVaultsMetaBalanceAdapter` - MetaMorpho vault positions
+- `EulerVaultsMetaBalanceAdapter` - Euler V2 vaults (EulerEarn aggregator + core eVault lend/borrow)
+- `ERC4626WrapBalanceAdapter` - Generic ERC-4626 share wrappers (e.g. Aave stata-tokens)
 - `SparkLendBalanceAdapter` - Spark Lend positions
 - `BalancerV2PoolsMetaBalanceAdapter`, `BalancerV2GaugesMetaBalanceAdapter` - Balancer V2 LPs + gauges
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
@@ -417,7 +419,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 
 ### Manual Configuration Needed
 1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
-2. **Uncomment or enable adapters** in chain config and deployment scripts as needed
+2. **Enable adapters** by setting `"enabled": true` in the relevant `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/{chainId}.json` files as needed
 3. **Execute Safe transactions** via Safe UI — only for **post-handoff governance** (`script/manage/`, `script/upgrade/`); deploy/config (`01`–`07`) is EOA broadcast, not Safe.
 4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step).
 
@@ -428,10 +430,10 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 
 ## Next Steps to Deploy
 
-1. **Configure** - Fill in `script/config/chains/{chainId}.json` with Safe, admin, manager (and RPC/explorer vars in `.env` if using `$VAR`).
+1. **Configure** - Fill in `script/config/chains/{chainId}.json` with `addresses.securityCouncil`, `admin`, `manager` (and RPC/explorer vars in `.env` if using `$VAR`).
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once with `--broadcast --account` to deploy via the deployer EOA.
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
-4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in chain config; broadcast to deploy adapter contracts.
+4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy adapter contracts.
 5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters. Idempotent.
 6. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract.
 7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.

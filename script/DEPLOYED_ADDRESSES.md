@@ -29,11 +29,11 @@ These contracts have identical bytecode + constructor input on every chain, so C
 
 ---
 
-## Roles (final state on every NAV proxy, after Phase 6 handoff)
+## Roles (final state on every NAV proxy, after the `07_TransferAdminToSecurityCouncil` handoff)
 
 | Role | Holder | Type |
 |---|---|---|
-| `DEFAULT_ADMIN_ROLE` | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://app.safe.global/home?safe=eth:0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) | Safe (5/N threshold, same address on all 5 chains) |
+| `DEFAULT_ADMIN_ROLE` | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://app.safe.global/home?safe=eth:0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) | Safe (multisig, same address on all 5 chains) |
 | `MANAGER` | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://app.safe.global/home?safe=eth:0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) | Safe |
 | Deployer EOA (post-handoff) | `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` | EOA — holds **no** privileged role on any NAV proxy. |
 

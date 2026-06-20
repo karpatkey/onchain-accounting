@@ -53,7 +53,7 @@ For *any* future balance adapter that needs to inline upstream math from a non-p
 - Preserve the upstream `SPDX-License-Identifier` verbatim — do not relicense them as MIT.
 - Add a short `@dev` header to each file documenting the port (which functions were copied, which were dropped, what was substituted, and the upstream URL).
 - Reference this ADR.
-- Mark the adapter file that imports the libs `GPL-2.0-or-later` too: importing and linking GPL math makes the adapter a combined work, so its SPDX header should match (this is what the Uniswap V3 adapter does — `UniswapV3PoolsMeta.sol` is `GPL-2.0-or-later`, not MIT).
+- Mark the adapter file that imports the libs `GPL-2.0-or-later` too: importing and linking GPL math makes the adapter a combined work, so its SPDX header should match (this is what the Uniswap V3 adapter does — `UniswapV3PoolsMeta.sol` is `GPL-2.0-or-later`, not MIT). A fork adapter that only consumes the GPL math *transitively* through an already-GPL parent is a combined work regardless of its own tag (`PancakeSwapV3PoolsMeta.sol` keeps an `MIT` header but is still GPL-bound — see the addendum); the SPDX-matching guidance above is about the *direct* importer of the libs.
 
 If a future situation calls for a different posture (clean-room MIT port, GPL-only adapter, dual-licensed lib, …), write a new ADR rather than amending this one.
 
@@ -65,6 +65,6 @@ Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, w
 
 Implications for this ADR:
 
-- The GPL-2.0-or-later combined-work obligation flows through inheritance the same way it flows through direct calls. `PancakeSwapV3PoolsMetaBalanceAdapter` consumes `TickMath`/`LiquidityAmounts`/`FixedPoint128` transitively via the parent and is therefore part of the same combined work.
+- The GPL-2.0-or-later combined-work obligation flows through inheritance the same way it flows through direct calls. `PancakeSwapV3PoolsMetaBalanceAdapter` consumes `TickMath`/`LiquidityAmounts`/`FixedPoint128` transitively via the parent and is therefore part of the same combined work — even though its own source header is `// SPDX-License-Identifier: MIT`. The per-file SPDX tag does not override the combined-work reality: anyone redistributing the compiled fork adapter (or its source set, which pulls in the GPL parent and libs) is bound by GPL-2.0-or-later regardless of the MIT tag on the fork file itself.
 - The convention "any future Uniswap-math consumer should reuse `lib/` rather than re-inlining" extends to fork adapters: they should reuse `src/balances/protocols/uniswap/lib/*` rather than copying the libs into `protocols/<fork>/lib/`. PancakeSwap V3 is the first such consumer.
 - The `virtual` hook is intentionally narrow (single internal helper) so the GPL-bearing math stays in the parent. Future fork adapters that diverge in similar tightly-scoped ways (different pool ABI fields, different NPM, etc.) should follow the same pattern: virtualize the smallest hook that isolates the divergence.

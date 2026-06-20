@@ -68,11 +68,16 @@ outliers stay as-is: `ETHPlus_Price` (no Chainlink leg), `eETH_Price` (derived t
 - An `abstract BalanceAdapter` base for the ~12 standalone leaf adapters mirroring the
   existing `MetaBalanceAdapter` base — shared `supportsInterface`, one canonical
   `_getAssetInfo`, and the empty `getAdapterBalances*` stubs.
-- A `StaticCallLib` for the `safeUint` / `safeAddr` / stash-unwrap try/catch helpers
+- A `StaticCallLib` carrying the `safeUint` / `safeAddr` staticcall-and-decode helpers
   duplicated (and already drifting) across AuraRewardsMeta, ConvexRewardsMeta, and
-  UniswapV2PairLib.
-- `ArrayLib.copySlicePositions` / `copySliceUint` for the trim-to-length copy-back repeated
-  20+ times.
+  UniswapV2PairLib. Only those three call sites have migrated so far; other hand-rolled
+  copies (CurvePoolLib, FluidVaultLib, CompoundV3CometLib, AaveUmbrella) still differ subtly
+  and route around the lib. The per-adapter stash-unwrap logic in the Aura/Convex adapters
+  builds on `safeAddr` but stays in the adapters — it is not itself a `StaticCallLib` helper.
+- `ArrayLib` for the trim-to-length copy-back: it ships `copySliceAddress` (plus
+  `intersection` / `deduplicateAddresses`) over **address** arrays, used today by NavRegistryLib
+  and PriceFeedLib. The analogous PositionBalance/uint copy-backs repeated across the leaf
+  adapters are still inlined and remain a candidate for future helpers.
 
 ## Consequences
 

@@ -236,7 +236,7 @@ Across, CCIP, Stargate, and Gnosis must be registered with the escrow callback c
 
 4. Implement **`_bridge(InvoiceDataLib.InvoiceData memory data)`:**
    - Encode payload: `bytes memory messagePayload = InvoiceDataLib.encode(data)`.
-   - Get asset: `address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(data.assetSymbol)`.
+   - Get asset: `address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol))` (`assetRegistry` takes a `string` symbol, so convert the `bytes6` symbol first).
    - If not native, pull tokens from escrow (it has already approved the adapter in `depositAndBridge`): `IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount)`.
    - Set the protocol’s recipient to `bridgeEscrow` so the escrow receives funds and/or the callback on the destination chain.
    - Call the protocol’s deposit/transfer function with the message payload (or its encoded form).

@@ -27,6 +27,8 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 | Arbitrum (42161) | 0 | 9 | 9 |
 | **Total** | **1** | **46** | **47** |
 
+> **Chains added since the original audit:** **Polygon (137)** and **BSC (56)** were not in scope on 2026-05-11 and so are absent from the gap table above. They now carry deploy config (`chains/{137,56}.json` plus the matching `contracts-deployment-config/` entries) and empty `deployments/{137,56}.json`, so they are TBD like every other chain — Polygon currently resolves to `FluidFTokensMeta` (its `Fluid_fToken_*` plain keys are `enabled: false`). The §6 audit script now iterates all seven chains; re-run it for the live count.
+
 ### 1.1 Pending price feeds
 
 ETHx was the only custom feed in the *original incremental gap* (below). In the NAV v2 from-scratch redeploy **every** enabled custom feed is TBD — `03_DeployPriceFeeds.s.sol` deploys all entries with `enabled: true` in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (17 on mainnet, plus 3 on Gnosis, 3 on Base, 5 on Arbitrum at the time of writing). Re-run §6 for the live count.
@@ -210,6 +212,8 @@ Deduplicate market IDs across the 13 vaults. Cross-reference against the `market
 
 ## 4. Gearbox markets cross-check
 
+> **Note (ADR 0010):** like the Morpho/Compound/Fluid families, the per-market `GearboxMarket_*` keys below are `enabled: false` in the current deploy config — the enabled deploy is the single `GearboxMarketsMeta` meta-adapter, which derives each market's identity on-chain from its `bytes32` market coordinate. The per-market keys remain (disabled) as the coverage map.
+
 | # | Address | On-chain symbol | On-chain name | In our config? |
 |---|---|---|---|---|
 | 1 | `0x9396DCbf…699571EF` | `kpkWETH` | WETH Market | ✅ `GearboxMarket_kpkWETH` (TBD — redeploy) |
@@ -292,7 +296,7 @@ After Phase A, every chain's `deployments/<chainId>.json` has new address entrie
 - `deployments/1.json` — core proxies/impls + every balance/price/bridge adapter address (the ETHx feed address also lands in `deployments/1.json .customPriceFeeds`, referenced by the ETHx `priceFeeds[]` entry in `nav-config/assets-and-price-feeds/1.json`)
 - `deployments/10.json`, `deployments/8453.json`, `deployments/42161.json` — per-chain core + adapter addresses
 
-This PR is config-only, doesn't change behaviour.
+This PR is config-only; it doesn't change behaviour.
 
 ### Phase C — Safe TX bundles (per chain)
 
@@ -364,7 +368,7 @@ To regenerate this inventory in the future:
 PYTHONUTF8=1 python3 -c "
 import json, os
 base = 'script/config'
-chains = [('1','mainnet'),('10','optimism'),('100','gnosis'),('8453','base'),('42161','arbitrum')]
+chains = [('1','mainnet'),('10','optimism'),('56','bsc'),('100','gnosis'),('137','polygon'),('8453','base'),('42161','arbitrum')]
 
 def load(path):
     return json.load(open(path)) if os.path.exists(path) else {}

@@ -47,13 +47,13 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 ## 03_DeployPriceFeeds.s.sol + asset registration
 
-Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `nav-config/...`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through `registerAsset`, any additional feeds through `addPriceFeed`).
+Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through `registerAsset`, any additional feeds through `addPriceFeed`).
 
 ## 04_DeployBalanceAdapters.s.sol / 05_DeployBridgeAdapters.s.sol
 
-Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge adapters via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to chain config only when `PERSIST_DEPLOYMENTS=1`; see the note below). (Addresses are therefore chain- and run-specific — only the impl/library layer in `01`/`02` uses CREATE2.)
+Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge adapters via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to the deployments file `script/config/deployments/{chainId}.json` only when `PERSIST_DEPLOYMENTS=1`; see the note below). (Addresses are therefore chain- and run-specific — only the impl/library layer in `01`/`02` uses CREATE2.)
 
-## 06_Configure.s.sol  (EOA broadcast)
+## 06_Configure.s.sol (EOA broadcast)
 
 Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempotent (skips already-registered/authorized via `isAdapterRegistered` / `isAuthorizedAdapter`), so it can be re-run safely:
 
@@ -65,7 +65,7 @@ Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempot
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-## 07_TransferAdminToSecurityCouncil.s.sol  (run LAST)
+## 07_TransferAdminToSecurityCouncil.s.sol (run LAST)
 
 Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies, revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`. After this the council Safe is the sole admin/manager and the deployer holds nothing.
 
@@ -74,4 +74,4 @@ DEPLOYER_EOA=0xYourDeployer \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-> Note: `PERSIST_DEPLOYMENTS=1` makes the scripts persist newly deployed addresses back to the chain config (otherwise they only log). Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.
+> Note: `PERSIST_DEPLOYMENTS=1` makes the scripts persist newly deployed addresses to the deployments file `script/config/deployments/{chainId}.json` (otherwise they only log). Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.

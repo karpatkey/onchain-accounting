@@ -2,13 +2,13 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/EulerVaultsMeta.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`, `name = vault.name()`.
+`src/balances/protocols/EulerVaultsMeta.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`. A human-readable label is available off the struct via `describePosition(positionId)` → `vault.name()`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
 - **Inheritance:** `EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter`. Overrides only `_instancePositions`, `_instanceAssets`, `describePosition`. The `…ForInstances` fan-out, ERC165, no-arg base methods returning empty, and bad-instance isolation are inherited from `MetaBalanceAdapter` (covered by its base tests + the Morpho-vaults suite). Mirrors `MorphoVaultsMetaBalanceAdapter`.
 - **Per-chain scope:** both KPK-held vaults are **mainnet-only** (chainId 1) — see `script/config/nav-config/meta-balance-adapters/1.json` and `…/contracts-deployment-config/meta-balance-adapters/1.json`. So a single mainnet fork test suffices. "Mainnet-only" reflects *where KPK holds positions today*, not a code limit.
-- **Chain-agnostic by design.** The adapter has no hardcoded addresses: it reads `asset()`, `convertToAssets`, `balanceOf`, `debtOf`, and `EVC()` → `getCollaterals` from each vault at query time (the EVC is read *per-vault*, so it auto-resolves to whatever EVC the chain uses). The ERC4626 ABI is standard across EulerEarn + EVK on every chain (no per-chain shim like PancakeSwap V3's `feeProtocol`). Of our five NAV chains, Euler V2 is live on **Ethereum (1)** and **Base (8453)** (not Optimism/Gnosis/Arbitrum as of 2026-06). Reusing it on Base — or any future Euler chain — is pure config: deploy via `04_DeployBalanceAdapters`, add the chain's `meta-balance-adapters` deploy + nav config, and `addMetaInstances` with that chain's vault addresses. No code change.
+- **Chain-agnostic by design.** The adapter has no hardcoded addresses: it reads `asset()`, `convertToAssets`, `balanceOf`, `debtOf`, and `EVC()` → `getCollaterals` from each vault at query time (the EVC is read *per-vault*, so it auto-resolves to whatever EVC the chain uses). The ERC4626 ABI is standard across EulerEarn + EVK on every chain (no per-chain shim like PancakeSwap V3's `feeProtocol`). Of our seven NAV chains, Euler V2 is live on **Ethereum (1)** and **Base (8453)** (not Optimism/BNB/Gnosis/Polygon/Arbitrum as of 2026-06). Reusing it on Base — or any future Euler chain — is pure config: deploy via `04_DeployBalanceAdapters`, add the chain's `meta-balance-adapters` deploy + nav config, and `addMetaInstances` with that chain's vault addresses. No code change.
 - **Two Euler V2 products, one adapter.** Euler V2 vaults are all ERC4626 on the EVK+EVC:
   - **EulerEarn** (the "Earn" product) — MetaMorpho-fork yield aggregators (`curator`/`guardian`/`supplyQueue`/`withdrawQueue`). No borrow. **Both KPK-held vaults are this kind.**
   - **core eVaults** (EVK, the "Lend/Borrow" product) — supply to lend/collateralise; borrow the underlying against collateral, tracked by `debtOf`.
@@ -174,7 +174,7 @@ cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
 
 Run via:
 
-```
+```bash
 forge test --match-path "test/balances/protocols/EulerVaultsMeta.t.sol"
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol" -vv
 ```

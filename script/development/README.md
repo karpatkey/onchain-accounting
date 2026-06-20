@@ -39,7 +39,7 @@ script/development/
 ├── deploy/
 │   ├── 01_DeployNAV.s.sol       — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
 │   ├── register-assets.sh       — Chainlink-asset registrar via cast (forge-script alternative hangs)
-│   ├── register-custom-assets.sh— custom-feed asset registrar via cast
+│   ├── register-custom-assets.sh — custom-feed asset registrar via cast
 │   ├── deploy.sh                — orchestrator: 01_DeployNAV then register-assets per chain
 │   └── deploy-*.sh / *.s.sol    — per-protocol ad-hoc adapter wiring helpers (forge create / forge script + cast send)
 ├── config/
@@ -105,8 +105,11 @@ local anvil:
    `script/development/deploy/deploy-lido-withdrawal-queue.sh` (plain) and
    `script/development/deploy/deploy-aave-instances-meta.sh` (meta) for canonical examples.
 2. **Post-verification:** the adapter is appended to `script/deploy/04_DeployBalanceAdapters.s.sol`
-   and its chain config goes into `script/config/chains/<id>.json`. The ad-hoc dev script is then
-   deleted; dev anvil deploys go through the same prod script with `--rpc-url http://127.0.0.1:<port>`.
+   and its config goes into `script/config/contracts-deployment-config/balance-adapters/<id>.json`
+   (plain) or `meta-balance-adapters/<id>.json` (meta) for the deploy, plus
+   `script/config/nav-config/{balance-adapters,meta-balance-adapters}/<id>.json` for NAV
+   registration. The ad-hoc dev script is then deleted; dev anvil deploys go through the same prod
+   script with `--rpc-url http://127.0.0.1:<port>`.
 
 This convention keeps the dev-anvil tooling tiny: once an adapter is verified, prod's 04 is the
 single source of truth for "what's deployed".

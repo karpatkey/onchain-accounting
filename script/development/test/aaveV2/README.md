@@ -145,6 +145,6 @@ The deployed adapter addresses are recorded in `script/development/state/1-addre
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/AaveV2InstancesMeta.fork.t.sol" -vv
 ```

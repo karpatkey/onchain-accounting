@@ -34,7 +34,7 @@ Stake tokens whose bare reserve is not registered with `NAVCalculator` are silen
 ADR 0005 hardcodes the legacy Safety Module set because Aave does not publish an on-chain registry for it. Umbrella ships with one (`getAllAssets()`), and other adapters in this repo (notably `AaveV3InstancesMetaBalanceAdapter`, which discovers reserves via `dataProvider.getAllReservesTokens()`) follow the *use the registry when it exists* convention. We do the same here:
 
 - A new Umbrella stake token (or a re-configured reward token on an existing one) does not require a code change or a redeploy. The adapter picks up governance changes the next time NAV is computed.
-- The constructor surface stays minimal — one trust-anchor address, no per-token plumbing — so the chain-config schema is small (`rewardsController` + `protocol`).
+- The constructor surface stays minimal — one trust-anchor address, no per-token plumbing — so the only config field the deploy script reads for this adapter is `rewardsController` (the deployment-config object also carries the boilerplate `protocol` / `positionDetail` / `positionId` keys, but `04_DeployBalanceAdapters.s.sol` passes only `rewardsController` to the constructor).
 - The bounded-gas `staticcall` walk over `asset()` and `UNDERLYING_ASSET_ADDRESS()` is cheap (a handful of view calls per stake token) and isolates the adapter from any single adversarial token contract: a misbehaving wrapper that reverts on `asset()` (or burns gas in its fallback) simply terminates the walk at that level.
 
 The adapter still pins **one** address — the `RewardsController` — as constructor input. That is the protocol's trust root: the entire stake-token graph reachable from it is treated as trusted. If governance ever ships a second controller (covering a disjoint stake-token set), this adapter would be redeployed pointing at the new controller; both adapters could be registered on `NAVCalculator` simultaneously.
@@ -58,7 +58,7 @@ The legacy SM's `aave2` allowlist entry (in `accounts.json`'s Mainnet `supported
 **Positive**
 
 - One uniform rule across the framework: adapters use the protocol's on-chain registry when it exists. Matches `AaveV3InstancesMetaBalanceAdapter`'s precedent.
-- No hardcoded token addresses anywhere in source. The only address pinned is the `RewardsController`, passed via constructor and treated as a trust anchor — the chain-config schema is minimal (`rewardsController` + `protocol`).
+- No hardcoded token addresses anywhere in source. The only address pinned is the `RewardsController`, passed via constructor and treated as a trust anchor — it is the only deployment-config field the script consumes for this adapter.
 - Aave governance can add a new Umbrella stake token (or change its reward configuration) and the adapter picks it up on the next view call, provided the bare reserve is already registered with `NAVCalculator`.
 - Reports in bare reserves means NAV pricing falls through to existing Chainlink feeds — no new price-feed adapters required for this PR.
 
@@ -96,6 +96,6 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 
 - Adapter: `src/balances/protocols/AaveUmbrella.sol`
 - Tests: `test/balances/protocols/AaveUmbrella.t.sol` (unit), `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` (fork)
-- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveUmbrella` (`rewardsController` + `protocol`)
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveUmbrella` (`04_DeployBalanceAdapters.s.sol` reads only `rewardsController` from this object; `navCalculator` is injected by the script)
 - Aave Umbrella source: <https://github.com/aave-dao/aave-umbrella>
 - Companion ADR: [0005 — Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md)

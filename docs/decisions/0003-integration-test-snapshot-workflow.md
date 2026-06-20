@@ -10,7 +10,7 @@ This worked but had three structural problems as the adapter and feed surface gr
 
 1. **Fork blocks rot.** They were captured once and never refreshed. The fixture aged and stopped representing current chain state.
 2. **Adding a test account = editing 5 Solidity files.** The friction was high enough that we accumulated only three accounts (`ACCOUNT_1`, `ACCOUNT_2`, `ACCOUNT_3`) over the project lifetime, even though we wanted broader coverage for new adapters.
-3. **No external sanity check.** The expected NAVs were captured by running the test once and writing down the output. Nothing independently confirmed the output was right at capture time — the per-chain test files literally have a comment `Compare value/1e8 against Debank's USD total for each account.` as a manual instruction.
+3. **No external sanity check.** The expected NAVs were captured by running the test once and writing down the output. Nothing independently confirmed the output was right at capture time — the per-chain test files literally had a comment `Compare value/1e8 against Debank's USD total for each account.` as a manual instruction.
 
 The user wanted a script-driven workflow that, on demand, (a) bumps every chain's fork block to latest, (b) regenerates expected NAV values, (c) cross-checks each account's NAV against an authoritative external reference (Debank), with a tolerance assertion at bump time so future test runs stay deterministic but every refresh is independently validated.
 
@@ -44,7 +44,7 @@ A GitHub Actions workflow (`.github/workflows/refresh-integration-snapshot.yml`)
 - The JSON can drift quietly between bumps if no one runs the script. Mitigation: weekly cron in CI.
 - Debank's "current" view and our "fork at block N" can diverge on volatile assets in the seconds between `cast block-number` and the Debank query. The 1% default tolerance is calibrated for normal market moves; protocols with poor Debank coverage or peg-stressed stables may need temporary tolerance adjustments.
 - Forge's `vm.writeJson` has unreliable JSONPath array-index handling, which is why the forge script *prints* `SNAPSHOT|…` lines that the shell wrapper applies via `jq` rather than writing JSON in-process. This is an extra hop but portable across Foundry versions.
-- Single test method per chain (`test_accountNavs`) loops over accounts. On failure, the assertion message identifies the account label, so failures are still attributable — but you don't get the "X passed, Y failed per account" view that one-method-per-account would. Acceptable trade-off for the JSON-driven shape.
+- Single test method per chain (`test_accountNavs`) loops over accounts. On failure, the method logs a `[NAV-MISMATCH]` line carrying the account label and chainId before reverting with a generic message, so failures are still attributable from the logs — but you don't get the "X passed, Y failed per account" view that one-method-per-account would. Acceptable trade-off for the JSON-driven shape.
 
 ## Alternatives considered
 

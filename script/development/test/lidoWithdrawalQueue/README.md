@@ -142,6 +142,6 @@ The position renders under **Lido** as a single **Supplied** leg denominated in 
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol" -vv
 ```

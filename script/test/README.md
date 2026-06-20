@@ -47,6 +47,9 @@ forge test --match-path "script/test/*.t.sol" -vv
 # Deployment tests
 forge test --match-path "script/test/DeploymentTest.fork.t.sol" -vv
 
+# Proxy deployment tests
+forge test --match-path "script/test/Test02_DeployProxies.t.sol" -vv
+
 # Config reader tests
 forge test --match-path "script/test/ConfigReaderTest.t.sol" -vv
 ```
@@ -128,8 +131,10 @@ contract MyDeploymentTest is Test {
         // Assert
     }
 
-    function testFail_InvalidInput() public {
-        // Test failure cases
+    function test_RevertWhen_InvalidInput() public {
+        // Test failure cases with vm.expectRevert
+        vm.expectRevert();
+        // Act (the call expected to revert)
     }
 }
 ```

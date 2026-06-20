@@ -64,6 +64,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
 | [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
 | [`0010-meta-balance-adapters.md`](decisions/0010-meta-balance-adapters.md) | Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator. |
+| [`0011-nav-size-and-shared-abstractions.md`](decisions/0011-nav-size-and-shared-abstractions.md) | NAVCalculator size headroom (EIP-170) + shared adapter/feed abstractions. |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---

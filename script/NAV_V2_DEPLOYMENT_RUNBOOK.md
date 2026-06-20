@@ -423,7 +423,7 @@ The first entry in a token's `priceFeeds` array is set via `registerAsset`; any 
 
 | Adapter | Config key | Configured today | Constructor params needed |
 |---------|-----------|------------------|--------------------------|
-| wstETH | `wstETH` | ✓ | `wstEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| wstETH | `wstETH` | ✓ | `wstEth`, `stEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `stEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
 | rETH | `rETH` | ✓ | `rEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 | weETH | `weETH` | ✓ | `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
 | eETH | `eETH` | ✓ | `eEth`, `weEth`, `weEthToEthChainlinkOracle`, `ethToUsdChainlinkOracle`, `weEthToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
@@ -432,6 +432,14 @@ The first entry in a token's `priceFeeds` array is set via `registerAsset`; any 
 | sUSDe | `sUSDe` | ✓ | `sUsde`, `usdeToUsdChainlinkAddress`, `usdeToUsdChainlinkHeartbeat` |
 | sUSDS | `sUSDS` | ✓ | `sUsds`, `usdsToUsdChainlinkAddress`, `usdsToUsdChainlinkHeartbeat` |
 | syrupUSDC | `syrupUSDC` | ✓ | `syrupUsdc`, `usdcToUsdChainlinkAddress`, `usdcToUsdChainlinkHeartbeat` |
+| stETH | `stETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRatePriceAdapter`) |
+| OETH | `OETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRatePriceAdapter`) |
+| ETHx | `ETHx` | ✓ | `ethx`, `stakePoolsManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| ETHPlus | `ETHPlus` | ✓ | `ethPlus`, `reserveProtocolHeartbeat` |
+| osETH | `osETH` | ✓ | `osToken`, `osTokenVaultController`, `underlyingToUsdChainlinkOracle`, `underlyingToUsdChainlinkHeartbeat` |
+| ankrETH | `ankrETH` | ✓ | `ankrEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| NXM | `NXM` | ✓ | `token`, `ramm`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
+| wNXM | `wNXM` | ✓ | `token`, `ramm`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 | sDAI | `sDAI` | — | `sDai`, `dsrManager`, `daiToUsdChainlinkOracle`, `daiToUsdChainlinkHeartbeat` |
 | LDO | `LDO` | — | `ldo`, `ldoToEthChainlinkAddress`, `ethToUsdChainlinkAddress`, `ldoToEthChainlinkHeartbeat`, `ethToUsdChainlinkHeartbeat` |
 | cbETH | `cbETH` | — | `cbEth`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
@@ -573,7 +581,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `addMetaInstances`/`removeMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
-**Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`
+**Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `EulerVaultsMeta` (Euler V2 EulerEarn + core eVaults — supply/collateral + borrow legs; instance set on NAV)
 
 **Morpho:** `MorphoVaultsMeta` (vaults via `instances`), `MorphoMarketsMeta` (raw bytes32 marketIds via `instancesRaw`)
 

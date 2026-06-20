@@ -34,7 +34,7 @@ All kept as regression nets.
 
 ## 3. What this case adds
 
-- A **fresh dual-holder pin at the verification block `25_330_819`** (`StaderWithdrawalQueueBalanceAdapterForkTest_Fresh`) — augments, doesn't replace. One holder per branch, at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check. The original suite only exercised `ethExpected`; the new finalized holder exercises `ethFinalized` **and proves it is preferred** (its `ethFinalized` is 9 wei below its `ethExpected`).
+- A **fresh three-holder pin at the verification block `25_330_819`** (`StaderWithdrawalQueueBalanceAdapterForkTest_Fresh`) — augments, doesn't replace. One holder per case (PENDING, FINALIZED, MULTI — see §5), at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check. The original suite only exercised `ethExpected`; the new finalized holder exercises `ethFinalized` **and proves it is preferred** (its `ethFinalized` is 9 wei below its `ethExpected`), and the MULTI holder exercises real on-chain multi-request summing.
 - This evidence pack: README + case JSON + query script + dev deploy helper, bringing Stader WQ up to the same 10-section structure as the other verified protocols.
 
 ## 4. Adapter formula recap
@@ -47,7 +47,7 @@ for i in 0 .. 255:                                   # MAX_REQUESTS_PROBED cap
     (owner, _, ethExpected, ethFinalized, _) = userWithdrawRequests(id)
     if owner == 0:                     continue        # already claimed — skip
     total += ethFinalized > 0 ? ethFinalized : ethExpected
-emit PositionBalance(WETH, total, isDebt=false, Supplied, positionId="")   if total > 0 and WETH registered
+return PositionBalance(WETH, total, isDebt=false, Supplied, positionId="")   if total > 0 and WETH registered
 ```
 
 ## 5. Cherry-picked accounts
@@ -75,8 +75,8 @@ emit PositionBalance(WETH, total, isDebt=false, Supplied, positionId="")   if to
 
 | File | Purpose |
 |---|---|
-| `case-real-holders-mainnet.json` | Machine-readable evidence pack: both holders, request ids, ETH owed, identity, ground-truth method |
-| `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints both holders' WETH legs for ad-hoc cross-checks |
+| `case-real-holders-mainnet.json` | Machine-readable evidence pack: all three holders, request ids, ETH owed, identity, ground-truth method |
+| `query-live-balances.s.sol` | Forge script that deploys the adapter against a dev NAV and prints all three holders' WETH legs for ad-hoc cross-checks |
 | `script/development/deploy/deploy-stader-withdrawal-queue.sh` | Dev-anvil deploy helper: `forge create` the adapter + `addBalanceAdapters([adapter])` on the local NAV |
 
 ## 7. Expected balances
@@ -115,7 +115,7 @@ The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/p
 
 ## 9. Wiring the live dev-anvil dashboard
 
-`script/development/deploy/deploy-stader-withdrawal-queue.sh` deploys + registers the adapter on the local mainnet anvil so the dashboard renders both holders' withdrawal-queue positions for a side-channel cross-check. WETH is registered on the NAV at bootstrap (`deploy.sh` registers the WETH/USD feed), so no extra asset registration is needed. To pin the dev anvil at the verification block (so the dashboard matches §7 exactly):
+`script/development/deploy/deploy-stader-withdrawal-queue.sh` deploys + registers the adapter on the local mainnet anvil so the dashboard renders all three holders' withdrawal-queue positions for a side-channel cross-check. WETH is registered on the NAV at bootstrap (`deploy.sh` registers the WETH/USD feed), so no extra asset registration is needed. To pin the dev anvil at the verification block (so the dashboard matches §7 exactly):
 
 ```bash
 anvil --fork-url <MAINNET_URL> --fork-block-number 25330819 --chain-id 1 --port 8545 \

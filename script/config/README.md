@@ -8,7 +8,7 @@ This guide explains all configuration files needed for multi-chain deployments o
 2. [chains/{chainId}.json](#chainschainidjson)
 3. [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson)
 4. [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson)
-4a. [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
+   - [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
 5. [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson)
 6. [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson)
 7. [deployments/{chainId}.json](#deploymentschainidjson)
@@ -224,7 +224,10 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
     "initialize": {
       "admin": "0x...",
       "bridgeEscrow": "0x...",
-      "version": "1.0.0"
+      "tokenMessenger": "0xBd3fa81B58Ba92a82136038B25aDec7066af3155",
+      "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
+      "version": "1.0.0",
+      "cctpDomain": 0
     }
   }
 }
@@ -629,7 +632,7 @@ Adapters that receive protocol callbacks (e.g. CCIP router, LayerZero endpoint) 
 | CCTP      | —                                    | none              | No callback; use `authorizeAdapter` |
 | Superchain| —                                    | none              | No callback; use `authorizeAdapter` |
 
-**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle’s CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`bridgeAdapters.CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this—configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this — configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
 
 These bytes4 selectors are asserted in `test/bridge/BridgeAdapterCallbacks.t.sol` (`test_documentedCallbackSelectors_bytes4`). Keep this table in sync with that test.
 

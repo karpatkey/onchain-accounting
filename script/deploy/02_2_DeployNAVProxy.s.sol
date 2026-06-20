@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {AtomicNAVProxyDeployer} from "./AtomicNAVProxyDeployer.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
@@ -19,7 +20,8 @@ import {console2} from "forge-std/console2.sol";
 ///     admin role is renounced atomically.
 ///   - Set env USE_LEGACY_DEPLOY=1 to use the legacy multi-tx path instead.
 ///     NOTE: legacy path does NOT grant MANAGER — have the admin (chainConfig.admin) call grantRole(MANAGER, manager) afterwards.
-///   - Proxy salts use version 2 (same as full 02_DeployProxies.s.sol — identical proxy address on all chains).
+///   - Proxy salts come from DeploySalts (shared with 02_DeployProxies.s.sol + both atomic deployers), so the
+///     NAVCalculator proxy lands at the same canonical address on every chain AND across both deploy paths.
 ///   - Prerequisite: run 01_2_DeployNAVImplementation.s.sol first to populate NAVCalculatorImplementation in config.
 contract DeployNAVProxy is BaseDeployScript {
     /// @notice Canonical CREATE2 deployer address (same on all chains)
@@ -29,13 +31,13 @@ contract DeployNAVProxy is BaseDeployScript {
         setUp();
         validateAddresses();
 
-        // Placeholder impl: same address on all chains (CREATE2).
-        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 3);
+        // Placeholder impl: same address on all chains (CREATE2). Salt version centralized in DeploySalts.
+        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL);
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
         // NAV proxy bytecode: (placeholder, "") — identical on every chain.
-        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 3);
+        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 

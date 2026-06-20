@@ -6,6 +6,7 @@ import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
 import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployImplementations
@@ -60,7 +61,7 @@ contract DeployImplementations is BaseDeployScript {
         plan.navRegistryLib =
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavRegistryLib, plan.navRegistryLibBytecode);
 
-        plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", 1);
+        plan.saltNavImpl = generateSalt("NAVCalculatorImplementation", DeploySalts.NAV_IMPL);
         plan.navImplBytecode = type(NAVCalculator).creationCode;
         plan.navImpl = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavImpl, plan.navImplBytecode);
 

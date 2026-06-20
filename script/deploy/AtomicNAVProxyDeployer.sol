@@ -7,6 +7,7 @@ import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {MANAGER} from "../../src/constants.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 
 /// @title AtomicNAVProxyDeployer
 /// @notice Deploys placeholder + NAVCalculator proxy and upgrades them in a single transaction.
@@ -24,11 +25,11 @@ contract AtomicNAVProxyDeployer {
         address adminToGrant,
         address managerToGrant
     ) {
-        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", uint256(3)));
+        bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL));
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
-        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", uint256(3)));
+        bytes32 saltNavProxy = keccak256(abi.encodePacked("NAVCalculatorProxy", DeploySalts.NAV_PROXY));
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 

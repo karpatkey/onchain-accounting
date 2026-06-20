@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {AtomicProxyDeployer} from "./AtomicProxyDeployer.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
@@ -29,18 +30,20 @@ contract DeployProxies is BaseDeployScript {
 
         // Placeholder impl: same address on all chains (CREATE2). Proxy bytecode uses this so it is chain-independent.
         // Uses UUPSPlaceholder which is UUPS-compatible (has upgradeToAndCall function)
-        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", 2);
+        bytes32 saltPlaceholder = generateSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL);
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
 
         // Proxy bytecode: (placeholder, "") — identical on every chain; real impl is set via upgradeToAndCall.
-        // Salt version 2: v1 addresses were front-run (proxy at 0xA76A... initialized by attacker with impl 0x013a...).
-        // UUPS pattern: no owner needed, upgrades go directly through proxy to implementation.
-        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", 2);
+        // Salt versions are centralized in DeploySalts (shared with 02_2_DeployNAVProxy + both atomic deployers)
+        // so the proxy address is identical across chains AND across both deploy paths. History: v1 addresses were
+        // front-run (proxy at 0xA76A... initialized by attacker with impl 0x013a...); bump the version in
+        // DeploySalts to derive fresh addresses. UUPS pattern: upgrades go directly through proxy to implementation.
+        bytes32 saltNavProxy = generateSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address navProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
 
-        bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", 2);
+        bytes32 saltBridgeProxy = generateSalt("BridgeEscrowProxy", DeploySalts.BRIDGE_PROXY);
         bytes memory bridgeProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
         address bridgeProxy = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 

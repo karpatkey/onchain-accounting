@@ -1,119 +1,48 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
-import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
 
 /// @title ezETH Custom Price Oracle
-/// @notice Returns the USD price of ezETH using Renzo RestakeManager TVL / ezETH supply x Chainlink ETH/USD.
-/// @dev price = (totalTVL / ezETHSupply) * (ETH/USD). calculateTVLs() may revert -- caught and marked stale.
+/// @notice USD price of Renzo's ezETH = (RestakeManager TVL / ezETH supply) (ETH per ezETH, 18 dec) × Chainlink ETH/USD.
+/// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
+///      BaseCustomPriceFeed; `_rate()` derives the ezETH/ETH rate from Renzo and returns 0 (→ stale) if
+///      `calculateTVLs()` reverts or supply is 0.
 /// @dev Staleness gap: calculateTVLs() reads Renzo's internal oracles, whose freshness is not independently
-///      checked here. Only the ETH/USD Chainlink heartbeat is verified. If Renzo's oracles are stale the TVL
-///      figure may be stale without this adapter detecting it. This is an architectural constraint of Renzo on
-///      mainnet; the L2 adapter (ezETH_L2_Price) avoids this by using xRenzoDeposit.getRate() directly.
+///      checked here. Only the ETH/USD Chainlink heartbeat is verified. This is an architectural constraint of
+///      Renzo on mainnet; the L2 adapter (ezETH_L2_Price) avoids this by using xRenzoDeposit.getRate() directly.
 /// @author kpk
-/* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract ezETH_PriceOracle is IPriceFeedCustom {
+/* solhint-disable contract-name-camelcase */
+contract ezETH_PriceOracle is BaseCustomPriceFeed {
     using Math for uint256;
 
-    address public immutable EZETH;
+    /// @notice Renzo RestakeManager (exposes calculateTVLs()).
     IRestakeManager public immutable RESTAKE_MANAGER;
-    AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
-    uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
-    uint8 private immutable _decimals;
 
     constructor(
         address ezEth_,
         address restakeManager_,
         address ethToUsdChainlinkOracle_,
         uint256 ethToUsdChainlinkHeartbeat_
-    ) {
-        EZETH = OracleArgumentChecks.assertERC20Address(ezEth_);
+    ) BaseCustomPriceFeed(ezEth_, ethToUsdChainlinkOracle_, ethToUsdChainlinkHeartbeat_) {
         RESTAKE_MANAGER = IRestakeManager(OracleArgumentChecks.assertNonZeroAddress(restakeManager_));
-        ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
-        ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
-        _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
     }
 
-    function _compute()
-        private
-        view
-        returns (
-            uint256 price,
-            bool stale,
-            uint80 roundId,
-            uint256 startedAt,
-            uint256 updatedAt,
-            uint80 answeredInRound
-        )
-    {
-        int256 ethToUsdPrice;
-        (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (ethToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
-        uint256 ezEthRate;
+    /// @inheritdoc BaseCustomPriceFeed
+    function _rate() internal view override returns (uint256) {
         try RESTAKE_MANAGER.calculateTVLs() returns (uint256[][] memory, uint256[] memory, uint256 totalTVL) {
-            uint256 supply = IERC20(EZETH).totalSupply();
-            if (supply == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-            ezEthRate = totalTVL.mulDiv(1e18, supply, Math.Rounding.Floor);
+            uint256 supply = IERC20(UNDERLYING).totalSupply();
+            if (supply == 0) return 0;
+            return totalTVL.mulDiv(1e18, supply, Math.Rounding.Floor);
         } catch {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+            return 0;
         }
-        if (ezEthRate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        // ezETH/ETH rate is 18 decimals, ETH/USD is 8 decimals -> result is 8 decimals
-        price = ezEthRate.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
-    }
-
-    /// @inheritdoc IPriceFeedCustom
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (price, stale,,,,) = _compute();
-    }
-
-    /// @inheritdoc IPriceFeedCustom
-    function underlyingAssetSupported() external view override returns (address) {
-        return EZETH;
-    }
-
-    /// @inheritdoc IPriceFeedCustom
-    function decimals() external view override returns (uint8) {
-        return _decimals;
-    }
-
-    /// @inheritdoc IPriceFeedCustom
-    function latestRoundData()
-        external
-        view
-        override
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
-    {
-        uint256 price;
-        bool stale;
-        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
-        answer = stale ? int256(0) : int256(price);
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
 interface IRestakeManager {
-    function calculateTVLs()
-        external
-        view
-        returns (
-            uint256[][] memory operatorDelegatorTokenTVLs,
-            uint256[] memory operatorDelegatorTVLs,
-            uint256 totalTVL
-        );
+    function calculateTVLs() external view returns (uint256[][] memory, uint256[] memory, uint256);
 }

@@ -40,6 +40,15 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         nav.registerAsset(address(weth), 18, "WETH");
         nav.registerAsset(address(usdc), 6, "USDC");
 
+        // [2] The adapter reconstructs sqrtPriceX96 from these oracle prices (it no longer reads slot0). They are
+        // chosen so the reconstructed raw token1/token0 price is exactly 1.0 (sqrtPrice == 2^96, tick 0) for both
+        // pools, keeping the [-100, 100] NFT positions in range. Deliberately nonsensical as USD figures (this
+        // suite asserts leg structure/amounts, not values): WBTC(8)/WETH(18) → (1e8·10^10)/1e18 = 1; USDC(6)/
+        // WETH(18) → (1e6·10^12)/1e18 = 1.
+        nav.setAssetPrice(address(wbtc), 1e8, 8);
+        nav.setAssetPrice(address(weth), 1e18, 8);
+        nav.setAssetPrice(address(usdc), 1e6, 8);
+
         poolA = new MockUniswapV3Pool(address(wbtc), address(weth), 3000, 60);
         poolB = new MockUniswapV3Pool(address(usdc), address(weth), 500, 10);
         poolA.setSlot0(TickMath.getSqrtRatioAtTick(0), 0);

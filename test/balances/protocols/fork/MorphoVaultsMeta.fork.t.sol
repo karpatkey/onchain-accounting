@@ -32,7 +32,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml). Etch its runtime code on the
     // fork so NAVCalculator pricing DELEGATECALLs succeed.
-    address constant PRICE_FEED_LIB = 0x1FdC404072CA29f6EC15308143D389B062584407;
+    address constant PRICE_FEED_LIB = 0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1;
 
     IERC4626 public constant KPK_USDC_VAULT = IERC4626(0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd);
     IERC20 public constant USDC = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
@@ -61,7 +61,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Etch the pre-linked PriceFeedLib so pricing works on the fork.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(PRICE_FEED_LIB, priceFeedLibImpl.code);
-        vm.etch(0x4e4bC58122D7fD21A110c1a69d83b57f12C1F021, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         // Real NAVCalculator (L1: no sequencer uptime feed).
         vm.startPrank(admin);

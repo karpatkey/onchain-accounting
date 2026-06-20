@@ -21,7 +21,7 @@ contract BalanceAdapterGasTest is Test {
 
     function setUp() public {
         // Etch NavRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0x4e4bC58122D7fD21A110c1a69d83b57f12C1F021, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultAdapter = balances.defaultAdapter();
     }

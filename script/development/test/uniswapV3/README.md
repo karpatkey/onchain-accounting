@@ -10,14 +10,14 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/uniswap/UniswapV3Pool.sol` — one adapter instance per pool (immutable). Position discovery is dynamic: the adapter iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
+`src/balances/protocols/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the immutable `UniswapV3PoolsMeta.sol` (`UniswapV3PoolsMetaBalanceAdapter`), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery is dynamic (and carried over unchanged into the meta-adapter): it iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
 
 The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/protocols/uniswap/lib/` and carry `GPL-2.0-or-later`. Because the adapter imports and links those libs, the adapter file itself also carries `GPL-2.0-or-later` — there is no MIT file in this compilation unit — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** direct `IBalanceAdapter` implementer. `_slot0()` is `virtual` — the override hook used by `PancakeSwapV3PoolBalanceOracle` to absorb PCS V3's `uint32 feeProtocol` ABI shim. Verification of that override is a separate task.
-- **Per-chain scope:** Uniswap V3 is deployed on Ethereum, Optimism, Arbitrum, Base, Polygon, BSC and others; only Ethereum has V3 instances configured in `script/config/chains/1.json` today (3 enabled: WBTC/WETH 0.3%, USDC/WETH 0.05%, WETH/USDT 0.3%). Gnosis has no Uniswap V3 deployment. The adapter has **zero per-chain code branches** — pool ABI/bytecode is identical on every chain; NPM is a constructor argument. Single-chain (mainnet) fork tests are sufficient.
+- **Inheritance:** the per-pool adapter under test was a direct `IBalanceAdapter` implementer; the live `UniswapV3PoolsMetaBalanceAdapter` is instead a `MetaBalanceAdapter` subclass. In both, `_slot0()` is `virtual` — the override hook used by `PancakeSwapV3PoolsMetaBalanceAdapter` to absorb PCS V3's `uint32 feeProtocol` ABI shim. Verification of that override is a separate task.
+- **Per-chain scope:** Uniswap V3 is deployed on Ethereum, Optimism, Arbitrum, Base, Polygon, BSC and others; only Ethereum has V3 instances configured (now as meta-adapter instances under `script/config/nav-config/meta-balance-adapters/<chainId>.json`, governed via `addMetaInstances`) today (3 enabled: WBTC/WETH 0.3%, USDC/WETH 0.05%, WETH/USDT 0.3%). Gnosis has no Uniswap V3 deployment. The adapter has **zero per-chain code branches** — pool ABI/bytecode is identical on every chain; NPM is a constructor argument. Single-chain (mainnet) fork tests are sufficient.
 - **Math branches** exercised in this case: in-range principal, above-range principal, below-range principal, in-range fee delta, out-of-range fee delta, settled `tokensOwed`, foreign-pool filter, closed-position filter, bounded iteration at scale.
 
 ## 2. Existing fork test coverage

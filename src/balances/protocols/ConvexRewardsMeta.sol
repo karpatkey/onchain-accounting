@@ -5,6 +5,7 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 
@@ -320,15 +321,11 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     function _safeUint(address target, bytes memory data) internal view returns (bool ok, uint256 result) {
-        bytes memory ret;
-        (ok, ret) = target.staticcall(data);
-        if (ok && ret.length >= 32) result = abi.decode(ret, (uint256));
+        return StaticCallLib.safeUint(target, data);
     }
 
     function _safeAddr(address target, bytes memory data) internal view returns (bool ok, address result) {
-        bytes memory ret;
-        (ok, ret) = target.staticcall(data);
-        if (ok && ret.length >= 32) result = abi.decode(ret, (address));
+        return StaticCallLib.safeAddr(target, data);
     }
 }
 

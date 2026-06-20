@@ -99,14 +99,17 @@ contract ETHPlus_PriceOracle is IPriceFeedCustom {
     }
 
     /// @notice Returns the minimum lastSave() timestamp across all components of the *active* reference basket.
-    /// @dev Drives freshness off `basketTokens()` (the live basket that `price()`/`basketsNeeded()` actually
-    ///      reflect), NOT `getPrimeBasket()` (the governance-configured target). After a collateral default swaps
+    /// @dev Drives freshness off `quote()`'s active-basket ERC20 set (the live basket that `price()`/
+    ///      `basketsNeeded()` actually reflect), NOT `getPrimeBasket()` (the governance-configured target). After a default swaps
     ///      in backup collateral and the basket re-collateralizes to SOUND, the active backups differ from prime;
     ///      checking the prime set would skip the backups' oracle freshness — the unsafe direction (stale accepted
     ///      as fresh). `basketTokens()` always matches the set being priced.
     function _minBasketLastSave(IMain main, IBasketHandler basketHandler) internal view returns (uint48 minLastSave) {
         IAssetRegistry registry = main.assetRegistry();
-        address[] memory erc20s = basketHandler.basketTokens();
+        // `quote(FIX_ONE, CEIL)` returns the *active* reference basket's ERC20s (the set `price()`/`basketsNeeded()`
+        // are computed over), reflecting backup collateral after a default + refresh. The deployed BasketHandler
+        // has no `basketTokens()` getter, so `quote` is the canonical way to read the live basket.
+        (address[] memory erc20s,) = basketHandler.quote(1e18, RoundingMode.CEIL);
         minLastSave = type(uint48).max;
         for (uint256 i = 0; i < erc20s.length; i++) {
             uint48 save = registry.toAsset(IERC20(erc20s[i])).lastSave();
@@ -159,9 +162,20 @@ interface IMain {
 interface IBasketHandler {
     function price() external view returns (uint192 low, uint192 high);
     function status() external view returns (CollateralStatus);
-    /// @notice ERC20s of the *active* reference basket (reflects backup collateral after a default + refresh) —
-    ///         the same set `price()`/`quote()` are computed over. Used for the freshness gate.
-    function basketTokens() external view returns (address[] memory erc20s);
+    /// @notice Quantities of each *active* reference-basket ERC20 needed for `amount` baskets. We use it only for
+    ///         the `erc20s` set (the live basket, reflecting backup collateral after a default + refresh) — the
+    ///         same set `price()`/`basketsNeeded()` are computed over. Used for the freshness gate.
+    function quote(uint192 amount, RoundingMode rounding)
+        external
+        view
+        returns (address[] memory erc20s, uint256[] memory quantities);
+}
+
+/// @notice Reserve Protocol fixed-point rounding mode (FLOOR, ROUND, CEIL); CEIL matches the issuance path.
+enum RoundingMode {
+    FLOOR,
+    ROUND,
+    CEIL
 }
 
 interface IAssetRegistry {

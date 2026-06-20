@@ -5,6 +5,7 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {BalancerV3PoolLib} from "./balancer/BalancerV3PoolLib.sol";
 import {IStablePool} from "./balancer/IBalancerV3.sol";
@@ -426,23 +427,16 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     function _safeAddr(address target, bytes memory data) internal view returns (address result) {
-        bytes memory ret;
-        bool ok;
-        (ok, ret) = target.staticcall(data);
-        if (ok && ret.length >= 32) result = abi.decode(ret, (address));
+        (, result) = StaticCallLib.safeAddr(target, data);
     }
 
     function _safeUint(address target, bytes memory data) internal view returns (bool ok, uint256 result) {
-        bytes memory ret;
-        (ok, ret) = target.staticcall(data);
-        if (ok && ret.length >= 32) result = abi.decode(ret, (uint256));
+        return StaticCallLib.safeUint(target, data);
     }
 
-    // Helper: staticcall that returns a uint256 (for ABI methods that take a uint256 arg and return address)
+    // Helper: staticcall that returns an address (for ABI methods that take a uint256 arg and return address)
     function _safeUintAddr(address target, bytes memory data) internal view returns (bool ok, address result) {
-        bytes memory ret;
-        (ok, ret) = target.staticcall(data);
-        if (ok && ret.length >= 32) result = abi.decode(ret, (address));
+        return StaticCallLib.safeAddr(target, data);
     }
 
     /// @notice Returns true if `pool` is a Balancer V3 pool (has getStablePoolDynamicData()).

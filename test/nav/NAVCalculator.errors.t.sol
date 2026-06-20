@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
 
 /// @title Mock Reverting Balance Adapter
@@ -109,6 +110,66 @@ contract Mock_MalformedPriceOracle is IPriceFeedCustom {
     }
 }
 
+/// @title Mock Many-Legs Balance Adapter
+/// @notice Emits a configurable number of position legs, all for a single registered asset. Models a
+///         meta-adapter that returns many legs per instance (e.g. Uniswap/PancakeSwap V3 emit up to 4
+///         legs per LP NFT). Used to regression-test the NAV read-buffer sizing — see audit finding #1
+///         in docs/audits/2026-06-nav-core-internal-audit.md.
+contract Mock_ManyLegsBalanceAdapter is IBalanceAdapter {
+    INAVCalculator.Asset internal _asset;
+    uint256 public legCount;
+
+    constructor(address asset_, string memory symbol_, uint8 decimals_) {
+        _asset = INAVCalculator.Asset({asset: asset_, symbol: symbol_, decimals: decimals_});
+    }
+
+    function setLegCount(uint256 n) external {
+        legCount = n;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory pos)
+    {
+        pos = new INAVCalculator.PositionBalance[](legCount);
+        for (uint256 i; i < legCount; ++i) {
+            pos[i] = INAVCalculator.PositionBalance({
+                balanceAsset: _asset,
+                balanceAdapter: address(this),
+                amount: 1,
+                isDebt: false,
+                protocolId: bytes32("uniswap-v3-mock"),
+                positionId: abi.encode(i),
+                positionKind: PositionKind.Supplied
+            });
+        }
+    }
+
+    function getAdapterBalances(address)
+        external
+        pure
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+
+    function getAdapterBalanceForAsset(address, address) external pure override returns (uint256, bool) {
+        return (0, false);
+    }
+
+    function underlyingAssetsSupported() external view override returns (address[] memory a) {
+        a = new address[](1);
+        a[0] = _asset.asset;
+    }
+}
+
 /// @title NAVCalculator Error Handling Tests
 /// @notice Tests error scenarios and graceful degradation
 contract NAVCalculatorErrorTest is SuperTest {
@@ -149,6 +210,36 @@ contract NAVCalculatorErrorTest is SuperTest {
                 "Should not have positions from reverting adapter"
             );
         }
+    }
+
+    /// @notice Regression for audit finding #1 (High): an adapter that emits more legs than the old
+    ///         `2 * (adapters + metaInstances) * assetCount` heuristic — as the Uniswap/PancakeSwap V3
+    ///         meta-adapters do (up to ~4 legs per LP NFT) — must NOT overflow the NAV read buffer and
+    ///         revert. Before the fix this triggered a Panic(0x32) that bricked getAccountNav /
+    ///         getAccountPositions for the account. The buffer is now sized from the actual returned
+    ///         lengths, so every leg is reported and the read succeeds.
+    function test_manyLegAdapter_doesNotOverflowNavReadBuffer() public {
+        Mock_ManyLegsBalanceAdapter many = new Mock_ManyLegsBalanceAdapter(address(usdc), "USDC", usdc.decimals());
+
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(many)));
+
+        // Old buffer bound = 2 * (adapters + metaInstances) * assetCount; setupAll registers no meta
+        // instances, so it is exactly 2 * adapters * assetCount. Emit comfortably past it.
+        uint256 oldBound = 2 * nav.getAllAdapters().length * nav.getAssetCount();
+        uint256 legs = oldBound + 200;
+        many.setLegCount(legs);
+
+        // Would Panic(0x32) under the old fixed-size buffer; must succeed now.
+        INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
+        assertGe(navResult.value, 0, "NAV read must not revert for a many-leg adapter");
+
+        INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
+        uint256 fromMany;
+        for (uint256 i; i < positions.length; ++i) {
+            if (positions[i].balanceAdapter == address(many)) ++fromMany;
+        }
+        assertEq(fromMany, legs, "every leg from the many-leg adapter must be reported (no truncation)");
     }
 
     /// @notice Test that multiple adapter reverts are handled

@@ -451,26 +451,37 @@ library PriceFeedLib {
 
     /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
     ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
-    ///         NAVCalculator._getPositionBalances; the 2·(adapters+metaInstances)·assetCount buffer is a hard upper
-    ///         bound on emitted rows.
+    ///         NAVCalculator._getPositionBalances. The output buffer is sized from the ACTUAL number of rows each
+    ///         adapter returns (each adapter is queried once, its array retained, lengths summed) — not a fixed
+    ///         per-(adapter,asset) heuristic. A meta-adapter can emit many legs per instance (e.g. Uniswap /
+    ///         PancakeSwap V3 emit up to 4 legs per LP NFT, far beyond a `2·(adapters+instances)·assetCount`
+    ///         bound), so a fixed bound could overflow the scratch buffer and revert the whole NAV read for that
+    ///         account. Summing real lengths makes the bound exact and overflow-proof. `metaInstanceTotal` and
+    ///         `assetCount` are retained in the signature for caller compatibility but no longer size the buffer.
     function _getPositionBalances(
         address[] memory allAdapters,
-        uint256 metaInstanceTotal,
+        uint256, /* metaInstanceTotal */
         mapping(address => uint256) storage assetIndex,
-        uint256 assetCount,
+        uint256, /* assetCount */
         address account,
         address assetFilter
     ) private view returns (INAVCalculator.PositionBalance[] memory positions) {
         uint256 totalAdapters = allAdapters.length;
-        uint256 maxPositions = 2 * (totalAdapters + metaInstanceTotal) * assetCount;
 
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
-        uint256 count = 0;
-
+        // First pass: query each adapter once, retain its rows, and sum the exact emitted-row count.
+        INAVCalculator.PositionBalance[][] memory perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
+        uint256 maxPositions;
         for (uint256 i = 0; i < totalAdapters; i++) {
             INAVCalculator.PositionBalance[] memory adapterPositions =
                 _getAdapterPositions(allAdapters[i], account, assetFilter);
+            perAdapter[i] = adapterPositions;
+            maxPositions += adapterPositions.length;
+        }
 
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](maxPositions);
+        uint256 count = 0;
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            INAVCalculator.PositionBalance[] memory adapterPositions = perAdapter[i];
             for (uint256 j = 0; j < adapterPositions.length; j++) {
                 address asset = adapterPositions[j].balanceAsset.asset;
                 if (assetIndex[asset] == 0) continue;

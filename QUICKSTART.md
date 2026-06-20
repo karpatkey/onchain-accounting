@@ -139,7 +139,9 @@ forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol \
 forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 
-# Copy and run the generated commands
+# Then run the wrapper, which parses the emitted VERIFY|... lines,
+# skips already-verified contracts, and runs forge verify-contract for the rest:
+script/verify/verify-all.sh
 ```
 
 ## Need Help?

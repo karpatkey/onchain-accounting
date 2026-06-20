@@ -23,7 +23,7 @@ The bot needs three pieces of operator-provided configuration:
 |---|---|---|
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
-| **Adapter address per chain** | `script/config/chains/<id>.json` → `balanceAdapters.MerklRewards.deployed` | Read at startup; refresh on redeploy. |
+| **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewards` | Read at startup; refresh on redeploy. |
 | **Owner key** | Operator secret store | The key that owns each `MerklRewardsBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.

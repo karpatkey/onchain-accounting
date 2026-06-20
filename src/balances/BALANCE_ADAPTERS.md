@@ -223,7 +223,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (21)
+### 7.1 Meta-adapters (22)
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
@@ -240,6 +240,7 @@ Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAV
 | **ConvexRewardsMeta** | All Convex staking (CRV, CVX, extras). Instance coordinate = rewarder address. positionId = `abi.encode(rewarder)`. | `(booster, cvxToken, protocolName, navCalculator)` | `ConvexRewardsMeta`; rewarder addresses under `instances`. |
 | **CurvePoolsMeta** | Wallet-held (unstaked) LP for all Curve pools. Instance coordinate = pool address. positionId = `abi.encode(pool)`. `Supplied` legs per underlying token. | `(protocolName, navCalculator)` | `CurvePoolsMeta`; pools under `instances`. |
 | **CurveGaugesMeta** | Gauge-staked LP + rewards (CRV + extras) for all Curve gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. `Staking` + `Rewards` legs. | `(minter, crvToken, protocolName, navCalculator)` | `CurveGaugesMeta`; gauges under `instances`. |
+| **EulerVaultsMeta** | All Euler V2 ERC-4626 vaults — both EulerEarn aggregators (Earn) and core eVaults (Lend/Borrow). Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Supplied` (or `Collateral` if EVC-enabled) leg via `convertToAssets(balanceOf)` + `Borrowed` leg (`debtOf`) for core eVaults. | `(protocolName, navCalculator)` | `EulerVaultsMeta`; vaults under `instances`. |
 | **FluidFTokensMeta** | All Fluid fTokens (ERC4626 lending vaults). Instance coordinate = fToken address. positionId = `abi.encode(fToken)`. One `Supplied` leg per fToken (`convertToAssets(balanceOf)`). | `(protocolName, navCalculator)` | `FluidFTokensMeta`; fTokens under `instances`. |
 | **FluidVaultsMeta** | All Fluid T1 vaults. Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Collateral` (supply) + `Borrowed` (debt) legs per vault. VaultResolver pinned in constructor. | `(vaultResolver, protocolName, navCalculator)` | `FluidVaultsMeta`; vaults under `instances`. |
 | **GearboxMarketsMeta** | All Gearbox V3 ERC4626 farming pools. Instance coordinate = market address. positionId = `abi.encode(market)`. One `Supplied` leg per market (`convertToAssets(balanceOf)`). | `(protocolName, navCalculator)` | `GearboxMarketsMeta`; markets under `instances`. |
@@ -267,7 +268,7 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 | **LidoWithdrawalQueue** | Lido `WithdrawalQueueERC721`. Open (un-claimed) withdrawal requests summed into a native-ETH credit. Finalized → exact claimable ETH (`getClaimableEther`); not finalized → `amountOfStETH`. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalQueue, underlyingToken, navCalculator)` | protocolId = `LIDO_WITHDRAWAL`. Mainnet only. |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(rewardToken)`. `Rewards` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. The framework's documented mutable-adapter exception (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |
 | **SkySavingsUsds** | Sky savings USDS. positionId = `abi.encode(savingsUsds)`. `Supplied` kind. | `(savingsUsds, navCalculator)` | protocolId = `SKY_SAVINGS`. |
-| **SparkLend** | Spark lending positions. Two legs per reserve (`Supplied`/`Collateral` + `Borrowed`). positionId = `abi.encode(pool, reserve)`. | `(dataProvider, navCalculator)` | protocolId = `SPARK_LEND`. Subclass of the Aave V3 lending logic. |
+| **SparkLend** | Spark lending positions. Two legs per reserve (`Supplied`/`Collateral` + `Borrowed`). positionId = `abi.encode(pool, reserve)`. | `(dataProvider, navCalculator)` | protocolId = `SPARK_LEND`. Standalone adapter mirroring the Aave V3 lending pattern (same `ProtocolDataProvider` ABI). |
 | **StaderWithdrawalQueue** | Stader `UserWithdrawalManager` pending unstake requests. Sums `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. positionId = `""` (account-global). `Supplied` kind. | `(userWithdrawalManager, underlyingToken, navCalculator)` | protocolId = `STADER_WITHDRAWAL`. Mainnet only; underlying configured to WETH. |
 
 Protocol adapters typically take **NAVCalculator** in the constructor to read the asset registry (symbol, decimals) so they can build correct `Asset` structs.

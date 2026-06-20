@@ -2,11 +2,11 @@
 
 > **Historical evidence pack (pre-meta).** This verification was done against the per-pool
 > `UniswapV2.sol` adapter, which `main` has since replaced with the immutable
-> `UniswapV2PoolsMeta` meta-adapter (ADR 0010). The per-pool dev-wiring helper
+> `UniswapV2PoolsMetaBalanceAdapter` meta-adapter (ADR 0010). The per-pool dev-wiring helper
 > (`deploy-uniV2-adapters-mainnet.sh`) was removed in the meta reconciliation. The
 > ground-truth math, holder, and expected amounts below remain valid as reference; the
 > dashboard wiring (§9) will be re-done with a meta-based deploy helper when V2 is
-> re-verified against `UniswapV2PoolsMeta`.
+> re-verified against `UniswapV2PoolsMetaBalanceAdapter`.
 
 ## 1. Adapter under test
 
@@ -112,22 +112,22 @@ Values are pinned at the fork block in §5 as `EXPECTED_*` constants in the test
 
 ### 7a. Per-leg detail
 
-Uniswap V2 is single-leg per pair (`Supply` from the LP token's pro-rata share). One row per token per pair the holder is in.
+Uniswap V2 is single-leg per pair (`Supplied` from the LP token's pro-rata share). One row per token per pair the holder is in.
 
 | Holder | Pair | Leg | Token | Amount (raw) | Amount (humanised) |
 |---|---|---|---|---|---|
-| Fee receiver | USDC/WETH | Supply | USDC | `74259143` | 74.259143 USDC |
-| Fee receiver | USDC/WETH | Supply | WETH | `35066111262254964` | 0.035066 WETH |
-| Fee receiver | USDT/WETH | Supply | WETH | `34371817334190102` | 0.034372 WETH |
-| Fee receiver | USDT/WETH | Supply | USDT | `72841301` | 72.841301 USDT |
-| Fee receiver | DAI/WETH | Supply | DAI | `36218518466527858189` | 36.218518 DAI |
-| Fee receiver | DAI/WETH | Supply | WETH | `17105149103443307` | 0.017105 WETH |
-| Fee receiver | WBTC/WETH | Supply | WBTC | `59860` | 0.0005986 WBTC |
-| Fee receiver | WBTC/WETH | Supply | WETH | `21711539995652021` | 0.021712 WETH |
-| Fee receiver | USDC/USDT | Supply | USDC | `72501` | 0.072501 USDC |
-| Fee receiver | USDC/USDT | Supply | USDT | `72670` | 0.072670 USDT |
-| Fee receiver | DAI/USDC | Supply | DAI | `12470607855679992115` | 12.470608 DAI |
-| Fee receiver | DAI/USDC | Supply | USDC | `12499207` | 12.499207 USDC |
+| Fee receiver | USDC/WETH | Supplied | USDC | `74259143` | 74.259143 USDC |
+| Fee receiver | USDC/WETH | Supplied | WETH | `35066111262254964` | 0.035066 WETH |
+| Fee receiver | USDT/WETH | Supplied | WETH | `34371817334190102` | 0.034372 WETH |
+| Fee receiver | USDT/WETH | Supplied | USDT | `72841301` | 72.841301 USDT |
+| Fee receiver | DAI/WETH | Supplied | DAI | `36218518466527858189` | 36.218518 DAI |
+| Fee receiver | DAI/WETH | Supplied | WETH | `17105149103443307` | 0.017105 WETH |
+| Fee receiver | WBTC/WETH | Supplied | WBTC | `59860` | 0.0005986 WBTC |
+| Fee receiver | WBTC/WETH | Supplied | WETH | `21711539995652021` | 0.021712 WETH |
+| Fee receiver | USDC/USDT | Supplied | USDC | `72501` | 0.072501 USDC |
+| Fee receiver | USDC/USDT | Supplied | USDT | `72670` | 0.072670 USDT |
+| Fee receiver | DAI/USDC | Supplied | DAI | `12470607855679992115` | 12.470608 DAI |
+| Fee receiver | DAI/USDC | Supplied | USDC | `12499207` | 12.499207 USDC |
 
 Each amount is `(holderLP * reserveX) / (totalSupply + pendingProtocolMint)` from §4, using the per-pair state in §5.
 
@@ -161,7 +161,7 @@ Bit-exact equivalence with the protocol settlement path: `pair.burn(holder)` sim
 
 ## 9. Wiring the live dev-anvil dashboard
 
-> **Stale (pre-meta).** `deploy-uniV2-adapters-mainnet.sh` was removed in the meta reconciliation, so the steps below no longer run as written. They are kept as a record of the original per-pool flow and will be re-done with a meta-based deploy helper when V2 is re-verified against `UniswapV2PoolsMeta` (see the note at the top of this file).
+> **Stale (pre-meta).** `deploy-uniV2-adapters-mainnet.sh` was removed in the meta reconciliation, so the steps below no longer run as written. They are kept as a record of the original per-pool flow and will be re-done with a meta-based deploy helper when V2 is re-verified against `UniswapV2PoolsMetaBalanceAdapter` (see the note at the top of this file).
 
 `deploy-uniV2-adapters-mainnet.sh` deployed + registered all 6 mainnet V2 adapters on the local mainnet anvil so the dashboard rendered the holder's positions for a side-channel cross-check. It was run after the dev anvil was up and the NAV proxy was deployed:
 

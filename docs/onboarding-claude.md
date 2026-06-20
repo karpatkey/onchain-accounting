@@ -8,7 +8,7 @@ This document is descriptive, not prescriptive. Conventions you must follow are 
 
 ## 1. The product, in one paragraph
 
-This repo provides onchain primitives for portfolio accounting. The single entry point is `NAVCalculator`: given an `account` and a `quoteAsset`, it returns the **net asset value** of that account in that currency. NAV is computed by aggregating positions from a registry of **balance adapters** (each one knows how to read positions from a specific protocol — Aave, Compound III, Morpho, etc.) and then valuing each position via the **price registry** (Chainlink or custom feeds). A separate **bridge** module (`BridgeEscrow` + per-protocol adapters) handles cross-chain asset movement with an invoice/release flow. There is no tokenized share, no subscribe/redeem; that lives in a layer above this one.
+This repo provides onchain primitives for portfolio accounting. The single entry point is `NAVCalculator`: given an `account` and a `quoteAsset`, it returns the **net asset value** of that account in that currency. NAV is computed by aggregating positions from a registry of **balance adapters** (each one knows how to read positions from a specific protocol — Aave, Compound V3, Morpho, etc.) and then valuing each position via the **price registry** (Chainlink or custom feeds). A separate **bridge** module (`BridgeEscrow` + per-protocol adapters) handles cross-chain asset movement with an invoice/release flow. There is no tokenized share, no subscribe/redeem; that lives in a layer above this one.
 
 ## 2. The four modules
 
@@ -60,7 +60,7 @@ Everything that goes wrong in NAV is one of three things:
 
 ## 4. Balance adapters: the framework
 
-Every balance source — wallet ERC20 holdings, Aave supply/borrow, Compound III, Morpho, Curve, Aura, Safety Module, etc. — is a contract that implements `IBalanceAdapter` (in `src/balances/IBalanceAdapter.sol`):
+Every balance source — wallet ERC20 holdings, Aave supply/borrow, Compound V3, Morpho, Curve, Aura, Safety Module, etc. — is a contract that implements `IBalanceAdapter` (in `src/balances/IBalanceAdapter.sol`):
 
 ```solidity
 function getAdapterPositions(address account, address assetFilter) external view returns (PositionBalance[]);

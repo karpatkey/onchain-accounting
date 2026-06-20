@@ -69,12 +69,13 @@ NAVCalculator's `getAccountPositions` returns `Position`, which adds pricing on 
 
 ```solidity
 struct Position {
-    // all PositionBalance fields (balanceAsset … positionKind) +
+    // PositionBalance's balance fields: balanceAsset, balanceAdapter, amount, isDebt +
     Asset   quoteAsset;      // quote currency (USD, ETH, …)
     int256  value;           // signed value in quoteAsset (negative for debt)
     int256  price;           // price used: quoteAsset per balanceAsset unit
     uint8   priceDecimals;   // decimal precision of price
     bool    stale;           // true if the price feed was stale at query time
+    // + the identity fields: protocolId, positionId, positionKind
 }
 ```
 
@@ -133,7 +134,8 @@ PositionBalance({
 
 ```solidity
 // One positionId per stake token (stkAAVE / stkABPT / stkABPTv2 / stkGHO).
-// Other legs: Rewards (claimable AAVE reward denominated in STAKED_TOKEN).
+// Staking principal is denominated in the stake token's STAKED_TOKEN (AAVE for stkAAVE).
+// Other legs: Rewards (claimable AAVE reward, denominated in AAVE — the REWARD_TOKEN, for every stake token).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x7Fc6…DaE9, symbol: "AAVE", decimals: 18 }),
     balanceAdapter: 0x<AaveV3SafetyModuleAdapter>,
@@ -156,7 +158,7 @@ PositionBalance({
     amount:        1_000_000_000,          // 1 000 USDC (principal via waToken exchange rate)
     isDebt:        false,
     protocolId:    keccak256("aave-v3-umbrella"),
-    positionId:    abi.encode(0x<stkwaEthUSDC_v1>),
+    positionId:    abi.encode(0x<stkwaEthUSDC.v1>),
     positionKind:  PositionKind.Staking
 })
 ```
@@ -327,7 +329,7 @@ PositionBalance({
 })
 ```
 
-#### `MorphoMarketsMeta` — Morpho Blue market
+#### `MorphoMarketsMeta` — Morpho market
 
 ```solidity
 // Per-market: positionId = raw bytes32 marketId. Other legs: Supplied (loan supply), Borrowed.
@@ -339,6 +341,21 @@ PositionBalance({
     protocolId:    keccak256("morpho-markets"),
     positionId:    abi.encode(bytes32(0x…marketId)),   // keccak256(MarketParams)
     positionKind:  PositionKind.Collateral
+})
+```
+
+#### `EulerVaultsMeta` — Euler V2 vault supply
+
+```solidity
+// EulerEarn aggregator or core eVault. Other legs: Collateral (EVC-enabled supply), Borrowed (core eVaults only).
+PositionBalance({
+    balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
+    balanceAdapter: 0x<EulerVaultsMeta>,
+    amount:        4_000_000_000,          // 4 000 USDC (convertToAssets)
+    isDebt:        false,
+    protocolId:    keccak256("euler-vaults"),
+    positionId:    abi.encode(0x<EulerVault>),
+    positionKind:  PositionKind.Supplied
 })
 ```
 
@@ -738,6 +755,14 @@ Scenario: 2 wstETH as collateral, 1 000 USDC borrowed — in a wstETH/USDC marke
 | USDC    | 1 000  | −1 000      | `Borrowed`   | `"Morpho"`   | `"wstETH/USDC market"`  |
 | **NAV** | | **+4 800** | | | |
 
+#### `EulerVaultsMeta`
+
+Scenario: 4 000 USDC supplied in an Euler V2 vault (not enabled as EVC collateral).
+
+| asset | amount | value (USD) | positionKind | protocolName | positionLabel        |
+|-------|--------|-------------|--------------|--------------|----------------------|
+| USDC  | 4 000  | +4 000      | `Supplied`   | `"Euler"`    | `"Euler USDC vault"` |
+
 #### `GearboxMarketsMeta`
 
 Scenario: 1 000 USDC in Gearbox USDC farming pool.
@@ -801,9 +826,9 @@ Scenario: staked BPT in gauge for a USDC/WETH pool, with 50 BAL rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName    | positionLabel           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
-| USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
-| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
-| BAL   | 50     | +150        | `Rewards`    | `"Balancer V3"` | `"80BAL-20WETH gauge"`  |
+| USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `"USDC/WETH gauge"`     |
+| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `"USDC/WETH gauge"`     |
+| BAL   | 50     | +150        | `Rewards`    | `"Balancer V3"` | `"USDC/WETH gauge"`     |
 | **NAV** | | **+1 750** | | | |
 
 #### `BalancerV2PoolsMeta`
@@ -929,6 +954,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `aave-v3-umbrella` | `(address stakeToken)` |
 | `morpho-vaults` | `(address vault)` |
 | `morpho-markets` | `(bytes32 marketId)` |
+| `euler-vaults` | `(address vault)` |
 | `gearbox-v3` | `(address market)` |
 | `compound-v3` | `(address comet)` |
 | `fluid-ftokens` | `(address fToken)` |
@@ -1031,6 +1057,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `AaveUmbrella` | `aave-v3-umbrella` | `Staking`, `Rewards` |
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
+| `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
 | `GearboxMarketsMeta` | `gearbox-v3` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
@@ -1120,10 +1147,23 @@ Per-reserve positionId (same as Aave): one positionId per (collateralToken, loan
 
 ```typescript
 const [marketId] = abi.decode(["bytes32"], pos.positionId);
-// marketId — Morpho Blue market ID (keccak of MarketParams)
+// marketId — Morpho market ID (keccak of MarketParams)
 // Collateral → collateral token supplied
 // Supplied   → loan token supplied (lending side)
 // Borrowed   → loan token borrowed
+```
+
+#### Euler Vaults — `euler-vaults`
+
+Covers both EulerEarn aggregator vaults and core eVaults (EVK). All legs of one vault share
+the same positionId.
+
+```typescript
+const [vault] = abi.decode(["address"], pos.positionId);
+// vault — Euler V2 ERC4626 vault (EulerEarn or core eVault)
+// Supplied   → convertToAssets(balanceOf(account)), not enabled as EVC collateral
+// Collateral → same supply, enabled as EVC collateral
+// Borrowed   → debtOf(account) on core eVaults (EulerEarn aggregators have no debt leg)
 ```
 
 #### Gearbox V3 — `gearbox-v3`
@@ -1314,7 +1354,8 @@ const [rewardToken] = abi.decode(["address"], pos.positionId);
 ```typescript
 // positionId = "" — account-global; one position per account per queue
 // Supplied → summed ETH owed across all open (unclaimed) request IDs
-// balanceAsset is the underlying (native ETH sentinel for Lido/Stader, the LST asset for Kelp)
+// balanceAsset is the underlying paid on claim: native ETH sentinel for Lido,
+//   WETH for Stader, and the LST asset (e.g. stETH) for Kelp — all set per-deploy via UNDERLYING_TOKEN
 ```
 
 ---

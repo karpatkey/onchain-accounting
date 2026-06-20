@@ -10,14 +10,14 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/uniswap/UniswapV3Pool.sol` — one adapter instance per pool (immutable). Position discovery is dynamic: the adapter iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
+`src/balances/protocols/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the immutable `UniswapV3PoolsMeta.sol` (`UniswapV3PoolsMetaBalanceAdapter`), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery is dynamic (and carried over unchanged into the meta-adapter): it iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
 
-The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/protocols/uniswap/lib/` and carry `GPL-2.0-or-later`. The adapter itself is MIT but the combined work is governed by GPL — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
+The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/protocols/uniswap/lib/` and carry `GPL-2.0-or-later`. Because the adapter imports and links those libs, the adapter file itself also carries `GPL-2.0-or-later` — there is no MIT file in this compilation unit — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** direct `IBalanceOracleAdapter` implementer. `_slot0()` is `virtual` — the override hook used by `PancakeSwapV3PoolBalanceOracle` to absorb PCS V3's `uint32 feeProtocol` ABI shim. Verification of that override is a separate task.
-- **Per-chain scope:** Uniswap V3 is deployed on Ethereum, Optimism, Arbitrum, Base, Polygon, BSC and others; only Ethereum has V3 instances configured in `script/config/chains/1.json` today (3 enabled: WBTC/WETH 0.3%, USDC/WETH 0.05%, WETH/USDT 0.3%). Gnosis has no Uniswap V3 deployment. The adapter has **zero per-chain code branches** — pool ABI/bytecode is identical on every chain; NPM is a constructor argument. Single-chain (mainnet) fork tests are sufficient.
+- **Inheritance:** the per-pool adapter under test was a direct `IBalanceAdapter` implementer; the live `UniswapV3PoolsMetaBalanceAdapter` is instead a `MetaBalanceAdapter` subclass. In both, `_slot0()` is `virtual` — the override hook used by `PancakeSwapV3PoolsMetaBalanceAdapter` to absorb PCS V3's `uint32 feeProtocol` ABI shim. Verification of that override is a separate task.
+- **Per-chain scope:** Uniswap V3 is deployed on Ethereum, Optimism, Arbitrum, Base, Polygon, BSC and others; only Ethereum has V3 instances configured (now as meta-adapter instances under `script/config/nav-config/meta-balance-adapters/<chainId>.json`, governed via `addMetaInstances`) today (3 enabled: WBTC/WETH 0.3%, USDC/WETH 0.05%, WETH/USDT 0.3%). Gnosis has no Uniswap V3 deployment. The adapter has **zero per-chain code branches** — pool ABI/bytecode is identical on every chain; NPM is a constructor argument. Single-chain (mainnet) fork tests are sufficient.
 - **Math branches** exercised in this case: in-range principal, above-range principal, below-range principal, in-range fee delta, out-of-range fee delta, settled `tokensOwed`, foreign-pool filter, closed-position filter, bounded iteration at scale.
 
 ## 2. Existing fork test coverage
@@ -107,7 +107,7 @@ Values are pinned at the fork block in §5 as `EXPECTED_*` constants in the test
 
 ### 7a. Per-leg detail (every emission the adapter makes)
 
-One row per `getOraclePositions` entry the adapter would emit, plus rows for closed/filtered NFTs marked in italics so the filter behaviour is also visible.
+One row per `getAdapterPositions` entry the adapter would emit, plus rows for closed/filtered NFTs marked in italics so the filter behaviour is also visible.
 
 | Holder | Pool | NFT | Leg | Token | Amount (raw) | Amount (humanised) |
 |---|---|---|---|---|---|---|
@@ -128,7 +128,7 @@ One row per `getOraclePositions` entry the adapter would emit, plus rows for clo
 
 The `Supply` legs come from `LiquidityAmounts.getAmountsForLiquidity(...)` (§4). The `Fees` legs come from `mulDiv(feeGrowthInside − feeGrowthInsideLast, L, 2^128) + tokensOwed` (§4).
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
+### 7b. Per-asset summary (what `getAdapterBalanceForAsset` returns)
 
 This is what the strict-equality test asserts. Each value is the sum of the per-leg rows above for the same `(holder, pool, token)`.
 
@@ -157,7 +157,7 @@ Three `test_groundTruth_*` cases run the protocol's own settlement path against 
 | `test_groundTruth_acct12_WETH_USDT_NFT1276763` | #1276763 | below-range | `NPM.decreaseLiquidity(L) + NPM.collect(uint128.max)` |
 | `test_groundTruth_holderB_WETH_USDT_NFT1287303` | #1287303 | in-range, `tokensOwed > 0` | `NPM.decreaseLiquidity(L) + NPM.collect(uint128.max)` |
 
-Each test impersonates the position owner with `vm.prank`, calls `decreaseLiquidity` at the full liquidity (which pushes principal into `tokensOwed*` on the NPM and zeros the position liquidity), then calls `collect` with `uint128.max` to pull principal + previously-settled `tokensOwed` + just-accrued fees into the returned `(amount0, amount1)`. The adapter's `getOracleBalanceForAsset` for the same `(holder, token)` must equal that return value — both compute the same quantity: the total transferable amount the protocol would settle at the pinned block.
+Each test impersonates the position owner with `vm.prank`, calls `decreaseLiquidity` at the full liquidity (which pushes principal into `tokensOwed*` on the NPM and zeros the position liquidity), then calls `collect` with `uint128.max` to pull principal + previously-settled `tokensOwed` + just-accrued fees into the returned `(amount0, amount1)`. The adapter's `getAdapterBalanceForAsset` for the same `(holder, token)` must equal that return value — both compute the same quantity: the total transferable amount the protocol would settle at the pinned block.
 
 This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity + collect` simulation. Same NPM contract, same forked archive state at the same block, same EVM — no possibility of derivation drift between the adapter's math and the protocol's settlement math.
 
@@ -183,9 +183,9 @@ Deployed adapter addresses go to `script/development/state/1-uniV3-adapters.json
 |---|---|
 | Pre-flight: `ACCOUNT_12` above + below-range NFTs active | ✅ |
 | Pre-flight: `HOLDER_B` in-range NFT with `tokensOwed > 0` on both tokens | ✅ |
-| Strict equality: `getOracleBalanceForAsset` per (holder, pool, token) | ✅ |
-| Strict equality: `getOracleBalances` aggregate per (holder, pool) | ✅ |
-| Structural: `getOraclePositions` per-leg breakdown matches branch | ✅ |
+| Strict equality: `getAdapterBalanceForAsset` per (holder, pool, token) | ✅ |
+| Strict equality: `getAdapterBalances` aggregate per (holder, pool) | ✅ |
+| Structural: `getAdapterPositions` per-leg breakdown matches branch | ✅ |
 | Foreign-pool + closed-position filter at scale (33 NFTs) | ✅ |
 | Ground-truth: adapter == `NPM.decreaseLiquidity + NPM.collect` | ✅ |
 

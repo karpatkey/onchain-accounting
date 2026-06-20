@@ -82,13 +82,13 @@ Multiple cases per protocol are allowed when one account doesn't cover all paths
 | `positions[].id` | Pool address (Uni V2) or position id (other protocols) |
 | `positions[].label` | Human-readable identifier (e.g. `USDC/WETH`) |
 | `positions[].lp` | Raw LP balance (or shares) at the block |
-| `positions[].expected.<token>` | Expected underlying amount per tracked token, derived from Tenderly |
+| `positions[].expected.<token>` | Expected underlying amount per tracked token, derived from the recorded ground-truth source |
 | `positions[].observed.<token>` | What the adapter actually returns |
 | `positions[].delta.<token>` | `observed - expected` (gross) and `(observed - expected) / expected * 100` (percent) |
-| `verification.method` | `tenderly-burn-simulation` / `tenderly-vtn-bundle` / `direct-onchain-read` |
+| `verification.method` | Free-form label for how ground truth was obtained, e.g. `direct-onchain-read`, a forked-EVM `decreaseLiquidity`/`collect` (or `burn`/`redeem`) settlement simulation, or an independent canonical `balanceOf` |
 | `verification.notes` | Anything noteworthy (e.g. "feeTo unset at this block, so no dilution branch") |
 
-The goal is for any future contributor to be able to (a) re-run the Tenderly simulation from the data here, (b) re-run the fork test, and (c) confirm the strict equality from scratch.
+The goal is for any future contributor to be able to (a) re-derive the ground truth from the data here, (b) re-run the fork test, and (c) confirm the strict equality from scratch.
 
 ## Adapters in scope
 

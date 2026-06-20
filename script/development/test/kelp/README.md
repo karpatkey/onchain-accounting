@@ -7,7 +7,7 @@
 ### Inheritance + per-chain scope (Phase 0)
 
 - **Inheritance:** none — implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
-- **Per-chain scope:** Kelp's `LRTWithdrawalManager` is **mainnet-only**. `chains/1.json` is the only chain config with `KelpWithdrawalQueue`. A single mainnet fork test suffices.
+- **Per-chain scope:** Kelp's `LRTWithdrawalManager` is **mainnet-only**. So mainnet (chainId 1) is the only chain that enables `KelpWithdrawalQueue` — see `script/config/nav-config/balance-adapters/1.json` and `script/config/contracts-deployment-config/balance-adapters/1.json`. A single mainnet fork test suffices.
 - **Multi-asset (the distinguishing feature):** when a user unstakes rsETH, the rsETH is burned and a per-`(asset, user)` request is recorded denominated in the LST the user chose to receive. Kelp's payout assets are **discovered at runtime** from `lrtConfig().getSupportedAssetList()` — at the fork block: **stETH** (`0xae7a…`), **ETHx** (`0xA35b…`), **native ETH** (`0xEeee…`, ERC-7528 sentinel). The adapter emits **one `Supplied` leg per asset** with non-zero owed that is also registered in NAV.
 - **Registration gating (asymmetric, same as sGHO / Aave Umbrella / Lido / Stader):** `getAdapterPositions` drops any asset not registered on NAVCalculator (registered-asset intersection). On the dev NAV, stETH and native ETH are registered; **ETHx is not** (it uses a custom feed the dev `deploy.sh` skips), so an ETHx request is dropped from positions — but `getAdapterBalanceForAsset` / `getAdapterBalances` still return its raw owed value (they don't consult the registry).
 
@@ -140,6 +140,6 @@ The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **tw
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/KelpWithdrawalQueue.fork.t.sol" -vv
 ```

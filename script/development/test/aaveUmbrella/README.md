@@ -164,7 +164,7 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 
 Run via:
 
-```
+```bash
 forge test --match-path "test/balances/protocols/AaveUmbrella.t.sol"
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/AaveUmbrella.fork.t.sol" -vv
 ```

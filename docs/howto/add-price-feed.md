@@ -79,9 +79,7 @@ Expect `(price > 0, 8, false)`.
 
 Use this path when there is no canonical Chainlink USD feed but the price is derivable on-chain — start with the decision check in §B.0.
 
----
-
-## B.0 Decide whether you actually need a custom feed
+### B.0 Decide whether you actually need a custom feed
 
 You need a custom feed if **any** of these are true:
 
@@ -91,9 +89,7 @@ You need a custom feed if **any** of these are true:
 
 If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't roll a custom feed for no reason.
 
----
-
-## B.1 Pick the recipe
+### B.1 Pick the recipe
 
 | Pattern | Existing reference | When to use |
 |---|---|---|
@@ -105,13 +101,13 @@ If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't r
 
 Copy the closest match and rename. Don't deviate from the structure unless you need to — every feed in `src/prices/protocols/` follows the same shape.
 
----
-
-## B.2 Write the contract
+### B.2 Write the contract
 
 File: `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
 
-Skeleton (yield-bearing pattern; adjust for LST/LRT or cross-rate):
+For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_Price`) stay bespoke and follow the self-contained skeleton below.
+
+Skeleton (bespoke yield-bearing pattern, à la `sDAI_Price.sol`; adjust for LST/LRT or cross-rate):
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -204,11 +200,9 @@ Conventions:
 - **Heartbeat applies to the Chainlink leg only**; the rate provider is on-chain and trusted. If the rate goes negative or zero, treat as stale.
 - **One asset per contract.** Even if two assets share the same recipe, deploy two contracts.
 
----
+### B.3 Tests
 
-## B.3 Tests
-
-### B.3.1 Unit test
+#### B.3.1 Unit test
 
 File: `test/prices/protocols/<Asset>_Price.t.sol`.
 
@@ -225,7 +219,7 @@ Cover, with mocked Chainlink + mocked rate provider:
 - **`latestRoundData()`** returns the underlying oracle's round data (and `answer == 0` when stale).
 - **`supportsInterface`** returns true for `IPriceFeedCustom` and `IERC165`.
 
-### B.3.2 Fork test
+#### B.3.2 Fork test
 
 File: `test/prices/protocols/fork/<Asset>_Price.fork.t.sol`.
 
@@ -236,9 +230,7 @@ Cover, against the real Chainlink + rate provider at a pinned block:
 
 Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"`.
 
----
-
-## B.4 Wire chain config
+### B.4 Wire chain config
 
 Two files. First, the custom-feed deploy config — `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`, keyed by feed name (top-level; no chainId wrapper):
 
@@ -277,21 +269,17 @@ Note: a `Custom` feed entry references the deployed feed by `"feed": "<name>"` (
 
 There is no `_symbolsForChain` list to update — both `RegisterAssets.s.sol` and the integration harness read symbols from `nav-config/assets-and-price-feeds/<chainId>.json`, so adding the asset there is enough. In the integration harness `test/integration/IntegrationFromConfigBase.fork.sol`, also add `_tryDeployPriceFeed("myAsset", _deployMyAsset)` in `_deployAllPriceFeeds()` (under the branch for the chains where the feed applies), along with the corresponding `_deployMyAsset()` function that reads constructor params via `ConfigReader.readPriceFeedParam`. See the §B.6 checklist for the full set of wiring touchpoints.
 
----
-
-## B.5 Deploy and register
+### B.5 Deploy and register
 
 Custom feeds are deployed by `script/deploy/03_DeployPriceFeeds.s.sol`. The script dispatches per chain (`_deployMainnetPriceAdapters`, `_deployArbitrumPriceAdapters`, etc.), and within each dispatch calls a hardcoded `_deploy<Asset>()` helper gated by `ConfigReader.isAdapterEnabled(vm, chainId, "priceFeeds", "<name>")` — so you must add a `_deploy<Asset>()` function and wire it into the relevant chain's dispatch block (and import the contract) before your entry from §B.4 is picked up. Each helper reads its constructor params via `ConfigReader.readPriceFeedParam` and writes the deployed feed address into `deployments/<chainId>.json .customPriceFeeds.<name>` via `ConfigReader.writeAdapterAddress`. The asset's `Custom` entry then references the feed by `feed: "<name>"`, and `RegisterAssets.s.sol` (below) resolves the on-chain address from the deployments file at registration time (no manual copy needed).
 
-After deploy, register the asset on `NAVCalculator` via Safe TX (MANAGER-gated):
+After deploy, register the asset on `NAVCalculator` (MANAGER-gated) by running `RegisterAssets.s.sol`:
 
 ```bash
-forge script script/manage/RegisterAssets.s.sol \
-  --rpc-url <RPC> \
-  --sig 'run()'
+forge script script/manage/RegisterAssets.s.sol --rpc-url <RPC>
 ```
 
-This emits a Safe TX bundle for `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (first feed) or `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for pre-registered assets needing only a feed added. Owners sign and execute on the chain's admin Safe.
+This plans `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (first feed) plus `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for any additional feeds (or for a pre-registered asset that only needs a feed added). It writes a Safe-TX batch to `safe-transactions/<chainId>-register-assets.json`; during the initial deploy flow the deployer EOA (which still holds `MANAGER`) broadcasts it directly with `--broadcast`, while after handoff the same batch is signed and executed on the security-council Safe.
 
 Verify:
 
@@ -301,7 +289,7 @@ cast call $NAV_CALCULATOR "latestPrice(address)(int256,uint8,bool)" $myAsset --r
 
 Expect `(price > 0, decimals, false)` at a fresh block.
 
-## B.6 Open the PR
+### B.6 Open the PR
 
 PR checklist:
 

@@ -8,7 +8,7 @@
 
 - **Inheritance:** none — `ERC4626WrapBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. sGHO needs **no bespoke contract**: it is the generic ERC-4626 wrapper adapter pointed at the sGHO vault.
 - **Per-chain scope:** the **sGHO savings vault is mainnet-only**. GHO the token exists on Gnosis / Arbitrum / Base too, but the sGHO vault (`0xE1753F2e…`) is not deployed there — so `script/config/nav-config/balance-adapters/1.json` is the only chain config with `ERC4626Wrap_sGHO`. A single mainnet fork test is sufficient; no per-chain branches.
-- **Yield mechanics:** sGHO is a yield-bearing savings vault — the share price rises over time (`convertToAssets(1 share) > 1 GHO`), accruing **per second** (so the GHO value is `block.timestamp`-dependent, not just block-number). There is **no exit fee, cooldown, or withdrawal delay** — redemption is instant and 1:1 (proven in §8), so `convertToAssets` is the correct, non-over-reporting read of redeemable value.
+- **Yield mechanics:** sGHO is a yield-bearing savings vault — the share price rises over time (`convertToAssets(1 share) > 1 GHO`), accruing **per second** (so the GHO value is `block.timestamp`-dependent, not just block-number). There is **no exit fee, cooldown, or withdrawal delay** — redemption is instant and pays out exactly `convertToAssets` with no haircut (proven in §8; this is *not* a 1:1 share/asset peg — share price is `>= 1` GHO), so `convertToAssets` is the correct, non-over-reporting read of redeemable value.
 - **Math branch:** single leg. `amount = sGHO.convertToAssets(sGHO.balanceOf(account))`, denominated in GHO, `isDebt = false`, `PositionKind.Supplied`. Registration gating is asymmetric: `getAdapterPositions` drops the leg if GHO isn't registered on NAVCalculator (registered-asset intersection — the "discard if no price" policy), whereas the balance methods (`getAdapterBalanceForAsset` / `getAdapterBalances`) do **not** consult the registry and still return the value. All return zero when the share balance is zero. (The constructor still *requires* GHO registered at deploy time.)
 
 ## 2. Existing fork test coverage
@@ -29,7 +29,7 @@ Both kept as regression nets.
 ```
 shares = sGHO.balanceOf(account)
 amount = sGHO.convertToAssets(shares)            # redeemable GHO (share price >= 1, accrues per second)
-emit PositionBalance(GHO, amount, isDebt=false, Supplied, positionId=abi.encode(sGHO))   if amount > 0
+return PositionBalance(GHO, amount, isDebt=false, Supplied, positionId=abi.encode(sGHO))   if amount > 0
 ```
 
 `convertToAssets` is the redeemable value: `4_575_878 sGHO shares → 4_589_154 GHO` at the block below (share price ≈ 1.0029, the ~0.29% being accrued savings yield).
@@ -100,7 +100,7 @@ bash script/development/app/sync-app-env.sh 1
 | Aspect | Status |
 |---|---|
 | `convertToAssets(balanceOf)` reports redeemable GHO | ✅ |
-| No exit fee / cooldown — redemption 1:1 (redeem-100% round-trip) | ✅ |
+| No exit fee / cooldown — redeemed GHO == `convertToAssets` (redeem-100% round-trip) | ✅ |
 | Real holder: adapter == exact pinned `convertToAssets` value | ✅ (2 pinned blocks: 25_230_126 + 25_287_877) |
 | Identity: `protocolId == erc4626`, `positionId == abi.encode(sGHO)`, `Supplied` | ✅ |
 | Constructor reverts if GHO unregistered | ✅ |

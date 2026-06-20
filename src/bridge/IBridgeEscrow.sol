@@ -158,12 +158,14 @@ interface IBridgeEscrow {
         payable
         returns (bytes32 invoiceHash);
 
-    /// @notice Releases funds to the account named by the invoice. Callable only by an authorized adapter.
+    /// @notice Releases funds to the account named by the invoice, funded by the calling adapter.
     /// @param messagePayload The message payload (invoiceId, amount, nonce, meta)
-    /// @dev Destination-side release (ADR 0012). There is no fallback dispatcher and MANAGER cannot call this
-    ///      directly, so the release path is unreachable to an attacker (C1 fixed). Validates checksum
-    ///      (incl. nonce), destination chain, authorized account and replay before transferring.
-    function releaseByInvoiceId(bytes calldata messagePayload) external;
+    /// @dev Destination-side funded pass-through (ADR 0012). Callable only by an authorized adapter; there is
+    ///      no fallback dispatcher and MANAGER cannot call this directly (C1). The escrow pulls `amount` of
+    ///      the asset from the caller (or requires `msg.value == amount` for native) and forwards it to the
+    ///      account, after validating checksum (incl. nonce), destination chain, authorized account and replay.
+    ///      It never pays from a standing balance (H2/H9).
+    function releaseByInvoiceId(bytes calldata messagePayload) external payable;
 
     /// @notice Cancels an invoice and returns assets (source chain, bridge-failure recovery)
     /// @param invoiceHash The hashed invoice ID (checksum) to cancel

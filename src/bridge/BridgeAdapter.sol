@@ -115,15 +115,35 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     /// @inheritdoc IBridgeAdapter
     /// @dev MANAGER-operated completion path. The adapter's `_completeBridge` performs protocol-specific
-    ///      verification (e.g. CCTP attestation, OP withdrawal finalization); the base then calls
-    ///      `releaseByInvoiceId` on the escrow (which re-validates checksum/replay/account).
+    ///      verification (e.g. CCTP attestation, OP withdrawal finalization) and ensures the adapter holds
+    ///      the delivered `amount` of the asset; the base then funds the escrow and releases atomically
+    ///      (funded pass-through, ADR 0012).
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override {
         if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
         if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
         _completeBridge(messagePayload, protocolData);
-        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+        _fundAndRelease(messagePayload, asset, data.amount);
         emit BridgeCompleted(data.invoiceId);
+    }
+
+    /// @notice Hands the escrow exactly `amount` of `asset` and triggers the funded pass-through release.
+    /// @dev The adapter must already hold `amount` of `asset` (delivered by the protocol). For ERC20 the
+    ///      escrow pulls via transferFrom (exact approval, reset to 0 after); for native the value is
+    ///      forwarded with the call. The escrow validates checksum/replay/account and forwards to the account.
+    function _fundAndRelease(bytes memory messagePayload, address asset, uint256 amount) internal {
+        if (_isNativeToken(asset)) {
+            uint256 bal = address(this).balance;
+            if (bal < amount) revert InsufficientBalance(asset, amount, bal);
+            IBridgeEscrow(bridgeEscrow).releaseByInvoiceId{value: amount}(messagePayload);
+        } else {
+            uint256 bal = IERC20(asset).balanceOf(address(this));
+            if (bal < amount) revert InsufficientBalance(asset, amount, bal);
+            IERC20(asset).forceApprove(bridgeEscrow, amount);
+            IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
+            IERC20(asset).forceApprove(bridgeEscrow, 0);
+        }
     }
 
     /// @inheritdoc IBridgeAdapter

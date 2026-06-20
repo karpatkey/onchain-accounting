@@ -18,7 +18,9 @@ import {console2} from "forge-std/console2.sol";
 /// @dev
 ///   - Default: one tx via AtomicProxyDeployer (deploy placeholder + proxies + upgradeToAndCall) to avoid front-running.
 ///   - Set env USE_LEGACY_DEPLOY=1 to use the legacy multi-tx path instead.
-///   - Proxy salts and placeholder use version 2. See script/deploy/README.md.
+///   - Proxy/placeholder salt versions come from DeploySalts (the single source of truth shared with
+///     02_2_DeployNAVProxy + both atomic deployers), so the addresses match across chains and deploy paths.
+///     See script/deploy/README.md.
 contract DeployProxies is BaseDeployScript {
     /// @notice Canonical CREATE2 deployer address (same on all chains)
     /// @dev 0x4e59b44847b379578588920cA78FbF26c0B4956C

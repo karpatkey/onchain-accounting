@@ -14,7 +14,7 @@ pragma solidity ^0.8;
 ///         for `vm.etch` (grep the old address: SuperTest, the integration base, the NAV/Morpho/Aave fork tests,
 ///         Prices.t, ERC20DefaultAdapter.t).
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0x8d8C2aba9A9a3898285F81b95F332FB4B88ab72B;
+    address internal constant PRICE_FEED_LIB = 0xf668F0D1341e89B78903c9D3fe18340175085C6C;
     address internal constant NAV_REGISTRY_LIB = 0x598D86380907a78ceE1AC81f55354Bc8871A3802;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a

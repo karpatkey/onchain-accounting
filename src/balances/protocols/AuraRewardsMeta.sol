@@ -156,24 +156,28 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     poolId = _poolId;
                     poolIdOk = true;
                 } catch {}
-                if (!poolIdOk) return positions; // non-standard V2 address — bail out gracefully
-                (address[] memory v2Toks, uint256[] memory v2Amts) =
-                    BalancerV2PoolLib.shares(BALANCER_V2_VAULT, poolId, address(pool), stakedBpt);
-                for (uint256 i; i < v2Toks.length; ++i) {
-                    address tok = v2Toks[i];
-                    if (assetFilter != address(0) && tok != assetFilter) continue;
-                    if (v2Amts[i] == 0) continue;
-                    (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
-                    if (!found) continue;
-                    tmp[n++] = INAVCalculator.PositionBalance({
-                        balanceAsset: info,
-                        balanceAdapter: address(this),
-                        amount: v2Amts[i],
-                        isDebt: false,
-                        protocolId: PROTOCOL_ID,
-                        positionId: pid,
-                        positionKind: PositionKind.Staking
-                    });
+                // A non-standard/reverting getPoolId() means the staked-BPT decomposition is
+                // unavailable, so skip just the staking legs — the reward legs below (BAL/AURA/extra)
+                // do not depend on the pool decomposition and must still be reported.
+                if (poolIdOk) {
+                    (address[] memory v2Toks, uint256[] memory v2Amts) =
+                        BalancerV2PoolLib.shares(BALANCER_V2_VAULT, poolId, address(pool), stakedBpt);
+                    for (uint256 i; i < v2Toks.length; ++i) {
+                        address tok = v2Toks[i];
+                        if (assetFilter != address(0) && tok != assetFilter) continue;
+                        if (v2Amts[i] == 0) continue;
+                        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(tok);
+                        if (!found) continue;
+                        tmp[n++] = INAVCalculator.PositionBalance({
+                            balanceAsset: info,
+                            balanceAdapter: address(this),
+                            amount: v2Amts[i],
+                            isDebt: false,
+                            protocolId: PROTOCOL_ID,
+                            positionId: pid,
+                            positionKind: PositionKind.Staking
+                        });
+                    }
                 }
             }
         }
@@ -289,8 +293,10 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                 address tok = _unstash(raw);
                 bool dup;
                 for (uint256 j; j < rn; ++j) {
-                    if (rwd[j] == tok) dup = true;
-                    break;
+                    if (rwd[j] == tok) {
+                        dup = true;
+                        break;
+                    }
                 }
                 if (!dup) rwd[rn++] = tok;
             }

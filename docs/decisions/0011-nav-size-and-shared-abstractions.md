@@ -1,6 +1,6 @@
 # 0011 — NAVCalculator size headroom + shared adapter/feed abstractions
 
-Status: accepted (PR A landed; PRs B/C follow-up)
+Status: accepted (introduced with PR A — the ERC20DefaultAdapter externalization; PRs B/C are follow-ups)
 
 ## Context
 

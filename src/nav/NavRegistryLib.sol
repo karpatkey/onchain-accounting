@@ -31,8 +31,11 @@ library NavRegistryLib {
     // ERC20Default adapter factory
     // -------------------------------------------------------------------------
 
-    /// @notice Deploys the singleton ERC20DefaultAdapter bound to the calling NAVCalculator.
-    /// @dev Called by NAVCalculator.initialize via DELEGATECALL, so `address(this)` is the NAV proxy — the adapter's
+    /// @notice Deploys a fresh ERC20DefaultAdapter bound to the calling NAVCalculator and returns it.
+    /// @dev This function does NOT enforce single-deploy semantics — each call deploys a new adapter. The
+    ///      one-adapter invariant is enforced by the caller: NAVCalculator.initialize calls this exactly once and
+    ///      passes the result to `_setErc20DefaultAdapter`, which reverts if the default adapter is already set.
+    ///      Called via DELEGATECALL, so `address(this)` is the NAV proxy — the adapter's
     ///      immutable NAV_CALCULATOR is pinned to it and the proxy is the CREATE deployer. Housed here so the
     ///      adapter's ~5 KB creation bytecode is embedded in THIS external library rather than NAVCalculator's
     ///      runtime code, keeping NAVCalculator well under EIP-170. `initialAssets` seeds the inclusion list

@@ -190,6 +190,53 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
     }
 
+    /// @notice Post-fee output model (resolves the PR#86 Stargate fee issue): when the pool charges a protocol
+    ///         fee, `_bridge` quotes the post-fee receive amount, re-encodes the invoice payload to carry it, and
+    ///         pins `minAmountLD` to it. The destination receives and releases exactly the post-fee amount; the
+    ///         depositor bears the fee (standard bridge UX). Source records the gross deposit; pairing is by
+    ///         invoiceId.
+    function test_realistic_postFeeOutput_releasesNetOfFee() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        uint256 fee = 7 * 10 ** usdc.decimals();
+        uint256 net = amount - fee;
+
+        usdcPool.setProtocolFeeLD(fee); // source pool charges a protocol fee
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = usdcPool.getLastComposeMsg();
+        assertEq(InvoiceDataLib.decode(messagePayload).amount, net, "payload carries the post-fee amount");
+        (,, uint256 amountLD, uint256 minAmountLD,,,) = usdcPool.lastSendParam();
+        assertEq(amountLD, amount, "gross amount debited on source");
+        assertEq(minAmountLD, net, "tight slippage floor pinned at the post-fee amount");
+        uint256 portfolioBefore = usdc.balanceOf(account);
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
+
+        // Stargate delivers the NET (post-fee) amount to the destination adapter.
+        usdc.mint(address(destEndpoint), net);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, net, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), net, composeMessage);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account) - portfolioBefore, net, "account received the post-fee amount");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
+    }
+
     /// @notice Sets up a destination adapter + escrow trusting the source sibling adapter, ready for lzCompose.
     function _setupDestination()
         internal

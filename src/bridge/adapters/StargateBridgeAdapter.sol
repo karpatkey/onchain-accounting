@@ -13,6 +13,8 @@ import {
     SendParam,
     MessagingFee,
     MessagingReceipt,
+    OFTLimit,
+    OFTFeeDetail,
     OFTReceipt,
     Ticket
 } from "./interfaces/IStargateInterfaces.sol";
@@ -120,8 +122,6 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @dev Sends the asset cross-chain via Stargate V2 `sendToken`, with the invoice payload composed so the
     ///      destination sibling adapter receives it via lzCompose after the tokens are delivered to it.
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
-        bytes memory messagePayload = InvoiceDataLib.encode(data);
-
         uint32 dstEid = chainIdToEid[uint64(data.destinationChainId)];
         if (dstEid == 0) revert UnsupportedChain(0);
 
@@ -133,7 +133,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         address pool = stargatePool[asset];
         if (pool == address(0)) revert InvalidPool();
 
-        // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge), approve the Stargate pool.
+        // Pull the gross ERC20 amount from escrow (escrow approved us in depositAndBridge), approve the pool.
         IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
         IERC20(asset).forceApprove(pool, data.amount);
 
@@ -143,17 +143,31 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             dstEid: dstEid,
             to: _toBytes32(address(this)),
             amountLD: data.amount,
-            // KNOWN ISSUE (Copilot PR#86): Stargate V2 applies a protocol fee, so the destination adapter
-            // receives `amount - fee` < `amount`; the exact-amount funded pass-through then can't release and
-            // would strand the shortfall. `minAmountLD = amount` is rejected by the real pool (fee), and a
-            // loose floor masks the shortfall. The correct fix is fee-aware: quote the receive amount
-            // (IStargate.quoteOFT) and either gross up the input so the destination receives >= `amount`, or
-            // record the invoice as the post-fee output amount. Tracked as a follow-up — see thread on PR #86.
-            minAmountLD: (data.amount * 95) / 100,
+            minAmountLD: 0, // set below from the quote
             extraOptions: composeOptions[dstEid],
-            composeMsg: messagePayload,
+            composeMsg: bytes(""), // set below once we know the post-fee amount
             oftCmd: bytes("") // Taxi mode (immediate)
         });
+
+        // POST-FEE OUTPUT MODEL (resolves the PR#86 fee issue): Stargate V2 applies a protocol fee and SD-dust
+        // rounding, so the destination adapter receives `amountReceivedLD <= amountLD`. The destination funded
+        // pass-through must release EXACTLY the invoiced amount, so we quote the post-fee receive amount in this
+        // same tx and re-encode the invoice payload to carry it as the amount. The recipient then receives and
+        // releases exactly `amountReceivedLD` (the bridge fee is borne by the transfer, standard bridge UX). The
+        // source-chain invoice still records the gross deposit; source↔destination pairing is by `invoiceId`
+        // (fee-independent), so the differing post-fee checksum on the destination is immaterial.
+        (,, OFTReceipt memory receipt) = IStargate(pool).quoteOFT(sendParam);
+        uint256 receivedAmount = receipt.amountReceivedLD;
+        if (receivedAmount == 0 || receivedAmount > data.amount) revert InvalidBridgeData();
+
+        // Re-encode the payload with the post-fee amount (recomputing the checksum over the new amount), and pin
+        // a tight slippage floor at the quoted amount. quoteOFT is evaluated against current pool state in this
+        // tx, so the subsequent sendToken credits exactly `receivedAmount`.
+        data.amount = receivedAmount;
+        data.checksum24 = InvoiceDataLib.calculateChecksum(data.invoiceId, receivedAmount, data.timestamp, data.nonce);
+        bytes memory messagePayload = InvoiceDataLib.encode(data);
+        sendParam.minAmountLD = receivedAmount;
+        sendParam.composeMsg = messagePayload;
 
         // Quote the LayerZero messaging fee (paid in native) and send.
         MessagingFee memory fee = IStargate(pool).quoteSend(sendParam, false);
@@ -165,7 +179,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
 
         messagePayloads[data.invoiceId] = messagePayload;
 
-        emit StargateBridgeInitiated(data.invoiceId, dstEid, msgReceipt.guid, data.amount);
+        emit StargateBridgeInitiated(data.invoiceId, dstEid, msgReceipt.guid, receivedAmount);
     }
 
     //

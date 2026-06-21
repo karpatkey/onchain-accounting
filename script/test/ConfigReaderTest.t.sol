@@ -157,8 +157,9 @@ contract ConfigReaderTest is TestEnvConfigurator {
     /// @notice readAdapterUintArray parses BOTH the numeric (`[1,10]`) and quoted (`["1","10"]`) array forms, and
     ///         honors the lookup precedence root → `.initialize.` → `.constructor.`. Uses a throwaway chain-id fixture
     ///         file so the test is independent of how the real per-chain configs happen to author `remoteChains`.
-    /// @dev    Every value is read BEFORE the fixture file is removed and BEFORE any assertion, so the temp file is
-    ///         always cleaned up regardless of which (if any) assertion fails.
+    /// @dev    All values are read first, then the fixture file is removed, then assertions run — so an assertion
+    ///         failure never leaves the file behind. (A revert during one of the reads themselves would still skip
+    ///         the removal, but that would indicate a real parsing bug the test should surface, not a stale fixture.)
     function test_ReadAdapterUintArray_BothFormsAndPrecedence() public {
         uint256 fixtureChainId = 424242;
         string memory path = string(

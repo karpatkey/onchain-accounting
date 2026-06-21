@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {EulerVaultsMetaBalanceAdapter, IEulerEVault} from "src/balances/protocols/EulerVaultsMeta.sol";
@@ -25,7 +26,7 @@ import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // External libraries pre-linked at deterministic CREATE2 addresses (foundry.toml). Etch their runtime on the fork
     // so NAVCalculator's pricing/registry DELEGATECALLs succeed.
-    address constant PRICE_FEED_LIB = 0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1;
+    address constant PRICE_FEED_LIB = LibraryPins.PRICE_FEED_LIB;
     address constant NAV_REGISTRY_LIB = 0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a;
 
     // kpk-curated Euler V2 EulerEarn vaults (ERC4626 yield aggregators, not core EVK eVaults) on mainnet.

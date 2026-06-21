@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMeta.sol";
@@ -19,7 +20,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 ///         configured DataProvider set (seeded via addMetaBalanceAdapter). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
 contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
-    address constant PRICE_FEED_LIB = 0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1;
+    address constant PRICE_FEED_LIB = LibraryPins.PRICE_FEED_LIB;
 
     // Aave V3 Core (mainnet) ProtocolDataProvider — the instance coordinate.
     address public constant CORE_DATA_PROVIDER = 0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3;

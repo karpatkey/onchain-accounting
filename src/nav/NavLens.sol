@@ -64,16 +64,37 @@ contract NavLens {
         uint256 len = pos.length;
         verbose = new INAVCalculator.VerbosePosition[](len);
         for (uint256 i = 0; i < len; i++) {
-            string memory name = "";
-            string memory label = "";
             address adapter = pos[i].balanceAdapter;
-            try IPositionDescribable(adapter).protocolName() returns (string memory n) {
-                name = n;
-            } catch {}
-            try IPositionDescribable(adapter).describePosition(pos[i].positionId) returns (string memory l) {
-                label = l;
-            } catch {}
+            string memory name = _safeString(adapter, abi.encodeCall(IPositionDescribable.protocolName, ()));
+            string memory label =
+                _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
             verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: name, positionLabel: label});
         }
+    }
+
+    /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
+    ///         returndata is a well-formed ABI string, otherwise "".
+    /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
+    ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
+    ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    function _safeString(address target, bytes memory callData) private view returns (string memory) {
+        (bool ok, bytes memory ret) = target.staticcall(callData);
+        if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
+        uint256 offset;
+        uint256 strLen;
+        assembly {
+            offset := mload(add(ret, 0x20))
+            strLen := mload(add(ret, 0x40))
+        }
+        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
+        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
+        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
+        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
+        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
+        if (offset != 0x20 || strLen > ret.length) return "";
+        uint256 padded = (strLen + 31) & ~uint256(31);
+        if (ret.length < 64 + padded) return "";
+        return abi.decode(ret, (string));
     }
 }

@@ -6,6 +6,13 @@ import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/panca
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
+/// @dev Minimal slot0 read used only by the test to derive oracle-consistent prices (PancakeSwap V3's
+///      `feeProtocol` is uint32; the adapter itself no longer reads slot0 — see [2]).
+interface IPcsSlot0 {
+    function slot0() external view returns (uint160 sqrtPriceX96, int24, uint16, uint16, uint16, uint32, bool);
+}
 
 /// @notice Minimal PancakeSwap V3 NonfungiblePositionManager interface for the ground-truth settlement check.
 interface IPancakeNPM {
@@ -73,7 +80,18 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
         balances = _deployBalancesForAdapter(_assets());
+        _setPoolImpliedPrices();
         meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
+    }
+
+    /// @notice Feeds the harness oracle prices consistent with the pool's live `sqrtPrice` so the adapter's [2]
+    ///         reconstruct-from-feeds split reproduces the real on-chain split. token0 = WETH (18dp), token1 =
+    ///         USDT (6dp), both price feeds 8dp; set USDT = $1 and derive WETH = sp²·10^(d0-d1+8)/2^192 = sp²·1e20/2^192.
+    function _setPoolImpliedPrices() internal {
+        (uint160 sp,,,,,,) = IPcsSlot0(POOL).slot0();
+        uint256 pWeth = Math.mulDiv(Math.mulDiv(uint256(sp), uint256(sp), 1 << 96), 1e20, 1 << 96);
+        balances.setAssetPrice(USDT, 1e8, 8);
+        balances.setAssetPrice(WETH, int256(pWeth), 8);
     }
 
     function _setupFork() internal override {
@@ -132,10 +150,12 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice Ground truth: the adapter's reported Supplied principal equals the protocol's own settlement.
-    ///         Burning each NFT's liquidity via the real NPM returns (amount0, amount1) = the principal the
-    ///         holder would receive; the adapter derives the same numbers from the same on-chain state via the
-    ///         overridden `_slot0`. Exact equality (both use the same round-down SqrtPriceMath).
+    /// @notice Ground truth: the adapter's reported Supplied principal ≈ the protocol's own settlement.
+    ///         Burning each NFT's liquidity via the real NPM returns (amount0, amount1) = the principal the holder
+    ///         would receive at the pool's current `slot0` price. Since [2] the adapter values the split at the
+    ///         *oracle* price instead — here fed to reproduce `slot0` (see `_setPoolImpliedPrices`), so the two
+    ///         agree to within the reconstruction's ~1e-9 relative rounding. The check is therefore
+    ///         `assertApproxEqRel` at a tight 0.01% tolerance rather than the former exact equality.
     function test_groundTruth_principalEqualsNpmSettlement() public {
         // Adapter's principal BEFORE mutating state (fetch once, reuse for both tokens).
         INAVCalculator.PositionBalance[] memory adapterPositions =
@@ -168,7 +188,9 @@ contract PancakeSwapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         }
 
         assertGt(active, 0, "holder should have at least one active position");
-        assertEq(adapterWeth, settledWeth, "adapter WETH principal != NPM settlement");
-        assertEq(adapterUsdt, settledUsdt, "adapter USDT principal != NPM settlement");
+        // 0.01% tolerance: the only gap from the NPM settlement is the oracle-price reconstruction rounding
+        // (the test feeds prices that reproduce slot0). assertApproxEqRel tolerance is 1e18 = 100%.
+        assertApproxEqRel(adapterWeth, settledWeth, 0.0001e18, "adapter WETH principal !~= NPM settlement");
+        assertApproxEqRel(adapterUsdt, settledUsdt, 0.0001e18, "adapter USDT principal !~= NPM settlement");
     }
 }

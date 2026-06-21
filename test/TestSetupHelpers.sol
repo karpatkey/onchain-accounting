@@ -57,6 +57,27 @@ contract BalancesHarnessForFork is Balances {
         require(idx != 0, "AssetNotFound");
         return _registeredAssets[idx - 1].symbol;
     }
+
+    // -------------------------------------------------------------------------
+    // Minimal price surface (for adapters that read oracle prices, e.g. UniswapV3PoolsMeta after [2]).
+    // Unset assets return price 0 / stale=false → treated as unpriceable (price <= 0) by such adapters.
+    // -------------------------------------------------------------------------
+
+    mapping(address => INAVCalculator.PriceFeedData) private _priceData;
+
+    /// @notice Sets a (USD) price for `asset` so `getPriceData` reports it. `decimals` is the price's decimals.
+    function setAssetPrice(address asset, int256 price, uint8 decimals) external {
+        INAVCalculator.PriceFeedData memory d;
+        d.price = price;
+        d.decimals = decimals;
+        d.stale = false;
+        _priceData[asset] = d;
+    }
+
+    /// @notice Mirrors NAVCalculator.getPriceData for the subset adapters consume (price/decimals/stale).
+    function getPriceData(address asset) external view returns (INAVCalculator.PriceFeedData memory) {
+        return _priceData[asset];
+    }
 }
 
 /// @title TestSetupHelpers

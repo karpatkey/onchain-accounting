@@ -312,7 +312,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         if (chainId == 1) {
             // L2 → L1 withdrawal: finalize via the portal (proof-gated).
             if (protocolData.length == 0) revert InvalidWithdrawalFinalization();
-            _finalizeWithdrawal(protocolData, data.amount);
+            address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+            _finalizeWithdrawal(protocolData, data.amount, _isNativeToken(asset));
         }
         // On L2 the tokens were delivered to this adapter by the canonical bridge; the base verifies the
         // adapter balance covers `amount` in `_fundAndRelease` and reverts otherwise.
@@ -347,17 +348,24 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         emit SuperchainBridgeCompleted(data.invoiceId, uint64(data.sourceChainId));
     }
 
-    /// @notice Finalizes a withdrawal (L2 → L1) through the portal so the ETH is delivered to this adapter.
+    /// @notice Finalizes a withdrawal (L2 → L1) through the portal so the funds are delivered to this adapter.
     /// @param protocolData ABI-encoded `Types.WithdrawalTransaction`.
-    /// @param amount The invoiced amount (used to validate the withdrawal value matches the invoice).
-    /// @dev The withdrawal `target` must be this adapter so the funded pass-through release draws from the
-    ///      adapter's balance. The withdrawal must already be proven; the portal enforces the challenge period.
-    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount) internal {
+    /// @param amount The invoiced amount.
+    /// @param isEth True for native-ETH withdrawals, false for ERC20.
+    /// @dev For ETH the withdrawal `target` is this adapter and `value == amount`, so we bind both to the
+    ///      invoice. For ERC20 the OP withdrawal `target` is the L1 bridge/messenger and `value == 0` (the
+    ///      ERC20 is delivered to the adapter as the `withdrawTo` receiver, not via `target`/`value`), so those
+    ///      bindings don't apply — provenance still comes from the proven withdrawal hash + portal Merkle
+    ///      proof, and the base `_fundAndRelease` reverts unless the adapter actually received `amount`.
+    ///      The withdrawal must already be proven; the portal enforces the challenge period.
+    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth) internal {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
 
-        // The withdrawal must deliver funds to this adapter and match the invoiced amount.
-        if (withdrawalTx.target != address(this)) revert InvalidWithdrawalFinalization();
-        if (withdrawalTx.value != amount) revert InvalidWithdrawalFinalization();
+        if (isEth) {
+            // ETH withdrawals deliver `value` directly to `target` (this adapter); bind both to the invoice.
+            if (withdrawalTx.target != address(this)) revert InvalidWithdrawalFinalization();
+            if (withdrawalTx.value != amount) revert InvalidWithdrawalFinalization();
+        }
 
         bytes32 withdrawalHash = _hashWithdrawal(withdrawalTx);
 

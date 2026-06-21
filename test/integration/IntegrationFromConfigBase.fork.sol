@@ -139,8 +139,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
-        vm.etch(0x28C643a92a617Da97758070DF55DA4153123fD5C, priceFeedLibImpl.code);
-        vm.etch(0x598D86380907a78ceE1AC81f55354Bc8871A3802, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1, priceFeedLibImpl.code);
+        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);
         string memory nativeSymbol = _nativeSymbol(_chainId);
@@ -812,8 +812,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
+        );
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navAddr));
+        return
+            address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
 
     function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {

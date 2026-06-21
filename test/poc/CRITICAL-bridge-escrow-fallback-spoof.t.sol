@@ -15,13 +15,18 @@ import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
-/// @notice REGRESSION (ADR 0012, C1 fixed): the escrow no longer has a `fallback()` dispatcher, and
-///         `releaseByInvoiceId` is callable only by an authorized adapter (never reachable through a
-///         public fallback). The original exploit fabricated a valid messagePayload (the checksum is
-///         keccak256 of public data — no signing key) and pushed it through
-///         escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId to drain the escrow with no
-///         real bridge delivery. This test asserts that exact attack now FAILS: the raw call to the escrow
-///         does not drain it, balances are unchanged, and the forged invoice is NOT marked completed.
+/// @notice REGRESSION (ADR 0012, C1 — UNAUTHENTICATED drain vector closed in this PR): the escrow no longer
+///         has a `fallback()` dispatcher, and `releaseByInvoiceId` is callable only by an authorized adapter
+///         (never reachable through a public fallback). The original exploit fabricated a valid messagePayload
+///         (the checksum is keccak256 of public data — no signing key) and pushed it through
+///         escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId to drain the escrow with no real
+///         bridge delivery. This test asserts that exact unauthenticated attack now FAILS: the raw call does
+///         not drain the escrow, balances are unchanged, and the forged invoice is NOT marked completed.
+/// @dev    SCOPE: this closes the *permissionless* drain. It does NOT yet make release fully provable — in
+///         this PR release still pays from the escrow's standing balance, and a MANAGER can drive
+///         adapter.completeBridge (no provenance check yet) with a forged payload to release from that
+///         balance. Full closure — per-adapter provenance + per-invoice funded pass-through (H9/D4) so release
+///         draws only the funds the genuine delivery brought in — is the follow-up adapter-provenance PR.
 contract Poc_BridgeEscrowFallbackSpoof is Test {
     address public admin = makeAddr("admin");
     address public manager = makeAddr("manager");

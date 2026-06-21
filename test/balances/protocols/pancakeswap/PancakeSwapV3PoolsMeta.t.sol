@@ -16,14 +16,14 @@ import {MockPositionManager, MockToken} from "test/balances/protocols/uniswap/Un
 import {MockPancakeV3Pool} from "test/balances/protocols/pancakeswap/PancakeSwapV3Mocks.sol";
 
 /// @title PancakeSwapV3PoolsMetaBalanceAdapter unit tests (no fork)
-/// @notice Covers the two overrides PancakeSwap V3 adds on top of `UniswapV3PoolsMetaBalanceAdapter` — the shared
-///         NFT discovery / principal+fee math / NAV filtering is verified by the Uniswap V3 unit + fork tests and
-///         inherited unchanged:
-///         - `_slot0`: PancakeSwap declares `slot0().feeProtocol` as `uint32`; a `uint8` decode reverts once the
-///           high bits are set. The mock pool returns `feeProtocol = 222825800` (> 255), so the PancakeSwap
-///           adapter decodes it (non-zero principal) while the inherited Uniswap adapter's `uint8` read reverts
-///           and the meta isolates the instance to empty. This is the entire reason the override exists.
+/// @notice The shared NFT discovery / principal+fee math / NAV filtering is verified by the Uniswap V3 unit + fork
+///         tests and inherited unchanged. Since [2] the adapter reconstructs the price from the registered oracle
+///         feeds and no longer reads `slot0`, so PancakeSwap V3 now differs from Uniswap V3 in exactly ONE way:
 ///         - `_protocolId`: reports `pancakeswap-v3` (not the inherited `uniswap-v3`).
+///         (The former `_slot0` override — needed because PancakeSwap declares `slot0().feeProtocol` as `uint32`
+///         vs Uniswap's `uint8` — was removed: with no slot0 read, the `uint32 feeProtocol` divergence is moot,
+///         and the inherited Uniswap base adapter now works on a PancakeSwap pool too. See
+///         test_uniswapBase_sameLegs_onlyProtocolIdDiffers.)
 contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
@@ -41,6 +41,12 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
         usdt = new MockToken("USDT", 6);
         nav.registerAsset(address(weth), 18, "WETH");
         nav.registerAsset(address(usdt), 6, "USDT");
+
+        // [2] The adapter reconstructs sqrtPriceX96 from these oracle prices (it no longer reads slot0). Chosen so
+        // the reconstructed raw token1/token0 price is exactly 1.0 (sqrtPrice == 2^96, tick 0), keeping the
+        // [-100, 100] position in range. WETH(18)/USDT(6): denominator USDT·10^12, numerator WETH → 1e18 == 1e6·1e12.
+        nav.setAssetPrice(address(weth), 1e18, 8);
+        nav.setAssetPrice(address(usdt), 1e6, 8);
 
         pool = new MockPancakeV3Pool(address(weth), address(usdt), 500, 10);
         pool.setSlot0(TickMath.getSqrtRatioAtTick(0), 0); // in-range for [-100, 100]
@@ -76,11 +82,13 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
         assertTrue(meta.supportsInterface(type(IERC165).interfaceId));
     }
 
-    /// @notice The `_slot0` override decodes a `uint32 feeProtocol > 255`: the adapter returns non-zero principal.
+    /// @notice The PCS pool yields non-zero in-range principal. (Pre-[2] this exercised the `_slot0` uint32
+    ///         override; since [2] the adapter reconstructs the price from oracle feeds and never reads slot0, so
+    ///         the pool's `uint32 feeProtocol` is irrelevant — the legs come purely from the reconstructed price.)
     function test_slot0_uint32FeeProtocol_decodes() public view {
         INAVCalculator.PositionBalance[] memory p =
             meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
-        assertGt(p.length, 0, "override decodes uint32 feeProtocol -> legs emitted");
+        assertGt(p.length, 0, "legs emitted from reconstructed price");
         uint256 supply;
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].positionKind == PositionKind.Supplied) supply += p[i].amount;
@@ -88,14 +96,24 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
         assertGt(supply, 0, "non-zero in-range principal");
     }
 
-    /// @notice The inherited Uniswap adapter decodes `feeProtocol` as `uint8`; on the same `uint32` pool its
-    ///         `_slot0` reverts, which the meta isolates per-instance -> empty. Exactly why PCS V3 overrides `_slot0`.
-    function test_uniswapBase_revertsOnUint32_isolatedToEmpty() public {
+    /// @notice Since [2] neither adapter reads slot0, so the inherited Uniswap base adapter no longer reverts on a
+    ///         PancakeSwap pool's `uint32 feeProtocol` — it now emits the same legs from the same reconstructed
+    ///         price. The ONLY remaining difference between the two is the protocol-id slug (asserted below and in
+    ///         test_protocolId_isPancakeswapV3). This is why the former `_slot0` override could be removed.
+    function test_uniswapBase_sameLegs_onlyProtocolIdDiffers() public {
         UniswapV3PoolsMetaBalanceAdapter base =
             new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
-        INAVCalculator.PositionBalance[] memory p =
+        INAVCalculator.PositionBalance[] memory bp =
             base.getAdapterPositionsForInstances(alice, _instances(), address(0));
-        assertEq(p.length, 0, "uint8 slot0 read reverts on feeProtocol > 255 -> instance isolated to empty");
+        INAVCalculator.PositionBalance[] memory pp =
+            meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        assertGt(bp.length, 0, "base adapter no longer reverts on a PCS pool (no slot0 read)");
+        assertEq(bp.length, pp.length, "same legs from the same reconstructed price");
+        for (uint256 i = 0; i < bp.length; i++) {
+            assertEq(bp[i].protocolId, ProtocolIds.UNISWAP_V3, "base reports uniswap-v3");
+            assertEq(pp[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "PCS reports pancakeswap-v3");
+            assertEq(bp[i].amount, pp[i].amount, "identical amounts");
+        }
     }
 
     /// @notice `_protocolId` override: every leg reports `pancakeswap-v3` (not the inherited `uniswap-v3`).

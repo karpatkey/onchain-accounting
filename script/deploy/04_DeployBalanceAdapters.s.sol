@@ -590,17 +590,21 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(new AuraRewardsMetaBalanceAdapter(booster, balancerV2Vault, protocol, navCalculator));
     }
 
-    /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken, protocol,
-    ///         navCalculator); the vault set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
+    /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken,
+    ///         osTokenVaultController, protocol, navCalculator); the vault set is configured on NAVCalculator via
+    ///         addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        address osTokenVaultController = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
-            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, protocol, navCalculator);
+            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navCalculator);
         return address(adapter);
     }
 

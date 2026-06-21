@@ -74,6 +74,9 @@ interface INAVCalculator is IBalances {
         int256 price;
         uint8 priceDecimals;
         bool stale;
+        // True if the quote asset's own price feed was stale. When true, `value` is in USD (8dp) even though
+        // `quoteAsset` is non-zero — the quote conversion was skipped. Mirrors NAV.quoteAssetStale ([9]/S2).
+        bool quoteAssetStale;
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
@@ -349,9 +352,12 @@ interface INAVCalculator is IBalances {
     /// @param assets Asset addresses.
     /// @param amounts Corresponding amounts (same length as assets).
     /// @param quoteAsset Quote currency; address(0) for USD.
-    /// @return value Sum of values in quote asset (non-negative for valid inputs).
+    /// @return value Sum of values in quote asset (non-negative for valid inputs). When `quoteAssetStale` is
+    ///         true, this is denominated in USD (8dp) instead of the requested quote ([9]/S2).
+    /// @return quoteAssetStale True if the requested non-USD quote asset's own feed was stale, so `value` fell
+    ///         back to USD rather than the quote currency. Always false for a USD quote (address(0)).
     function calculateValue(address[] memory assets, uint256[] memory amounts, address quoteAsset)
         external
         view
-        returns (int256 value);
+        returns (int256 value, bool quoteAssetStale);
 }

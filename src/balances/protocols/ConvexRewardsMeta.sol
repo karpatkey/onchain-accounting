@@ -290,8 +290,17 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     ///         Uses rewarder.pid() → Booster.poolInfo(pid).lptoken.
     function _lpTokenOf(address rewarder) internal view returns (address) {
         if (address(BOOSTER) == address(0)) return address(0);
-        (bool pidOk, uint256 pid) = _safeUint(rewarder, abi.encodeWithSignature("pid()"));
-        if (!pidOk) return address(0);
+        // Require a FULL 32-byte pid() word: a short/empty return (malformed rewarder) would otherwise decode as
+        // pid == 0 and silently resolve to Booster pool 0's LP token. (`_safeUint`'s ok flag does not distinguish
+        // a short return, which leaves result == 0 — indistinguishable from a genuine pid 0.)
+        (bool pidOk, bytes memory ret) = rewarder.staticcall(abi.encodeWithSignature("pid()"));
+        if (!pidOk || ret.length < 32) return address(0);
+        // Read the first word directly: abi.decode(ret, (uint256)) can revert on a non-32-multiple length
+        // (e.g. 33 bytes), which would defeat the fail-open intent for a malformed rewarder.
+        uint256 pid;
+        assembly {
+            pid := mload(add(ret, 0x20))
+        }
         try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {
             return lptoken;
         } catch {

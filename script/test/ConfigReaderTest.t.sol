@@ -154,6 +154,88 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertEq(cctpSel, bytes4(0), "CCTP selector should be 0");
     }
 
+    /// @notice readAdapterUintArray parses BOTH the numeric (`[1,10]`) and quoted (`["1","10"]`) array forms, and
+    ///         honors the lookup precedence root → `.initialize.` → `.constructor.`. Uses a throwaway chain-id fixture
+    ///         file so the test is independent of how the real per-chain configs happen to author `remoteChains`.
+    /// @dev    Every value is read BEFORE the fixture file is removed and BEFORE any assertion, so the temp file is
+    ///         always cleaned up regardless of which (if any) assertion fails.
+    function test_ReadAdapterUintArray_BothFormsAndPrecedence() public {
+        uint256 fixtureChainId = 424242;
+        string memory path = string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/bridge-adapters/",
+                vm.toString(fixtureChainId),
+                ".json"
+            )
+        );
+        string memory fixture = string(
+            abi.encodePacked(
+                "{",
+                '"RootNumeric":{"remoteChains":[1,10]},',
+                '"RootQuoted":{"remoteChains":["1","10"]},',
+                '"InitNumeric":{"initialize":{"remoteChains":[10,8453]}},',
+                '"ConstrQuoted":{"constructor":{"remoteChains":["100","42161"]}},',
+                '"RootWins":{"remoteChains":[1],"initialize":{"remoteChains":[2]},"constructor":{"remoteChains":[3]}},',
+                '"InitOverConstr":{"initialize":{"remoteChains":[7]},"constructor":{"remoteChains":[8]}},',
+                '"NoArray":{"enabled":true}',
+                "}"
+            )
+        );
+        vm.writeFile(path, fixture);
+
+        uint256[] memory rootNumeric =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "RootNumeric", "remoteChains");
+        uint256[] memory rootQuoted =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "RootQuoted", "remoteChains");
+        uint256[] memory initNumeric =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "InitNumeric", "remoteChains");
+        uint256[] memory constrQuoted =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "ConstrQuoted", "remoteChains");
+        uint256[] memory rootWins =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "RootWins", "remoteChains");
+        uint256[] memory initOverConstr =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "InitOverConstr", "remoteChains");
+        uint256[] memory noArray =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "NoArray", "remoteChains");
+        uint256[] memory missingAdapter =
+            ConfigReader.readAdapterUintArray(vm, fixtureChainId, "bridgeAdapters", "DoesNotExist", "remoteChains");
+
+        vm.removeFile(path);
+
+        // Numeric array form at root.
+        assertEq(rootNumeric.length, 2, "RootNumeric length");
+        assertEq(rootNumeric[0], 1, "RootNumeric[0]");
+        assertEq(rootNumeric[1], 10, "RootNumeric[1]");
+
+        // Quoted-string array form at root (exercises the parseJsonUintArray->catch->parseJsonStringArray branch).
+        assertEq(rootQuoted.length, 2, "RootQuoted length");
+        assertEq(rootQuoted[0], 1, "RootQuoted[0]");
+        assertEq(rootQuoted[1], 10, "RootQuoted[1]");
+
+        // `.initialize.` lookup (numeric).
+        assertEq(initNumeric.length, 2, "InitNumeric length");
+        assertEq(initNumeric[0], 10, "InitNumeric[0]");
+        assertEq(initNumeric[1], 8453, "InitNumeric[1]");
+
+        // `.constructor.` lookup (quoted).
+        assertEq(constrQuoted.length, 2, "ConstrQuoted length");
+        assertEq(constrQuoted[0], 100, "ConstrQuoted[0]");
+        assertEq(constrQuoted[1], 42161, "ConstrQuoted[1]");
+
+        // Precedence: root wins over `.initialize.` and `.constructor.`.
+        assertEq(rootWins.length, 1, "RootWins length");
+        assertEq(rootWins[0], 1, "root must win over initialize/constructor");
+
+        // Precedence: `.initialize.` wins over `.constructor.` when root is absent.
+        assertEq(initOverConstr.length, 1, "InitOverConstr length");
+        assertEq(initOverConstr[0], 7, "initialize must win over constructor");
+
+        // Param absent on a present adapter, and an absent adapter, both yield an empty array (not a revert).
+        assertEq(noArray.length, 0, "NoArray should be empty");
+        assertEq(missingAdapter.length, 0, "missing adapter should be empty");
+    }
+
     /// @notice Test reading non-existent parameter returns empty string
     function test_ReadNonExistentParam() public view {
         string memory nonExistent =

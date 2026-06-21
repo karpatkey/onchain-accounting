@@ -28,3 +28,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0009 | [Multi-feed price redundancy](0009-multi-feed-price-redundancy.md) | accepted |
 | 0010 | [Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator](0010-meta-balance-adapters.md) | accepted |
 | 0011 | [NAVCalculator size headroom + shared adapter/feed abstractions](0011-nav-size-and-shared-abstractions.md) | accepted |
+| 0012 | [Bridge: provable destination-side release (remove escrow fallback dispatcher, authenticate the real protocol)](0012-bridge-provable-release-rearchitecture.md) | accepted |

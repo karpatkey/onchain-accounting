@@ -215,7 +215,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
             // Validate checksum
             if (!IBridgeEscrow(bridgeEscrow)
                     .validateInvoiceIdChecksum(
-                        invoiceId, payloadData.amount, payloadData.timestamp, payloadData.checksum24
+                        invoiceId, payloadData.amount, payloadData.timestamp, payloadData.nonce, payloadData.checksum24
                     )) {
                 revert InvalidInvoice();
             }

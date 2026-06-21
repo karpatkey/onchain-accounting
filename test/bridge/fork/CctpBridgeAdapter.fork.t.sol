@@ -143,7 +143,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
 
         // Verify checksum validation works
         bool isValid = bridgeEscrow.validateInvoiceIdChecksum(
-            invoiceData.invoiceId, invoiceData.amount, invoiceData.timestamp, invoiceData.checksum24
+            invoiceData.invoiceId, invoiceData.amount, invoiceData.timestamp, invoiceData.nonce, invoiceData.checksum24
         );
         assertTrue(isValid, "Checksum should be valid");
     }

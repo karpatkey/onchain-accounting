@@ -14,7 +14,12 @@ import "src/errors.sol";
 import "src/constants.sol";
 
 /// @title BridgeAdapter
-/// @notice Abstract base contract for bridge adapter implementations (non-upgradeable, single-initialize)
+/// @notice Abstract base for bridge adapters (non-upgradeable, single-initialize).
+/// @dev See ADR 0012. There is no escrow fallback dispatcher. In this PR a bridge is completed via the
+///      MANAGER-gated `completeBridge`, which runs the adapter's protocol-specific `_completeBridge` and then
+///      calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow). The follow-up adapter-provenance
+///      PR makes each adapter the direct on-chain recipient that authenticates the real protocol message +
+///      source sender and funds the escrow per-invoice.
 /// @author kpk
 abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -24,7 +29,6 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     //
 
     /// @notice Role for managers who can complete bridges and recover assets
-    /// @dev This role is used consistently across NAVCalculator and bridge system
     bytes32 public constant MANAGER_ROLE = MANAGER;
 
     /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
@@ -43,15 +47,19 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @notice Adapter version
     string public adapterVersion;
 
+    /// @notice Allowlist of trusted sibling adapters on remote chains, keyed by a protocol-specific source key
+    ///         (chainId / CCIP selector / CCTP domain / LZ eid — the adapter defines the key).
+    /// @dev The inbound value is the remote adapter identity as bytes32 (address widened, or raw bytes32).
+    ///      Concrete adapters consult this in their authenticated callback to verify message provenance.
+    mapping(uint64 => bytes32) public trustedRemoteAdapter;
+
     bool private _initialized;
 
+    /// @notice Emitted when a trusted remote adapter is set/updated for a source key
+    event TrustedRemoteAdapterSet(uint64 indexed sourceKey, bytes32 remoteAdapter);
+
     /// @notice One-time initializer for the BridgeAdapter (internal; only for use by derived adapters)
-    /// @param admin_ The admin address
-    /// @param bridgeEscrow_ The BridgeEscrow contract address
-    /// @param providerName_ The bridge provider name
-    /// @param version_ The adapter version
     /// @dev Derived adapters expose their own initialize() and call this via super._initializeBridgeAdapter().
-    ///      Uses a simple boolean guard instead of OZ Initializable.
     function _initializeBridgeAdapter(
         address admin_,
         address bridgeEscrow_,
@@ -59,6 +67,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         string memory version_
     ) internal {
         require(!_initialized, "BridgeAdapter: already initialized");
+        if (admin_ == address(0) || bridgeEscrow_ == address(0)) revert InvalidArguments();
         _initialized = true;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
@@ -68,19 +77,29 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     }
 
     //
-    // IBridgeAdapter Implementation
+    // Config
     //
+
+    /// @notice Sets the trusted remote adapter for a source key (admin only)
+    /// @param sourceKey Protocol-specific source identifier (chainId / selector / domain / eid)
+    /// @param remoteAdapter The remote sibling adapter identity (bytes32). bytes32(0) clears it.
+    function setTrustedRemoteAdapter(uint64 sourceKey, bytes32 remoteAdapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        trustedRemoteAdapter[sourceKey] = remoteAdapter;
+        emit TrustedRemoteAdapterSet(sourceKey, remoteAdapter);
+    }
 
     //
     // Helper Functions
     //
 
     /// @notice Checks if an address represents a native token
-    /// @param token The token address to check
-    /// @return True if the address is address(0) or NATIVE_ADDRESS_ERC7528
-    /// @dev Some L2s use 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE instead of address(0) for native tokens
     function _isNativeToken(address token) internal pure returns (bool) {
         return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
+    }
+
+    /// @notice Widens an address to a bytes32 identity (for trustedRemoteAdapter comparisons)
+    function _toBytes32(address a) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
     }
 
     //
@@ -89,42 +108,22 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     /// @inheritdoc IBridgeAdapter
     function bridge(bytes calldata messagePayload) external override {
-        // Verify caller is BridgeEscrow
         if (msg.sender != bridgeEscrow) revert NotAuthorized();
-
-        // Decode messagePayload into struct once
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-
-        // Pass decoded struct to adapter implementation
         _bridge(data);
-
         emit BridgeInitiated(data.invoiceId, data.amount);
     }
 
     /// @inheritdoc IBridgeAdapter
+    /// @dev MANAGER-operated completion path. The adapter's `_completeBridge` performs protocol-specific
+    ///      verification (e.g. CCTP attestation, OP withdrawal finalization); the base then calls
+    ///      `releaseByInvoiceId` on the escrow (which re-validates checksum/replay/account).
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override {
-        // Verify caller is authorized
-        if (!hasRole(MANAGER_ROLE, msg.sender)) {
-            revert NotAuthorized();
-        }
-
-        // Validate messagePayload is not empty
-        if (messagePayload.length == 0) {
-            revert InvalidCompletionData();
-        }
-
-        // Decode messagePayload into struct once using InvoiceDataLib
+        if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
+        if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-
-        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
-        // No need to validate here to avoid redundant gas costs
-
-        // Call bridge-specific completion logic
         _completeBridge(messagePayload, protocolData);
-
-        // Call BridgeEscrow.releaseByInvoiceId() with messagePayload (mandatory checksum validation)
         IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
-
         emit BridgeCompleted(data.invoiceId);
     }
 
@@ -142,73 +141,50 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     // Abstract Functions
     //
 
-    /// @notice Abstract function - implement bridge-specific logic
-    /// @param data The decoded invoice data struct
-    /// @dev Adapter receives decoded struct with all invoice components
-    ///      Adapter should encode data back to messagePayload if needed for the bridge protocol
+    /// @notice Implement bridge-specific outbound logic
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal virtual;
 
-    /// @notice Transfers tokens from adapter to BridgeEscrow
-    /// @param invoiceId The invoice ID
-    /// @param asset The asset address (address(0) for native tokens)
-    /// @param amount The amount to transfer
-    /// @dev Handles both native and ERC20 tokens
-    /// @dev Requires exact amount - reverts if insufficient balance
-    /// @dev Emits TokensTransferredToEscrow event
+    /// @notice Pushes tokens held by the adapter to the escrow before completion.
+    /// @dev Used by adapters whose protocol delivers tokens to the adapter (e.g. CCTP mint): `_completeBridge`
+    ///      calls this so the escrow holds the funds, then the base `completeBridge` calls `releaseByInvoiceId`.
     function _transferTokensToEscrow(bytes32 invoiceId, address asset, uint256 amount) internal {
-        bool isNative = _isNativeToken(asset);
-
-        if (isNative) {
-            // Native token - check balance and transfer
+        if (_isNativeToken(asset)) {
             uint256 adapterBalance = address(this).balance;
-            if (adapterBalance < amount) {
-                revert InsufficientBalance(asset, amount, adapterBalance);
-            }
+            if (adapterBalance < amount) revert InsufficientBalance(asset, amount, adapterBalance);
             (bool success,) = bridgeEscrow.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
-            // ERC20 token - check balance and transfer
             uint256 adapterBalance = IERC20(asset).balanceOf(address(this));
-            if (adapterBalance < amount) {
-                revert InsufficientBalance(asset, amount, adapterBalance);
-            }
+            if (adapterBalance < amount) revert InsufficientBalance(asset, amount, adapterBalance);
             IERC20(asset).safeTransfer(bridgeEscrow, amount);
         }
-
-        // Emit event directly from adapter
         emit TokensTransferredToEscrow(invoiceId, asset, amount);
     }
 
-    /// @notice Abstract function - implement bridge-specific completion logic
-    /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
-    /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
-    /// @dev All information (invoiceId, sourceChainId, account, asset, amount) can be derived
-    ///      from messagePayload via decodeInvoiceId() if needed by the adapter
+    /// @notice Implement bridge-specific completion logic (protocol verification); the base then releases
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal virtual;
 
     /// @inheritdoc IBridgeAdapter
+    /// @dev Recipient-restricted (ADR 0012, H11): recovered funds may only go to the escrow or an
+    ///      escrow-authorized account, never an arbitrary address.
     function recoverStuckAssets(address asset, uint256 amount, address to)
         external
+        virtual
         override
         onlyRole(MANAGER_ROLE)
         nonReentrant
     {
-        if (to == address(0)) revert InvalidArguments();
         if (amount == 0) revert InvalidArguments();
+        if (to != bridgeEscrow && !IBridgeEscrow(bridgeEscrow).isAuthorizedAccount(to)) revert NotAuthorized();
 
-        // Default implementation: transfer assets directly
         if (_isNativeToken(asset)) {
             uint256 balance = address(this).balance;
-            if (balance < amount) {
-                revert InsufficientBalance(asset, amount, balance);
-            }
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
             (bool success,) = to.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
             uint256 balance = IERC20(asset).balanceOf(address(this));
-            if (balance < amount) {
-                revert InsufficientBalance(asset, amount, balance);
-            }
+            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
             IERC20(asset).safeTransfer(to, amount);
         }
 
@@ -220,10 +196,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     //
 
     /// @notice Checks if the contract supports an interface
-    /// @param interfaceId The interface ID to check
-    /// @return True if supported
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IBridgeAdapter).interfaceId || super.supportsInterface(interfaceId);
     }
 }
-

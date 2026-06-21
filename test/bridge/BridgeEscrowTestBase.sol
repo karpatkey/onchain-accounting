@@ -73,8 +73,9 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         uint256 amount,
         uint64 timestamp
     ) internal pure returns (InvoiceDataLib.InvoiceData memory) {
+        uint256 nonce = 0;
         bytes32 invoiceId = _generateInvoiceId(sourceChainId, destChainId, safe, assetSymbol);
-        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
+        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp, nonce);
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
             sourceChainId: SafeCast.toUint24(sourceChainId),
@@ -82,6 +83,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
             account: safe,
             assetSymbol: assetSymbol,
             amount: amount,
+            nonce: nonce,
             timestamp: timestamp,
             checksum24: checksum24
         });

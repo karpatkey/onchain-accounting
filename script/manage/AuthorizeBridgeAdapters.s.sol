@@ -9,10 +9,9 @@ import {console2} from "forge-std/console2.sol";
 /// @title AuthorizeBridgeAdapters
 /// @notice Authorizes all enabled bridge adapters on BridgeEscrow by broadcasting from the EOA admin.
 /// @dev Run with the admin EOA as broadcaster (e.g. --account $DEPLOYER_NAME or --ledger).
-///      For each enabled adapter in config: if bridgeAdapters.<Name>.callbackSelector is set,
-///      calls authorizeAdapterWithCallback(adapter, selector); otherwise authorizeAdapter(adapter).
-///      See script/config/README.md "Bridge adapters: callbacks". If an adapter is already authorized,
-///      authorizeAdapterWithCallback will revert — use BridgeEscrow.updateAdapterConfig(adapter, selector) instead.
+///      For each enabled adapter in config, calls authorizeAdapter(adapter). (As of ADR 0012 there is no
+///      escrow callback dispatcher; protocol callbacks are received and authenticated by the adapters
+///      directly, and trusted remote adapters are configured via BridgeAdapter.setTrustedRemoteAdapter.)
 contract AuthorizeBridgeAdapters is BaseDeployScript {
     function run() public override {
         setUp();
@@ -42,21 +41,14 @@ contract AuthorizeBridgeAdapters is BaseDeployScript {
         console2.log("\n=== Done ===");
     }
 
-    /// @dev Authorizes one adapter: with callback if config has callbackSelector, else without.
+    /// @dev Authorizes one enabled adapter on the escrow.
     function _authorizeAdapterFromConfig(BridgeEscrow escrow, string memory name) internal {
         if (!ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", name)) return;
         address deployed = _readAdapterDeployed("bridgeAdapters", name);
         if (deployed == address(0)) return;
 
-        (bool hasCallback, bytes4 selector) =
-            ConfigReader.readAdapterCallbackSelector(vm, currentChainId, "bridgeAdapters", name);
-        if (hasCallback && selector != bytes4(0)) {
-            escrow.authorizeAdapterWithCallback(deployed, selector);
-            console2.log("Authorized (with callback):", name, deployed);
-        } else {
-            escrow.authorizeAdapter(deployed);
-            console2.log("Authorized:", name, deployed);
-        }
+        escrow.authorizeAdapter(deployed);
+        console2.log("Authorized:", name, deployed);
     }
 
     /// @dev Ordered list of bridge adapter names to consider (config may omit or disable some).

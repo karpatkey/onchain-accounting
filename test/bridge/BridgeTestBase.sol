@@ -110,17 +110,11 @@ abstract contract BridgeTestBase is Test {
         vm.stopPrank();
     }
 
-    /// @notice Register callback for an adapter on an escrow (adapter must already be authorized). Adapter is the delegatecall target.
-    /// @param escrow BridgeEscrow to configure
-    /// @param selector Function selector the bridge protocol calls (e.g. handleAcrossMessage.selector)
-    /// @param callbackAdapter Adapter (authorized)
-    function _registerCallbackModule(BridgeEscrow escrow, bytes4 selector, address callbackAdapter) internal {
-        vm.startPrank(admin);
-        escrow.updateAdapterConfig(callbackAdapter, selector);
-        vm.stopPrank();
-    }
-
-    /// @notice Helper to create a valid invoice data
+    /// @notice Helper to create a valid invoice data with the default nonce (0).
+    /// @dev ADR 0012 added a per-account nonce to invoice identity. Call sites that do not deposit first
+    ///      (and therefore have no escrow-assigned nonce) use nonce 0 here. For flows that deposit via
+    ///      depositAndBridge, read `bridgeEscrow.bridgeNonce(account)` before the deposit and use the
+    ///      explicit-nonce overload below.
     function _createInvoiceData(
         uint64 sourceChainId,
         uint64 destChainId,
@@ -128,9 +122,21 @@ abstract contract BridgeTestBase is Test {
         bytes6 assetSymbol,
         uint256 amount
     ) internal view returns (InvoiceDataLib.InvoiceData memory) {
+        return _createInvoiceData(sourceChainId, destChainId, safe, assetSymbol, amount, 0);
+    }
+
+    /// @notice Helper to create a valid invoice data with an explicit nonce (ADR 0012).
+    function _createInvoiceData(
+        uint64 sourceChainId,
+        uint64 destChainId,
+        address safe,
+        bytes6 assetSymbol,
+        uint256 amount,
+        uint256 nonce
+    ) internal view returns (InvoiceDataLib.InvoiceData memory) {
         bytes32 invoiceId = _generateInvoiceId(sourceChainId, destChainId, safe, assetSymbol);
         uint64 timestamp = uint64(block.timestamp);
-        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp);
+        bytes24 checksum24 = _calculateChecksum(invoiceId, amount, timestamp, nonce);
 
         return InvoiceDataLib.InvoiceData({
             invoiceId: invoiceId,
@@ -139,6 +145,7 @@ abstract contract BridgeTestBase is Test {
             account: safe,
             assetSymbol: assetSymbol,
             amount: amount,
+            nonce: nonce,
             timestamp: timestamp,
             checksum24: checksum24
         });
@@ -157,12 +164,13 @@ abstract contract BridgeTestBase is Test {
         );
     }
 
-    /// @notice Helper to calculate checksum (matches BridgeEscrow logic)
-    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp) internal pure returns (bytes24) {
-        bytes32 hash = keccak256(abi.encodePacked(invoiceId, amount, timestamp));
-        // Truncation to 24 bytes by design (checksum layout)
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return bytes24(hash); // First 24 bytes
+    /// @notice Helper to calculate checksum (matches BridgeEscrow logic; ADR 0012 nonce in preimage)
+    function _calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp, uint256 nonce)
+        internal
+        pure
+        returns (bytes24)
+    {
+        return InvoiceDataLib.calculateChecksum(invoiceId, amount, timestamp, nonce);
     }
 
     /// @notice Helper to approve token spending

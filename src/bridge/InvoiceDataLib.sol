@@ -5,7 +5,12 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title InvoiceDataLib
 /// @notice Library for encoding and decoding invoice message payloads and symbol conversion
-/// @dev Provides a standardized way to encode/decode invoice data and convert bytes6/string symbols
+/// @dev Provides a standardized way to encode/decode invoice data and convert bytes6/string symbols.
+///      The wire format is `abi.encode(invoiceId, amount, nonce, meta)` (4 slots), where
+///      `meta = timestamp (uint64, bits 192-255) || checksum24 (bytes24, bits 0-191)`.
+///      The `nonce` is a per-(account) monotonic counter included in the checksum preimage so that
+///      invoice identity is unique per bridge operation (see ADR 0012). The checksum is
+///      `bytes24(keccak256(invoiceId, amount, timestamp, nonce))`.
 /// @author kpk
 library InvoiceDataLib {
     /// @notice Converts a bytes6 symbol (e.g. right-padded "USDC  ") to a string, trimming trailing spaces and null bytes
@@ -44,26 +49,28 @@ library InvoiceDataLib {
     //
     /// @notice Struct containing all invoice data components
     struct InvoiceData {
-        bytes32 invoiceId; // The full invoice ID (32 bytes)
+        bytes32 invoiceId; // The route+account+symbol identity (32 bytes, excludes amount and nonce)
         uint24 sourceChainId; // Source chain ID
         uint24 destinationChainId; // Destination chain ID
         address account; // Account address
         bytes6 assetSymbol; // Asset symbol
         uint256 amount; // Amount being bridged
+        uint256 nonce; // Per-account monotonic nonce (unique per bridge operation)
         uint64 timestamp; // Timestamp (uint64, 8 bytes)
-        bytes24 checksum24; // 24-byte checksum
+        bytes24 checksum24; // 24-byte checksum over (invoiceId, amount, timestamp, nonce)
     }
 
     /// @notice Decodes a message payload into a complete InvoiceData struct
     /// @param messagePayload The message payload to decode
     /// @return data The complete invoice data struct
     function decode(bytes memory messagePayload) internal pure returns (InvoiceData memory data) {
-        // Decode messagePayload (exactly 3 slots: invoiceId, amount, meta)
+        // Decode messagePayload (exactly 4 slots: invoiceId, amount, nonce, meta)
         bytes32 meta;
-        (data.invoiceId, data.amount, meta) = abi.decode(messagePayload, (bytes32, uint256, bytes32));
+        (data.invoiceId, data.amount, data.nonce, meta) =
+            abi.decode(messagePayload, (bytes32, uint256, uint256, bytes32));
 
         // Decode meta: timestamp (uint64, 8 bytes) + checksum24 (bytes24, 24 bytes) = 32 bytes total
-        // timestamp is in the first 8 bytes (bits 0-63, shifted right by 192 to get first 8 bytes)
+        // timestamp is in the first 8 bytes (bits 192-255, shifted right by 192 to get first 8 bytes)
         data.timestamp = uint64(uint256(meta) >> 192);
         // checksum24 is in the last 24 bytes (bits 0-191)
         // Truncation to 24 bytes by design (checksum layout)
@@ -88,7 +95,29 @@ library InvoiceDataLib {
         // timestamp goes in bits 192-255 (leftmost 8 bytes), checksum24 goes in bits 0-191 (rightmost 24 bytes)
         bytes32 meta = bytes32(uint256(uint256(data.timestamp) << 192 | uint256(uint192(data.checksum24))));
 
-        // Encode messagePayload
-        return abi.encode(data.invoiceId, data.amount, meta);
+        // Encode messagePayload (4 slots: invoiceId, amount, nonce, meta)
+        return abi.encode(data.invoiceId, data.amount, data.nonce, meta);
+    }
+
+    /// @notice Calculates the 24-byte checksum over (invoiceId, amount, timestamp, nonce)
+    /// @dev Single source of truth for the checksum preimage, shared by escrow and any validator.
+    ///      The nonce makes the preimage unique per bridge operation; it is NOT a security
+    ///      authenticator (all inputs are public) — provenance is enforced by the adapter layer
+    ///      (ADR 0012). The checksum only guards payload integrity + replay (completedInvoices).
+    /// @param invoiceId The 32-byte invoice ID (route+account+symbol identity)
+    /// @param amount The amount being bridged
+    /// @param timestamp The timestamp (uint64)
+    /// @param nonce The per-account monotonic nonce
+    /// @return checksum24 The first 24 bytes of keccak256(invoiceId, amount, timestamp, nonce)
+    function calculateChecksum(bytes32 invoiceId, uint256 amount, uint64 timestamp, uint256 nonce)
+        internal
+        pure
+        returns (bytes24 checksum24)
+    {
+        // forge-lint: disable-next-line(asm-keccak256)
+        bytes32 fullHash = keccak256(abi.encodePacked(invoiceId, amount, timestamp, nonce));
+        // casting to 'bytes24' is safe because we're truncating the last 8 bytes of a 32-byte hash
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return bytes24(fullHash);
     }
 }

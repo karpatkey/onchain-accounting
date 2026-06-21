@@ -12,6 +12,7 @@ import {
     AssetHasActiveInvoices,
     AssetNotRegistered
 } from "src/errors.sol";
+import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
 
 /// @title BridgeEscrow Error Tests
 /// @notice Revert and authorization tests for BridgeEscrow
@@ -69,18 +70,30 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.stopPrank();
         vm.deal(account, 2 ether);
 
+        // ADR 0012: native msg.value must equal amount, else InvalidValue (fee-on-transfer safety path).
         vm.prank(account);
-        vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.InvalidValue.selector));
         bridgeEscrow.depositAndBridge{value: 0.5 ether}(DEST_CHAIN_ID, WETH_SYMBOL, 1 ether, address(mockAdapter));
     }
 
     // ============ releaseByInvoiceId reverts ============
 
-    function test_RevertWhen_releaseByInvoiceId_callerNotAdapterOrManager() public {
+    function test_RevertWhen_releaseByInvoiceId_callerNotAuthorizedAdapter() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload,) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         usdc.mint(address(destEscrow), 1000e6);
         vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
+        destEscrow.releaseByInvoiceId(messagePayload);
+    }
+
+    /// @notice ADR 0012 (H9): MANAGER can no longer call releaseByInvoiceId directly — only an authorized
+    ///         adapter (after its provenance check) may. A MANAGER-direct call reverts NotAuthorized.
+    function test_RevertWhen_releaseByInvoiceId_callerIsManager() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload,) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destEscrow), 1000e6);
+        vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
         destEscrow.releaseByInvoiceId(messagePayload);
     }
@@ -197,28 +210,6 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(AssetHasActiveInvoices.selector, USDC_SYMBOL));
         bridgeEscrow.unregisterAsset(USDC_SYMBOL);
-    }
-
-    // ============ authorizeAdapterWithCallback / updateAdapterConfig reverts ============
-
-    function test_RevertWhen_authorizeAdapterWithCallback_zeroSelector() public {
-        MockBridgeAdapter other = _deployMockAdapterForEscrow(bridgeEscrow);
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
-        bridgeEscrow.authorizeAdapterWithCallback(address(other), bytes4(0));
-    }
-
-    function test_RevertWhen_authorizeAdapterWithCallback_alreadyAuthorized() public {
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
-        bridgeEscrow.authorizeAdapterWithCallback(address(mockAdapter), bytes4(keccak256("fake()")));
-    }
-
-    function test_RevertWhen_updateAdapterConfig_adapterNotAuthorized() public {
-        address unregisteredAdapter = makeAddr("unregisteredAdapter");
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
-        bridgeEscrow.updateAdapterConfig(unregisteredAdapter, bytes4(keccak256("fake()")));
     }
 
     // ============ emergencyWithdraw reverts ============

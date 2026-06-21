@@ -310,13 +310,25 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
 
     function test_emergencyWithdraw_success() public {
         usdc.mint(address(bridgeEscrow), 5000e6);
-        vm.prank(admin);
-        bridgeEscrow.pause();
 
+        // ADR 0012 (H10): emergencyWithdraw recipient MUST be an authorized account.
         address recipient = makeAddr("recipient");
-        vm.prank(admin);
+        vm.startPrank(admin);
+        bridgeEscrow.authorizeAccount(recipient);
+        bridgeEscrow.pause();
         bridgeEscrow.emergencyWithdraw(address(usdc), 5000e6, recipient);
+        vm.stopPrank();
         assertEq(usdc.balanceOf(recipient), 5000e6, "Recipient should receive tokens");
+    }
+
+    /// @notice ADR 0012 (H10): emergencyWithdraw to a non-authorized recipient reverts NotAuthorized.
+    function test_RevertWhen_emergencyWithdraw_recipientNotAuthorized() public {
+        usdc.mint(address(bridgeEscrow), 5000e6);
+        vm.startPrank(admin);
+        bridgeEscrow.pause();
+        vm.expectRevert();
+        bridgeEscrow.emergencyWithdraw(address(usdc), 5000e6, makeAddr("notAuthorized"));
+        vm.stopPrank();
     }
 
     // ============ View functions ============
@@ -354,18 +366,22 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
-        bytes24 checksum = _calculateChecksum(invoiceId, amount, timestamp);
-        assertTrue(bridgeEscrow.validateInvoiceIdChecksum(invoiceId, amount, timestamp, checksum), "Valid checksum");
+        uint256 nonce = 0;
+        bytes24 checksum = _calculateChecksum(invoiceId, amount, timestamp, nonce);
+        assertTrue(
+            bridgeEscrow.validateInvoiceIdChecksum(invoiceId, amount, timestamp, nonce, checksum), "Valid checksum"
+        );
     }
 
     function test_validateInvoiceIdChecksum_invalid() public view {
         bytes32 invoiceId = _generateInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
         uint256 amount = 1000e6;
         uint64 timestamp = uint64(block.timestamp);
-        bytes24 goodChecksum = _calculateChecksum(invoiceId, amount, timestamp);
+        uint256 nonce = 0;
+        bytes24 goodChecksum = _calculateChecksum(invoiceId, amount, timestamp, nonce);
         bytes24 badChecksum = bytes24(uint192(uint256(uint192(goodChecksum)) ^ 1));
         assertFalse(
-            bridgeEscrow.validateInvoiceIdChecksum(invoiceId, amount, timestamp, badChecksum), "Invalid checksum"
+            bridgeEscrow.validateInvoiceIdChecksum(invoiceId, amount, timestamp, nonce, badChecksum), "Invalid checksum"
         );
     }
 

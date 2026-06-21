@@ -1,6 +1,18 @@
 # Bridge Adapters: Architecture and Integration
 
-This document describes the bridge escrow and adapter architecture as implemented: message format, flows, existing adapters, and how to implement and register a new adapter.
+> ⚠️ **OUT OF DATE as of this PR (ADR 0012).** This PR removes the escrow `fallback()` dispatcher and the
+> `authorizeAdapterWithCallback` / `updateAdapterConfig` / `getCallbackAdapter` callback-registration APIs.
+> The sections below that describe the **fallback selector dispatcher** and **callback registration** (§5.3,
+> §5.4, the "callback path" in §7, and §10) no longer reflect the code:
+> - Adapters are authorized with **`authorizeAdapter(address)`** only — there is no callback selector to register.
+> - Completion in this PR is the **MANAGER path**: `adapter.completeBridge(messagePayload, protocolData)` →
+>   base calls `BridgeEscrow.releaseByInvoiceId(messagePayload)` (release pays from the escrow balance and is
+>   callable only by an authorized adapter; never via a public fallback, never by MANAGER directly).
+> - The trust-minimized **direct-receiver provenance** model (each adapter authenticates the real protocol
+>   contract + source sender, funded per-invoice pass-through) and the full rewrite of this document land in
+>   the follow-up adapter-provenance PR. See [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md).
+
+This document describes the bridge escrow and adapter architecture: message format, flows, existing adapters, and how to implement and register a new adapter.
 
 ---
 

@@ -371,11 +371,19 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destBridgeEscrow, CcipBridgeAdapter.ccipReceive.selector, address(destAdapter));
+        // TODO(PR2): provenance-checked protocol callback
+        // Manager completion path: tokens already at escrow, manager drives completeBridge.
+        usdc.mint(address(destBridgeEscrow), amount);
 
-        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destBridgeEscrow));
+        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
+            sender: "",
+            data: messagePayload,
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -383,7 +391,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
     }
 
-    /// @notice When delivery goes to escrow, escrow fallback forwards ccipReceive to adapter; adapter stores payload
+    /// @notice Manager completion path stores the message payload on the adapter
     function test_ccipReceive_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
@@ -404,17 +412,26 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(destAdapterProxy);
         vm.stopPrank();
 
-        _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
+        // TODO(PR2): provenance-checked protocol callback
+        // Manager completion path: tokens already at escrow, manager drives completeBridge.
+        usdc.mint(address(destEscrow), amount);
 
-        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow));
+        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
+            sender: "",
+            data: messagePayload,
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completeBridge");
     }
 
     /// @notice Adapter's ccipReceive reverts when not called by escrow, so only escrow fallback → adapter path is used
@@ -536,13 +553,23 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(destAdapterProxy);
-        _registerCallbackModule(destEscrow, CcipBridgeAdapter.ccipReceive.selector, destAdapterProxy);
         vm.stopPrank();
 
-        uint64 msgId = destRouter.addMessageForDelivery(messagePayload, address(usdc), amount);
-        usdc.mint(address(destRouter), amount);
-        destRouter.deliverMessage(msgId, address(destEscrow));
+        // TODO(PR2): provenance-checked protocol callback
+        // Manager completion path: tokens already at escrow, manager drives completeBridge.
+        usdc.mint(address(destEscrow), amount);
+
+        Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: SOURCE_CHAIN_SELECTOR,
+            sender: "",
+            data: messagePayload,
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");

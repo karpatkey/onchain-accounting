@@ -248,18 +248,13 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Recipient is BridgeEscrow; escrow fallback forwards handleAcrossMessage to adapter -> _completeDelivery -> releaseByInvoiceId
-        _registerCallbackModule(
-            destBridgeEscrow, AcrossBridgeAdapter.handleAcrossMessage.selector, address(destAdapter)
-        );
+        // TODO(PR2): provenance-checked protocol callback
+        // Completion via MANAGER path: mint tokens to dest escrow (releaseByInvoiceId expects them present),
+        // then completeBridge stores the payload and triggers release.
+        usdc.mint(address(destBridgeEscrow), amount);
 
-        // Relay deposit: recipient = dest escrow (realistic: relayer fills to escrow)
-        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destBridgeEscrow), messagePayload);
-
-        usdc.mint(address(destSpokePool), amount);
-
-        // Delivery via mock: tokens to escrow, then handleAcrossMessage on escrow -> fallback forwards to adapter -> _completeDelivery -> releaseByInvoiceId
-        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(uint32(1), SOURCE_CHAIN_ID));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
@@ -291,10 +286,11 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Corrupt messagePayload (invalid checksum)
+        // Corrupt messagePayload (invalid checksum). Wire format is 4 slots: invoiceId, amount, nonce, meta.
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,
+            uint256(invoiceData.nonce),
             bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
@@ -338,7 +334,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ Across Receiver Tests (adapter is not receiver; escrow + module are) ============
 
-    /// @notice When delivery goes to escrow, escrow fallback forwards handleAcrossMessage to adapter; adapter stores payload
+    /// @notice completeBridge (MANAGER path) stores the message payload, retrievable via getMessagePayload
     function test_handleAcrossMessage_storesMessagePayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
@@ -362,14 +358,14 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        _registerCallbackModule(destEscrow, AcrossBridgeAdapter.handleAcrossMessage.selector, address(destAdapter));
-
-        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destEscrow), messagePayload);
-        usdc.mint(address(destSpokePool), amount);
-        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
+        // TODO(PR2): provenance-checked protocol callback
+        // completeBridge stores the payload; releaseByInvoiceId needs tokens already at escrow.
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(uint32(123), SOURCE_CHAIN_ID));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completeBridge");
     }
 
     /// @notice Adapter's handleAcrossMessage reverts when not called by escrow, so only escrow fallback → adapter path is used
@@ -442,7 +438,8 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Store payload via callback path (escrow fallback → adapter.handleAcrossMessage → _completeDelivery)
+        // Store payload via MANAGER completeBridge path
+        // TODO(PR2): provenance-checked protocol callback
         vm.chainId(uint256(DEST_CHAIN_ID));
         BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
         MockSpokePool destSpokePool = new MockSpokePool();
@@ -456,13 +453,14 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             ));
         AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
+        destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(address(destAdapter));
-        _registerCallbackModule(destEscrow, AcrossBridgeAdapter.handleAcrossMessage.selector, address(destAdapter));
         vm.stopPrank();
 
-        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destEscrow), messagePayload);
-        usdc.mint(address(destSpokePool), amount);
-        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
+        // releaseByInvoiceId needs tokens already at escrow
+        usdc.mint(address(destEscrow), amount);
+        vm.prank(manager);
+        destAdapter.completeBridge(messagePayload, abi.encode(uint32(123), SOURCE_CHAIN_ID));
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");

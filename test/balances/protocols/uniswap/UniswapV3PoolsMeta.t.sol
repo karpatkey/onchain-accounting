@@ -152,15 +152,16 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         assertGt(p.length, 0);
     }
 
-    function test_unregisteredToken_skipped() public {
-        nav.unregisterAssetHelper(address(weth));
+    /// @notice [2] Valuing the LP split needs BOTH tokens' oracle prices (the split is a function of their price
+    ///         ratio). If either token is unregistered/unpriced the price cannot be reconstructed, so the whole
+    ///         pool instance is dropped — not just the unregistered token's leg. (Pre-[2], when amounts came from
+    ///         slot0, the registered token's leg survived; that path is gone with the manipulation-resistant fix.)
+    function test_unregisteredToken_dropsInstance() public {
+        nav.unregisterAssetHelper(address(weth)); // poolA is WBTC/WETH → WETH unregistered
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
         INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
-        for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].balanceAsset.asset, address(wbtc), "only WBTC legs survive");
-        }
-        assertGt(p.length, 0);
+        assertEq(p.length, 0, "unregistering either token drops the whole instance (need both prices to value it)");
     }
 
     function test_badInstance_isolated() public view {

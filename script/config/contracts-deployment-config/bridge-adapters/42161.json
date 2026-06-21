@@ -8,6 +8,7 @@
       "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
       "version": "1.0.0"
     },
+    "remoteChains": [1, 10, 137, 8453],
     "callbackSelector": "0x85572ffb"
   },
   "Across": {
@@ -19,6 +20,7 @@
       "defaultRelayerFeePct": "5000",
       "version": "1.0.0"
     },
+    "remoteChains": [1, 10, 137, 8453],
     "callbackSelector": "0x0ea1f938"
   },
   "Stargate": {
@@ -30,6 +32,7 @@
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
+    "remoteChains": [1, 10, 56, 100, 137, 8453],
     "callbackSelector": "0x001d3567"
   },
   "CCTP": {
@@ -41,6 +44,7 @@
       "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       "version": "1.0.0",
       "cctpDomain": 3
-    }
+    },
+    "remoteChains": [1, 10, 137, 8453]
   }
 }

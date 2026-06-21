@@ -138,7 +138,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
             uint256(data.destinationChainId), // destinationChainId
             address(0), // exclusiveRelayer (none)
             nowTs, // quoteTimestamp
-            type(uint32).max, // fillDeadline (no expiry)
+            nowTs + spokePool.fillDeadlineBuffer(), // fillDeadline: max the SpokePool accepts (reverts beyond it)
             0, // exclusivityDeadline (none)
             messagePayload // message (carries the invoice payload)
         );

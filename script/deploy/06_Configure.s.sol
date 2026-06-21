@@ -174,7 +174,12 @@ contract Configure is BaseDeployScript {
         }
     }
 
-    /// @notice Authorizes each enabled+deployed bridge adapter on BridgeEscrow (idempotent via isAuthorizedAdapter).
+    /// @notice Authorizes each enabled+deployed bridge adapter on BridgeEscrow (idempotent via isAuthorizedAdapter),
+    ///         then wires its `trustedRemoteAdapter` allowlist (ADR 0012, D2 + D7).
+    /// @dev The escrow fallback dispatcher was removed (ADR 0012 D1), so there is no `authorizeAdapterWithCallback`
+    ///      anymore — plain `authorizeAdapter(address)` is the only authorization call. After authorizing, each
+    ///      adapter's per-source-chain trusted sibling is set: with CREATE2 same-address (D7) the sibling adapter on
+    ///      every remote chain has the SAME address as this one, so `remote = bytes32(uint256(uint160(adapter)))`.
     function _authorizeBridgeAdapters(address bridgeProxy) internal {
         string[] memory adapterNames = _bridgeAdapterNames();
         uint256 authorized;
@@ -183,30 +188,73 @@ contract Configure is BaseDeployScript {
 
             address deployed = _readAdapterDeployed("bridgeAdapters", adapterNames[i]);
             if (deployed == address(0)) continue;
+
             if (IBridgeEscrow(bridgeProxy).isAuthorizedAdapter(deployed)) {
                 console2.log("[SKIP] Bridge adapter already authorized:", adapterNames[i], deployed);
-                continue;
+            } else {
+                (bool ok, bytes memory data) =
+                    bridgeProxy.call(abi.encodeWithSignature("authorizeAdapter(address)", deployed));
+                if (!ok) {
+                    revert(
+                        string(
+                            abi.encodePacked(
+                                "authorize bridge adapter failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                            )
+                        )
+                    );
+                }
+                console2.log("[OK] Authorized bridge adapter:", adapterNames[i], deployed);
+                authorized++;
             }
 
-            (bool hasCallback, bytes4 selector) =
-                ConfigReader.readAdapterCallbackSelector(vm, currentChainId, "bridgeAdapters", adapterNames[i]);
-            bytes memory authorizeData = (hasCallback && selector != bytes4(0))
-                ? abi.encodeWithSignature("authorizeAdapterWithCallback(address,bytes4)", deployed, selector)
-                : abi.encodeWithSignature("authorizeAdapter(address)", deployed);
-            (bool ok, bytes memory data) = bridgeProxy.call(authorizeData);
+            _wireTrustedRemoteAdapters(adapterNames[i], deployed);
+        }
+        console2.log("--- Bridge adapters authorized:", authorized);
+    }
+
+    /// @notice Sets `setTrustedRemoteAdapter(sourceKey, remote)` on `adapter` for each configured remote chain
+    ///         (ADR 0012, D2 + D7).
+    /// @dev sourceKey: every adapter (CCIP, Across, Stargate, Gnosis, CCTP, Superchain) keys its
+    ///      `trustedRemoteAdapter` mapping by the remote chain's STANDARD chain id — the adapters translate
+    ///      protocol-specific source identifiers (CCIP selector, LayerZero eid, CCTP domain, AMB/OP xDomain source)
+    ///      back to the standard chain id internally before the lookup, so the config-driven key is the plain chain
+    ///      id. remote: with CREATE2 same-address (D7) the sibling adapter on every remote chain shares this
+    ///      adapter's address, so the trusted remote identity is `bytes32(uint256(uint160(adapter)))`.
+    ///      Idempotent: re-runs simply re-set the same value. The remote-chain list is read from the adapter's
+    ///      `remoteChains` array in `contracts-deployment-config/bridge-adapters/<chainId>.json`.
+    function _wireTrustedRemoteAdapters(string memory adapterName, address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", adapterName, "remoteChains");
+        if (remoteChains.length == 0) {
+            console2.log("[WARN] No remoteChains configured for adapter; trustedRemoteAdapter left unset:", adapterName);
+            return;
+        }
+
+        // CREATE2 same-address: the trusted sibling on every remote chain is this adapter's own address.
+        bytes32 remote = bytes32(uint256(uint160(adapter)));
+
+        for (uint256 i = 0; i < remoteChains.length; i++) {
+            uint256 remoteChainId = remoteChains[i];
+            if (remoteChainId == 0 || remoteChainId == currentChainId) continue; // skip self / invalid
+            (bool ok, bytes memory data) = adapter.call(
+                abi.encodeWithSignature("setTrustedRemoteAdapter(uint64,bytes32)", uint64(remoteChainId), remote)
+            );
             if (!ok) {
                 revert(
                     string(
                         abi.encodePacked(
-                            "authorize bridge adapter failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                            "setTrustedRemoteAdapter failed for ",
+                            adapterName,
+                            " sourceKey ",
+                            vm.toString(remoteChainId),
+                            ": ",
+                            _decodeRevert(data)
                         )
                     )
                 );
             }
-            console2.log("[OK] Authorized bridge adapter:", adapterNames[i], deployed);
-            authorized++;
+            console2.log("[OK] trustedRemoteAdapter set:", adapterName, remoteChainId);
         }
-        console2.log("--- Bridge adapters authorized:", authorized);
     }
 
     /// @notice Bridge adapter name list — kept in sync with `05_DeployBridgeAdapters.s.sol`.

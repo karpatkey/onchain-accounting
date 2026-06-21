@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {Options as UUPSDeployOptions} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
@@ -139,7 +140,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml libraries config).
         // Etch its runtime code so DELEGATECALL succeeds on any fork where it hasn't been deployed yet.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
-        vm.etch(0x1A18012eb9Af97aa33A0391825d4466acd69FAbA, priceFeedLibImpl.code);
+        vm.etch(LibraryPins.PRICE_FEED_LIB, priceFeedLibImpl.code);
         vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         address sequencerFeed = _sequencerFeed(_chainId);

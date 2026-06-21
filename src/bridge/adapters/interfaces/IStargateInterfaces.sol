@@ -45,6 +45,18 @@ struct OFTReceipt {
     uint256 amountReceivedLD; // Amount credited on destination, in local decimals
 }
 
+/// @notice Allowed send-amount bounds returned by `quoteOFT`
+struct OFTLimit {
+    uint256 minAmountLD;
+    uint256 maxAmountLD;
+}
+
+/// @notice A single fee/reward component returned by `quoteOFT` (negative = reward)
+struct OFTFeeDetail {
+    int256 feeAmountLD;
+    string description;
+}
+
 /// @notice Stargate V2 bus ("Ticket") receipt — returned by sendToken
 struct Ticket {
     uint72 ticketId;
@@ -68,6 +80,17 @@ interface IStargate {
         external
         view
         returns (MessagingFee memory fee);
+
+    /// @notice Quotes the OFT amounts for a send: the destination receives `oftReceipt.amountReceivedLD`
+    ///         (= `amountLD` minus the Stargate protocol fee and minus SD-granularity dust).
+    /// @param _sendParam The send parameters (amountLD is the gross amount to debit on the source)
+    /// @return limit The min/max send-amount bounds
+    /// @return oftFeeDetails The fee/reward breakdown (negative entries are rewards)
+    /// @return oftReceipt The resulting amounts: `amountSentLD` debited on source, `amountReceivedLD` credited on destination
+    function quoteOFT(SendParam calldata _sendParam)
+        external
+        view
+        returns (OFTLimit memory limit, OFTFeeDetail[] memory oftFeeDetails, OFTReceipt memory oftReceipt);
 
     /// @notice Sends tokens cross-chain via Stargate V2 (OFT), optionally composing a message at the destination
     /// @param _sendParam The send parameters (destination eid, recipient, amounts, options, composeMsg)

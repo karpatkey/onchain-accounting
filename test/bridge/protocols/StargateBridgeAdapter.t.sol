@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {StargateBridgeAdapter} from "src/bridge/adapters/StargateBridgeAdapter.sol";
 import {IStargateBridgeAdapter} from "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
@@ -188,6 +189,146 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged amount");
         assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds nothing (funded pass-through)");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
+    }
+
+    /// @notice Post-fee output model (resolves the PR#86 Stargate fee issue): when the pool charges a protocol
+    ///         fee, `_bridge` quotes the post-fee receive amount, re-encodes the invoice payload to carry it, and
+    ///         pins `minAmountLD` to it. The destination receives and releases exactly the post-fee amount; the
+    ///         depositor bears the fee (standard bridge UX). Source records the gross deposit; pairing is by
+    ///         invoiceId.
+    function test_realistic_postFeeOutput_releasesNetOfFee() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        uint256 fee = 7 * 10 ** usdc.decimals();
+        uint256 net = amount - fee;
+
+        usdcPool.setProtocolFeeLD(fee); // source pool charges a protocol fee
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.recordLogs();
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        // The generic BridgeInitiated event must carry the GROSS deposit amount (the post-fee re-encoding is
+        // confined to the composed payload, not the shared `data` struct), so it stays consistent with the
+        // escrow's recorded invoice and with every other adapter.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool sawBridgeInitiated;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("BridgeInitiated(bytes32,uint256)")) {
+                assertEq(abi.decode(logs[i].data, (uint256)), amount, "BridgeInitiated must emit the gross amount");
+                sawBridgeInitiated = true;
+            }
+        }
+        assertTrue(sawBridgeInitiated, "BridgeInitiated emitted");
+
+        bytes memory messagePayload = usdcPool.getLastComposeMsg();
+        assertEq(InvoiceDataLib.decode(messagePayload).amount, net, "payload carries the post-fee amount");
+        // The SOURCE adapter stores the GROSS payload (matches the escrow's gross invoice), not the post-fee one.
+        bytes32 invoiceId = InvoiceDataLib.decode(messagePayload).invoiceId;
+        assertEq(
+            InvoiceDataLib.decode(adapter.getMessagePayload(invoiceId)).amount,
+            amount,
+            "source getMessagePayload is gross"
+        );
+        (,, uint256 amountLD, uint256 minAmountLD,,,) = usdcPool.lastSendParam();
+        assertEq(amountLD, amount, "gross amount debited on source");
+        assertEq(minAmountLD, net, "tight slippage floor pinned at the post-fee amount");
+        uint256 portfolioBefore = usdc.balanceOf(account);
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
+
+        // Stargate delivers the NET (post-fee) amount to the destination adapter.
+        usdc.mint(address(destEndpoint), net);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, net, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), net, composeMessage);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account) - portfolioBefore, net, "account received the post-fee amount");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
+    }
+
+    /// @notice Reward path (PR #90 Copilot): Stargate can quote a reward (`amountReceivedLD > amountLD`); the
+    ///         adapter must NOT block it. The payload carries the larger credited amount and the destination
+    ///         releases it (account receives gross + reward).
+    function test_realistic_rewardOutput_releasesGrossPlusReward() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        uint256 reward = 3 * 10 ** usdc.decimals();
+        uint256 credited = amount + reward;
+
+        usdcPool.setRewardLD(reward); // source pool quotes a reward
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = usdcPool.getLastComposeMsg();
+        assertEq(
+            InvoiceDataLib.decode(messagePayload).amount, credited, "payload carries the credited (gross+reward) amount"
+        );
+        (,, uint256 amountLD, uint256 minAmountLD,,,) = usdcPool.lastSendParam();
+        assertEq(amountLD, amount, "gross amount debited on source");
+        assertEq(minAmountLD, credited, "slippage floor at the credited amount");
+        uint256 portfolioBefore = usdc.balanceOf(account);
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
+
+        usdc.mint(address(destEndpoint), credited);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, credited, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), credited, composeMessage);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account) - portfolioBefore, credited, "account received gross + reward");
+    }
+
+    /// @notice Fee cap (PR #90 code-review): a quote worse than MAX_BRIDGE_FEE_BPS (5%) reverts the send, so a
+    ///         misconfigured/abusive pool cannot silently burn the deposit (source locks gross, destination ~dust).
+    function test_bridge_revertsIfFeeExceedsCap() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        usdcPool.setProtocolFeeLD(amount / 2); // 50% fee — far over the 5% cap
+
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+    }
+
+    /// @notice A fee exactly at the cap (5%) is allowed (boundary).
+    function test_bridge_allowsFeeAtCap() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        usdcPool.setProtocolFeeLD((amount * 500) / 10000); // exactly 5%
+
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        uint256 net = amount - (amount * 500) / 10000;
+        assertEq(InvoiceDataLib.decode(usdcPool.getLastComposeMsg()).amount, net, "5% fee allowed; payload net");
     }
 
     /// @notice Sets up a destination adapter + escrow trusting the source sibling adapter, ready for lzCompose.

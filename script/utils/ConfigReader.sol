@@ -13,7 +13,7 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 ///      - `contracts-deployment-config/custom-price-feeds/<id>.json`  — Custom feed adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/balance-adapters/<id>.json`    — PLAIN adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/meta-balance-adapters/<id>.json` — META adapters to DEPLOY: `.<name>.{enabled,constructor}`.
-///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,callbackSelector}`.
+///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,remoteChains}`.
 ///      - `nav-config/assets-and-price-feeds/<id>.json`               — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
 ///      - `nav-config/balance-adapters/<id>.json`                     — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
 ///      - `nav-config/meta-balance-adapters/<id>.json`                — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
@@ -246,7 +246,7 @@ library ConfigReader {
             json = _readOrEmpty(vm, _deployPriceFeedsPath(vm, chainId));
             prefix = "";
         } else if (_equals(adapterType, "bridgeAdapters")) {
-            // Bridge adapters (deploy/initialize args + enabled + callbackSelector) live in their own per-chain file.
+            // Bridge adapters (deploy/initialize args + enabled + remoteChains) live in their own per-chain file.
             json = _readOrEmpty(vm, _deployBridgeAdaptersPath(vm, chainId));
             prefix = "";
         } else {
@@ -443,18 +443,6 @@ library ConfigReader {
         }
     }
 
-    /// @notice Reads an optional bridge-adapter callback selector (e.g. "0x85572ffb").
-    function readAdapterCallbackSelector(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
-        internal
-        view
-        returns (bool hasSelector, bytes4 selector)
-    {
-        string memory s = readAdapterParam(vm, chainId, adapterType, adapterName, "callbackSelector");
-        if (bytes(s).length == 0 || _isPlaceholder(s)) return (false, bytes4(0));
-        selector = _parseSelectorHex4(vm, s);
-        return (selector != bytes4(0), selector);
-    }
-
     // -------------------------------------------------------------------------
     // Custom price feeds (contracts-deployment-config/custom-price-feeds/<id>.json → .<name>)
     // -------------------------------------------------------------------------
@@ -603,24 +591,6 @@ library ConfigReader {
 
     function computeSalt(string memory contractName, uint256 version) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(contractName, version));
-    }
-
-    function _parseSelectorHex4(Vm vm, string memory s) private view returns (bytes4) {
-        bytes memory b = bytes(s);
-        if (b.length != 10 || b[0] != "0" || (b[1] != "x" && b[1] != "X")) return bytes4(0);
-        string memory padded =
-            string.concat("0x", "00000000000000000000000000000000000000000000000000000000", _substring(s, 2, 10));
-        bytes32 full = vm.parseBytes32(padded);
-        return bytes4(uint32(uint256(full) & 0xffffffff));
-    }
-
-    function _substring(string memory str, uint256 start, uint256 end) private pure returns (string memory) {
-        bytes memory strBytes = bytes(str);
-        bytes memory result = new bytes(end - start);
-        for (uint256 i = start; i < end && i < strBytes.length; i++) {
-            result[i - start] = strBytes[i];
-        }
-        return string(result);
     }
 
     function _resolveRpcUrl(Vm vm, string memory value, uint256 chainId) private view returns (string memory) {

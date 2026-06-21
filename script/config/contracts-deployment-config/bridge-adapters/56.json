@@ -1,1 +1,19 @@
-{}
+{
+  "Stargate": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      10,
+      100,
+      137,
+      42161,
+      8453
+    ]
+  }
+}

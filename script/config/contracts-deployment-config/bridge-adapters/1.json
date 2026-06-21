@@ -1,6 +1,6 @@
 {
   "CCIP": {
-    "enabled": false,
+    "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
@@ -8,10 +8,15 @@
       "feeToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
       "version": "1.0.0"
     },
-    "callbackSelector": "0x85572ffb"
+    "remoteChains": [
+      10,
+      137,
+      42161,
+      8453
+    ]
   },
   "Across": {
-    "enabled": false,
+    "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
@@ -19,18 +24,29 @@
       "defaultRelayerFeePct": "5000",
       "version": "1.0.0"
     },
-    "callbackSelector": "0x0ea1f938"
+    "remoteChains": [
+      10,
+      137,
+      42161,
+      8453
+    ]
   },
   "Stargate": {
-    "enabled": false,
+    "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
-      "router": "0x8731d54E9D02c286767d56ac03e8037C07e01e98",
-      "endpoint": "0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
-    "callbackSelector": "0x001d3567"
+    "remoteChains": [
+      10,
+      56,
+      100,
+      137,
+      42161,
+      8453
+    ]
   },
   "CCTP": {
     "enabled": false,
@@ -42,5 +58,18 @@
       "version": "1.0.0",
       "cctpDomain": 0
     }
+  },
+  "Gnosis": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "omnibridge": "0x88ad09518695c6c3712AC10a214bE5109a655671",
+      "amb": "0x4C36d2919e407f0Cc2Ee3c993ccF8ac26d9CE64e",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      100
+    ]
   }
 }

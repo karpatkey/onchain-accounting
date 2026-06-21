@@ -8,8 +8,12 @@
       "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
       "version": "1.0.0"
     },
-    "remoteChains": [1, 10, 137, 8453],
-    "callbackSelector": "0x85572ffb"
+    "remoteChains": [
+      1,
+      10,
+      137,
+      8453
+    ]
   },
   "Across": {
     "enabled": true,
@@ -20,20 +24,29 @@
       "defaultRelayerFeePct": "5000",
       "version": "1.0.0"
     },
-    "remoteChains": [1, 10, 137, 8453],
-    "callbackSelector": "0x0ea1f938"
+    "remoteChains": [
+      1,
+      10,
+      137,
+      8453
+    ]
   },
   "Stargate": {
     "enabled": true,
     "initialize": {
       "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
       "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",
-      "router": "0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614",
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
-    "remoteChains": [1, 10, 56, 100, 137, 8453],
-    "callbackSelector": "0x001d3567"
+    "remoteChains": [
+      1,
+      10,
+      56,
+      100,
+      137,
+      8453
+    ]
   },
   "CCTP": {
     "enabled": true,
@@ -45,6 +58,11 @@
       "version": "1.0.0",
       "cctpDomain": 3
     },
-    "remoteChains": [1, 10, 137, 8453]
+    "remoteChains": [
+      1,
+      10,
+      137,
+      8453
+    ]
   }
 }

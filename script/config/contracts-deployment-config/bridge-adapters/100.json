@@ -1,6 +1,6 @@
 {
   "Gnosis": {
-    "enabled": false,
+    "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
@@ -8,6 +8,25 @@
       "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
       "version": "1.0.0"
     },
-    "callbackSelector": "0x0bad0c90"
+    "remoteChains": [
+      1
+    ]
+  },
+  "Stargate": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      10,
+      56,
+      137,
+      42161,
+      8453
+    ]
   }
 }

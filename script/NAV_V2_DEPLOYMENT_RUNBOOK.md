@@ -807,7 +807,7 @@ forge script script/deploy/06_Configure.s.sol \
   --account $DEPLOYER_NAME
 ```
 
-It configures both NAVCalculator (`addBalanceAdapters` / `addMetaBalanceAdapter` + `addMetaInstances`/`removeMetaInstances`) and BridgeEscrow (`authorizeAdapter`) in one run. Per [ADR 0012](../docs/decisions/0012-bridge-provable-release-rearchitecture.md) there is no `authorizeAdapterWithCallback` — the escrow has no callback dispatcher and adapters authenticate inbound messages themselves; trusted source senders are set separately via `BridgeAdapter.setTrustedRemoteAdapter` (admin). If a Safe-based flow is required instead, use Option B (`ManageAdapters.s.sol`).
+It configures both NAVCalculator (`addBalanceAdapters` / `addMetaBalanceAdapter` + `addMetaInstances`/`removeMetaInstances`) and BridgeEscrow (`authorizeAdapter`) in one run. Per [ADR 0012](../docs/decisions/0012-bridge-provable-release-rearchitecture.md) there is no `authorizeAdapterWithCallback` — the escrow has no callback dispatcher and adapters authenticate inbound messages themselves. `06_Configure` also wires each adapter's trusted source senders **in the same run**: for every remote chain id in the adapter's `remoteChains` config it calls `setTrustedRemoteAdapter(remoteChainId, <sibling adapter identity>)` (the sibling shares this adapter's CREATE2 address), so no separate provenance-configuration step is required. If a Safe-based flow is required instead, use Option B (`ManageAdapters.s.sol`).
 
 ### Option B: Use `ManageAdapters.s.sol` (individual Safe TXs)
 

@@ -202,9 +202,9 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 
 ## contracts-deployment-config/bridge-adapters/{chainId}.json
 
-**Bridge adapters to deploy on a chain.** Keyed by adapter name (e.g. `CCIP`, `CCTP`, `Across`, `Stargate`, `Superchain`, `Gnosis`), each with `enabled` and the adapter's `initialize` args. Read by `05_DeployBridgeAdapters.s.sol`, which deploys every adapter where `enabled: true` and writes the address to `deployments/{chainId}.json` under `bridgeAdapters`. Top-level keys are adapter names — no chainId wrapper. (This config previously lived under a `bridgeAdapters` block in `chains/{chainId}.json`; it now lives here.)
+**Bridge adapters to deploy on a chain.** Keyed by adapter name (e.g. `CCIP`, `CCTP`, `Across`, `Stargate`, `Superchain`, `Gnosis`), each with `enabled`, the adapter's `initialize` args, and a `remoteChains` array (the standard chain ids this adapter bridges to/from). `05_DeployBridgeAdapters.s.sol` deploys every adapter where `enabled: true` via the canonical CREATE2 deployer (same address on every chain) and writes the address to `deployments/{chainId}.json` under `bridgeAdapters`. Top-level keys are adapter names — no chainId wrapper. (This config previously lived under a `bridgeAdapters` block in `chains/{chainId}.json`; it now lives here.)
 
-As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has **no callback dispatcher**: adapters are the direct on-chain protocol receivers and authenticate inbound messages themselves. There is no `callbackSelector` config — the escrow `authorizeAdapterWithCallback` / selector-registration mechanism was removed. Source-sender authentication is configured per adapter via `setTrustedRemoteAdapter(sourceKey, remoteAdapter)` after deployment (admin), not through this file. (Some legacy per-chain JSONs may still carry a vestigial `callbackSelector` key; it is no longer consumed by the current escrow.)
+As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has **no callback dispatcher**: adapters are the direct on-chain protocol receivers and authenticate inbound messages themselves. There is no `callbackSelector` config — the escrow `authorizeAdapterWithCallback` / selector-registration mechanism was removed. Instead, source-sender authentication is configured from the **`remoteChains`** array here: `06_Configure.s.sol` reads it and calls `setTrustedRemoteAdapter(remoteChainId, <sibling adapter identity>)` per remote chain (keyed by the remote's **standard chain id**; the sibling shares this adapter's CREATE2 address). Leaving `remoteChains` unset means provenance is **not** configured and inbound messages from that chain are rejected. (Some legacy per-chain JSONs may still carry a vestigial `callbackSelector` key; it is no longer consumed by the current escrow.)
 
 ### Template
 
@@ -239,9 +239,10 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | Deploy this bridge adapter on this chain? |
-| `initialize` | object | Initialize args for the adapter (admin, bridgeEscrow, protocol contracts, version; CCTP also `cctpDomain`) |
+| `initialize` | object | Initialize args for the adapter (admin, bridgeEscrow, protocol contracts, version). Note: CCTP chain↔domain mappings are pinned in the adapter itself (`_setChainDomain`), **not** an `initialize` arg — a `cctpDomain` key here is ignored. |
+| `remoteChains` | uint[] | Standard chain ids this adapter bridges to/from. `06_Configure.s.sol` reads it to wire `setTrustedRemoteAdapter` per remote chain (provenance allowlist). |
 
-There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md): the escrow no longer dispatches callbacks. Each adapter is the direct protocol receiver and authenticates inbound messages; trusted source senders are set per adapter via `setTrustedRemoteAdapter` after deployment. (See "Bridge adapters: provenance" below.)
+There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md): the escrow no longer dispatches callbacks. Each adapter is the direct protocol receiver and authenticates inbound messages; trusted source senders are wired by `06_Configure.s.sol` from the `remoteChains` array above (keyed by the remote's standard chain id). (See "Bridge adapters: provenance" below.)
 
 ---
 
@@ -620,7 +621,7 @@ Each adapter has:
 
 As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has **no callback dispatcher** and no `authorizeAdapterWithCallback` / selector registration. Each adapter is the **direct on-chain protocol receiver** on the destination chain and authenticates the inbound message itself (genuine protocol contract as `msg.sender`, source chain, and source sender) before triggering the funded release. So **every** adapter — including CCIP, Across, Stargate, and Gnosis — is authorized with `authorizeAdapter(adapter)` only.
 
-Source-sender authentication is configured per adapter via `setTrustedRemoteAdapter(sourceKey, remoteAdapter)` (admin) after deployment, where `sourceKey` is protocol-specific (chainId / CCIP selector / CCTP domain / LZ eid) and `remoteAdapter` is the sibling adapter's identity (equal to the adapter's own address under CREATE2 same-address deployment). The per-protocol authentic entry points and provenance checks are:
+Source-sender authentication is wired by `06_Configure.s.sol` from each adapter's `remoteChains` config via `setTrustedRemoteAdapter(sourceKey, remoteAdapter)` (admin), where `sourceKey` is the remote's **standard chain id** for every adapter — each adapter translates its protocol-specific source identifier (CCIP selector, LZ eid, CCTP domain, AMB/OP xDomain sender) back to the standard chain id internally before the lookup — and `remoteAdapter` is the sibling adapter's identity (equal to the adapter's own address under CREATE2 same-address deployment). The per-protocol authentic entry points and provenance checks are:
 
 | Adapter    | Authentic destination entry          | Authenticated `msg.sender` | Source authentication |
 |-----------|--------------------------------------|----------------------------|-----------------------|
@@ -879,8 +880,9 @@ NAVCalculator.revokeRole(MANAGER, oldManagerAddress);
 BridgeEscrow.authorizeAdapter(adapterAddress);
 
 // BridgeAdapter: Configure the trusted sibling adapter per source chain
-// (sourceKey is protocol-specific: chainId / CCIP selector / CCTP domain / LZ eid)
-BridgeAdapter.setTrustedRemoteAdapter(sourceKey, remoteAdapterIdentity);
+// (sourceKey is the remote's STANDARD chain id; adapters translate protocol-specific
+//  identifiers — CCIP selector / CCTP domain / LZ eid — to the chain id internally)
+BridgeAdapter.setTrustedRemoteAdapter(remoteChainId, remoteAdapterIdentity);
 
 // BridgeAdapter: Grant MANAGER to operations address (gates completeBridge / recoverStuckAssets)
 BridgeAdapter.grantRole(MANAGER, managerAddress);

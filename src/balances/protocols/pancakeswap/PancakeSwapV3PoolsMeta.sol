@@ -6,12 +6,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title PancakeSwap V3 Pools Meta Balance Adapter
 /// @author kpk
-/// @notice Meta-adapter for PancakeSwap V3 pools. PancakeSwap V3 is a Uniswap V3 fork sharing every relevant view
-///         byte-for-byte; the single divergence is `slot0().feeProtocol`, which PancakeSwap declares as `uint32`
-///         (vs Uniswap V3's `uint8`). Solidity 0.8's strict ABI decoder rejects a `uint8` read when the high bits
-///         are set (the case on every active PCS V3 pool), so this contract inherits the Uniswap V3 pools
-///         meta-adapter and overrides only the `_slot0` hook with a local `uint32 feeProtocol` interface. All
-///         other behaviour (NFT discovery, principal/fee math, NAV filtering, identity derivation) is unchanged.
+/// @notice Meta-adapter for PancakeSwap V3 pools. PancakeSwap V3 is a Uniswap V3 fork sharing every view this
+///         adapter reads. Historically this subclass also overrode `_slot0` because PancakeSwap declares
+///         `slot0().feeProtocol` as `uint32` (vs Uniswap V3's `uint8`) and Solidity 0.8's strict decoder rejects
+///         the `uint8` read. Since [2], the adapter no longer reads `slot0` at all — the price is reconstructed
+///         from the registered oracle feeds — so that divergence is moot and this subclass differs from Uniswap V3
+///         only in its protocol-id slug. All other behaviour (NFT discovery, principal/fee math, NAV filtering,
+///         identity derivation) is inherited unchanged.
 contract PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter {
     /// @param positionManager_ The PancakeSwap V3 NonfungiblePositionManager (canonical CREATE2 address).
     /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V3").
@@ -21,32 +22,9 @@ contract PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapte
     {}
 
     /// @inheritdoc UniswapV3PoolsMetaBalanceAdapter
-    /// @dev Reads `slot0()` via a local `IPancakeV3Pool` declaration so the `uint32 feeProtocol` field decodes.
-    function _slot0(address pool) internal view override returns (uint160 sqrtPriceX96, int24 tick) {
-        (sqrtPriceX96, tick,,,,,) = IPancakeV3Pool(pool).slot0();
-    }
-
-    /// @inheritdoc UniswapV3PoolsMetaBalanceAdapter
     /// @dev Reports the `pancakeswap-v3` slug (vs the inherited `uniswap-v3`) so the typed reconciliation key
     ///      distinguishes PancakeSwap V3 LP from Uniswap V3 LP. Same positionId schema (address npm, uint256 tokenId).
     function _protocolId() internal pure override returns (bytes32) {
         return ProtocolIds.PANCAKESWAP_V3;
     }
-}
-
-/// @notice Minimal PancakeSwap V3 pool interface — identical to Uniswap V3's except `slot0().feeProtocol` is
-///         `uint32` (see contract NatSpec for the rationale).
-interface IPancakeV3Pool {
-    function slot0()
-        external
-        view
-        returns (
-            uint160 sqrtPriceX96,
-            int24 tick,
-            uint16 observationIndex,
-            uint16 observationCardinality,
-            uint16 observationCardinalityNext,
-            uint32 feeProtocol,
-            bool unlocked
-        );
 }

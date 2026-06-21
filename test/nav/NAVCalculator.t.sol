@@ -1717,8 +1717,9 @@ contract NAVCalculatorTest is SuperTest {
         assets[0] = address(usdc);
         amounts[0] = 10 ** usdc.decimals();
 
-        int256 value = nav.calculateValue(assets, amounts, address(0));
+        (int256 value, bool quoteStale) = nav.calculateValue(assets, amounts, address(0));
         assertEq(value, 1e8); // 1 USDC = 1 USD (8 decimals)
+        assertFalse(quoteStale, "USD quote is never stale");
     }
 
     function test_calculateValue_multipleAssets_usd() public view {
@@ -1731,7 +1732,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[2] = address(weth);
         amounts[2] = 10 ** weth.decimals();
 
-        int256 value = nav.calculateValue(assets, amounts, address(0));
+        (int256 value,) = nav.calculateValue(assets, amounts, address(0));
         assertApproxEqRel(value, 3242e8, 0.01 ether);
     }
 
@@ -1741,8 +1742,9 @@ contract NAVCalculatorTest is SuperTest {
         assets[0] = address(usdc);
         amounts[0] = 10 ** usdc.decimals();
 
-        int256 valueInDai = nav.calculateValue(assets, amounts, address(dai));
+        (int256 valueInDai, bool quoteStale) = nav.calculateValue(assets, amounts, address(dai));
         assertApproxEqRel(valueInDai, int256(10 ** dai.decimals()), 0.01 ether);
+        assertFalse(quoteStale, "DAI quote feed is fresh");
     }
 
     function test_calculateValue_zeroAmountsSkipped() public view {
@@ -1753,7 +1755,7 @@ contract NAVCalculatorTest is SuperTest {
         assets[1] = address(dai);
         amounts[1] = 10 ** dai.decimals();
 
-        int256 value = nav.calculateValue(assets, amounts, address(0));
+        (int256 value,) = nav.calculateValue(assets, amounts, address(0));
         assertEq(value, 1e8);
     }
 

@@ -24,10 +24,20 @@ library BalancerV3PoolLib {
         }
     }
 
-    /// @notice Account's share of `token` (the pool's underlying, possibly ERC4626-unwrapped) for `userBalance` BPT.
-    /// @dev Returns 0 if the token is not in the pool, or supply/balance is zero. Matches the original adapter's
-    ///      live-scaled-balance → raw-units conversion, including the ERC4626 previewRedeem unwrap path.
-    function poolBalanceOf(IStablePool pool, uint256 userBalance, address token) internal view returns (uint256) {
+    /// @notice Account's share of the pool token at `tokenIndex` (ERC4626-unwrapped to its underlying) for
+    ///         `userBalance` BPT.
+    /// @dev Index-driven on purpose: the callers iterate `poolTokens()` (one entry per pool-token index, in index
+    ///      order) and pass the loop index here, so each pool-token index contributes exactly one leg. The previous
+    ///      address-matching variant broke on the FIRST index whose (raw or unwrapped) token matched — for pools
+    ///      that hold the same underlying at two indices (e.g. two distinct ERC4626 wrappers of the same asset) it
+    ///      double-counted index 0 and dropped the duplicate. Keying on the index removes the ambiguity entirely.
+    ///      Returns 0 if supply/balance is zero, `tokenIndex` is out of range, or a scaling factor / token rate is
+    ///      transiently zero (which would otherwise divide-by-zero and revert the whole instance).
+    function poolBalanceOfIndexed(IStablePool pool, uint256 userBalance, uint256 tokenIndex)
+        internal
+        view
+        returns (uint256)
+    {
         uint256 totalSupply = pool.totalSupply();
         if (totalSupply == 0 || userBalance == 0) {
             return 0;
@@ -36,42 +46,27 @@ library BalancerV3PoolLib {
         IStablePool.StablePoolDynamicData memory poolData = pool.getStablePoolDynamicData();
         IStablePool.StablePoolImmutableData memory immutableData = pool.getStablePoolImmutableData();
 
-        uint256 tokenIndex;
-        bool found = false;
-        bool erc4626 = false;
-        for (uint256 i = 0; i < immutableData.tokens.length; i++) {
-            address currentToken = address(immutableData.tokens[i]);
-            if (currentToken == token) {
-                tokenIndex = i;
-                found = true;
-                break;
-            }
-            try IERC4626(currentToken).asset() returns (address underlyingToken) {
-                if (underlyingToken == token) {
-                    tokenIndex = i;
-                    found = true;
-                    erc4626 = true;
-                    break;
-                }
-            } catch {}
-        }
-
-        if (!found) return 0;
+        if (tokenIndex >= immutableData.tokens.length) return 0;
 
         // User's share of the live (18-dec scaled) balance.
         uint256 tokenBalance = poolData.balancesLiveScaled18[tokenIndex] * userBalance / totalSupply;
 
-        if (erc4626) {
-            // Undo scaling+rate to wrapped-token shares, then preview-redeem to the underlying.
-            uint256 shares = (tokenBalance * 1e18)
-                / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
-            tokenBalance = IERC4626(address(immutableData.tokens[tokenIndex])).previewRedeem(shares);
-        } else {
-            // Undo scaling+rate back to raw token units.
-            tokenBalance = (tokenBalance * 1e18)
-                / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
+        // A transiently-zero scaling factor or token rate would divide-by-zero below (reverting the whole
+        // instance via the per-instance try/catch). Treat it as a 0 leg so one bad rate can't drop the batch.
+        if (immutableData.decimalScalingFactors[tokenIndex] == 0 || poolData.tokenRates[tokenIndex] == 0) {
+            return 0;
         }
 
-        return tokenBalance;
+        // Undo scaling+rate back to raw token (wrapped-share) units.
+        uint256 rawUnits =
+            (tokenBalance * 1e18) / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
+
+        // If the pool token is an ERC4626 wrapper, preview-redeem the shares to the underlying; otherwise raw units.
+        address poolToken = address(immutableData.tokens[tokenIndex]);
+        (bool ok, bytes memory data) = poolToken.staticcall(abi.encodeWithSelector(IERC4626.asset.selector));
+        if (ok && data.length >= 32) {
+            return IERC4626(poolToken).previewRedeem(rawUnits);
+        }
+        return rawUnits;
     }
 }

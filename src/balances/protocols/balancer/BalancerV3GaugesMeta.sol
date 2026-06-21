@@ -72,7 +72,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 if (assetFilter != address(0) && token != assetFilter) continue;
                 (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
                 if (!found) continue;
-                uint256 amount = pool.poolBalanceOf(staked, token);
+                uint256 amount = pool.poolBalanceOfIndexed(staked, i);
                 if (amount == 0) continue;
                 temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Staking);
             }

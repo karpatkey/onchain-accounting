@@ -37,4 +37,21 @@ library DeploySalts {
 
     /// @notice NAVCalculator implementation salt. Used by 01_DeployImplementations and 01_2_DeployNAVImplementation.
     uint256 internal constant NAV_IMPL = 2;
+
+    //
+    // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)
+    //
+    // Each bridge adapter is a plain (non-proxied) AccessControl contract deployed via the canonical CREATE2
+    // deployer in 05_DeployBridgeAdapters. Adapters take their constructor args via `initialize(...)` (not the
+    // constructor), so their creation bytecode carries no per-chain arguments and the same salt yields the SAME
+    // address on every chain. That same-address guarantee is what `trustedRemoteAdapter` (D2) and the CCTP
+    // `mintRecipient`/`destinationCaller` + Superchain `receiver` assumptions rely on, so these salts MUST stay
+    // identical across the 7 target chains (1, 10, 100, 137, 42161, 56, 8453). Bumping a version (e.g. to dodge a
+    // front-run of the deterministic address) re-derives that adapter's address on every chain at once.
+    uint256 internal constant CCIP_ADAPTER = 1;
+    uint256 internal constant ACROSS_ADAPTER = 1;
+    uint256 internal constant STARGATE_ADAPTER = 1;
+    uint256 internal constant GNOSIS_ADAPTER = 1;
+    uint256 internal constant CCTP_ADAPTER = 1;
+    uint256 internal constant SUPERCHAIN_ADAPTER = 1;
 }

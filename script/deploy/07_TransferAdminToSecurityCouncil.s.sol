@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {ConfigReader} from "../utils/ConfigReader.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
@@ -47,6 +48,18 @@ contract TransferAdminToSecurityCouncil is BaseDeployScript {
         if (bridgeProxy != address(0)) {
             require(bridgeProxy.code.length > 0, "No code at BridgeEscrow proxy. Provide --rpc-url.");
             _handoff(bridgeProxy, "BridgeEscrow", deployer, council);
+        }
+
+        // Bridge adapters are independent AccessControl contracts (not proxies). ADR 0012 (M1/AC-6): the
+        // deployer EOA must not retain ADMIN/MANAGER on them. Hand each deployed adapter off to the council
+        // — this both strips the deployer and grants the council MANAGER (needed for completeBridge /
+        // recoverStuckAssets / proveWithdrawal / setTrustedRemoteAdapter).
+        string[6] memory adapterNames = ["CCIP", "Across", "Stargate", "Gnosis", "CCTP", "Superchain"];
+        for (uint256 i = 0; i < adapterNames.length; i++) {
+            address adapter =
+                ConfigReader.readDeployedAdapterAddress(vm, currentChainId, "bridgeAdapters", adapterNames[i]);
+            if (adapter == address(0) || adapter.code.length == 0) continue;
+            _handoff(adapter, string(abi.encodePacked("Adapter:", adapterNames[i])), deployer, council);
         }
 
         console2.log("\n=== Handoff complete ===");

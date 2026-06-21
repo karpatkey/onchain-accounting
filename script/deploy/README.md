@@ -4,7 +4,7 @@ Everything is deployed and configured by a single **deployer EOA** (private key 
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds + asset registration) → **04** (balance adapters) → **05** (bridge adapters) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters) → **07** (transfer admin to the security council, last).
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds + asset registration) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council, last).
 
 ## Role model
 
@@ -49,9 +49,13 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through `registerAsset`, any additional feeds through `addPriceFeed`).
 
-## 04_DeployBalanceAdapters.s.sol / 05_DeployBridgeAdapters.s.sol
+## 04_DeployBalanceAdapters.s.sol
 
-Deploy the per-protocol balance adapters (incl. the meta-adapters) and bridge adapters via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to the deployments file `script/config/deployments/{chainId}.json` only when `PERSIST_DEPLOYMENTS=1`; see the note below). (Addresses are therefore chain- and run-specific — only the impl/library layer in `01`/`02` uses CREATE2.)
+Deploys the per-protocol balance adapters (incl. the meta-adapters) via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to the deployments file `script/config/deployments/{chainId}.json`). Balance-adapter addresses are therefore chain- and run-specific.
+
+## 05_DeployBridgeAdapters.s.sol (CREATE2 same-address, ADR 0012 D7)
+
+Deploys the six bridge adapters (CCIP, Across, Stargate, Gnosis, CCTP, Superchain) via the **canonical CREATE2 deployer** (`0x4e59…4956C`), so each adapter's address is **identical on every chain**. Adapters take their args through `initialize(...)` rather than constructor args, so their creation bytecode carries no per-chain data and the pinned salt (from `DeploySalts`) yields the same address everywhere. After each CREATE2 deploy the script **asserts** the on-chain address equals the predicted deterministic address and **reverts** otherwise (this is the D7 same-address guarantee that `trustedRemoteAdapter`, the CCTP `mintRecipient`/`destinationCaller`, and the Superchain `receiver` rely on). The flow stays EOA-broadcast and idempotent (a re-run skips an adapter that already has code at its deterministic address). Each enabled adapter is gated by config `enabled`; addresses are saved under `bridgeAdapters.<Name>` in the deployments file **only when `PERSIST_DEPLOYMENTS=1`** (the default dry-run leaves the deployments file untouched — see the persistence note at the bottom of this README).
 
 ## 06_Configure.s.sol (EOA broadcast)
 
@@ -59,7 +63,7 @@ Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempot
 
 - **Plain balance adapters** (from `nav-config/balance-adapters/<chainId>.json`): registered with `addBalanceAdapters([adapter])`.
 - **Meta-adapters** (ADR 0010, from `nav-config/meta-balance-adapters/<chainId>.json`): registered atomically with `addMetaBalanceAdapter(adapter, instances)` (register + seed the configured instance set in one call), then the on-chain instance set is reconciled against config via `addMetaInstances`/`removeMetaInstances` (diff-only, so a just-seeded adapter is a no-op). The instance set is `instances` addresses (widened to `bytes32`) and/or `instancesRaw` bytes32 coordinates.
-- **Bridge adapters:** each enabled + deployed adapter is authorized on `BridgeEscrow` (`authorizeAdapter`, or `authorizeAdapterWithCallback` when a callback selector is configured).
+- **Bridge adapters:** each enabled + deployed adapter is authorized on `BridgeEscrow` via `authorizeAdapter(address)`. (ADR 0012 D1 removed the escrow fallback dispatcher, so `authorizeAdapterWithCallback` no longer exists — the legacy `callbackSelector` config field is obsolete and ignored.) Then, for each remote chain id in the adapter's `remoteChains` config, the script wires its trusted sibling via `setTrustedRemoteAdapter(remoteChainId, bytes32(uint256(uint160(adapter))))` (ADR 0012 D2 + D7). The `sourceKey` is the remote **standard chain id** for every adapter — each adapter translates protocol-specific source identifiers (CCIP selector, LayerZero eid, CCTP domain, AMB/OP xDomain sender) back to the standard chain id internally before the lookup. The `remote` value is the adapter's own CREATE2 address, since the sibling on every remote chain shares it.
 
 ```bash
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME

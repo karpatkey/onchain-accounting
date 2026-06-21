@@ -10,7 +10,8 @@
       "l2Messenger": "0x4200000000000000000000000000000000000007",
       "optimismPortal": "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
       "version": "1.0.0"
-    }
+    },
+    "remoteChains": [1]
   },
   "Across": {
     "enabled": true,
@@ -21,6 +22,7 @@
       "defaultRelayerFeePct": "5000",
       "version": "1.0.0"
     },
+    "remoteChains": [1, 10, 137, 42161],
     "callbackSelector": "0x0ea1f938"
   },
   "Stargate": {
@@ -32,6 +34,7 @@
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
+    "remoteChains": [1, 10, 56, 100, 137, 42161],
     "callbackSelector": "0x001d3567"
   },
   "CCTP": {
@@ -43,6 +46,7 @@
       "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       "version": "1.0.0",
       "cctpDomain": 6
-    }
+    },
+    "remoteChains": [1, 10, 137, 42161]
   }
 }

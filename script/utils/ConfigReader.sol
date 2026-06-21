@@ -409,6 +409,40 @@ library ConfigReader {
         return new bytes32[](0);
     }
 
+    /// @notice Reads a uint-array adapter param (e.g. a bridge adapter's `remoteChains`). Empty if absent.
+    /// @dev Accepts the array authored either as JSON numbers (`[1, 10]`) or quoted numeric strings (`["1","10"]`).
+    function readAdapterUintArray(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        string memory paramName
+    ) internal view returns (uint256[] memory) {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory base = string(abi.encodePacked(prefix, ".", adapterName));
+        string memory p = string(abi.encodePacked(base, ".", paramName));
+        if (vm.keyExists(json, p)) return _parseUintArray(vm, json, p);
+        p = string(abi.encodePacked(base, ".initialize.", paramName));
+        if (vm.keyExists(json, p)) return _parseUintArray(vm, json, p);
+        p = string(abi.encodePacked(base, ".constructor.", paramName));
+        if (vm.keyExists(json, p)) return _parseUintArray(vm, json, p);
+        return new uint256[](0);
+    }
+
+    /// @dev Parses a JSON uint array at `p`, tolerating both numeric (`[1,10]`) and quoted (`["1","10"]`) forms.
+    function _parseUintArray(Vm vm, string memory json, string memory p) private view returns (uint256[] memory) {
+        try vm.parseJsonUintArray(json, p) returns (uint256[] memory nums) {
+            return nums;
+        } catch {
+            string[] memory strs = vm.parseJsonStringArray(json, p);
+            uint256[] memory out = new uint256[](strs.length);
+            for (uint256 i = 0; i < strs.length; i++) {
+                out[i] = vm.parseUint(strs[i]);
+            }
+            return out;
+        }
+    }
+
     /// @notice Reads an optional bridge-adapter callback selector (e.g. "0x85572ffb").
     function readAdapterCallbackSelector(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
         internal

@@ -143,7 +143,13 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             dstEid: dstEid,
             to: _toBytes32(address(this)),
             amountLD: data.amount,
-            minAmountLD: (data.amount * 95) / 100, // 5% slippage floor
+            // KNOWN ISSUE (Copilot PR#86): Stargate V2 applies a protocol fee, so the destination adapter
+            // receives `amount - fee` < `amount`; the exact-amount funded pass-through then can't release and
+            // would strand the shortfall. `minAmountLD = amount` is rejected by the real pool (fee), and a
+            // loose floor masks the shortfall. The correct fix is fee-aware: quote the receive amount
+            // (IStargate.quoteOFT) and either gross up the input so the destination receives >= `amount`, or
+            // record the invoice as the post-fee output amount. Tracked as a follow-up — see thread on PR #86.
+            minAmountLD: (data.amount * 95) / 100,
             extraOptions: composeOptions[dstEid],
             composeMsg: messagePayload,
             oftCmd: bytes("") // Taxi mode (immediate)
@@ -172,18 +178,22 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     ///      OFT-composed `_message` (OFTComposeMsgCodec layout) so we authenticate the source the same way.
     ///      The adapter must already hold the delivered tokens (Stargate delivered them to this adapter as the
     ///      recipient); the base then funds+releases.
-    function _completeBridge(bytes calldata, bytes calldata protocolData) internal override {
+    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         if (protocolData.length < OFTComposeMsgCodec.composeFromEnd()) revert InvalidCompletionData();
 
         uint32 srcEid_ = protocolData.srcEid();
         bytes32 composeFrom_ = protocolData.composeFrom();
         _authenticateSource(srcEid_, composeFrom_);
 
-        bytes memory messagePayload = protocolData.composeMsg();
-        if (messagePayload.length == 0) revert InvalidCompletionData();
+        bytes memory authedPayload = protocolData.composeMsg();
+        if (authedPayload.length == 0) revert InvalidCompletionData();
+        // The base completeBridge funds + releases against `messagePayload`, so it MUST be the same payload
+        // we authenticated from the LayerZero compose message — otherwise a manager could release a different
+        // invoice than the one provenance vouches for.
+        if (keccak256(messagePayload) != keccak256(authedPayload)) revert InvalidCompletionData();
 
-        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-        messagePayloads[data.invoiceId] = messagePayload;
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(authedPayload);
+        messagePayloads[data.invoiceId] = authedPayload;
 
         emit StargateBridgeCompleted(data.invoiceId, srcEid_);
     }

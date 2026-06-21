@@ -2,13 +2,13 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {IAcrossReceiver, ISpokePool} from "./IAcrossInterfaces.sol";
+import {IAcrossV3Receiver, ISpokePool} from "./IAcrossInterfaces.sol";
 
 /// @title IAcrossBridgeAdapter Interface
-/// @notice Interface for Across Protocol Bridge Adapter
-/// @dev Documents all events, errors, and public functions for the Across adapter
+/// @notice Interface for Across Protocol V3 Bridge Adapter
+/// @dev Documents all events, errors, and public functions for the Across adapter (ADR 0012, V3 flow).
 /// @author kpk
-interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossReceiver {
+interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     //
     // Events
     //
@@ -16,7 +16,7 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossReceiver {
     /// @notice Event emitted when an Across bridge is initiated
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param destinationChainId The destination chain ID
-    /// @param depositId The Across deposit ID
+    /// @param depositId The Across deposit ID (0 — V3 assigns the id in the SpokePool event, not returned inline)
     /// @param amount The amount being bridged
     event AcrossBridgeInitiated(
         bytes32 indexed invoiceId, uint256 destinationChainId, uint32 depositId, uint256 amount
@@ -42,10 +42,10 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossReceiver {
     /// @param chainId The unsupported chain ID
     error UnsupportedChain(uint256 chainId);
 
-    /// @notice Thrown when Across message reception fails
+    /// @notice Thrown when an inbound Across message fails authentication or validation
     error MessageReceiveFailed();
 
-    /// @notice Thrown when bridge data is invalid
+    /// @notice Thrown when bridge data is invalid (token/amount mismatch, or untrusted source)
     error InvalidBridgeData();
 
     //
@@ -56,7 +56,8 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossReceiver {
     /// @return The SpokePool contract instance
     function spokePool() external view returns (ISpokePool);
 
-    /// @notice Default relayer fee percentage (in 1e18, e.g., 0.01e18 = 1%)
+    /// @notice Default relayer + LP fee percentage (in 1e18, e.g., 0.01e18 = 1%) subtracted from input to
+    ///         derive the V3 outputAmount the recipient receives on the destination chain
     /// @return The default relayer fee percentage
     function defaultRelayerFeePct() external view returns (int64);
 

@@ -10,16 +10,23 @@ import {ICctpBridgeAdapter} from "src/bridge/adapters/interfaces/ICctpBridgeAdap
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "test/bridge/mocks/MockBridgeProtocols.sol";
+import {
+    MockProvenanceMessageTransmitter,
+    MockProvenanceTokenMessenger
+} from "test/bridge/mocks/CctpProvenanceMocks.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
-/// @notice PoC: CCTP adapter uses `destinationDomain == 0` as a "not configured" sentinel,
-///         but the canonical CCTP domain for Ethereum mainnet IS 0. As a result, every attempt
-///         to bridge USDC *into* Ethereum reverts with `InvalidDomain`, making the Ethereum
-///         leg of CCTP completely unusable from any non-Ethereum source chain.
-contract Poc_CctpDomainZero is Test {
+/// @notice Regression for the (now fixed) HIGH "domain-0 sentinel" bug.
+///
+/// The CCTP adapter previously used `destinationDomain == 0` as a "not configured" sentinel, but the
+/// canonical CCTP domain for Ethereum mainnet IS 0. As a result, every attempt to bridge USDC *into*
+/// Ethereum reverted with `InvalidDomain`, making the Ethereum leg of CCTP unusable from any
+/// non-Ethereum source chain.
+///
+/// The fix replaces the sentinel with an explicit `domainConfigured` mapping, so domain 0 is a fully
+/// valid, configured destination. This test asserts the bridge to Ethereum now SUCCEEDS.
+contract Regression_CctpDomainZero is Test {
     address public admin = makeAddr("admin");
     address public manager = makeAddr("manager");
     address public account = makeAddr("account");
@@ -27,10 +34,10 @@ contract Poc_CctpDomainZero is Test {
     BridgeEscrow public srcEscrow;
     CctpBridgeAdapter public srcAdapter;
     Mock_ERC20 public usdc;
-    MockTokenMessenger public tokenMessenger;
-    MockMessageTransmitter public messageTransmitter;
+    MockProvenanceTokenMessenger public tokenMessenger;
+    MockProvenanceMessageTransmitter public messageTransmitter;
 
-    // Simulate bridging USDC from Base (8453, domain=6) -> Ethereum (1, domain=0)
+    // Bridge USDC from Base (8453, domain=6) -> Ethereum (1, domain=0)
     uint64 public constant BASE_CHAIN_ID = 8453;
     uint64 public constant ETHEREUM_CHAIN_ID = 1;
 
@@ -38,12 +45,12 @@ contract Poc_CctpDomainZero is Test {
         vm.chainId(uint256(BASE_CHAIN_ID));
 
         usdc = new Mock_ERC20("USDC", 6);
-        messageTransmitter = new MockMessageTransmitter(
+        messageTransmitter = new MockProvenanceMessageTransmitter(
             6,
             /* localDomain */
             address(usdc)
         );
-        tokenMessenger = new MockTokenMessenger(address(messageTransmitter));
+        tokenMessenger = new MockProvenanceTokenMessenger();
 
         // Deploy escrow
         address impl = address(new BridgeEscrow());
@@ -74,34 +81,37 @@ contract Poc_CctpDomainZero is Test {
         srcEscrow.authorizeAdapter(adapterProxy);
     }
 
-    /// @notice Verify the bug: chainIdToDomain[1] = 0 (Ethereum's canonical domain), and the adapter
-    ///         treats `domain == 0` as "not configured", so any deposit targeting Ethereum reverts.
-    function test_exploit_cctpBridgeToEthereumAlwaysReverts() public {
-        // 1. Confirm Ethereum is "configured" with domain 0 by the constructor mapping.
+    /// @notice Regression: chainIdToDomain[1] = 0 (Ethereum's canonical domain) is an explicitly
+    ///         configured domain (domainConfigured[1] == true), so bridging to Ethereum SUCCEEDS.
+    function test_regression_cctpBridgeToEthereumSucceeds() public {
+        // 1. Ethereum is configured with domain 0 AND explicitly flagged as configured.
         assertEq(srcAdapter.getDomainForChain(ETHEREUM_CHAIN_ID), 0, "ETH mapped to domain 0 (correct CCTP value)");
+        assertTrue(srcAdapter.domainConfigured(ETHEREUM_CHAIN_ID), "ETH domain explicitly configured (not a sentinel)");
 
-        // 2. Try to bridge USDC from Base -> Ethereum. Mint, approve, deposit.
+        // 2. Bridge USDC from Base -> Ethereum. This must NOT revert (the domain-0 bug is fixed).
         uint256 amount = 1_000e6;
         usdc.mint(account, amount);
         vm.startPrank(account);
         usdc.approve(address(srcEscrow), amount);
-        vm.expectRevert(ICctpBridgeAdapter.InvalidDomain.selector);
         srcEscrow.depositAndBridge(ETHEREUM_CHAIN_ID, "USDC", amount, address(srcAdapter));
         vm.stopPrank();
 
-        // 3. Compare: bridging to a non-zero-domain chain (e.g. Arbitrum, domain=3) does NOT revert.
-        //    This proves the bug is specifically the domain-0 sentinel collision, not a generic config issue.
-        usdc.mint(account, amount);
+        assertEq(tokenMessenger.nonce(), 1, "burn happened: Ethereum-bound bridge succeeded");
+        console.log("Bridge to Ethereum (domain 0) succeeded; domain-0 sentinel bug is fixed.");
+
+        // 3. An unconfigured chain still reverts with InvalidDomain (sanity: the guard still works).
+        uint256 amount2 = 1_000e6;
+        usdc.mint(account, amount2);
         vm.startPrank(account);
-        usdc.approve(address(srcEscrow), amount);
+        usdc.approve(address(srcEscrow), amount2);
+        vm.expectRevert(ICctpBridgeAdapter.InvalidDomain.selector);
         srcEscrow.depositAndBridge(
-            42161,
-            /* Arbitrum */
+            123456,
+            /* unconfigured chain */
             "USDC",
-            amount,
+            amount2,
             address(srcAdapter)
         );
         vm.stopPrank();
-        console.log("Arbitrum bridge succeeded; Ethereum bridge reverted because domain==0 is the sentinel.");
     }
 }

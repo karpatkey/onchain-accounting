@@ -61,10 +61,7 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         address adapterImpl = address(new StargateBridgeAdapter());
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
-            abi.encodeCall(
-                StargateBridgeAdapter.initialize,
-                (admin, address(destEscrow), address(0xBEEF), address(0xBEEF), "1.0.0")
-            )
+            abi.encodeCall(StargateBridgeAdapter.initialize, (admin, address(destEscrow), address(0xBEEF), "1.0.0"))
         );
         destAdapter = StargateBridgeAdapter(payable(adapterProxy));
 
@@ -103,10 +100,11 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         });
         bytes memory payload = InvoiceDataLib.encode(fake);
 
-        // 2. Encode the old lzReceive dispatch attempt. Previously the escrow.fallback() would have looked up
-        //    a registered adapter for this selector and forwarded via .call. There is no fallback anymore.
+        // 2. Encode the old lzReceive dispatch attempt (historical Stargate V1 callback selector 0x001d3567).
+        //    Previously the escrow.fallback() would have looked up a registered adapter for this selector and
+        //    forwarded via .call. There is no fallback anymore, so any such selector hits no code path.
         bytes memory lzReceiveCalldata = abi.encodeWithSelector(
-            StargateBridgeAdapter.lzReceive.selector,
+            bytes4(0x001d3567), // lzReceive(uint16,bytes,uint64,bytes)
             uint16(101), // _srcChainId
             bytes(""), // _srcAddress
             uint64(0), // _nonce

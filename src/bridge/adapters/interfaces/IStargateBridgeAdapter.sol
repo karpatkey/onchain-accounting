@@ -2,92 +2,71 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {ILayerZeroReceiver, IStargateRouter} from "./IStargateInterfaces.sol";
+import {ILayerZeroComposer} from "./IStargateInterfaces.sol";
 
 /// @title IStargateBridgeAdapter Interface
-/// @notice Interface for Stargate Bridge Adapter
-/// @dev Documents all events, errors, and public functions for the Stargate adapter
+/// @notice Interface for the Stargate V2 (OFT / LayerZero V2) Bridge Adapter
+/// @dev Documents events, errors, and public functions. Destination completion is provenance-checked
+///      (ADR 0012): the genuine LayerZero V2 Endpoint calls `lzCompose` on the adapter after Stargate
+///      delivers the tokens to it; the adapter authenticates the endpoint, the source eid and the source
+///      sibling adapter against `trustedRemoteAdapter`, then funds the escrow and releases.
 /// @author kpk
-interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroReceiver {
+interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroComposer {
     //
     // Events
     //
 
-    /// @notice Event emitted when a Stargate bridge is initiated
+    /// @notice Emitted when a Stargate V2 bridge is initiated
     /// @param invoiceId The invoice ID (32 bytes) - indexed
-    /// @param destinationChainId The LayerZero chain ID of destination chain
-    /// @param srcPoolId The source pool ID
-    /// @param dstPoolId The destination pool ID
+    /// @param dstEid The destination LayerZero endpoint ID
+    /// @param guid The LayerZero message guid
     /// @param amount The amount being bridged
-    event StargateBridgeInitiated(
-        bytes32 indexed invoiceId, uint16 destinationChainId, uint256 srcPoolId, uint256 dstPoolId, uint256 amount
-    );
+    event StargateBridgeInitiated(bytes32 indexed invoiceId, uint32 dstEid, bytes32 guid, uint256 amount);
 
-    /// @notice Event emitted when a Stargate bridge is completed
+    /// @notice Emitted when a Stargate V2 bridge is completed on the destination chain
     /// @param invoiceId The invoice ID (32 bytes) - indexed
-    /// @param sourceChainId The LayerZero chain ID of source chain
-    event StargateBridgeCompleted(bytes32 indexed invoiceId, uint16 sourceChainId);
+    /// @param srcEid The source LayerZero endpoint ID
+    event StargateBridgeCompleted(bytes32 indexed invoiceId, uint32 srcEid);
 
     //
     // Errors
     //
 
-    /// @notice Thrown when an invalid Stargate router address is provided
-    error InvalidRouter();
-
     /// @notice Thrown when an invalid LayerZero endpoint address is provided
     error InvalidEndpoint();
 
-    /// @notice Thrown when an invalid pool ID is provided
-    error InvalidPoolId();
+    /// @notice Thrown when no Stargate V2 pool is configured for an asset
+    error InvalidPool();
 
-    /// @notice Thrown when attempting to bridge to an unsupported chain
-    /// @param chainId The unsupported chain ID
-    error UnsupportedChain(uint16 chainId);
+    /// @notice Thrown when attempting to bridge to an unsupported chain (no eid mapping)
+    /// @param dstEid The unsupported destination eid (or 0 when no mapping exists)
+    error UnsupportedChain(uint32 dstEid);
 
-    /// @notice Thrown when LayerZero message reception fails
-    error MessageReceiveFailed();
-
-    /// @notice Thrown when bridge data is invalid
+    /// @notice Thrown when bridge data is invalid or provenance authentication fails
     error InvalidBridgeData();
 
     //
     // State Variables (Public)
     //
 
-    /// @notice Stargate Router contract address
-    /// @return The Router contract instance
-    function router() external view returns (IStargateRouter);
-
-    /// @notice LayerZero Endpoint contract address
-    /// @return The Endpoint contract instance
+    /// @notice LayerZero V2 Endpoint contract address (the only authorized caller of lzCompose)
+    /// @return The Endpoint address
     function endpoint() external view returns (address);
 
-    /// @notice Gets the invoice ID for a given LayerZero nonce
-    /// @param nonce The LayerZero message nonce
-    /// @return The invoice ID, or bytes32(0) if not found
-    function nonceToInvoiceId(uint64 nonce) external view returns (bytes32);
-
-    /// @notice Gets the LayerZero nonce for a given invoice ID
-    /// @param invoiceId The invoice ID (32 bytes)
-    /// @return The nonce, or 0 if not found
-    function invoiceToNonce(bytes32 invoiceId) external view returns (uint64);
-
-    /// @notice Gets the LayerZero chain ID for a given chain ID
-    /// @param chainId The standard chain ID
-    /// @return The LayerZero chain ID, or 0 if not set
-    function chainIdToLzChainId(uint64 chainId) external view returns (uint16);
-
-    /// @notice Gets the standard chain ID for a given LayerZero chain ID
-    /// @param lzChainId The LayerZero chain ID
-    /// @return The standard chain ID, or 0 if not set
-    function lzChainIdToChainId(uint16 lzChainId) external view returns (uint64);
-
-    /// @notice Gets the pool ID for a given asset and chain
+    /// @notice Gets the Stargate V2 pool (OFT) address configured for an asset
     /// @param asset The asset address
-    /// @param chainId The chain ID
-    /// @return The pool ID, or 0 if not set
-    function assetPoolId(address asset, uint64 chainId) external view returns (uint256);
+    /// @return The Stargate V2 pool address, or address(0) if not set
+    function stargatePool(address asset) external view returns (address);
+
+    /// @notice Gets the LayerZero endpoint ID (eid) for a given chain ID
+    /// @param chainId The standard chain ID
+    /// @return The LayerZero eid, or 0 if not set
+    function chainIdToEid(uint64 chainId) external view returns (uint32);
+
+    /// @notice Gets the standard chain ID for a given LayerZero endpoint ID (eid)
+    /// @param eid The LayerZero eid
+    /// @return The standard chain ID, or 0 if not set
+    function eidToChainId(uint32 eid) external view returns (uint64);
 
     /// @notice Gets the stored message payload for an invoice
     /// @param invoiceId The invoice ID (32 bytes)
@@ -98,42 +77,35 @@ interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroReceiver {
     // Configuration Functions
     //
 
-    /// @notice Initializes the Stargate Bridge Adapter
+    /// @notice Initializes the Stargate V2 Bridge Adapter
     /// @param admin_ The admin address
     /// @param bridgeEscrow_ The BridgeEscrow contract address
-    /// @param router_ The Stargate Router contract address
-    /// @param endpoint_ The LayerZero Endpoint contract address
+    /// @param endpoint_ The LayerZero V2 Endpoint contract address
     /// @param version_ The adapter version
-    function initialize(
-        address admin_,
-        address bridgeEscrow_,
-        address router_,
-        address endpoint_,
-        string memory version_
-    ) external;
+    function initialize(address admin_, address bridgeEscrow_, address endpoint_, string memory version_) external;
 
-    /// @notice Sets the LayerZero chain ID mapping for a chain ID
+    /// @notice Sets the LayerZero eid mapping for a chain ID
     /// @param chainId The standard chain ID
-    /// @param lzChainId The LayerZero chain ID
+    /// @param eid The LayerZero endpoint ID
     /// @dev Only callable by admin role
-    function setChainIdMapping(uint64 chainId, uint16 lzChainId) external;
+    function setEidMapping(uint64 chainId, uint32 eid) external;
 
-    /// @notice Sets the Stargate Router contract address
-    /// @param router_ The Router contract address
-    /// @dev Only callable by admin role
-    function setRouter(address router_) external;
-
-    /// @notice Sets the LayerZero Endpoint contract address
-    /// @param endpoint_ The Endpoint contract address
+    /// @notice Sets the LayerZero V2 Endpoint contract address
+    /// @param endpoint_ The Endpoint address
     /// @dev Only callable by admin role
     function setEndpoint(address endpoint_) external;
 
-    /// @notice Sets the pool ID for an asset on a chain
+    /// @notice Sets the Stargate V2 pool (OFT) used to bridge an asset
     /// @param asset The asset address
-    /// @param chainId The chain ID
-    /// @param poolId The pool ID
+    /// @param pool The Stargate V2 pool address (its `token()` must equal `asset`)
     /// @dev Only callable by admin role
-    function setAssetPoolId(address asset, uint64 chainId, uint256 poolId) external;
+    function setStargatePool(address asset, address pool) external;
+
+    /// @notice Sets the destination executor options (extraOptions) used for the lzCompose gas budget
+    /// @param dstEid The destination LayerZero eid
+    /// @param options The encoded executor options (LayerZero OptionsBuilder output)
+    /// @dev Only callable by admin role
+    function setComposeOptions(uint32 dstEid, bytes calldata options) external;
 
     //
     // View Functions
@@ -144,31 +116,13 @@ interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroReceiver {
     /// @return The message payload, or empty bytes if not found
     function getMessagePayload(bytes32 invoiceId) external view returns (bytes memory);
 
-    /// @notice Gets the LayerZero chain ID for a given chain ID
+    /// @notice Gets the LayerZero eid for a given chain ID
     /// @param chainId The standard chain ID
-    /// @return The LayerZero chain ID, or 0 if not set
-    function getLzChainIdForChain(uint64 chainId) external view returns (uint16);
+    /// @return The LayerZero eid, or 0 if not set
+    function getEidForChain(uint64 chainId) external view returns (uint32);
 
-    /// @notice Gets the standard chain ID for a given LayerZero chain ID
-    /// @param lzChainId The LayerZero chain ID
+    /// @notice Gets the standard chain ID for a given LayerZero eid
+    /// @param eid The LayerZero eid
     /// @return The standard chain ID, or 0 if not set
-    function getChainForLzChainId(uint16 lzChainId) external view returns (uint64);
-
-    /// @notice Quotes the LayerZero fee for a swap
-    /// @param destinationChainId The destination LayerZero chain ID
-    /// @param srcPoolId The source pool ID
-    /// @param dstPoolId The destination pool ID
-    /// @param amountLd The amount in local decimals
-    /// @param payload The message payload
-    /// @param dstGasForCall The destination gas for call
-    /// @return nativeFee The native token fee
-    /// @return zroFee The ZRO token fee (if applicable)
-    function quoteLayerZeroFee(
-        uint16 destinationChainId,
-        uint256 srcPoolId,
-        uint256 dstPoolId,
-        uint256 amountLd,
-        bytes calldata payload,
-        uint256 dstGasForCall
-    ) external view returns (uint256 nativeFee, uint256 zroFee);
+    function getChainForEid(uint32 eid) external view returns (uint64);
 }

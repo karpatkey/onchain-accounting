@@ -20,23 +20,23 @@ import "test/bridge/BridgeTestBase.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
-import "test/bridge/mocks/MockBridgeProtocols.sol";
+import "test/bridge/mocks/AcrossProvenanceMocks.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title AcrossBridgeAdapterTest
-/// @notice Test suite for Across Bridge Adapter
+/// @notice Test suite for the Across V3 Bridge Adapter (provenance model, ADR 0012)
 contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     AcrossBridgeAdapter public adapter;
-    MockSpokePool public spokePool;
+    MockSpokePoolV3 public spokePool;
 
     int64 public constant DEFAULT_RELAYER_FEE_PCT = 0.01e18; // 1%
 
     function setUp() public override {
         super.setUp();
 
-        // Deploy mock Across SpokePool
-        spokePool = new MockSpokePool();
+        // Deploy mock Across V3 SpokePool
+        spokePool = new MockSpokePoolV3();
 
         // Deploy Across adapter
         address adapterImpl = address(new AcrossBridgeAdapter());
@@ -59,7 +59,33 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Setup labels
         vm.label(address(adapter), "AcrossBridgeAdapter");
-        vm.label(address(spokePool), "MockSpokePool");
+        vm.label(address(spokePool), "MockSpokePoolV3");
+    }
+
+    /// @notice Deploys a destination-chain Across adapter wired to `destEscrow` + `destSpokePool`, grants
+    ///         MANAGER, authorizes it on the escrow, and configures the trusted remote sibling for the source
+    ///         chain. Under CREATE2 the sibling shares this adapter's address, so the trusted remote for the
+    ///         source chain is the destination adapter's own address.
+    function _deployDestAdapter(BridgeEscrow destEscrow, MockSpokePoolV3 destSpokePool)
+        internal
+        returns (AcrossBridgeAdapter destAdapter)
+    {
+        address destAdapterImpl = address(new AcrossBridgeAdapter());
+        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                destAdapterImpl,
+                abi.encodeCall(
+                    AcrossBridgeAdapter.initialize,
+                    (admin, address(destEscrow), address(destSpokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
+                )
+            ));
+        destAdapter = AcrossBridgeAdapter(destAdapterProxy);
+
+        vm.startPrank(admin);
+        destAdapter.grantRole(MANAGER, manager);
+        destEscrow.authorizeAdapter(address(destAdapter));
+        // Trusted remote for the source chain is the (CREATE2 same-address) sibling adapter.
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(destAdapter)))));
+        vm.stopPrank();
     }
 
     // ============ Bridge Initiation Tests ============
@@ -81,7 +107,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(adapter), amount);
 
-        // Initiate bridge (adapter will pull tokens in _bridge())
+        // Initiate bridge (adapter will pull tokens in _bridge() and call depositV3)
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -89,6 +115,11 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 invoiceId = invoiceData.invoiceId;
         bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+
+        // Verify a V3 deposit was created with this adapter as the destination recipient
+        assertEq(spokePool.depositId(), 1, "one V3 deposit created");
+        (, address recipient,,,,,,) = spokePool.deposits(1);
+        assertEq(recipient, address(adapter), "recipient must be the sibling adapter, not the escrow");
     }
 
     function test_bridge_initiatesNativeTokenDeposit() public {
@@ -106,8 +137,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         // Fund adapter with ETH (simulating BridgeEscrow sending ETH)
         vm.deal(address(adapter), amount);
 
-        // Initiate bridge with native token
-        // The adapter's _bridge() will call spokePool.deposit{value: amount}()
+        // Initiate bridge with native token: adapter calls spokePool.depositV3{value: amount}()
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
@@ -115,6 +145,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 invoiceId = invoiceData.invoiceId;
         bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+        assertEq(address(spokePool).balance, amount, "SpokePool received native input");
     }
 
     function test_bridge_initiatesNativeTokenDepositWithEeeAddress() public {
@@ -140,7 +171,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         // Verify messagePayload was stored
         bytes32 invoiceId = invoiceData.invoiceId;
         bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be ustored");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
     }
 
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
@@ -154,7 +185,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         adapter.bridge(messagePayload);
     }
 
-    // ============ Bridge Completion Tests ============
+    // ============ Bridge Completion Tests (MANAGER fallback path) ============
 
     function test_completeBridge_releasesTokensOnDestinationChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
@@ -165,25 +196,11 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
-        // Set up adapter on destination chain
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(spokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destBridgeEscrow, destSpokePool);
 
-        // Configure adapter on destination chain
-        vm.startPrank(admin);
-        destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        // Recipient is BridgeEscrow; for manager fallback path we mint tokens to escrow, then completeBridge (no transfer in _completeBridge)
-        usdc.mint(address(destBridgeEscrow), amount);
+        // New model: the adapter (recipient) holds the delivered tokens; funded pass-through pulls from it.
+        usdc.mint(address(destAdapter), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
@@ -192,25 +209,46 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
-        bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
+        bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
-
-        // Verify invoice is marked as completed
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after release");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow holds no standing balance");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
-
-        // Note: In-transit balance is only tracked on source chain
-        // On destination chain, there are no invoices, so in-transit balance is always 0
     }
 
-    // ============ Realistic flow test (source-originated payload + delivery via bridge mock only) ============
+    /// @notice MANAGER completion reverts when the source chain is not a configured trusted remote.
+    function test_completeBridge_revertsForUntrustedSource() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
-    /// @notice Full round-trip: depositAndBridge on source → payload from deposit → deliver only via fillDeposit → completeBridge
-    /// @dev Ensures we use the exact messagePayload the escrow produced and that the adapter receives the callback from the mock (as in prod)
+        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
+            _setupDestinationChainForCompletion(invoiceData, address(usdc));
+
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destBridgeEscrow, destSpokePool);
+
+        // Clear the trusted remote so source authentication fails.
+        vm.prank(admin);
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(0));
+
+        usdc.mint(address(destAdapter), amount);
+
+        bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.completeBridge(messagePayload, protocolData);
+    }
+
+    // ============ Realistic round-trip (source payload + delivery via genuine SpokePool fill) ============
+
+    /// @notice Full round-trip: depositAndBridge on source → payload from deposit → fill on destination
+    ///         SpokePool which delivers tokens to the adapter and calls handleV3AcrossMessage directly.
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaFillDeposit() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -220,46 +258,30 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
         // Payload must come from the deposit the adapter created (realistic: same as production)
-        bytes memory messagePayload = _getAcrossMessagePayloadFromLastDeposit(spokePool);
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account); // after deposit: safe sent amount to escrow
+        bytes memory messagePayload = spokePool.getDepositMessage(spokePool.depositId());
+        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account);
         assertGt(messagePayload.length, 0, "messagePayload from source deposit");
+        assertEq(spokePool.depositId(), 1, "one deposit on source");
 
-        uint256 sourceDepositId = spokePool.depositId();
-        assertEq(sourceDepositId, 1, "one deposit on source");
-
-        // ---------- DESTINATION CHAIN (simulate: same test, different chainId and contracts) ----------
+        // ---------- DESTINATION CHAIN ----------
         vm.chainId(uint256(DEST_CHAIN_ID));
 
         BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockSpokePool destSpokePool = new MockSpokePool();
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destBridgeEscrow, destSpokePool);
 
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(destSpokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
+        // Relay fill: recipient = dest adapter (the genuine protocol delivers tokens to the adapter).
+        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destAdapter), messagePayload);
+        usdc.mint(address(destSpokePool), amount);
 
-        vm.startPrank(admin);
-        destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        // TODO(PR2): provenance-checked protocol callback
-        // Completion via MANAGER path: mint tokens to dest escrow (releaseByInvoiceId expects them present),
-        // then completeBridge stores the payload and triggers release.
-        usdc.mint(address(destBridgeEscrow), amount);
-
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(uint32(1), SOURCE_CHAIN_ID));
+        // Delivery via the SpokePool: tokens to adapter, then handleV3AcrossMessage on the adapter.
+        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter balance zero after release");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow holds no standing balance");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -267,24 +289,13 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
-        // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
-        // Set up adapter on destination chain
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(spokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destBridgeEscrow, destSpokePool);
 
-        vm.startPrank(admin);
-        destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
+        // Adapter holds funds so the failure is the checksum, not a missing-balance error.
+        usdc.mint(address(destAdapter), amount);
 
         // Corrupt messagePayload (invalid checksum). Wire format is 4 slots: invoiceId, amount, nonce, meta.
         bytes memory corruptedPayload = abi.encode(
@@ -294,10 +305,10 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
         );
 
-        bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
+        bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
         vm.prank(manager);
-        vm.expectRevert(); // Should revert because checksum is invalid
+        vm.expectRevert(); // Should revert because checksum is invalid (in releaseByInvoiceId)
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
@@ -306,36 +317,24 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
 
-        // Set up destination chain environment
         (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
-        // Set up adapter on destination chain
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(spokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destBridgeEscrow, destSpokePool);
 
-        vm.startPrank(admin);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        bytes memory protocolData = abi.encode(uint32(123), SOURCE_CHAIN_ID);
+        bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not manager
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    // ============ Across Receiver Tests (adapter is not receiver; escrow + module are) ============
+    // ============ Across V3 Receiver Tests (adapter is the direct protocol receiver) ============
 
-    /// @notice completeBridge (MANAGER path) stores the message payload, retrievable via getMessagePayload
-    function test_handleAcrossMessage_storesMessagePayload() public {
+    /// @notice Auto path: the genuine SpokePool delivers tokens to the adapter and calls handleV3AcrossMessage,
+    ///         which authenticates and releases. The payload is stored and retrievable.
+    function test_handleV3AcrossMessage_releasesAndStoresPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -343,59 +342,105 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         vm.chainId(uint256(DEST_CHAIN_ID));
         BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockSpokePool destSpokePool = new MockSpokePool();
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(destSpokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
-        vm.startPrank(admin);
-        destAdapter.grantRole(MANAGER, manager);
-        destEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destEscrow, destSpokePool);
 
-        // TODO(PR2): provenance-checked protocol callback
-        // completeBridge stores the payload; releaseByInvoiceId needs tokens already at escrow.
-        usdc.mint(address(destEscrow), amount);
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(uint32(123), SOURCE_CHAIN_ID));
+        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destAdapter), messagePayload);
+        usdc.mint(address(destSpokePool), amount);
 
+        uint256 before = usdc.balanceOf(account);
+        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
+
+        assertEq(usdc.balanceOf(account) - before, amount, "account received bridged amount");
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completeBridge");
+        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
     }
 
-    /// @notice Adapter's handleAcrossMessage reverts when not called by escrow, so only escrow fallback → adapter path is used
-    function test_handleAcrossMessage_revertsWhenCalledOnAdapter() public {
+    /// @notice handleV3AcrossMessage reverts when not called by the SpokePool (only the genuine protocol path).
+    function test_handleV3AcrossMessage_revertsWhenNotSpokePool() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        vm.prank(address(spokePool));
+        vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.MessageReceiveFailed.selector));
-        adapter.handleAcrossMessage(address(usdc), amount, true, address(this), messagePayload);
+        adapter.handleV3AcrossMessage(address(usdc), amount, address(this), messagePayload);
     }
 
-    function test_handleAcrossMessage_revertsForEmptyMessage() public {
+    function test_handleV3AcrossMessage_revertsForEmptyMessage() public {
         vm.prank(address(spokePool));
-        vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.MessageReceiveFailed.selector));
-        adapter.handleAcrossMessage(address(usdc), 1000, true, address(this), "");
+        vm.expectRevert(abi.encodeWithSelector(InvalidCompletionData.selector));
+        adapter.handleV3AcrossMessage(address(usdc), 1000, address(this), "");
+    }
+
+    /// @notice handleV3AcrossMessage reverts when the delivered token does not match the invoice asset.
+    function test_handleV3AcrossMessage_revertsForTokenMismatch() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destEscrow, destSpokePool);
+
+        // Deliver DAI but the invoice is for USDC.
+        dai.mint(address(destAdapter), amount);
+        vm.prank(address(destSpokePool));
+        vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.handleV3AcrossMessage(address(dai), amount, address(this), messagePayload);
+    }
+
+    /// @notice handleV3AcrossMessage reverts when the delivered amount is below the invoice amount.
+    function test_handleV3AcrossMessage_revertsForAmountShortfall() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destEscrow, destSpokePool);
+
+        vm.prank(address(destSpokePool));
+        vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.handleV3AcrossMessage(address(usdc), amount - 1, address(this), messagePayload);
+    }
+
+    /// @notice handleV3AcrossMessage reverts when the source chain is not a configured trusted remote.
+    function test_handleV3AcrossMessage_revertsForUntrustedSource() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destEscrow, destSpokePool);
+
+        // Remove the trusted remote so source authentication fails even though the SpokePool delivered tokens.
+        vm.prank(admin);
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(0));
+
+        usdc.mint(address(destAdapter), amount);
+        vm.prank(address(destSpokePool));
+        vm.expectRevert(abi.encodeWithSelector(IAcrossBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.handleV3AcrossMessage(address(usdc), amount, address(this), messagePayload);
     }
 
     // ============ Configuration Tests ============
 
     function test_setSpokePool_updatesSpokePool() public {
-        MockSpokePool newSpokePool = new MockSpokePool();
+        MockSpokePoolV3 newSpokePool = new MockSpokePoolV3();
 
         vm.prank(admin);
         adapter.setSpokePool(address(newSpokePool));
 
-        // Verify spokePool was updated (indirectly)
-        assertTrue(true, "SpokePool should be updated");
+        assertEq(address(adapter.spokePool()), address(newSpokePool), "SpokePool should be updated");
     }
 
     function test_setSpokePool_revertsIfNotAdmin() public {
@@ -410,8 +455,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(admin);
         adapter.setDefaultRelayerFeePct(newFee);
 
-        // Verify fee was updated (indirectly)
-        assertTrue(true, "Relayer fee should be updated");
+        assertEq(adapter.defaultRelayerFeePct(), newFee, "Relayer fee should be updated");
     }
 
     function test_setDefaultRelayerFeePct_revertsIfNotAdmin() public {
@@ -438,29 +482,15 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Store payload via MANAGER completeBridge path
-        // TODO(PR2): provenance-checked protocol callback
+        // Store payload via the genuine SpokePool delivery path
         vm.chainId(uint256(DEST_CHAIN_ID));
         BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockSpokePool destSpokePool = new MockSpokePool();
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    AcrossBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(destSpokePool), DEFAULT_RELAYER_FEE_PCT, "1.0.0")
-                )
-            ));
-        AcrossBridgeAdapter destAdapter = AcrossBridgeAdapter(destAdapterProxy);
-        vm.startPrank(admin);
-        destAdapter.grantRole(MANAGER, manager);
-        destEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
+        MockSpokePoolV3 destSpokePool = new MockSpokePoolV3();
+        AcrossBridgeAdapter destAdapter = _deployDestAdapter(destEscrow, destSpokePool);
 
-        // releaseByInvoiceId needs tokens already at escrow
-        usdc.mint(address(destEscrow), amount);
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(uint32(123), SOURCE_CHAIN_ID));
+        uint256 relayDepositId = destSpokePool.addRelayDeposit(address(destAdapter), messagePayload);
+        usdc.mint(address(destSpokePool), amount);
+        destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
@@ -468,8 +498,8 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ ERC165 Tests ============
 
-    function test_supportsInterface_returnsTrueForIAcrossReceiver() public view {
-        bytes4 interfaceId = type(IAcrossReceiver).interfaceId;
-        assertTrue(adapter.supportsInterface(interfaceId), "Should support IAcrossReceiver");
+    function test_supportsInterface_returnsTrueForIAcrossV3Receiver() public view {
+        bytes4 interfaceId = type(IAcrossV3Receiver).interfaceId;
+        assertTrue(adapter.supportsInterface(interfaceId), "Should support IAcrossV3Receiver");
     }
 }

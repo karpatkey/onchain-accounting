@@ -18,14 +18,9 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
     StargateBridgeAdapter public adapter;
     IERC20 public usdc;
 
-    // Mainnet Stargate router/endpoint (LayerZero v1) - source: script/config/chains/1.json + Stargate docs
-    address public constant STARGATE_ROUTER_MAINNET = 0x8731d54E9D02c286767d56ac03e8037C07e01e98;
-    address public constant LZ_ENDPOINT_MAINNET = 0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675;
-
-    // Known Stargate pool IDs for USDC (Ethereum and Optimism)
-    // Source: Stargate docs; used only for this fork test
-    uint256 public constant SRC_POOL_ID = 1; // USDC pool on Ethereum
-    uint256 public constant DST_POOL_ID = 1; // USDC pool on Optimism
+    // Mainnet LayerZero V2 endpoint + Stargate V2 USDC pool - source: LayerZero V2 deployments + Stargate V2 docs
+    address public constant LZ_ENDPOINT_MAINNET = 0x1a44076050125825900e736c501f859c50fE728c; // EndpointV2
+    address public constant STARGATE_POOL_USDC_MAINNET = 0xc026395860Db2d07ee33e05fE50ed7bD583189C7; // StargatePoolUSDC
 
     function setUp() public override {
         super.setUp();
@@ -35,22 +30,20 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
     }
 
     function _setupStargateAdapter() internal {
-        // Deploy Stargate adapter
+        // Deploy Stargate V2 adapter
         address adapterImpl = address(new StargateBridgeAdapter());
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
-                StargateBridgeAdapter.initialize,
-                (admin, address(bridgeEscrow), STARGATE_ROUTER_MAINNET, LZ_ENDPOINT_MAINNET, "1.0.0")
+                StargateBridgeAdapter.initialize, (admin, address(bridgeEscrow), LZ_ENDPOINT_MAINNET, "1.0.0")
             )
         );
         adapter = StargateBridgeAdapter(payable(adapterProxy));
 
-        // Configure adapter: LZ chain IDs for 1 and 10 are pre-configured in initialize
+        // Configure adapter: LayerZero eids for 1 and 10 are pre-configured in initialize
         vm.startPrank(admin);
-        // Set pool IDs for USDC on source and destination chains
-        adapter.setAssetPoolId(MAINNET_USDC, MAINNET_CHAIN_ID, SRC_POOL_ID);
-        adapter.setAssetPoolId(MAINNET_USDC, OPTIMISM_CHAIN_ID, DST_POOL_ID);
+        // Bind the Stargate V2 USDC pool to the USDC asset
+        adapter.setStargatePool(MAINNET_USDC, STARGATE_POOL_USDC_MAINNET);
         adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
@@ -66,19 +59,24 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
 
     // ============ Bridge Initiation Tests ============
 
-    /// @notice On mainnet fork, the adapter correctly calls Stargate router.swap(); LayerZero's relayer
-    ///         reverts with "Relayer: stargate composer is not sending" because the call is not from
-    ///         the Stargate composer context. We expect this revert to confirm we hit the protocol path.
-    function testFork_stargate_bridge_initiatesRealSwap() public {
+    /// @notice On mainnet fork, the adapter calls the real Stargate V2 pool `sendToken` and successfully
+    ///         dispatches a composed cross-chain transfer to Optimism (recipient = sibling adapter).
+    function testFork_stargate_bridge_initiatesRealSend() public {
         uint256 amount = TEST_AMOUNT_USDC;
         uint64 destChainId = OPTIMISM_CHAIN_ID;
 
         _approveToken(MAINNET_USDC, address(bridgeEscrow), amount);
-        vm.deal(address(adapter), 0.1 ether);
+        // Fund the adapter with native gas for the LayerZero messaging fee
+        vm.deal(address(adapter), 1 ether);
 
-        vm.expectRevert("Relayer: stargate composer is not sending");
         vm.prank(account);
         bridgeEscrow.depositAndBridge(destChainId, USDC_SYMBOL, amount, address(adapter));
+
+        // The invoice payload was recorded for the dispatched send.
+        IBridgeEscrow.Invoice[] memory active = bridgeEscrow.getActiveInvoices(account);
+        assertEq(active.length, 1, "one active invoice after dispatch");
+        bytes memory payload = adapter.getMessagePayload(active[0].invoiceId);
+        assertGt(payload.length, 0, "messagePayload recorded for dispatched send");
     }
 }
 

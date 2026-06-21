@@ -4,63 +4,50 @@ pragma solidity ^0.8.0;
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 import {StargateBridgeAdapter} from "src/bridge/adapters/StargateBridgeAdapter.sol";
+import {IStargateBridgeAdapter} from "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
 import {BridgeEscrow} from "src/bridge/BridgeEscrow.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "test/bridge/mocks/MockBridgeProtocols.sol";
+import {MockStargatePoolV2, MockLZEndpointV2} from "test/bridge/mocks/StargateProvenanceMocks.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 
 /// @title StargateBridgeAdapterTest
-/// @notice Test suite for Stargate Bridge Adapter
+/// @notice Unit tests for the Stargate V2 (OFT / LayerZero V2) Bridge Adapter under the provenance model
+///         (ADR 0012). The genuine LayerZero V2 Endpoint calls `lzCompose` on the destination sibling adapter;
+///         the adapter authenticates the endpoint, the composing Stargate pool, the source eid and the source
+///         sibling adapter, then funds the escrow and releases.
 contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     StargateBridgeAdapter public adapter;
-    MockStargateRouter public router;
-    address public endpoint; // Mock LayerZero endpoint
+    MockStargatePoolV2 public usdcPool;
+    MockLZEndpointV2 public endpoint;
 
-    uint16 public constant SOURCE_LZ_CHAIN_ID = 101; // Ethereum mainnet
-    uint16 public constant DEST_LZ_CHAIN_ID = 111; // Optimism
-    uint256 public constant SRC_POOL_ID = 1;
-    uint256 public constant DST_POOL_ID = 1;
-
-    // Note: In tests, block.chainid is usually 31337 (foundry default)
-    // We'll use block.chainid for source chain pool ID configuration
+    // LayerZero eids: 30101 (Ethereum) and 30111 (Optimism) are pre-configured in initialize.
+    uint32 public constant SOURCE_EID = 30101; // Ethereum
+    uint32 public constant DEST_EID = 30111; // Optimism
 
     function setUp() public override {
         super.setUp();
 
-        // Deploy mock Stargate router
-        router = new MockStargateRouter();
-        endpoint = address(router); // Use router as mock endpoint
+        // Deploy the LayerZero V2 endpoint mock and a Stargate V2 USDC pool
+        endpoint = new MockLZEndpointV2();
+        usdcPool = new MockStargatePoolV2(address(usdc));
 
         // Deploy Stargate adapter
         address adapterImpl = address(new StargateBridgeAdapter());
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
-                    StargateBridgeAdapter.initialize, (admin, address(bridgeEscrow), address(router), endpoint, "1.0.0")
+                    StargateBridgeAdapter.initialize, (admin, address(bridgeEscrow), address(endpoint), "1.0.0")
                 )
             ));
         adapter = StargateBridgeAdapter(adapterProxy);
 
-        // Configure adapter (chain ID -> LZ ID for 1 and 10 are pre-configured in initialize)
         vm.startPrank(admin);
-        // Set pool IDs (must be non-zero)
-        // Note: block.chainid in tests is usually 31337 (foundry default)
-        // We need to set pool IDs for the actual chain ID used in tests
-        uint64 testChainId = uint64(block.chainid);
-        adapter.setAssetPoolId(address(usdc), testChainId, SRC_POOL_ID);
-        adapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        adapter.setAssetPoolId(address(weth), testChainId, SRC_POOL_ID);
-        adapter.setAssetPoolId(address(weth), DEST_CHAIN_ID, DST_POOL_ID);
+        adapter.setStargatePool(address(usdc), address(usdcPool));
         adapter.grantRole(MANAGER, manager);
         vm.stopPrank();
 
@@ -69,103 +56,87 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         // Setup labels
         vm.label(address(adapter), "StargateBridgeAdapter");
-        vm.label(address(router), "MockStargateRouter");
-        vm.label(endpoint, "MockLayerZeroEndpoint");
+        vm.label(address(usdcPool), "MockStargatePoolV2");
+        vm.label(address(endpoint), "MockLZEndpointV2");
     }
 
     // ============ Bridge Initiation Tests ============
 
-    function test_bridge_initiatesStargateSwap() public {
+    function test_bridge_initiatesStargateSend() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         _approveToken(address(usdc), address(bridgeEscrow), amount);
 
-        // Create invoice data
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Transfer tokens to BridgeEscrow (simulating depositAndBridge)
+        // Simulate depositAndBridge: tokens at escrow, escrow approves adapter.
         vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
-
-        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(adapter), amount);
 
-        // Fund adapter with ETH for LayerZero fee
-        vm.deal(address(adapter), 0.01 ether);
+        // Fund adapter with native gas for the LayerZero fee
+        vm.deal(address(adapter), 0.1 ether);
 
-        // Initiate bridge (adapter will pull tokens in _bridge())
         vm.prank(address(bridgeEscrow));
         adapter.bridge(messagePayload);
 
-        // Verify messagePayload was stored
-        bytes32 invoiceId = invoiceData.invoiceId;
-        bytes memory storedPayload = adapter.getMessagePayload(invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored");
+        // The Stargate pool received the tokens and recorded the compose payload (invoice payload).
+        assertEq(usdc.balanceOf(address(usdcPool)), amount, "pool received bridged tokens");
+        assertEq(usdcPool.getLastComposeMsg(), messagePayload, "composeMsg == invoice messagePayload");
+
+        // The destination recipient (SendParam.to) is the sibling adapter (this address via CREATE2).
+        (, bytes32 to,,,,,) = usdcPool.lastSendParam();
+        assertEq(to, bytes32(uint256(uint160(address(adapter)))), "recipient is sibling adapter");
+
+        bytes memory stored = adapter.getMessagePayload(invoiceData.invoiceId);
+        assertEq(stored.length, messagePayload.length, "messagePayload stored");
     }
 
-    function test_bridge_revertsForInvalidLzChainId() public {
+    function test_bridge_revertsForUnsupportedDestChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData = _createInvoiceData(
-            SOURCE_CHAIN_ID,
-            999, // Invalid chain ID (no LZ chain ID mapping)
-            account,
-            USDC_SYMBOL_BYTES6,
-            amount
-        );
+        // destinationChainId 999 has no eid mapping
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, 999, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         usdc.transfer(address(bridgeEscrow), amount);
-
-        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
         usdc.approve(address(adapter), amount);
-
-        vm.deal(address(adapter), 0.01 ether);
+        vm.deal(address(adapter), 0.1 ether);
 
         vm.prank(address(bridgeEscrow));
-        vm.expectRevert(); // Should revert because LZ chain ID mapping doesn't exist
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.UnsupportedChain.selector, uint32(0)));
         adapter.bridge(messagePayload);
     }
 
-    function test_bridge_revertsForInvalidPoolId() public {
+    function test_bridge_revertsForUnconfiguredPool() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
-        // Use a different asset that doesn't have destination pool ID set
-        // First, register a new token
+        // Register a new asset with no Stargate pool configured
         Mock_ERC20 newToken = new Mock_ERC20("NEW", 18);
         newToken.mint(account, amount);
-
-        vm.startPrank(admin);
+        vm.prank(admin);
         bridgeEscrow.registerAsset("NEW", address(newToken));
-        // Set source pool ID but NOT destination pool ID
-        uint64 testChainId = uint64(block.chainid);
-        adapter.setAssetPoolId(address(newToken), testChainId, SRC_POOL_ID);
-        // Intentionally don't set destination pool ID for DEST_CHAIN_ID
-        vm.stopPrank();
 
         vm.prank(account);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         newToken.transfer(address(bridgeEscrow), amount);
-
-        // BridgeEscrow approves adapter (new pattern: approval instead of transfer)
         vm.prank(address(bridgeEscrow));
         newToken.approve(address(adapter), amount);
+        vm.deal(address(adapter), 0.1 ether);
 
-        vm.deal(address(adapter), 0.01 ether);
-
-        // Create invoice with new token
-        InvoiceDataLib.InvoiceData memory newInvoiceData =
+        InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, "NEW   ", amount);
-        bytes memory newMessagePayload = InvoiceDataLib.encode(newInvoiceData);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(address(bridgeEscrow));
-        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidPoolId.selector)); // Should revert because destination pool ID is not set
-        adapter.bridge(newMessagePayload);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidPool.selector));
+        adapter.bridge(messagePayload);
     }
 
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
@@ -175,373 +146,391 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not BridgeEscrow
+        vm.expectRevert(); // not BridgeEscrow
         adapter.bridge(messagePayload);
     }
 
-    // ============ Bridge Completion Tests ============
+    // ============ Destination: lzCompose auto path (provenance-checked) ============
 
-    function test_completeBridge_releasesTokensOnDestinationChain() public {
-        uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
-
-        // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
-
-        // Set up adapter on destination chain
-        address destAdapterImpl = address(new StargateBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
-                )
-            ));
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
-
-        vm.startPrank(admin);
-        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
-        uint64 destChainId = uint64(block.chainid);
-        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
-        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        // Manager fallback: tokens already at escrow
-        usdc.mint(address(destBridgeEscrow), amount);
-
-        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
-        assertFalse(
-            destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion"
-        );
-
-        uint256 initialPortfolioBalance = usdc.balanceOf(account);
-
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
-
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
-    }
-
-    /// @notice Full round-trip: depositAndBridge on source → payload from router → MANAGER completeBridge on destination
-    function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaStargate() public {
+    /// @notice Full round-trip: deposit on source -> read composed payload from pool -> genuine endpoint
+    ///         delivers tokens + lzCompose on the destination adapter -> escrow funded -> account paid.
+    function test_realistic_fullRoundTrip_lzComposeRelease() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
-        vm.deal(address(adapter), 0.02 ether); // LayerZero fee
+        vm.deal(address(adapter), 0.1 ether);
         vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
 
-        bytes memory messagePayload = router.getLastSwapPayload();
-        uint256 portfolioBalanceBeforeRelease = usdc.balanceOf(account);
-        assertGt(messagePayload.length, 0, "messagePayload from source");
+        bytes memory messagePayload = usdcPool.getLastComposeMsg();
+        assertGt(messagePayload.length, 0, "composed payload from source");
+        uint256 portfolioBefore = usdc.balanceOf(account);
 
         // ---------- DESTINATION CHAIN ----------
         vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
 
-        BridgeEscrow destBridgeEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockStargateRouter destRouter = new MockStargateRouter();
-        address destEndpoint = address(destRouter);
+        // Genuine delivery: fund the endpoint, then it delivers tokens + lzCompose (from the dest pool).
+        usdc.mint(address(destEndpoint), amount);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
 
-        address destAdapterImpl = address(new StargateBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(destRouter), destEndpoint, "1.0.0")
-                )
-            ));
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
-
-        vm.startPrank(admin);
-        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
-        uint64 destChainId = uint64(block.chainid);
-        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
-        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        // TODO(PR2): provenance-checked protocol callback
-        // Completion now goes through the MANAGER path: tokens already at escrow, manager drives completeBridge.
-        usdc.mint(address(destBridgeEscrow), amount);
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
-
-        bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged amount");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds nothing (funded pass-through)");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
     }
 
-    function test_completeBridge_validatesChecksum() public {
-        uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+    /// @notice Sets up a destination adapter + escrow trusting the source sibling adapter, ready for lzCompose.
+    function _setupDestination()
+        internal
+        returns (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        )
+    {
+        destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
+        destEndpoint = new MockLZEndpointV2();
+        destPool = new MockStargatePoolV2(address(usdc));
 
-        // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
-
-        // Set up adapter on destination chain (simplified setup)
-        address destAdapterImpl = address(new StargateBridgeAdapter());
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
+                address(new StargateBridgeAdapter()),
                 abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
+                    StargateBridgeAdapter.initialize, (admin, address(destEscrow), address(destEndpoint), "1.0.0")
                 )
             ));
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
+        destAdapter = StargateBridgeAdapter(destAdapterProxy);
 
         vm.startPrank(admin);
+        destAdapter.setStargatePool(address(usdc), address(destPool));
         destAdapter.grantRole(MANAGER, manager);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(adapter)))));
+        destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
+    }
 
-        // Corrupt messagePayload (invalid checksum)
-        bytes memory corruptedPayload = abi.encode(
-            invoiceData.invoiceId,
-            invoiceData.amount,
-            bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
+    function test_lzCompose_revertsIfNotEndpoint() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter, MockStargatePoolV2 destPool, MockLZEndpointV2 destEndpoint) =
+            _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
         );
 
-        bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
+        // Caller is not the endpoint -> revert.
+        vm.prank(unauthorized);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidEndpoint.selector));
+        destAdapter.lzCompose(address(destPool), bytes32(0), composeMessage, address(0), bytes(""));
+    }
+
+    function test_lzCompose_revertsForUntrustedSourceAdapter() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter, MockStargatePoolV2 destPool, MockLZEndpointV2 destEndpoint) =
+            _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        usdc.mint(address(destEndpoint), amount);
+        // composeFrom is a WRONG (untrusted) source adapter address.
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(unauthorized))), messagePayload
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
+    }
+
+    function test_lzCompose_revertsForUnsupportedSourceEid() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter, MockStargatePoolV2 destPool, MockLZEndpointV2 destEndpoint) =
+            _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        usdc.mint(address(destEndpoint), amount);
+        uint32 unknownEid = 40404; // no eidToChainId mapping
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, unknownEid, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.UnsupportedChain.selector, unknownEid));
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
+    }
+
+    function test_lzCompose_revertsForWrongComposingPool() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter,, MockLZEndpointV2 destEndpoint) = _setupDestination();
+
+        // A pool that is NOT the one configured for USDC on the dest adapter.
+        MockStargatePoolV2 roguePool = new MockStargatePoolV2(address(usdc));
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        usdc.mint(address(destEndpoint), amount);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+
+        // _from == roguePool != stargatePool[usdc] -> revert.
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        destEndpoint.deliverCompose(address(destAdapter), address(roguePool), address(usdc), amount, composeMessage);
+    }
+
+    function test_lzCompose_revertsIfDeliveredLessThanInvoice() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter, MockStargatePoolV2 destPool, MockLZEndpointV2 destEndpoint) =
+            _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // amountLD in the composed message claims less than the invoice amount -> reverts.
+        usdc.mint(address(destEndpoint), amount);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount - 1, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
+    }
+
+    function test_lzCompose_revertsOnReplay() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+
+        // First delivery succeeds.
+        usdc.mint(address(destEndpoint), amount);
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "completed after first delivery");
+
+        // Second delivery (replay) reverts at the escrow's completedInvoices guard.
+        usdc.mint(address(destEndpoint), amount);
+        vm.expectRevert();
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
+    }
+
+    // ============ Destination: MANAGER completeBridge fallback path ============
+
+    function test_completeBridge_releasesTokensOnDestinationChain() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (BridgeEscrow destEscrow, StargateBridgeAdapter destAdapter,, MockLZEndpointV2 destEndpoint) =
+            _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // Manager path: the adapter already holds the delivered tokens (Stargate delivered to recipient).
+        usdc.mint(address(destAdapter), amount);
+
+        // protocolData = the OFT-composed message (authenticated the same way as the auto path).
+        bytes memory protocolData = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+
+        uint256 portfolioBefore = usdc.balanceOf(account);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
 
         vm.prank(manager);
-        vm.expectRevert(); // Should revert because checksum is invalid
-        destAdapter.completeBridge(corruptedPayload, protocolData);
+        destAdapter.completeBridge(messagePayload, protocolData);
+
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow zero after release");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
     }
 
     function test_completeBridge_revertsIfNotManager() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter,, MockLZEndpointV2 destEndpoint) = _setupDestination();
+
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
-
-        // Set up destination chain environment
-        (BridgeEscrow destBridgeEscrow, bytes memory messagePayload) =
-            _setupDestinationChainForCompletion(invoiceData, address(usdc));
-
-        // Set up adapter on destination chain
-        address destAdapterImpl = address(new StargateBridgeAdapter());
-        address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                destAdapterImpl,
-                abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destBridgeEscrow), address(router), endpoint, "1.0.0")
-                )
-            ));
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(destAdapterProxy);
-
-        vm.startPrank(admin);
-        destBridgeEscrow.authorizeAdapter(address(destAdapter));
-        vm.stopPrank();
-
-        bytes memory protocolData = abi.encode(SOURCE_LZ_CHAIN_ID);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes memory protocolData = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
 
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not manager
+        vm.expectRevert(); // not MANAGER
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    // ============ LayerZero Receiver Tests ============
-
-    /// @notice Completion via the MANAGER path (completeBridge) stores the message payload on the adapter
-    function test_lzReceive_storesNonceMapping() public {
+    function test_completeBridge_revertsForUntrustedSource() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
         vm.chainId(uint256(DEST_CHAIN_ID));
-        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockStargateRouter destRouter = new MockStargateRouter();
-        address destEndpoint = address(destRouter);
-        address destAdapterProxy = address(
-            UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
-                abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(destRouter), destEndpoint, "1.0.0")
-                )
-            )
-        );
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
-        vm.startPrank(admin);
-        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
-        uint64 destChainId = uint64(block.chainid);
-        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
-        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destEscrow.authorizeAdapter(destAdapterProxy);
-        destAdapter.grantRole(MANAGER, manager);
-        vm.stopPrank();
+        (, StargateBridgeAdapter destAdapter,, MockLZEndpointV2 destEndpoint) = _setupDestination();
 
-        // TODO(PR2): provenance-checked protocol callback
-        // Completion now goes through the MANAGER path: tokens already at escrow, completeBridge stores the payload.
-        usdc.mint(address(destEscrow), amount);
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
-
-        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via completion");
-    }
-
-    function test_lzReceive_revertsIfNotEndpoint() public {
-        uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        usdc.mint(address(destAdapter), amount);
 
-        vm.prank(unauthorized);
-        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidEndpoint.selector));
-        adapter.lzReceive(SOURCE_LZ_CHAIN_ID, "", 123, messagePayload);
+        // Untrusted composeFrom in protocolData -> manager path must still authenticate source.
+        bytes memory protocolData = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(unauthorized))), messagePayload
+        );
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    function test_lzReceive_revertsForEmptyPayload() public {
-        vm.prank(endpoint);
-        vm.expectRevert(); // adapter reverts (empty payload or MessageReceiveFailed)
-        adapter.lzReceive(SOURCE_LZ_CHAIN_ID, "", 123, "");
+    function test_completeBridge_validatesChecksum() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (, StargateBridgeAdapter destAdapter,, MockLZEndpointV2 destEndpoint) = _setupDestination();
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+
+        // Corrupt the checksum (flip a bit) while keeping the same wire layout.
+        bytes24 badChecksum = bytes24(uint192(invoiceData.checksum24) ^ uint192(1));
+        invoiceData.checksum24 = badChecksum;
+        bytes memory corruptedPayload = InvoiceDataLib.encode(invoiceData);
+
+        usdc.mint(address(destAdapter), amount);
+        bytes memory protocolData = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), corruptedPayload
+        );
+
+        // Source authentication passes; the escrow rejects the bad checksum in releaseByInvoiceId.
+        vm.prank(manager);
+        vm.expectRevert();
+        destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
     // ============ Configuration Tests ============
 
-    function test_setChainIdMapping_updatesMapping() public {
+    function test_setEidMapping_updatesMapping() public {
         uint64 chainId = 42161; // Arbitrum
-        uint16 lzChainId = 110;
+        uint32 eid = 30110;
 
         vm.prank(admin);
-        adapter.setChainIdMapping(chainId, lzChainId);
+        adapter.setEidMapping(chainId, eid);
 
-        assertEq(adapter.getLzChainIdForChain(chainId), lzChainId, "LZ chain ID mapping should be set");
-        assertEq(adapter.getChainForLzChainId(lzChainId), chainId, "Chain ID mapping should be set");
+        assertEq(adapter.getEidForChain(chainId), eid, "eid mapping set");
+        assertEq(adapter.getChainForEid(eid), chainId, "chain mapping set");
     }
 
-    function test_setChainIdMapping_revertsIfNotAdmin() public {
+    function test_setEidMapping_revertsIfNotAdmin() public {
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setChainIdMapping(42161, 110);
-    }
-
-    function test_setRouter_updatesRouter() public {
-        MockStargateRouter newRouter = new MockStargateRouter();
-
-        vm.prank(admin);
-        adapter.setRouter(address(newRouter));
-
-        // Verify router was updated (indirectly)
-        assertTrue(true, "Router should be updated");
-    }
-
-    function test_setRouter_revertsIfNotAdmin() public {
-        vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setRouter(address(0));
+        vm.expectRevert();
+        adapter.setEidMapping(42161, 30110);
     }
 
     function test_setEndpoint_updatesEndpoint() public {
         address newEndpoint = makeAddr("newEndpoint");
-
         vm.prank(admin);
         adapter.setEndpoint(newEndpoint);
+        assertEq(adapter.endpoint(), newEndpoint, "endpoint updated");
+    }
 
-        // Verify endpoint was updated (indirectly)
-        assertTrue(true, "Endpoint should be updated");
+    function test_setEndpoint_revertsForZero() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidEndpoint.selector));
+        adapter.setEndpoint(address(0));
     }
 
     function test_setEndpoint_revertsIfNotAdmin() public {
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setEndpoint(address(0));
+        vm.expectRevert();
+        adapter.setEndpoint(makeAddr("x"));
     }
 
-    function test_setAssetPoolId_updatesPoolId() public {
-        uint256 newPoolId = 2;
-
+    function test_setStargatePool_updatesPool() public {
+        MockStargatePoolV2 newPool = new MockStargatePoolV2(address(weth));
         vm.prank(admin);
-        adapter.setAssetPoolId(address(usdc), SOURCE_CHAIN_ID, newPoolId);
-
-        // Verify pool ID was set (indirectly)
-        assertTrue(true, "Pool ID should be set");
+        adapter.setStargatePool(address(weth), address(newPool));
+        assertEq(adapter.stargatePool(address(weth)), address(newPool), "pool set");
     }
 
-    function test_setAssetPoolId_revertsIfNotAdmin() public {
-        vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setAssetPoolId(address(usdc), SOURCE_CHAIN_ID, 2);
-    }
-
-    function test_setDefaultDstGasForCall_updatesGasLimit() public {
-        uint256 newGasLimit = 300000;
-
+    function test_setStargatePool_revertsForMismatchedToken() public {
+        // Pool's underlying is WETH, but we try to bind it to USDC.
+        MockStargatePoolV2 wethPool = new MockStargatePoolV2(address(weth));
         vm.prank(admin);
-        adapter.setDefaultDstGasForCall(newGasLimit);
-
-        // Verify gas limit was updated (indirectly)
-        assertTrue(true, "Gas limit should be updated");
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidPool.selector));
+        adapter.setStargatePool(address(usdc), address(wethPool));
     }
 
-    function test_setDefaultDstGasForCall_revertsIfNotAdmin() public {
+    function test_setStargatePool_revertsForZero() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidPool.selector));
+        adapter.setStargatePool(address(usdc), address(0));
+    }
+
+    function test_setStargatePool_revertsIfNotAdmin() public {
         vm.prank(unauthorized);
-        vm.expectRevert(); // Should revert because caller is not admin
-        adapter.setDefaultDstGasForCall(300000);
+        vm.expectRevert();
+        adapter.setStargatePool(address(usdc), address(usdcPool));
     }
 
-    // ============ View Function Tests ============
-
-    function test_getMessagePayload_returnsStoredPayload() public {
-        uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
-        vm.chainId(uint256(DEST_CHAIN_ID));
-        BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
-        MockStargateRouter destRouter = new MockStargateRouter();
-        address destEndpoint = address(destRouter);
-        address destAdapterProxy = address(
-            UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
-                abi.encodeCall(
-                    StargateBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(destRouter), destEndpoint, "1.0.0")
-                )
-            )
-        );
-        StargateBridgeAdapter destAdapter = StargateBridgeAdapter(payable(destAdapterProxy));
-        vm.startPrank(admin);
-        // SOURCE_CHAIN_ID and DEST_CHAIN_ID LZ mappings are pre-configured in initialize
-        uint64 destChainId = uint64(block.chainid);
-        destAdapter.setAssetPoolId(address(usdc), destChainId, SRC_POOL_ID);
-        destAdapter.setAssetPoolId(address(usdc), DEST_CHAIN_ID, DST_POOL_ID);
-        destEscrow.authorizeAdapter(destAdapterProxy);
-        destAdapter.grantRole(MANAGER, manager);
-        vm.stopPrank();
-
-        // TODO(PR2): provenance-checked protocol callback
-        // Completion now goes through the MANAGER path: tokens already at escrow, completeBridge stores the payload.
-        usdc.mint(address(destEscrow), amount);
-        vm.prank(manager);
-        destAdapter.completeBridge(messagePayload, abi.encode(SOURCE_LZ_CHAIN_ID));
-
-        bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
-        assertEq(storedPayload.length, messagePayload.length, "Stored payload should match");
+    function test_setComposeOptions_updatesOptions() public {
+        bytes memory opts = hex"0003";
+        vm.prank(admin);
+        adapter.setComposeOptions(DEST_EID, opts);
+        assertEq(adapter.composeOptions(DEST_EID), opts, "options set");
     }
 
-    function test_quoteLayerZeroFee_returnsFee() public view {
-        uint256 amount = 1000 * 10 ** usdc.decimals();
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+    function test_setComposeOptions_revertsIfNotAdmin() public {
+        vm.prank(unauthorized);
+        vm.expectRevert();
+        adapter.setComposeOptions(DEST_EID, hex"0003");
+    }
 
-        // quoteLayerZeroFee signature: quoteLayerZeroFee(uint16 destinationChainId, uint256, uint256, uint256, bytes calldata payload, uint256 dstGasForCall)
-        (uint256 nativeFee, uint256 zroFee) =
-            adapter.quoteLayerZeroFee(DEST_LZ_CHAIN_ID, SRC_POOL_ID, DST_POOL_ID, amount, messagePayload, 200000);
-        assertEq(nativeFee, 0.01 ether, "Native fee should match router's quote");
-        assertEq(zroFee, 0, "ZRO fee should be 0");
+    function test_setTrustedRemoteAdapter_revertsIfNotAdmin() public {
+        vm.prank(unauthorized);
+        vm.expectRevert();
+        adapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(1)));
+    }
+
+    // ============ View / Pre-config ============
+
+    function test_eids_preconfigured() public view {
+        assertEq(adapter.getEidForChain(1), SOURCE_EID, "Ethereum eid");
+        assertEq(adapter.getEidForChain(10), DEST_EID, "Optimism eid");
+        assertEq(adapter.getChainForEid(SOURCE_EID), 1, "eid -> Ethereum");
     }
 }

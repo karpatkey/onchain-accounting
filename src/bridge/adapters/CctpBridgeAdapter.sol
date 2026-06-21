@@ -9,11 +9,15 @@ import {InvoiceDataLib} from "../InvoiceDataLib.sol";
 import {ICircleTokenMessengerV2} from "./interfaces/ICircleTokenMessengerV2.sol";
 import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageTransmitter.sol";
 import {ICctpBridgeAdapter} from "./interfaces/ICctpBridgeAdapter.sol";
-import {InvalidArguments, InvalidInvoice} from "src/errors.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @title CctpBridgeAdapter
 /// @notice Bridge adapter for Circle's Cross-Chain Transfer Protocol (CCTP)
-/// @dev Enables bridging USDC between chains with message payload support
+/// @dev MANAGER-driven completion path: provenance is the Circle attestation verified by the
+///      MessageTransmitter, NOT a msg.sender/protocol-callback check. On the destination chain
+///      USDC mints directly to this adapter (mintRecipient == destinationCaller == address(this));
+///      _completeBridge then forwards the minted USDC to the escrow, and the base BridgeAdapter
+///      releases it to the account via releaseByInvoiceId AFTER _completeBridge returns.
 /// @author kpk
 contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -33,9 +37,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     mapping(bytes32 => bytes) public messagePayloads;
 
     /// @notice Mapping from CCTP message identifier to invoice ID
-    /// @dev Used to correlate CCTP messages with invoice IDs
-    ///      Format: messageToInvoiceId[sourceDomain][messageIdentifier] = invoiceId
-    ///      For CCTP, the messageIdentifier is the nonce (unique per message)
+    /// @dev Format: messageToInvoiceId[sourceDomain][nonce] = invoiceId
     mapping(uint32 => mapping(uint64 => bytes32)) public messageToInvoiceId;
 
     /// @notice Mapping from chain ID to CCTP domain ID
@@ -44,15 +46,27 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @notice Mapping from domain ID to chain ID
     mapping(uint32 => uint64) public domainToChainId;
 
+    /// @notice Whether a chain ID has an explicitly configured CCTP domain mapping
+    /// @dev Required because Ethereum's canonical CCTP domain IS 0; domain==0 cannot double as
+    ///      an "unconfigured" sentinel (that was the HIGH domain-0 bug). This flag is the source of truth.
+    mapping(uint64 => bool) public domainConfigured;
+
+    /// @notice Replay protection: whether a (sourceDomain, nonce) CCTP message was already consumed
+    /// @dev Defense in depth — the MessageTransmitter also rejects replayed messages, but the adapter
+    ///      records used nonces and reverts on replay before re-invoking receiveMessage.
+    mapping(uint32 => mapping(uint64 => bool)) public usedNonces;
+
     /// @inheritdoc ICctpBridgeAdapter
     function tokenMessenger() public view returns (ICircleTokenMessengerV2) {
         return _tokenMessenger;
     }
 
-    /// @dev Internal helper to set both chainId -> domain and domain -> chainId mappings
+    /// @dev Internal helper to set both chainId -> domain and domain -> chainId mappings,
+    ///      and mark the chain as explicitly configured.
     function _setChainDomain(uint64 chainId, uint32 domain) internal {
         chainIdToDomain[chainId] = domain;
         domainToChainId[domain] = chainId;
+        domainConfigured[chainId] = true;
     }
 
     /// @inheritdoc ICctpBridgeAdapter
@@ -72,7 +86,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         // Pre-configure known CCTP domains for supported EVM chains (mainnets)
         // Reference: Circle CCTP MessageTransmitterV2 domains
-        _setChainDomain(1, 0); // Ethereum
+        _setChainDomain(1, 0); // Ethereum (domain 0 — explicitly configured, NOT a sentinel)
         _setChainDomain(43114, 1); // Avalanche
         _setChainDomain(10, 2); // OP Mainnet
         _setChainDomain(42161, 3); // Arbitrum
@@ -97,8 +111,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
     /// @inheritdoc ICctpBridgeAdapter
     function setDomainMapping(uint64 chainId, uint32 domain) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        chainIdToDomain[chainId] = domain;
-        domainToChainId[domain] = chainId;
+        _setChainDomain(chainId, domain);
     }
 
     /// @inheritdoc ICctpBridgeAdapter
@@ -116,7 +129,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     //
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Receives decoded invoice data struct and converts it to CCTP-specific format
+    /// @dev Receives decoded invoice data struct and converts it to CCTP-specific format.
+    ///      Burns USDC to mint on the destination chain to THIS adapter (mintRecipient ==
+    ///      destinationCaller == address(this)); the destination adapter re-funds the escrow.
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal override {
         // Get asset address from registry
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
@@ -129,26 +144,25 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
         IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-        // Convert chain ID to CCTP domain
-        uint32 destinationDomain = chainIdToDomain[uint64(data.destinationChainId)];
-        if (destinationDomain == 0) {
+        // Convert chain ID to CCTP domain — use explicit configuration flag, NOT a domain==0 sentinel
+        // (Ethereum's canonical CCTP domain is 0 and must be a valid destination).
+        uint64 destChainId = uint64(data.destinationChainId);
+        if (!domainConfigured[destChainId]) {
             revert InvalidDomain();
         }
+        uint32 destinationDomain = chainIdToDomain[destChainId];
 
-        // Convert recipient address to bytes32 (CCTP format)
-        // Use bridgeEscrow as the recipient - all BridgeEscrows have the same address across chains
-        // BridgeEscrow will then release to account via releaseByInvoiceId()
-        bytes32 mintRecipient = bytes32(uint256(uint160(bridgeEscrow)));
+        // New provenance model: mint to THIS adapter on destination and restrict the destination
+        // caller to THIS adapter. The destination adapter then funds the escrow + releases.
+        bytes32 selfAsBytes32 = bytes32(uint256(uint160(address(this))));
+        bytes32 mintRecipient = selfAsBytes32;
+        bytes32 destinationCaller = selfAsBytes32;
 
         // Approve TokenMessenger to spend tokens
-        // Use forceApprove if available, otherwise use approve after resetting
         IERC20(asset).forceApprove(address(tokenMessenger()), data.amount);
 
-        // Step 1: Burn USDC using TokenMessengerV2
-        // This creates a message automatically that will mint USDC on destination
-        // The destinationCaller is set to this contract's address so we can receive the message
-        bytes32 destinationCaller = bytes32(uint256(uint160(address(this))));
-        // Use zero maxFee (no fee charged) and standard finality threshold (2000) as per Circle docs
+        // Step 1: Burn USDC using TokenMessengerV2. Creates a message that mints USDC on destination.
+        // Use zero maxFee (no fee charged) and standard finality threshold (2000) as per Circle docs.
         tokenMessenger()
             .depositForBurn(
                 data.amount,
@@ -161,74 +175,125 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
             );
 
         // TokenMessengerV2 does not return the message nonce; it is only available in events.
-        // We do not set messageToInvoiceId here; _completeBridge uses messagePayload.invoiceId when
-        // the mapping is zero (see _completeBridge).
+        // Completion verifies provenance from the attested CCTP message body, not from this mapping.
         uint64 nonce = 0;
 
         emit CctpBridgeInitiated(data.invoiceId, destinationDomain, mintRecipient, bytes32(data.amount), nonce);
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Receives USDC message and mints USDC on destination
+    /// @dev Receives the Circle-attested CCTP message, mints USDC to THIS adapter, verifies that the
+    ///      minted transfer matches the invoice, then forwards the minted USDC to the escrow. Does NOT
+    ///      call releaseByInvoiceId — the base BridgeAdapter.completeBridge invokes it immediately
+    ///      after this returns, releasing the escrow balance to the account.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
-        // Decode protocol data (CCTP message and attestation)
-        (bytes memory usdcMessage, bytes memory usdcAttestation) = abi.decode(protocolData, (bytes, bytes));
+        // Decode protocol data: the raw CCTP message and Circle's attestation over it.
+        (bytes memory cctpMessage, bytes memory attestation) = abi.decode(protocolData, (bytes, bytes));
 
-        if (usdcMessage.length == 0 || usdcAttestation.length == 0) {
+        if (cctpMessage.length == 0 || attestation.length == 0) {
             revert InvalidCompletionData();
         }
 
-        // Extract source domain and nonce from CCTP message for invoiceId lookup
-        uint32 sourceDomain;
-        uint64 nonce;
-        if (usdcMessage.length >= 20) {
-            assembly {
-                // Extract sourceDomain from bytes 4-8 (offset 4, length 4)
-                let ptr := add(usdcMessage, 4)
-                sourceDomain := mload(ptr)
-                sourceDomain := shr(224, sourceDomain) // Right shift to get first 4 bytes (uint32)
+        // Decode the invoice we expect this CCTP transfer to settle.
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-                // Extract nonce from bytes 12-20 (offset 12, length 8)
-                ptr := add(usdcMessage, 12)
-                nonce := mload(ptr)
-                nonce := shr(192, nonce) // Right shift to get first 8 bytes (uint64)
-            }
+        // Resolve the destination asset (the burnToken minted here must equal it).
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+        if (_isNativeToken(asset)) revert InvalidArguments();
+
+        // ── Parse + verify the CCTP message against the invoice (provenance check) ──
+        (uint32 sourceDomain, uint64 nonce) = _verifyCctpMessage(cctpMessage, data, asset);
+
+        // Replay protection: a (sourceDomain, nonce) message may settle exactly once.
+        // (The MessageTransmitter also rejects replays; this is defense in depth and lets us
+        // bind a nonce to its invoiceId.)
+        if (usedNonces[sourceDomain][nonce]) {
+            revert NonceAlreadyUsed(sourceDomain, nonce);
         }
+        usedNonces[sourceDomain][nonce] = true;
+        messageToInvoiceId[sourceDomain][nonce] = data.invoiceId;
+        messagePayloads[data.invoiceId] = messagePayload;
 
-        // Look up invoiceId using source domain and nonce
-        bytes32 invoiceId = messageToInvoiceId[sourceDomain][nonce];
-
-        // Extract invoiceId, amount, and meta from messagePayload if available
-        if (messagePayload.length > 0) {
-            InvoiceDataLib.InvoiceData memory payloadData = InvoiceDataLib.decode(messagePayload);
-
-            // Verify invoiceId from mapping matches payload
-            if (invoiceId != bytes32(0) && invoiceId != payloadData.invoiceId) {
-                revert InvalidInvoice();
-            }
-
-            // Use payload invoiceId if mapping lookup failed
-            if (invoiceId == bytes32(0)) {
-                invoiceId = payloadData.invoiceId;
-            }
-
-            // Validate checksum
-            if (!IBridgeEscrow(bridgeEscrow)
-                    .validateInvoiceIdChecksum(
-                        invoiceId, payloadData.amount, payloadData.timestamp, payloadData.nonce, payloadData.checksum24
-                    )) {
-                revert InvalidInvoice();
-            }
-        }
-
-        // Receive USDC message and mint USDC
-        bool success = messageTransmitter.receiveMessage(usdcMessage, usdcAttestation);
+        // Receive the attested CCTP message — reverts unless Circle-attested. Mints USDC to
+        // mintRecipient (this adapter, verified above). The adapter now holds the minted USDC.
+        bool success = messageTransmitter.receiveMessage(cctpMessage, attestation);
         if (!success) {
             revert MessageReceiveFailed();
         }
 
-        // Emit CCTP-specific event (sourceInvoiceId is the same as invoiceId)
-        emit CctpBridgeCompleted(invoiceId, invoiceId, sourceDomain);
+        // The adapter now holds the freshly-minted USDC. The base BridgeAdapter.completeBridge calls
+        // _fundAndRelease after we return (funded pass-through, ADR 0012): the escrow pulls exactly
+        // `amount` from this adapter and forwards it to the account. We do NOT push/release here.
+        emit CctpBridgeCompleted(data.invoiceId, data.invoiceId, sourceDomain);
+    }
+
+    /// @notice Parses a CCTP message and verifies it matches the decoded invoice.
+    /// @param cctpMessage The raw CCTP message (header + BurnMessage body)
+    /// @param data The decoded invoice this completion is settling
+    /// @param asset The resolved destination asset address (expected burnToken)
+    /// @return sourceDomain The source CCTP domain from the message header
+    /// @return nonce The CCTP message nonce from the message header
+    /// @dev CCTP message layout (see Circle / IMessageTransmitter). Byte offsets in brackets:
+    ///        version[0..4] sourceDomain[4..8] destinationDomain[8..12] nonce[12..20]
+    ///        sender[20..52] recipient[52..84] destinationCaller[84..116] messageBody[116..]
+    ///      BurnMessage body (offsets relative to message start, body begins at byte 116):
+    ///        body.version[116..120] burnToken[120..152] mintRecipient[152..184] amount[184..216]
+    ///      We verify: header.recipient == this adapter, body.mintRecipient == this adapter,
+    ///      body.burnToken == invoice asset, body.amount == invoice amount, and
+    ///      domainToChainId[sourceDomain] == invoice.sourceChainId.
+    function _verifyCctpMessage(bytes memory cctpMessage, InvoiceDataLib.InvoiceData memory data, address asset)
+        internal
+        view
+        returns (uint32 sourceDomain, uint64 nonce)
+    {
+        // Header (12B) + sender/recipient/destinationCaller (96B) + body version(4) + burnToken(32)
+        // + mintRecipient(32) + amount(32) = 216 bytes minimum.
+        if (cctpMessage.length < 216) revert InvalidMessage();
+
+        bytes32 headerRecipient;
+        bytes32 bodyBurnTokenWord;
+        bytes32 bodyMintRecipient;
+        uint256 bodyAmount;
+        assembly ("memory-safe") {
+            let base := add(cctpMessage, 32) // first data byte
+
+            // sourceDomain: bytes 4-8 (uint32)
+            sourceDomain := shr(224, mload(add(base, 4)))
+            // nonce: bytes 12-20 (uint64)
+            nonce := shr(192, mload(add(base, 12)))
+            // header recipient: bytes 52-84 (bytes32) — the transmitter-level mint recipient
+            headerRecipient := mload(add(base, 52))
+            // body burnToken: bytes 120-152 (bytes32, left-padded address)
+            bodyBurnTokenWord := mload(add(base, 120))
+            // body mintRecipient: bytes 152-184 (bytes32)
+            bodyMintRecipient := mload(add(base, 152))
+            // body amount: bytes 184-216 (uint256)
+            bodyAmount := mload(add(base, 184))
+        }
+
+        bytes32 selfAsBytes32 = bytes32(uint256(uint160(address(this))));
+
+        // Recipient of the mint (both header- and body-level) must be THIS adapter.
+        if (headerRecipient != selfAsBytes32 || bodyMintRecipient != selfAsBytes32) {
+            revert InvalidMintRecipient();
+        }
+
+        // burnToken must equal the invoice's destination asset.
+        if (address(uint160(uint256(bodyBurnTokenWord))) != asset) {
+            revert BurnTokenMismatch();
+        }
+
+        // Minted amount must equal the invoice amount.
+        if (bodyAmount != data.amount) {
+            revert AmountMismatch();
+        }
+
+        // sourceDomain must map back to the invoice's source chain id.
+        if (
+            !domainConfigured[uint64(data.sourceChainId)] || domainToChainId[sourceDomain] != uint64(data.sourceChainId)
+        ) {
+            revert SourceDomainMismatch();
+        }
     }
 
     /// @inheritdoc ICctpBridgeAdapter

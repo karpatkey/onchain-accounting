@@ -147,13 +147,17 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     // Receiver Functions
     //
 
-    /// @notice Receives tokens from Omnibridge via ERC677 onTokenTransfer
-    /// @param from The sender address
-    /// @param value The amount received
-    /// @param data The message payload (contains invoiceId + amount + timestamp + checksum)
+    /// @notice Receives tokens from the Omnibridge mediator via ERC677 onTokenTransfer
+    /// @param from The sender on the mediator side
+    /// @param value The amount of tokens delivered to the adapter
+    /// @param data The message payload (contains invoiceId + amount + nonce + meta)
     /// @return success Whether the transfer was successful
-    /// @dev This function is called automatically by Omnibridge when tokens arrive
-    function onTokenTransfer(address from, bytes32 value, bytes memory data) external returns (bool);
+    /// @dev Auto completion path: the genuine Omnibridge mediator delivers the bridged tokens to this adapter
+    ///      and then calls this. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the
+    ///      AMB-reported source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()`
+    ///      == the expected source chain), verifies the delivered token+amount match the invoice, then funds the
+    ///      escrow and releases. Calling it from any other address reverts.
+    function onTokenTransfer(address from, uint256 value, bytes calldata data) external returns (bool);
 
     /// @notice Receives native tokens from Omnibridge
     /// @dev This function is called when native tokens (ETH/xDAI) are received

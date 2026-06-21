@@ -32,7 +32,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     // PriceFeedLib is pre-linked at this deterministic CREATE2 address (foundry.toml). Etch its runtime code on the
     // fork so NAVCalculator pricing DELEGATECALLs succeed.
-    address constant PRICE_FEED_LIB = 0x1A18012eb9Af97aa33A0391825d4466acd69FAbA;
+    address constant PRICE_FEED_LIB = 0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1;
 
     IERC4626 public constant KPK_USDC_VAULT = IERC4626(0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd);
     IERC20 public constant USDC = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);

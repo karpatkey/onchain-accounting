@@ -9,6 +9,8 @@ import {
     SendParam,
     MessagingFee,
     MessagingReceipt,
+    OFTLimit,
+    OFTFeeDetail,
     OFTReceipt,
     Ticket
 } from "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
@@ -34,12 +36,35 @@ contract MockStargatePoolV2 is IStargate {
     address public immutable underlying;
     uint256 public constant NATIVE_FEE = 0.01 ether;
 
+    /// @notice Flat protocol fee (in local decimals) deducted from the send amount; the destination receives
+    ///         `amountLD - protocolFeeLD + rewardLD`. Defaults 0 (no fee, no reward) so existing tests are
+    ///         unaffected; set them to exercise the post-fee output model (fee) or the reward path.
+    uint256 public protocolFeeLD;
+    /// @notice Flat reward (in local decimals) added to the credited amount (Stargate `OFTFeeDetail` negative fee).
+    uint256 public rewardLD;
+
     // Records of the last send (for source-side assertions)
     SendParam public lastSendParam;
     bool public sent;
 
     constructor(address _underlying) {
         underlying = _underlying;
+    }
+
+    /// @notice Test hook: configure the flat protocol fee deducted on a send.
+    function setProtocolFeeLD(uint256 feeLD) external {
+        protocolFeeLD = feeLD;
+    }
+
+    /// @notice Test hook: configure a flat reward added on a send (destination receives MORE than sent).
+    function setRewardLD(uint256 reward) external {
+        rewardLD = reward;
+    }
+
+    /// @dev The amount credited on the destination for a given gross send amount (post fee, plus any reward).
+    function _received(uint256 amountLD) internal view returns (uint256) {
+        uint256 net = amountLD > protocolFeeLD ? amountLD - protocolFeeLD : 0;
+        return net + rewardLD;
     }
 
     /// @inheritdoc IStargate
@@ -53,6 +78,18 @@ contract MockStargatePoolV2 is IStargate {
     }
 
     /// @inheritdoc IStargate
+    function quoteOFT(SendParam calldata _sendParam)
+        external
+        view
+        override
+        returns (OFTLimit memory limit, OFTFeeDetail[] memory oftFeeDetails, OFTReceipt memory oftReceipt)
+    {
+        limit = OFTLimit({minAmountLD: 0, maxAmountLD: type(uint256).max});
+        oftFeeDetails = new OFTFeeDetail[](0);
+        oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: _received(_sendParam.amountLD)});
+    }
+
+    /// @inheritdoc IStargate
     function sendToken(SendParam calldata _sendParam, MessagingFee calldata _fee, address)
         external
         payable
@@ -60,6 +97,9 @@ contract MockStargatePoolV2 is IStargate {
         returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt, Ticket memory ticket)
     {
         require(msg.value >= _fee.nativeFee, "fee");
+        uint256 received = _received(_sendParam.amountLD);
+        // Enforce the caller's slippage floor, like the real pool.
+        require(received >= _sendParam.minAmountLD, "minAmountLD");
         // Pull the tokens from the sender (the adapter), mirroring a real OFT debit.
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), _sendParam.amountLD);
 
@@ -69,7 +109,7 @@ contract MockStargatePoolV2 is IStargate {
         msgReceipt = MessagingReceipt({
             guid: keccak256(abi.encode(_sendParam.dstEid, _sendParam.to, _sendParam.amountLD)), nonce: 1, fee: _fee
         });
-        oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: _sendParam.amountLD});
+        oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: received});
         ticket = Ticket({ticketId: 0, passengerBytes: bytes("")});
     }
 

@@ -57,6 +57,12 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @notice Mapping to store message payloads by invoice ID
     mapping(bytes32 => bytes) public messagePayloads;
 
+    /// @notice Max bridge fee tolerated on a send, in basis points. A quote worse than this (destination would
+    ///         receive less than `(10000 - MAX_BRIDGE_FEE_BPS)/10000` of the gross) reverts the send, so a
+    ///         misconfigured/abusive pool cannot silently burn most of the deposit. 5% matches the prior implicit
+    ///         floor; a reward (received >= sent) has zero fee and always passes.
+    uint256 public constant MAX_BRIDGE_FEE_BPS = 500;
+
     /// @dev Internal helper to set both chainId <-> eid mappings
     function _setEid(uint64 chainId, uint32 eid) internal {
         chainIdToEid[chainId] = eid;
@@ -155,16 +161,24 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         // `amountReceivedLD` (the bridge fee/reward is borne by the transfer, standard bridge UX). The source-chain
         // invoice still records the gross deposit; source↔destination pairing is by `invoiceId` (fee-independent),
         // so the differing post-fee checksum on the destination is immaterial.
+        // quoteOFT is the AUTHORITATIVE in-tx pre-image of sendToken's credit: both read the same pool/feeLib
+        // state within this single transaction (nothing interleaves), so `amountReceivedLD` equals the amount
+        // sendToken will credit on the destination. Pinning minAmountLD to it (below) therefore carries zero
+        // slippage *by construction* — it is exact, not optimistic.
         (,, OFTReceipt memory receipt) = IStargate(pool).quoteOFT(sendParam);
         uint256 receivedAmount = receipt.amountReceivedLD;
-        // Only a zero quote is invalid; a reward (receivedAmount > data.amount) is legitimate and must not be blocked.
         if (receivedAmount == 0) revert InvalidBridgeData();
+        // Sanity floor: reject an abnormally large fee. A misconfigured/abusive pool quoting a near-total fee
+        // would otherwise pass silently (source locks the gross deposit, destination pays ~dust, no revert).
+        // A reward (receivedAmount >= data.amount) has zero fee and always passes; only excessive *loss* reverts.
+        if (receivedAmount < data.amount && (data.amount - receivedAmount) * 10000 > data.amount * MAX_BRIDGE_FEE_BPS) {
+            revert InvalidBridgeData();
+        }
 
-        // Build a SEPARATE post-fee copy for the composed payload — do NOT mutate `data`, which is shared by
-        // reference with the base `bridge()` (it emits `BridgeInitiated` with the gross deposit amount after this
-        // returns) and reflects the gross amount the escrow recorded. Only the destination payload carries the
-        // post-fee amount + its recomputed checksum. Pin a tight slippage floor at the quoted amount; quoteOFT is
-        // evaluated against current pool state in this tx, so the subsequent sendToken credits exactly `receivedAmount`.
+        // Build a SEPARATE post-fee copy for the COMPOSED payload (the destination release amount) — do NOT mutate
+        // `data`, which is shared by reference with the base `bridge()` (it emits `BridgeInitiated` with the gross
+        // deposit amount after this returns). KEEP THESE FIELDS IN SYNC with InvoiceDataLib.InvoiceData: a new
+        // field added there must be copied here, or the destination payload silently carries a zero/stale value.
         InvoiceDataLib.InvoiceData memory postFeeData = InvoiceDataLib.InvoiceData({
             invoiceId: data.invoiceId,
             sourceChainId: data.sourceChainId,
@@ -176,9 +190,12 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
             timestamp: data.timestamp,
             checksum24: InvoiceDataLib.calculateChecksum(data.invoiceId, receivedAmount, data.timestamp, data.nonce)
         });
-        bytes memory messagePayload = InvoiceDataLib.encode(postFeeData);
         sendParam.minAmountLD = receivedAmount;
-        sendParam.composeMsg = messagePayload;
+        sendParam.composeMsg = InvoiceDataLib.encode(postFeeData);
+        // Reward safety: any reward is delivered to THIS adapter in the same lzCompose, which the destination
+        // verifies via `_message.amountLD() >= payload.amount` AND `balanceOf(this) >= payload.amount`. An
+        // under-delivered reward therefore safely reverts there; it can never release one invoice from another's
+        // funds (adapters forward everything and hold no standing balance).
 
         // Quote the LayerZero messaging fee (paid in native) and send.
         MessagingFee memory fee = IStargate(pool).quoteSend(sendParam, false);
@@ -188,7 +205,10 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         // Reset approval (defensive; sendToken should have consumed exactly amountLD).
         IERC20(asset).forceApprove(pool, 0);
 
-        messagePayloads[data.invoiceId] = messagePayload;
+        // Store the GROSS payload so getMessagePayload on the SOURCE matches the gross invoice the escrow recorded
+        // (the escrow keys its BRIDGING invoice by the gross checksum). The post-fee payload lives only in the
+        // destination composeMsg above; the destination adapter stores its own post-fee payload on receipt.
+        messagePayloads[data.invoiceId] = InvoiceDataLib.encode(data);
 
         // Emit the GROSS source amount (consistent with the base BridgeInitiated event and other adapters'
         // *BridgeInitiated events). The post-fee amount lives in the composed payload / OFT receipt.

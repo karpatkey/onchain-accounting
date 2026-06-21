@@ -225,6 +225,13 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory messagePayload = usdcPool.getLastComposeMsg();
         assertEq(InvoiceDataLib.decode(messagePayload).amount, net, "payload carries the post-fee amount");
+        // The SOURCE adapter stores the GROSS payload (matches the escrow's gross invoice), not the post-fee one.
+        bytes32 invoiceId = InvoiceDataLib.decode(messagePayload).invoiceId;
+        assertEq(
+            InvoiceDataLib.decode(adapter.getMessagePayload(invoiceId)).amount,
+            amount,
+            "source getMessagePayload is gross"
+        );
         (,, uint256 amountLD, uint256 minAmountLD,,,) = usdcPool.lastSendParam();
         assertEq(amountLD, amount, "gross amount debited on source");
         assertEq(minAmountLD, net, "tight slippage floor pinned at the post-fee amount");
@@ -295,6 +302,33 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
         assertEq(usdc.balanceOf(account) - portfolioBefore, credited, "account received gross + reward");
+    }
+
+    /// @notice Fee cap (PR #90 code-review): a quote worse than MAX_BRIDGE_FEE_BPS (5%) reverts the send, so a
+    ///         misconfigured/abusive pool cannot silently burn the deposit (source locks gross, destination ~dust).
+    function test_bridge_revertsIfFeeExceedsCap() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        usdcPool.setProtocolFeeLD(amount / 2); // 50% fee — far over the 5% cap
+
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        vm.expectRevert(abi.encodeWithSelector(IStargateBridgeAdapter.InvalidBridgeData.selector));
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+    }
+
+    /// @notice A fee exactly at the cap (5%) is allowed (boundary).
+    function test_bridge_allowsFeeAtCap() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        usdcPool.setProtocolFeeLD((amount * 500) / 10000); // exactly 5%
+
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        uint256 net = amount - (amount * 500) / 10000;
+        assertEq(InvoiceDataLib.decode(usdcPool.getLastComposeMsg()).amount, net, "5% fee allowed; payload net");
     }
 
     /// @notice Sets up a destination adapter + escrow trusting the source sibling adapter, ready for lzCompose.

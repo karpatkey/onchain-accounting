@@ -36,6 +36,11 @@ contract MockSpokePoolV3 {
         uint256 depositId
     );
 
+    /// @notice Mirrors the real SpokePool getter the adapter reads to set a valid fillDeadline.
+    function fillDeadlineBuffer() external pure returns (uint32) {
+        return 21_600; // 6h, a representative mainnet value
+    }
+
     /// @notice Across V3 deposit entrypoint (subset used by the adapter)
     function depositV3(
         address depositor,

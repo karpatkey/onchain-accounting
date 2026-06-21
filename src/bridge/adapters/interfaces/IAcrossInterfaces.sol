@@ -63,6 +63,10 @@ interface ISpokePool {
         bytes calldata message
     ) external payable;
 
+    /// @notice Maximum allowed offset of a deposit's fillDeadline beyond the current block timestamp.
+    /// @dev The SpokePool reverts `InvalidFillDeadline()` if `fillDeadline > block.timestamp + fillDeadlineBuffer`.
+    function fillDeadlineBuffer() external view returns (uint32);
+
     /// @notice Event emitted when a V3 deposit is made
     event V3FundsDeposited(
         address inputToken,

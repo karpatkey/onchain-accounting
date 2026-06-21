@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {StargateBridgeAdapter} from "src/bridge/adapters/StargateBridgeAdapter.sol";
 import {IStargateBridgeAdapter} from "src/bridge/adapters/interfaces/IStargateBridgeAdapter.sol";
@@ -205,8 +206,22 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         // ---------- SOURCE CHAIN ----------
         _approveToken(address(usdc), address(bridgeEscrow), amount);
         vm.deal(address(adapter), 0.1 ether);
+        vm.recordLogs();
         vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        // The generic BridgeInitiated event must carry the GROSS deposit amount (the post-fee re-encoding is
+        // confined to the composed payload, not the shared `data` struct), so it stays consistent with the
+        // escrow's recorded invoice and with every other adapter.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool sawBridgeInitiated;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("BridgeInitiated(bytes32,uint256)")) {
+                assertEq(abi.decode(logs[i].data, (uint256)), amount, "BridgeInitiated must emit the gross amount");
+                sawBridgeInitiated = true;
+            }
+        }
+        assertTrue(sawBridgeInitiated, "BridgeInitiated emitted");
 
         bytes memory messagePayload = usdcPool.getLastComposeMsg();
         assertEq(InvoiceDataLib.decode(messagePayload).amount, net, "payload carries the post-fee amount");

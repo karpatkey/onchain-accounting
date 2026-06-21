@@ -160,12 +160,23 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         uint256 receivedAmount = receipt.amountReceivedLD;
         if (receivedAmount == 0 || receivedAmount > data.amount) revert InvalidBridgeData();
 
-        // Re-encode the payload with the post-fee amount (recomputing the checksum over the new amount), and pin
-        // a tight slippage floor at the quoted amount. quoteOFT is evaluated against current pool state in this
-        // tx, so the subsequent sendToken credits exactly `receivedAmount`.
-        data.amount = receivedAmount;
-        data.checksum24 = InvoiceDataLib.calculateChecksum(data.invoiceId, receivedAmount, data.timestamp, data.nonce);
-        bytes memory messagePayload = InvoiceDataLib.encode(data);
+        // Build a SEPARATE post-fee copy for the composed payload — do NOT mutate `data`, which is shared by
+        // reference with the base `bridge()` (it emits `BridgeInitiated` with the gross deposit amount after this
+        // returns) and reflects the gross amount the escrow recorded. Only the destination payload carries the
+        // post-fee amount + its recomputed checksum. Pin a tight slippage floor at the quoted amount; quoteOFT is
+        // evaluated against current pool state in this tx, so the subsequent sendToken credits exactly `receivedAmount`.
+        InvoiceDataLib.InvoiceData memory postFeeData = InvoiceDataLib.InvoiceData({
+            invoiceId: data.invoiceId,
+            sourceChainId: data.sourceChainId,
+            destinationChainId: data.destinationChainId,
+            account: data.account,
+            assetSymbol: data.assetSymbol,
+            amount: receivedAmount,
+            nonce: data.nonce,
+            timestamp: data.timestamp,
+            checksum24: InvoiceDataLib.calculateChecksum(data.invoiceId, receivedAmount, data.timestamp, data.nonce)
+        });
+        bytes memory messagePayload = InvoiceDataLib.encode(postFeeData);
         sendParam.minAmountLD = receivedAmount;
         sendParam.composeMsg = messagePayload;
 

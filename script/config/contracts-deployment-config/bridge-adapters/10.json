@@ -11,7 +11,9 @@
       "optimismPortal": "0xbEb5Fc579115071764c7423A4f12eDde41f106EdC",
       "version": "1.0.0"
     },
-    "remoteChains": [1]
+    "remoteChains": [
+      1
+    ]
   },
   "CCTP": {
     "enabled": true,
@@ -23,6 +25,63 @@
       "version": "1.0.0",
       "cctpDomain": 2
     },
-    "remoteChains": [1, 137, 42161, 8453]
+    "remoteChains": [
+      1,
+      137,
+      42161,
+      8453
+    ]
+  },
+  "CCIP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "router": "0x3206695CaE29952f4b0c22a169725a865bc8Ce0f",
+      "feeToken": "0x350a791Bfc2C21F9Ed5d10980Dad2e2638ffa7f6",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      56,
+      100,
+      137,
+      42161,
+      8453
+    ]
+  },
+  "Across": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "spokePool": "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
+      "defaultRelayerFeePct": "5000",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      56,
+      137,
+      42161,
+      8453
+    ]
+  },
+  "Stargate": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      56,
+      100,
+      137,
+      42161,
+      8453
+    ]
   }
 }

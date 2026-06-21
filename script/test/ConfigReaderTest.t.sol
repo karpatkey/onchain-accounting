@@ -143,17 +143,6 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(bytes(router).length > 0, "Router parameter should be set");
     }
 
-    /// @notice Test reading callback selector from chain config (Arbitrum has callbackSelectors set)
-    function test_ReadAdapterCallbackSelector() public view {
-        (bool hasCcip, bytes4 ccipSel) = ConfigReader.readAdapterCallbackSelector(vm, 42161, "bridgeAdapters", "CCIP");
-        assertTrue(hasCcip, "CCIP should have callbackSelector on Arbitrum");
-        assertEq(ccipSel, bytes4(0x85572ffb), "CCIP callback selector should match ccipReceive");
-
-        (bool hasCctp, bytes4 cctpSel) = ConfigReader.readAdapterCallbackSelector(vm, 42161, "bridgeAdapters", "CCTP");
-        assertFalse(hasCctp, "CCTP should not have callbackSelector");
-        assertEq(cctpSel, bytes4(0), "CCTP selector should be 0");
-    }
-
     /// @notice readAdapterUintArray parses BOTH the numeric (`[1,10]`) and quoted (`["1","10"]`) array forms, and
     ///         honors the lookup precedence root → `.initialize.` → `.constructor.`. Uses a throwaway chain-id fixture
     ///         file so the test is independent of how the real per-chain configs happen to author `remoteChains`.

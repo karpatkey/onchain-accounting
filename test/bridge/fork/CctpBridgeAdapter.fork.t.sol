@@ -164,18 +164,18 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
 
         // Decode CctpBridgeInitiated event: data = (destinationDomain, mintRecipient, amount, nonce)
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint64 nonce = 0;
-        bytes32 expectedTopic = keccak256("CctpBridgeInitiated(bytes32,uint32,bytes32,bytes32,uint64)");
+        bytes32 nonce = bytes32(uint256(0));
+        bytes32 expectedTopic = keccak256("CctpBridgeInitiated(bytes32,uint32,bytes32,bytes32,bytes32)");
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length >= 1 && logs[i].topics[0] == expectedTopic && logs[i].data.length >= 32 * 4) {
-                (,,, nonce) = abi.decode(logs[i].data, (uint32, bytes32, bytes32, uint64));
+                (,,, nonce) = abi.decode(logs[i].data, (uint32, bytes32, bytes32, bytes32));
                 break;
             }
         }
         // Real TokenMessengerV2 does not return nonce; adapter emits nonce=0
-        assertEq(nonce, 0, "Adapter should emit nonce=0 when TokenMessengerV2 does not return nonce");
+        assertEq(nonce, bytes32(0), "Adapter should emit nonce=0 when TokenMessengerV2 does not return nonce");
         // Adapter does not set messageToInvoiceId; completion uses messagePayload when mapping is zero
-        bytes32 storedInvoiceId = adapter.messageToInvoiceId(MAINNET_DOMAIN, 0);
+        bytes32 storedInvoiceId = adapter.messageToInvoiceId(MAINNET_DOMAIN, bytes32(0));
         assertEq(storedInvoiceId, bytes32(0), "Adapter should not store mapping (completion uses payload)");
     }
 

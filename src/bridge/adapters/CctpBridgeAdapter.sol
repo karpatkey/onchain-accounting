@@ -37,8 +37,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     mapping(bytes32 => bytes) public messagePayloads;
 
     /// @notice Mapping from CCTP message identifier to invoice ID
-    /// @dev Format: messageToInvoiceId[sourceDomain][nonce] = invoiceId
-    mapping(uint32 => mapping(uint64 => bytes32)) public messageToInvoiceId;
+    /// @dev Format: messageToInvoiceId[sourceDomain][nonce] = invoiceId. CCTP V2 nonces are `bytes32`
+    ///      (Circle-assigned), not the V1 `uint64`.
+    mapping(uint32 => mapping(bytes32 => bytes32)) public messageToInvoiceId;
 
     /// @notice Mapping from chain ID to CCTP domain ID
     mapping(uint64 => uint32) public chainIdToDomain;
@@ -53,8 +54,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
     /// @notice Replay protection: whether a (sourceDomain, nonce) CCTP message was already consumed
     /// @dev Defense in depth — the MessageTransmitter also rejects replayed messages, but the adapter
-    ///      records used nonces and reverts on replay before re-invoking receiveMessage.
-    mapping(uint32 => mapping(uint64 => bool)) public usedNonces;
+    ///      records used nonces and reverts on replay before re-invoking receiveMessage. CCTP V2 nonces
+    ///      are `bytes32`.
+    mapping(uint32 => mapping(bytes32 => bool)) public usedNonces;
 
     /// @inheritdoc ICctpBridgeAdapter
     function tokenMessenger() public view returns (ICircleTokenMessengerV2) {
@@ -176,7 +178,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         // TokenMessengerV2 does not return the message nonce; it is only available in events.
         // Completion verifies provenance from the attested CCTP message body, not from this mapping.
-        uint64 nonce = 0;
+        bytes32 nonce = bytes32(0);
 
         emit CctpBridgeInitiated(data.invoiceId, destinationDomain, mintRecipient, bytes32(data.amount), nonce);
     }
@@ -202,7 +204,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         if (_isNativeToken(asset)) revert InvalidArguments();
 
         // ── Parse + verify the CCTP message against the invoice (provenance check) ──
-        (uint32 sourceDomain, uint64 nonce) = _verifyCctpMessage(cctpMessage, data, asset);
+        (uint32 sourceDomain, bytes32 nonce) = _verifyCctpMessage(cctpMessage, data, asset);
 
         // Replay protection: a (sourceDomain, nonce) message may settle exactly once.
         // (The MessageTransmitter also rejects replays; this is defense in depth and lets us
@@ -232,23 +234,28 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @param data The decoded invoice this completion is settling
     /// @param asset The resolved destination asset address (expected burnToken)
     /// @return sourceDomain The source CCTP domain from the message header
-    /// @return nonce The CCTP message nonce from the message header
-    /// @dev CCTP message layout (see Circle / IMessageTransmitter). Byte offsets in brackets:
-    ///        version[0..4] sourceDomain[4..8] destinationDomain[8..12] nonce[12..20]
-    ///        sender[20..52] recipient[52..84] destinationCaller[84..116] messageBody[116..]
-    ///      BurnMessage body (offsets relative to message start, body begins at byte 116):
-    ///        body.version[116..120] burnToken[120..152] mintRecipient[152..184] amount[184..216]
+    /// @return nonce The CCTP message nonce (bytes32, Circle-assigned) from the message header
+    /// @dev CCTP **V2** message layout (Circle MessageV2 + BurnMessageV2). Byte offsets in brackets:
+    ///        version[0..4] sourceDomain[4..8] destinationDomain[8..12] nonce[12..44]
+    ///        sender[44..76] recipient[76..108] destinationCaller[108..140]
+    ///        minFinalityThreshold[140..144] finalityThresholdExecuted[144..148] messageBody[148..]
+    ///      BurnMessageV2 body (offsets relative to message start, body begins at byte 148):
+    ///        body.version[148..152] burnToken[152..184] mintRecipient[184..216] amount[216..248]
+    ///        (followed by messageSender/maxFee/feeExecuted/expirationBlock/hookData, not read here)
     ///      We verify: header.recipient == this adapter, body.mintRecipient == this adapter,
     ///      body.burnToken == invoice asset, body.amount == invoice amount, and
     ///      domainToChainId[sourceDomain] == invoice.sourceChainId.
+    ///      NOTE: V2 widened the header nonce from a uint64 (V1 bytes 12..20) to a bytes32 (bytes 12..44)
+    ///      and shifted the recipient (bytes 76 vs V1 bytes 52) and the body (begins at byte 148 vs V1
+    ///      byte 116). The configured V2 contracts (TokenMessengerV2/MessageTransmitterV2) emit this layout.
     function _verifyCctpMessage(bytes memory cctpMessage, InvoiceDataLib.InvoiceData memory data, address asset)
         internal
         view
-        returns (uint32 sourceDomain, uint64 nonce)
+        returns (uint32 sourceDomain, bytes32 nonce)
     {
-        // Header (12B) + sender/recipient/destinationCaller (96B) + body version(4) + burnToken(32)
-        // + mintRecipient(32) + amount(32) = 216 bytes minimum.
-        if (cctpMessage.length < 216) revert InvalidMessage();
+        // Header (148B: through finalityThresholdExecuted) + body version(4) + burnToken(32)
+        // + mintRecipient(32) + amount(32) = 248 bytes minimum.
+        if (cctpMessage.length < 248) revert InvalidMessage();
 
         bytes32 headerRecipient;
         bytes32 bodyBurnTokenWord;
@@ -259,16 +266,16 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
             // sourceDomain: bytes 4-8 (uint32)
             sourceDomain := shr(224, mload(add(base, 4)))
-            // nonce: bytes 12-20 (uint64)
-            nonce := shr(192, mload(add(base, 12)))
-            // header recipient: bytes 52-84 (bytes32) — the transmitter-level mint recipient
-            headerRecipient := mload(add(base, 52))
-            // body burnToken: bytes 120-152 (bytes32, left-padded address)
-            bodyBurnTokenWord := mload(add(base, 120))
-            // body mintRecipient: bytes 152-184 (bytes32)
-            bodyMintRecipient := mload(add(base, 152))
-            // body amount: bytes 184-216 (uint256)
-            bodyAmount := mload(add(base, 184))
+            // nonce: bytes 12-44 (bytes32, Circle-assigned)
+            nonce := mload(add(base, 12))
+            // header recipient: bytes 76-108 (bytes32) — the transmitter-level mint recipient
+            headerRecipient := mload(add(base, 76))
+            // body burnToken: bytes 152-184 (bytes32, left-padded address)
+            bodyBurnTokenWord := mload(add(base, 152))
+            // body mintRecipient: bytes 184-216 (bytes32)
+            bodyMintRecipient := mload(add(base, 184))
+            // body amount: bytes 216-248 (uint256)
+            bodyAmount := mload(add(base, 216))
         }
 
         bytes32 selfAsBytes32 = bytes32(uint256(uint160(address(this))));

@@ -1,1 +1,54 @@
-{}
+{
+  "Stargate": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      10,
+      100,
+      137,
+      42161,
+      8453
+    ]
+  },
+  "CCIP": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "router": "0x34B03Cb9086d7D758AC55af71584F81A598759FE",
+      "feeToken": "0x404460C6A5EdE2D891e8297795264fDe62ADBB75",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      10,
+      100,
+      137,
+      42161,
+      8453
+    ]
+  },
+  "Across": {
+    "enabled": true,
+    "initialize": {
+      "admin": "",
+      "bridgeEscrow": "",
+      "spokePool": "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+      "defaultRelayerFeePct": "5000",
+      "version": "1.0.0"
+    },
+    "remoteChains": [
+      1,
+      10,
+      137,
+      42161,
+      8453
+    ]
+  }
+}

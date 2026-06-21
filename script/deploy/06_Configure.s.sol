@@ -188,12 +188,10 @@ contract Configure is BaseDeployScript {
                 continue;
             }
 
-            (bool hasCallback, bytes4 selector) =
-                ConfigReader.readAdapterCallbackSelector(vm, currentChainId, "bridgeAdapters", adapterNames[i]);
-            bytes memory authorizeData = (hasCallback && selector != bytes4(0))
-                ? abi.encodeWithSignature("authorizeAdapterWithCallback(address,bytes4)", deployed, selector)
-                : abi.encodeWithSignature("authorizeAdapter(address)", deployed);
-            (bool ok, bytes memory data) = bridgeProxy.call(authorizeData);
+            // ADR 0012 removed the escrow fallback dispatcher and authorizeAdapterWithCallback — adapters are
+            // authorized with plain authorizeAdapter(address); any legacy `callbackSelector` config is ignored.
+            (bool ok, bytes memory data) =
+                bridgeProxy.call(abi.encodeWithSignature("authorizeAdapter(address)", deployed));
             if (!ok) {
                 revert(
                     string(

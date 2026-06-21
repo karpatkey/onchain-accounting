@@ -360,7 +360,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         external
         view
         override
-        returns (int256 value)
+        returns (int256 value, bool quoteAssetStale)
     {
         return PriceFeedLib.calculateValue(
             _priceOracles, _assetIndex, _registeredAssets, assetAddresses, amounts, quoteAsset, _nativeTokenSymbol

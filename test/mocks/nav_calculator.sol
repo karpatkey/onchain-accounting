@@ -148,7 +148,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function calculateValue(address[] memory, uint256[] memory, address) external pure override returns (int256) {
+    function calculateValue(address[] memory, uint256[] memory, address) external pure override returns (int256, bool) {
         revert("Not implemented in mock");
     }
 
@@ -196,8 +196,20 @@ contract Mock_NAVCalculator is INAVCalculator {
         return 8;
     }
 
-    function getPriceData(address) external pure override returns (PriceFeedData memory) {
-        revert("Not implemented in mock");
+    /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsMeta after [2]).
+    ///         Unset assets return price 0 / stale=false → treated as unpriceable by such adapters.
+    mapping(address => PriceFeedData) private _priceData;
+
+    function setAssetPrice(address asset, int256 price, uint8 decimals) external {
+        PriceFeedData memory d;
+        d.price = price;
+        d.decimals = decimals;
+        d.stale = false;
+        _priceData[asset] = d;
+    }
+
+    function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+        return _priceData[asset];
     }
 
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {

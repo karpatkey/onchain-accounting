@@ -6,12 +6,12 @@ import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/panca
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title PancakeSwapV3PoolsMetaParityForkTest (Base)
-/// @notice Validates the PancakeSwap V3 pools meta-adapter against the real Base WETH/COW 0.25% pool. The key
-///         check is that the `_slot0` override decodes PancakeSwap's `uint32 feeProtocol` (Uniswap's `uint8` read
-///         would revert on a live PCS pool): the test holder has an NFT in this pool, so the slot0 read in
-///         UniswapV3PoolLib is exercised. The holder's position is closed (liquidity 0), so amounts are zero —
-///         the assertion is that the adapter returns empty without
-///         reverting).
+/// @notice Validates the PancakeSwap V3 pools meta-adapter against the real Base WETH/COW 0.25% pool. The holder's
+///         position here is closed (liquidity 0), so the adapter returns zero amounts; the assertion is that the
+///         call succeeds and yields empty without reverting. (Historically this also exercised the `_slot0`
+///         uint32-feeProtocol override, but since [2] the adapter no longer reads slot0 — it reconstructs the
+///         price from the registered oracle feeds — so an unpriced pair like WETH/COW is simply dropped, which for
+///         a closed position is indistinguishable from the zero result asserted below.)
 contract PancakeSwapV3PoolsMetaParityForkTest_Base is BalanceAdapterTestBase {
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address public constant POOL = 0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF; // WETH/COW 0.25%

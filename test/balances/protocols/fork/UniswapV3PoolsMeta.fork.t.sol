@@ -4,6 +4,13 @@ pragma solidity ^0.8;
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
+/// @dev Minimal slot0 read used only by the test to derive oracle-consistent prices (the adapter itself no
+///      longer reads slot0 — see [2]).
+interface IPoolSlot0 {
+    function slot0() external view returns (uint160 sqrtPriceX96, int24, uint16, uint16, uint16, uint8, bool);
+}
 
 /// @title UniswapV3PoolsMetaParityForkTest
 /// @notice Fork tests for the Uniswap V3 pools meta-adapter against real mainnet contracts.
@@ -23,7 +30,20 @@ contract UniswapV3PoolsMetaParityForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
+        _setPoolImpliedPrices();
         meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
+    }
+
+    /// @notice Feeds the harness oracle prices consistent with the pool's live `sqrtPrice`, so the adapter's
+    ///         [2] reconstruct-from-feeds split reproduces the real on-chain split (and the holder's position is
+    ///         in range). token0 = WBTC (8dp), token1 = WETH (18dp); both price feeds use 8 decimals, so the
+    ///         reconstructed raw price is `(pWBTC/pWETH)·1e10` — set pWETH = 1e8 and pWBTC = P/100 where P is the
+    ///         pool's raw token1/token0 price.
+    function _setPoolImpliedPrices() internal {
+        (uint160 sp,,,,,,) = IPoolSlot0(POOL).slot0();
+        uint256 p = Math.mulDiv(uint256(sp), uint256(sp), 1 << 192); // raw WETH per raw WBTC
+        balances.setAssetPrice(WETH, 1e8, 8);
+        balances.setAssetPrice(WBTC, int256(p / 100), 8);
     }
 
     function _setupFork() internal override {

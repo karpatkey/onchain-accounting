@@ -59,7 +59,7 @@ Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempot
 
 - **Plain balance adapters** (from `nav-config/balance-adapters/<chainId>.json`): registered with `addBalanceAdapters([adapter])`.
 - **Meta-adapters** (ADR 0010, from `nav-config/meta-balance-adapters/<chainId>.json`): registered atomically with `addMetaBalanceAdapter(adapter, instances)` (register + seed the configured instance set in one call), then the on-chain instance set is reconciled against config via `addMetaInstances`/`removeMetaInstances` (diff-only, so a just-seeded adapter is a no-op). The instance set is `instances` addresses (widened to `bytes32`) and/or `instancesRaw` bytes32 coordinates.
-- **Bridge adapters:** each enabled + deployed adapter is authorized on `BridgeEscrow` (`authorizeAdapter`, or `authorizeAdapterWithCallback` when a callback selector is configured).
+- **Bridge adapters:** each enabled + deployed adapter is authorized on `BridgeEscrow` with `authorizeAdapter(adapter)`. As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has no callback dispatcher and no `authorizeAdapterWithCallback` — adapters are the direct protocol receivers and authenticate inbound messages themselves. Trusted source senders are configured separately, per adapter, via `BridgeAdapter.setTrustedRemoteAdapter(sourceKey, remoteAdapter)` (admin) before the adapter is used on the destination chain.
 
 ```bash
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
@@ -67,7 +67,11 @@ forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account
 
 ## 07_TransferAdminToSecurityCouncil.s.sol (run LAST)
 
-Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies, revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`. After this the council Safe is the sole admin/manager and the deployer holds nothing.
+Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies (`NAVCalculator`, `BridgeEscrow`), revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`.
+
+It also hands off **each deployed bridge adapter** (CCIP, Across, Stargate, Gnosis, CCTP, Superchain — `AccessControl` contracts, not proxies; addresses read from `deployments/<chainId>.json` under `bridgeAdapters`, skipping any not deployed). Per [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) (M1/AC-6) the deployer EOA must not retain ADMIN/MANAGER on the adapters: for each, the council is granted `DEFAULT_ADMIN_ROLE` + `MANAGER`, the deployer's `MANAGER` is revoked, and the deployer's `DEFAULT_ADMIN_ROLE` is renounced. The council's adapter `MANAGER` is what subsequently gates `completeBridge` / `recoverStuckAssets` (and, on Superchain, `proveWithdrawal` / `finalizeWithdrawal`); admin gates `setTrustedRemoteAdapter`.
+
+After this the council Safe is the sole admin/manager on the proxies **and** the adapters, and the deployer holds nothing.
 
 ```bash
 DEPLOYER_EOA=0xYourDeployer \

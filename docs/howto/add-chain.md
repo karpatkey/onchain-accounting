@@ -66,7 +66,7 @@ The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed
 | `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` | `{ "<feedName>": { "enabled", "constructor": {…} } }` — custom price feeds to **deploy** | `03_DeployPriceFeeds.s.sol` |
 | `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **plain** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **meta** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
-| `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…}, "callbackSelector"? } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
+| `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…} } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
 | `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
 | `script/config/nav-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled" } }` — **plain** adapters to add on NAV | `06_Configure.s.sol` → `addBalanceAdapters` |
 | `script/config/nav-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "instances": […] \| "instancesRaw": […] } }` — **meta** adapters to add on NAV | `06_Configure.s.sol` → `addMetaBalanceAdapter` + add/removeMetaInstances |
@@ -95,14 +95,13 @@ The `ERC20Default` adapter (wallet/native coverage) is deployed and registered a
 
 ### 3.3 Bridge adapters
 
-For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate, Superchain, Gnosis), add the deploy config under `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json`, keyed by adapter name. Each entry has `enabled`, the adapter's `initialize` args (admin, bridgeEscrow, protocol contracts, version), and an optional `callbackSelector` for callback-based protocols. Read by `05_DeployBridgeAdapters.s.sol`.
+For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate, Superchain, Gnosis), add the deploy config under `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json`, keyed by adapter name. Each entry has `enabled` and the adapter's `initialize` args (admin, bridgeEscrow, protocol contracts, version; CCTP also `cctpDomain`). Read by `05_DeployBridgeAdapters.s.sol`. There is no `callbackSelector`: per [ADR 0012](../decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has no callback dispatcher; adapters authenticate inbound messages directly, and trusted source senders are set per adapter via `setTrustedRemoteAdapter(sourceKey, remoteAdapter)` (admin) after deployment.
 
 ```json
 {
   "CCIP": {
     "enabled": true,
-    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "router": "0x...", "feeToken": "0x...", "version": "1.0.0" },
-    "callbackSelector": "0x85572ffb"
+    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "router": "0x...", "feeToken": "0x...", "version": "1.0.0" }
   },
   "CCTP": {
     "enabled": true,
@@ -190,7 +189,7 @@ PR checklist:
 - [ ] `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` populated (custom feeds to deploy: `enabled` + `constructor`)
 - [ ] `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` populated (plain adapters to deploy: `enabled` + `constructor`)
 - [ ] `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters to deploy: `enabled` + `constructor`)
-- [ ] `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` populated (bridge adapters to deploy: `enabled` + `initialize` + optional `callbackSelector`)
+- [ ] `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` populated (bridge adapters to deploy: `enabled` + `initialize`)
 - [ ] `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` populated (assets with `priceFeeds`)
 - [ ] `script/config/nav-config/balance-adapters/<newChainId>.json` populated (plain adapters to register)
 - [ ] `script/config/nav-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters + `instances`/`instancesRaw`)

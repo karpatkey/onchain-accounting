@@ -13,8 +13,6 @@ import {
     SendParam,
     MessagingFee,
     MessagingReceipt,
-    OFTLimit,
-    OFTFeeDetail,
     OFTReceipt,
     Ticket
 } from "./interfaces/IStargateInterfaces.sol";
@@ -150,15 +148,17 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         });
 
         // POST-FEE OUTPUT MODEL (resolves the PR#86 fee issue): Stargate V2 applies a protocol fee and SD-dust
-        // rounding, so the destination adapter receives `amountReceivedLD <= amountLD`. The destination funded
-        // pass-through must release EXACTLY the invoiced amount, so we quote the post-fee receive amount in this
-        // same tx and re-encode the invoice payload to carry it as the amount. The recipient then receives and
-        // releases exactly `amountReceivedLD` (the bridge fee is borne by the transfer, standard bridge UX). The
-        // source-chain invoice still records the gross deposit; source↔destination pairing is by `invoiceId`
-        // (fee-independent), so the differing post-fee checksum on the destination is immaterial.
+        // rounding (so the destination adapter usually receives `amountReceivedLD <= amountLD`), but can also quote
+        // a reward (`OFTFeeDetail` negative fee) making it slightly larger. The destination funded pass-through
+        // must release EXACTLY the amount the payload carries, so we quote the receive amount in this same tx and
+        // re-encode the invoice payload to carry it. The recipient then receives and releases exactly
+        // `amountReceivedLD` (the bridge fee/reward is borne by the transfer, standard bridge UX). The source-chain
+        // invoice still records the gross deposit; source↔destination pairing is by `invoiceId` (fee-independent),
+        // so the differing post-fee checksum on the destination is immaterial.
         (,, OFTReceipt memory receipt) = IStargate(pool).quoteOFT(sendParam);
         uint256 receivedAmount = receipt.amountReceivedLD;
-        if (receivedAmount == 0 || receivedAmount > data.amount) revert InvalidBridgeData();
+        // Only a zero quote is invalid; a reward (receivedAmount > data.amount) is legitimate and must not be blocked.
+        if (receivedAmount == 0) revert InvalidBridgeData();
 
         // Build a SEPARATE post-fee copy for the composed payload — do NOT mutate `data`, which is shared by
         // reference with the base `bridge()` (it emits `BridgeInitiated` with the gross deposit amount after this
@@ -190,7 +190,9 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
 
         messagePayloads[data.invoiceId] = messagePayload;
 
-        emit StargateBridgeInitiated(data.invoiceId, dstEid, msgReceipt.guid, receivedAmount);
+        // Emit the GROSS source amount (consistent with the base BridgeInitiated event and other adapters'
+        // *BridgeInitiated events). The post-fee amount lives in the composed payload / OFT receipt.
+        emit StargateBridgeInitiated(data.invoiceId, dstEid, msgReceipt.guid, data.amount);
     }
 
     //

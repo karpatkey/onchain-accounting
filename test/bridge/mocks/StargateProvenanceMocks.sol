@@ -37,9 +37,11 @@ contract MockStargatePoolV2 is IStargate {
     uint256 public constant NATIVE_FEE = 0.01 ether;
 
     /// @notice Flat protocol fee (in local decimals) deducted from the send amount; the destination receives
-    ///         `amountLD - protocolFeeLD`. Default 0 (no fee) so existing tests are unaffected; set it to
-    ///         exercise the post-fee output model.
+    ///         `amountLD - protocolFeeLD + rewardLD`. Defaults 0 (no fee, no reward) so existing tests are
+    ///         unaffected; set them to exercise the post-fee output model (fee) or the reward path.
     uint256 public protocolFeeLD;
+    /// @notice Flat reward (in local decimals) added to the credited amount (Stargate `OFTFeeDetail` negative fee).
+    uint256 public rewardLD;
 
     // Records of the last send (for source-side assertions)
     SendParam public lastSendParam;
@@ -54,9 +56,15 @@ contract MockStargatePoolV2 is IStargate {
         protocolFeeLD = feeLD;
     }
 
-    /// @dev The post-fee amount credited on the destination for a given gross send amount.
+    /// @notice Test hook: configure a flat reward added on a send (destination receives MORE than sent).
+    function setRewardLD(uint256 reward) external {
+        rewardLD = reward;
+    }
+
+    /// @dev The amount credited on the destination for a given gross send amount (post fee, plus any reward).
     function _received(uint256 amountLD) internal view returns (uint256) {
-        return amountLD > protocolFeeLD ? amountLD - protocolFeeLD : 0;
+        uint256 net = amountLD > protocolFeeLD ? amountLD - protocolFeeLD : 0;
+        return net + rewardLD;
     }
 
     /// @inheritdoc IStargate

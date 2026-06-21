@@ -252,6 +252,51 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
     }
 
+    /// @notice Reward path (PR #90 Copilot): Stargate can quote a reward (`amountReceivedLD > amountLD`); the
+    ///         adapter must NOT block it. The payload carries the larger credited amount and the destination
+    ///         releases it (account receives gross + reward).
+    function test_realistic_rewardOutput_releasesGrossPlusReward() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        uint256 reward = 3 * 10 ** usdc.decimals();
+        uint256 credited = amount + reward;
+
+        usdcPool.setRewardLD(reward); // source pool quotes a reward
+
+        // ---------- SOURCE CHAIN ----------
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.deal(address(adapter), 0.1 ether);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, amount, address(adapter));
+
+        bytes memory messagePayload = usdcPool.getLastComposeMsg();
+        assertEq(
+            InvoiceDataLib.decode(messagePayload).amount, credited, "payload carries the credited (gross+reward) amount"
+        );
+        (,, uint256 amountLD, uint256 minAmountLD,,,) = usdcPool.lastSendParam();
+        assertEq(amountLD, amount, "gross amount debited on source");
+        assertEq(minAmountLD, credited, "slippage floor at the credited amount");
+        uint256 portfolioBefore = usdc.balanceOf(account);
+
+        // ---------- DESTINATION CHAIN ----------
+        vm.chainId(uint256(DEST_CHAIN_ID));
+        (
+            BridgeEscrow destEscrow,
+            StargateBridgeAdapter destAdapter,
+            MockStargatePoolV2 destPool,
+            MockLZEndpointV2 destEndpoint
+        ) = _setupDestination();
+
+        usdc.mint(address(destEndpoint), credited);
+        bytes memory composeMessage = destEndpoint.encodeComposeMessage(
+            1, SOURCE_EID, credited, bytes32(uint256(uint160(address(adapter)))), messagePayload
+        );
+        destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), credited, composeMessage);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account) - portfolioBefore, credited, "account received gross + reward");
+    }
+
     /// @notice Sets up a destination adapter + escrow trusting the source sibling adapter, ready for lzCompose.
     function _setupDestination()
         internal

@@ -57,6 +57,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
     MockUnderlying underlying;
     MockStakeWiseVault vaultA; // Genesis
     MockStakeWiseVault vaultB; // Meta
+    MockStakeWiseVault osTokenController; // stands in for the OsTokenVaultController (has convertToAssets)
 
     address alice = makeAddr("alice");
 
@@ -73,7 +74,12 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         vaultA.setOsToken(alice, 1e18);
         vaultB.setShares(alice, 3e18);
 
-        meta = new StakeWiseV3VaultsMetaBalanceAdapter(address(underlying), "StakeWise V3", address(nav));
+        // OsTokenVaultController converts osToken debt shares → underlying at its own rate (2e18 here): alice's
+        // 1 osToken share → 2 underlying debt, matching the comment above.
+        osTokenController = new MockStakeWiseVault("OsTokenVaultController", 2e18);
+        meta = new StakeWiseV3VaultsMetaBalanceAdapter(
+            address(underlying), address(osTokenController), "StakeWise V3", address(nav)
+        );
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

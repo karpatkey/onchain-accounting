@@ -338,6 +338,7 @@ library PriceFeedLib {
                 quoteInfo.price,
                 quoteInfo.priceDecimals,
                 quoteInfo.assetDecimals,
+                quoteInfo.stale,
                 registered.decimals,
                 registered.symbol
             );
@@ -410,7 +411,7 @@ library PriceFeedLib {
         uint256[] memory amounts,
         address quoteAsset,
         string memory nativeTokenSymbol
-    ) external view returns (int256 value) {
+    ) external view returns (int256 value, bool quoteAssetStale) {
         if (assetAddresses.length != amounts.length) {
             revert ArrayLengthMismatch();
         }
@@ -420,6 +421,9 @@ library PriceFeedLib {
 
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        // [9]/S2: surface that a stale non-USD quote made `_priceConversion` fall back to USD, instead of a
+        // silent unit switch. (quoteInfo.stale is always false for a USD quote.)
+        quoteAssetStale = quoteInfo.stale;
 
         value = 0;
         for (uint256 i = 0; i < assetAddresses.length; i++) {
@@ -549,6 +553,19 @@ library PriceFeedLib {
         priceFeeds = new PriceFeedCache[](length);
         for (uint256 i = 0; i < length; i++) {
             address asset = assets[i];
+            // [8]/S1 — A feedless asset that still has a live position must NOT revert the whole NAV/positions
+            // read. `_selectFeedCore` reverts PriceFeedNotSet when len == 0; here in the value-aggregation path we
+            // instead treat it exactly like the all-feeds-stale case: price 0, stale = true. The asset is then
+            // surfaced in `nav.stalePriceAssets` and summed as a zero-value (stale) leg rather than DoS-reverting
+            // the entire read. The explicit query paths (selectFeed/buildPriceData/calculateValue) keep reverting
+            // PriceFeedNotSet so MANAGER tooling still sees the misconfiguration.
+            if (priceOracles[asset].length == 0) {
+                // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
+                // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
+                // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
+                priceFeeds[i] = PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true});
+                continue;
+            }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
             priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale});
         }
@@ -636,6 +653,7 @@ library PriceFeedLib {
         int256 quoteAssetPrice,
         uint8 quoteAssetPriceDecimals,
         uint8 quoteAssetDecimals,
+        bool quoteAssetStale,
         uint8 canonicalDecimals,
         string memory canonicalSymbol
     ) private pure returns (INAVCalculator.Position memory position) {
@@ -665,7 +683,8 @@ library PriceFeedLib {
             value: value,
             price: priceFeed.price,
             priceDecimals: priceFeed.decimals,
-            stale: priceFeed.stale
+            stale: priceFeed.stale,
+            quoteAssetStale: quoteAssetStale
         });
     }
 

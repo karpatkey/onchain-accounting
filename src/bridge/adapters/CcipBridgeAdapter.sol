@@ -214,10 +214,14 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     ///      This manager path is used only if that did not run. `protocolData` carries the delivered
     ///      Any2EVMMessage so we can authenticate the source the same way. The adapter must already hold the
     ///      delivered tokens (CCIP delivered them to this adapter as the receiver); the base then funds+releases.
-    function _completeBridge(bytes calldata, bytes calldata protocolData) internal override {
+    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         Client.Any2EVMMessage memory message = abi.decode(protocolData, (Client.Any2EVMMessage));
         if (message.data.length == 0) revert InvalidCompletionData();
         _authenticateSource(message.sourceChainSelector, message.sender);
+        // The base completeBridge funds + releases against `messagePayload`, so it MUST equal the payload we
+        // authenticated from the CCIP message — otherwise a manager could release a different invoice than the
+        // one provenance vouches for.
+        if (keccak256(messagePayload) != keccak256(message.data)) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(message.data);
         messagePayloads[data.invoiceId] = message.data;
         emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);

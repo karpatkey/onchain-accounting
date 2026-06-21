@@ -36,9 +36,11 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     {}
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
-    ///      Supply/Collateral (aToken balance) and Borrow (variable debt). Stable debt is ignored (Aave V3
-    ///      deprecated it). Skips unregistered reserves and respects assetFilter.
+    /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to three rows per registered reserve:
+    ///      Supply/Collateral (aToken balance), variable Borrow, and stable Borrow. Aave V3 deprecated NEW stable
+    ///      borrows but legacy stable debt can persist, and the Aave V2 subclass inherits this — so both the
+    ///      variable and stable debt legs are emitted whenever positive (dropping stable debt understates debt and
+    ///      overstates NAV). Skips unregistered reserves and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -49,7 +51,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         address pool = _poolOf(dp);
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 2);
+        // up to 3 legs per reserve: supply/collateral + variable debt + stable debt
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 3);
         uint256 count;
 
         for (uint256 i = 0; i < reserves.length; i++) {
@@ -59,7 +62,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(asset);
             if (!found) continue;
 
-            (uint256 aTokenBalance,, uint256 variableDebt,,,,,, bool usageAsCollateral) =
+            (uint256 aTokenBalance, uint256 stableDebt, uint256 variableDebt,,,,,, bool usageAsCollateral) =
                 dp.getUserReserveData(asset, account);
 
             // positionId is per-reserve (pool + asset); _instancePositionId does not apply.
@@ -71,6 +74,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             }
             if (variableDebt > 0) {
                 temp[count++] = _row(assetInfo, variableDebt, true, pid, PositionKind.Borrowed);
+            }
+            if (stableDebt > 0) {
+                temp[count++] = _row(assetInfo, stableDebt, true, pid, PositionKind.Borrowed);
             }
         }
 

@@ -7,7 +7,11 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IUniswapV3Pool, INonfungiblePositionManager} from "src/balances/protocols/uniswap/UniswapV3PoolLib.sol";
+import {
+    IUniswapV3Pool,
+    INonfungiblePositionManager,
+    UniswapV3PoolLib
+} from "src/balances/protocols/uniswap/UniswapV3PoolLib.sol";
 import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
 import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
@@ -21,8 +25,13 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         (`addMetaInstances`/`removeMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
 ///         constructor. Each NFT position gets its own positionId = abi.encode(npm, tokenId).
 ///         See ADR 0010.
-/// @dev `slot0` is read via the `_slot0` virtual hook so forks with a divergent `slot0()` ABI (PancakeSwap V3)
-///      override just that read.
+/// @dev Manipulation resistance ([2]): the in-range split and the fee-growth branch are driven by a `sqrtPriceX96`
+///      *reconstructed from the two tokens' registered oracle prices* (`NAV_CALCULATOR.getPriceData`), NOT the
+///      pool's `slot0` spot. This makes reported amounts a pure function of the same oracles NAV prices with, so an
+///      attacker who atomically moves the pool price cannot move the reported value (honors the repo's "never trust
+///      an AMM spot price" rule). A position whose tokens are unregistered/unpriced/stale is dropped (returns no
+///      legs) rather than valued off a manipulable spot. Because `slot0` is no longer read, byte-compatible forks
+///      with a divergent `slot0()` ABI (PancakeSwap V3) need no special handling.
 ///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128) —
 ///      combined work is GPL-2.0-or-later (ADR 0008).
 contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
@@ -66,11 +75,27 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         address token1 = IUniswapV3Pool(pool).token1();
         uint24 fee = IUniswapV3Pool(pool).fee();
 
-        (INAVCalculator.Asset memory a0, bool f0reg) = _eligible(token0, assetFilter);
-        (INAVCalculator.Asset memory a1, bool f1reg) = _eligible(token1, assetFilter);
+        // Both tokens must be registered: valuing the LP split needs *both* oracle prices, regardless of which
+        // leg(s) `assetFilter` ultimately emits. `assetFilter` only gates emission below (f0reg/f1reg).
+        (INAVCalculator.Asset memory a0, bool reg0) = _getAssetInfo(token0);
+        (INAVCalculator.Asset memory a1, bool reg1) = _getAssetInfo(token1);
+        if (!reg0 || !reg1) return new INAVCalculator.PositionBalance[](0);
+        bool f0reg = assetFilter == address(0) || assetFilter == token0;
+        bool f1reg = assetFilter == address(0) || assetFilter == token1;
         if (!f0reg && !f1reg) return new INAVCalculator.PositionBalance[](0);
 
-        (uint160 sqrtPriceX96, int24 tick) = _slot0(pool);
+        // [2] Reconstruct the price from the registered oracles instead of reading the manipulable slot0. Drop the
+        // whole instance if either feed is missing/zero/stale — an LP can't be valued manipulation-safely without
+        // both fair prices (the stale asset is already surfaced in NAV.stalePriceAssets).
+        INAVCalculator.PriceFeedData memory pd0 = NAV_CALCULATOR.getPriceData(token0);
+        INAVCalculator.PriceFeedData memory pd1 = NAV_CALCULATOR.getPriceData(token1);
+        if (pd0.price <= 0 || pd1.price <= 0 || pd0.stale || pd1.stale) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+        uint160 sqrtPriceX96 = UniswapV3PoolLib.sqrtPriceX96FromOraclePrices(
+            uint256(pd0.price), pd0.decimals, a0.decimals, uint256(pd1.price), pd1.decimals, a1.decimals
+        );
+
         uint256 fgGlobal0 = IUniswapV3Pool(pool).feeGrowthGlobal0X128();
         uint256 fgGlobal1 = IUniswapV3Pool(pool).feeGrowthGlobal1X128();
 
@@ -106,20 +131,23 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             // not apply here; see MetaBalanceAdapter.
             bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
 
+            // Tick-boundary sqrt ratios, computed once: used for the in-range split AND (via comparison against
+            // the reconstructed sqrtPriceX96) the fee-growth branch — `sqrtPriceX96 < getSqrtRatioAtTick(t)` is
+            // exactly equivalent to `currentTick < t`, so no reverse tick lookup is needed.
+            uint160 sqrtLower = TickMath.getSqrtRatioAtTick(tickLower);
+            uint160 sqrtUpper = TickMath.getSqrtRatioAtTick(tickUpper);
+
             uint256 liq0;
             uint256 liq1;
             if (liquidity > 0) {
-                (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(
-                    sqrtPriceX96,
-                    TickMath.getSqrtRatioAtTick(tickLower),
-                    TickMath.getSqrtRatioAtTick(tickUpper),
-                    liquidity
-                );
+                (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(sqrtPriceX96, sqrtLower, sqrtUpper, liquidity);
             }
 
             (uint256 fee0, uint256 fee1) = _computeFees(
                 pool,
-                tick,
+                sqrtPriceX96,
+                sqrtLower,
+                sqrtUpper,
                 fgGlobal0,
                 fgGlobal1,
                 tickLower,
@@ -158,23 +186,6 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return string.concat("NFT #", tokenId.toString());
     }
 
-    /// @notice Reads `(sqrtPriceX96, tick)` from the pool's `slot0`.
-    /// @dev `virtual` so a fork with a divergent `slot0()` ABI overrides this single read. The first override is
-    ///      `PancakeSwapV3PoolsMetaBalanceAdapter` (PancakeSwap V3's `slot0().feeProtocol` is `uint32`, not `uint8`).
-    function _slot0(address pool) internal view virtual returns (uint160 sqrtPriceX96, int24 tick) {
-        (sqrtPriceX96, tick,,,,,) = IUniswapV3Pool(pool).slot0();
-    }
-
-    /// @notice Returns `(assetInfo, eligible)` where eligible == registered AND passes `assetFilter`.
-    function _eligible(address token, address assetFilter)
-        private
-        view
-        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
-    {
-        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
-        (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
         private
         view
@@ -193,9 +204,15 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Computes unclaimed fees for a single NFT position.
     /// @dev Subtractions intentionally wrap (`unchecked`), matching Uniswap's fee accounting (v3 whitepaper 6.3).
+    ///      The below/in/above-range branch is selected by comparing the reconstructed `sqrtPriceX96` against the
+    ///      range's tick-boundary sqrt ratios — `sqrtPriceX96 < getSqrtRatioAtTick(t)` is exactly equivalent to
+    ///      `currentTick < t`. So, like the principal split, fee valuation is driven by the oracle-implied price,
+    ///      not the manipulable slot0 tick.
     function _computeFees(
         address pool,
-        int24 tickCurrent,
+        uint160 sqrtPriceX96,
+        uint160 sqrtLower,
+        uint160 sqrtUpper,
         uint256 fgGlobal0,
         uint256 fgGlobal1,
         int24 tickLower,
@@ -212,10 +229,10 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         unchecked {
             uint256 fgInside0;
             uint256 fgInside1;
-            if (tickCurrent < tickLower) {
+            if (sqrtPriceX96 < sqrtLower) {
                 fgInside0 = fgOutLower0 - fgOutUpper0;
                 fgInside1 = fgOutLower1 - fgOutUpper1;
-            } else if (tickCurrent < tickUpper) {
+            } else if (sqrtPriceX96 < sqrtUpper) {
                 fgInside0 = fgGlobal0 - fgOutLower0 - fgOutUpper0;
                 fgInside1 = fgGlobal1 - fgOutLower1 - fgOutUpper1;
             } else {

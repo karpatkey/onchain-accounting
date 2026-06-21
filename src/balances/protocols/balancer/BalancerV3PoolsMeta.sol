@@ -53,7 +53,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
             if (!found) continue;
 
-            uint256 amount = pool.poolBalanceOf(walletBpt, token);
+            uint256 amount = pool.poolBalanceOfIndexed(walletBpt, i);
             if (amount == 0) continue;
 
             temp[count++] = INAVCalculator.PositionBalance({

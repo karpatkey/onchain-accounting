@@ -19,7 +19,7 @@ import {aa} from "test/helpers/AdapterArray.sol";
 ///         configured DataProvider set (seeded via addMetaBalanceAdapter). Uses the mainnet Core instance and an account with
 ///         collateral + supply + borrow, and asserts parity with the per-instance AaveV3Instance adapter.
 contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
-    address constant PRICE_FEED_LIB = 0xf668F0D1341e89B78903c9D3fe18340175085C6C;
+    address constant PRICE_FEED_LIB = 0x1A18012eb9Af97aa33A0391825d4466acd69FAbA;
 
     // Aave V3 Core (mainnet) ProtocolDataProvider — the instance coordinate.
     address public constant CORE_DATA_PROVIDER = 0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3;
@@ -41,7 +41,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp(); // forks mainnet at DEFAULT_FORK_BLOCK
 
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(0x598D86380907a78ceE1AC81f55354Bc8871A3802, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
 
         vm.startPrank(admin);
         address navImpl = address(new NAVCalculator());

@@ -130,6 +130,7 @@
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
     "constructor": {
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
       "protocol": "StakeWise V3"
     }
   },

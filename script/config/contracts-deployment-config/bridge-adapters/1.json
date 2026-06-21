@@ -49,15 +49,21 @@
     ]
   },
   "CCTP": {
-    "enabled": false,
+    "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
-      "tokenMessenger": "0xBd3fa81B58Ba92a82136038B25aDec7066af3155",
-      "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
+      "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       "version": "1.0.0",
       "cctpDomain": 0
-    }
+    },
+    "remoteChains": [
+      10,
+      137,
+      42161,
+      8453
+    ]
   },
   "Gnosis": {
     "enabled": true,

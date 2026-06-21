@@ -192,7 +192,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         (BridgeEscrow destBridgeEscrow, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        uint64 nonce = 123;
+        bytes32 nonce = bytes32(uint256(123));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
@@ -222,7 +222,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        uint64 nonce = 777;
+        bytes32 nonce = bytes32(uint256(777));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
         vm.prank(manager);
@@ -243,7 +243,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // CCTP message mints a different amount than the invoice — must revert.
-        uint64 nonce = 5;
+        bytes32 nonce = bytes32(uint256(5));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
             SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount + 1
         );
@@ -263,7 +263,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // Mint recipient is the escrow (NOT the adapter) — provenance check must reject it.
-        uint64 nonce = 9;
+        bytes32 nonce = bytes32(uint256(9));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
             SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destBridgeEscrow), address(destAdapter), amount
         );
@@ -283,7 +283,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         // burnToken is DAI, not the invoice asset (USDC) — must revert.
-        uint64 nonce = 11;
+        bytes32 nonce = bytes32(uint256(11));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
             SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(dai), address(destAdapter), address(destAdapter), amount
         );
@@ -304,7 +304,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         // sourceDomain in the CCTP message (DEST_DOMAIN=6 -> chainId 10) does NOT map to the invoice's
         // sourceChainId (1). Must revert.
-        uint64 nonce = 13;
+        bytes32 nonce = bytes32(uint256(13));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
             DEST_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount
         );
@@ -332,7 +332,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // ---------- DESTINATION CHAIN ----------
         (BridgeEscrow destBridgeEscrow, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
 
-        uint64 nonce = 42;
+        bytes32 nonce = bytes32(uint256(42));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
         vm.prank(manager);
@@ -350,7 +350,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
 
         (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
 
-        uint64 nonce = 123;
+        bytes32 nonce = bytes32(uint256(123));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
         // Corrupt messagePayload (invalid checksum) — releaseByInvoiceId in the base reverts.
@@ -373,7 +373,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        uint64 nonce = 123;
+        bytes32 nonce = bytes32(uint256(123));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
         vm.prank(unauthorized);
@@ -434,7 +434,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Build protocolData (CCTP message + attestation) for a completion that mints to the adapter.
-    function _prepareCctpProtocolData(uint64 nonce, uint256 amount, address destAdapter)
+    function _prepareCctpProtocolData(bytes32 nonce, uint256 amount, address destAdapter)
         internal
         view
         returns (bytes memory)

@@ -19,9 +19,9 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     /// @param destinationDomain The CCTP domain ID of destination chain
     /// @param mintRecipient The recipient address on destination chain (as bytes32)
     /// @param amount The amount being bridged
-    /// @param nonce The CCTP message nonce
+    /// @param nonce The CCTP message nonce (bytes32, Circle-assigned in V2)
     event CctpBridgeInitiated(
-        bytes32 indexed invoiceId, uint32 destinationDomain, bytes32 mintRecipient, bytes32 amount, uint64 nonce
+        bytes32 indexed invoiceId, uint32 destinationDomain, bytes32 mintRecipient, bytes32 amount, bytes32 nonce
     );
 
     /// @notice Event emitted when a CCTP bridge is completed
@@ -59,7 +59,7 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     error SourceDomainMismatch();
 
     /// @notice Thrown when a CCTP message nonce has already been consumed (replay protection)
-    error NonceAlreadyUsed(uint32 sourceDomain, uint64 nonce);
+    error NonceAlreadyUsed(uint32 sourceDomain, bytes32 nonce);
 
     //
     // State Variables (Public)
@@ -80,9 +80,9 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
 
     /// @notice Gets the invoice ID for a given CCTP message
     /// @param sourceDomain The source CCTP domain
-    /// @param nonce The CCTP message nonce
+    /// @param nonce The CCTP message nonce (bytes32, Circle-assigned in V2)
     /// @return The invoice ID, or bytes32(0) if not found
-    function messageToInvoiceId(uint32 sourceDomain, uint64 nonce) external view returns (bytes32);
+    function messageToInvoiceId(uint32 sourceDomain, bytes32 nonce) external view returns (bytes32);
 
     /// @notice Gets the CCTP domain for a given chain ID
     /// @param chainId The chain ID
@@ -103,9 +103,9 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
 
     /// @notice Whether a (sourceDomain, nonce) CCTP message has already been consumed
     /// @param sourceDomain The source CCTP domain
-    /// @param nonce The CCTP message nonce
+    /// @param nonce The CCTP message nonce (bytes32, Circle-assigned in V2)
     /// @return True if the nonce was already used to complete a bridge (replay protection)
-    function usedNonces(uint32 sourceDomain, uint64 nonce) external view returns (bool);
+    function usedNonces(uint32 sourceDomain, bytes32 nonce) external view returns (bool);
 
     //
     // Configuration Functions

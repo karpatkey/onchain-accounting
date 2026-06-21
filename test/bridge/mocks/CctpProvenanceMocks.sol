@@ -20,41 +20,43 @@ interface IMintableERC20 {
     function mint(address to, uint256 amount) external;
 }
 
-/// @notice Builds CCTP messages in the exact layout the new adapter verifies.
-/// @dev Full CCTP message layout (matches Circle / IMessageTransmitter). Byte offsets in brackets:
-///        version[0..4] sourceDomain[4..8] destinationDomain[8..12] nonce[12..20]
-///        sender[20..52] recipient[52..84] destinationCaller[84..116] messageBody[116..]
-///      BurnMessage body (offsets relative to message start, body begins at byte 116):
-///        body.version[116..120] burnToken[120..152] mintRecipient[152..184] amount[184..216]
-///      Offsets the adapter reads: sourceDomain[4], nonce[12], recipient[52],
-///        burnToken[120], mintRecipient[152], amount[184].
+/// @notice Builds CCTP V2 messages in the exact layout the new adapter verifies.
+/// @dev Full CCTP V2 message layout (Circle MessageV2 + BurnMessageV2). Byte offsets in brackets:
+///        version[0..4] sourceDomain[4..8] destinationDomain[8..12] nonce[12..44]
+///        sender[44..76] recipient[76..108] destinationCaller[108..140]
+///        minFinalityThreshold[140..144] finalityThresholdExecuted[144..148] messageBody[148..]
+///      BurnMessageV2 body (offsets relative to message start, body begins at byte 148):
+///        body.version[148..152] burnToken[152..184] mintRecipient[184..216] amount[216..248]
+///      Offsets the adapter reads: sourceDomain[4], nonce[12] (bytes32), recipient[76],
+///        burnToken[152], mintRecipient[184], amount[216].
 library CctpProvenanceMessage {
-    /// @notice Build a parseable CCTP message for the provenance model.
+    /// @notice Build a parseable CCTP V2 message for the provenance model.
     /// @param sourceDomain Source CCTP domain
     /// @param destDomain Destination CCTP domain
-    /// @param nonce CCTP message nonce
+    /// @param nonce CCTP V2 message nonce (bytes32, Circle-assigned)
     /// @param burnToken The token burned on source / minted on destination (USDC)
     /// @param mintRecipient The mint recipient (the destination adapter)
     /// @param destinationCaller The authorized destination caller (the destination adapter)
     /// @param amount The amount minted
-    /// @return message The encoded CCTP message (248 bytes: 116 header + 132 body)
+    /// @return message The encoded CCTP V2 message (248 bytes: 148 header + 100 body through amount)
     function build(
         uint32 sourceDomain,
         uint32 destDomain,
-        uint64 nonce,
+        bytes32 nonce,
         address burnToken,
         address mintRecipient,
         address destinationCaller,
         uint256 amount
     ) internal pure returns (bytes memory message) {
-        // 116 (header) + 4 (body version) + 32 (burnToken) + 32 (mintRecipient) + 32 (amount)
-        // + 32 (messageSender) = 248 bytes.
+        // 148 (V2 header) + 4 (body version) + 32 (burnToken) + 32 (mintRecipient) + 32 (amount) = 248 bytes.
         message = new bytes(248);
 
         bytes32 recipientWord = bytes32(uint256(uint160(mintRecipient)));
         bytes32 callerWord = bytes32(uint256(uint160(destinationCaller)));
         bytes32 burnTokenWord = bytes32(uint256(uint160(burnToken)));
 
+        // Fields written in increasing offset order; each writes a full 32-byte word whose meaningful
+        // bytes sit at the start, so the next write (starting at/after that field's end) preserves it.
         assembly ("memory-safe") {
             let base := add(message, 32) // first data byte
 
@@ -63,21 +65,20 @@ library CctpProvenanceMessage {
             mstore(add(base, 4), shl(224, sourceDomain))
             // destinationDomain @8 (uint32)
             mstore(add(base, 8), shl(224, destDomain))
-            // nonce @12 (uint64)
-            mstore(add(base, 12), shl(192, nonce))
-            // sender @20 (bytes32) — left as zero
-            // recipient @52 (bytes32) — transmitter-level mint recipient (the adapter)
-            mstore(add(base, 52), recipientWord)
-            // destinationCaller @84 (bytes32)
-            mstore(add(base, 84), callerWord)
-            // body version @116 (uint32) — left as zero
-            // body burnToken @120 (bytes32, left-padded address)
-            mstore(add(base, 120), burnTokenWord)
-            // body mintRecipient @152 (bytes32)
-            mstore(add(base, 152), recipientWord)
-            // body amount @184 (uint256)
-            mstore(add(base, 184), amount)
-            // body messageSender @216 (bytes32) — left as zero
+            // nonce @12 (bytes32, Circle-assigned)
+            mstore(add(base, 12), nonce)
+            // sender @44 (bytes32) — left as zero
+            // recipient @76 (bytes32) — transmitter-level mint recipient (the adapter)
+            mstore(add(base, 76), recipientWord)
+            // destinationCaller @108 (bytes32)
+            mstore(add(base, 108), callerWord)
+            // minFinalityThreshold @140 / finalityThresholdExecuted @144 / body version @148 — left zero
+            // body burnToken @152 (bytes32, left-padded address)
+            mstore(add(base, 152), burnTokenWord)
+            // body mintRecipient @184 (bytes32)
+            mstore(add(base, 184), recipientWord)
+            // body amount @216 (uint256)
+            mstore(add(base, 216), amount)
         }
     }
 }
@@ -92,7 +93,7 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
     IERC20 public usdc;
     mapping(bytes32 => bool) public receivedMessages;
 
-    event MessageReceived(bytes32 messageHash, uint32 sourceDomain, uint64 nonce);
+    event MessageReceived(bytes32 messageHash, uint32 sourceDomain, bytes32 nonce);
 
     constructor(uint32 domain, address usdc_) {
         _LOCAL_DOMAIN = domain;
@@ -100,7 +101,7 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
     }
 
     /// @inheritdoc IMessageTransmitter
-    /// @dev Parses the recipient field (bytes 52-84) and mints `amount` (body @184) to it.
+    /// @dev Parses the V2 recipient field (bytes 76-108) and mints `amount` (body bytes 216-248) to it.
     ///      Reverts on replay — modelling Circle's nonce-tracking transmitter. A real transmitter
     ///      additionally verifies `attestation`; here a non-empty attestation is required by the
     ///      adapter before this is ever called.
@@ -112,16 +113,16 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
         override
         returns (bool)
     {
-        require(message.length >= 216, "Message too short");
+        require(message.length >= 248, "Message too short");
 
         bytes32 messageHash = keccak256(message);
         require(!receivedMessages[messageHash], "Message already received");
         receivedMessages[messageHash] = true;
 
         uint32 sourceDomain = uint32(bytes4(message[4:8]));
-        uint64 nonce = uint64(uint256(bytes32(message[12:20])));
-        address recipient = address(uint160(uint256(bytes32(message[52:84]))));
-        uint256 amount = uint256(bytes32(message[184:216]));
+        bytes32 nonce = bytes32(message[12:44]);
+        address recipient = address(uint160(uint256(bytes32(message[76:108]))));
+        uint256 amount = uint256(bytes32(message[216:248]));
 
         // Mint USDC to the recipient (the adapter, in the new provenance model).
         IMintableERC20(address(usdc)).mint(recipient, amount);

@@ -15,10 +15,11 @@ import "src/constants.sol";
 
 /// @title BridgeAdapter
 /// @notice Abstract base for bridge adapters (non-upgradeable, single-initialize).
-/// @dev See ADR 0012. The destination escrow is the funded-pass-through payer: an adapter completes a bridge
-///      by authenticating the real protocol message + source sender, then calling `_fundAndRelease`, which
-///      hands the escrow exactly `amount` of the delivered asset and triggers the release. Adapters are the
-///      direct on-chain recipients of inbound protocol messages — there is no escrow fallback dispatcher.
+/// @dev See ADR 0012. There is no escrow fallback dispatcher. In this PR a bridge is completed via the
+///      MANAGER-gated `completeBridge`, which runs the adapter's protocol-specific `_completeBridge` and then
+///      calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow). The follow-up adapter-provenance
+///      PR makes each adapter the direct on-chain recipient that authenticates the real protocol message +
+///      source sender and funds the escrow per-invoice.
 /// @author kpk
 abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -143,9 +144,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @notice Implement bridge-specific outbound logic
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal virtual;
 
-    /// @notice Pushes tokens held by the adapter to the escrow (legacy push helper)
-    /// @dev Retained for adapters that move funds to the escrow out-of-band. The preferred completion path
-    ///      is `_fundAndRelease`, which funds the escrow and releases atomically.
+    /// @notice Pushes tokens held by the adapter to the escrow before completion.
+    /// @dev Used by adapters whose protocol delivers tokens to the adapter (e.g. CCTP mint): `_completeBridge`
+    ///      calls this so the escrow holds the funds, then the base `completeBridge` calls `releaseByInvoiceId`.
     function _transferTokensToEscrow(bytes32 invoiceId, address asset, uint256 amount) internal {
         if (_isNativeToken(asset)) {
             uint256 adapterBalance = address(this).balance;

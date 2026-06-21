@@ -10,9 +10,11 @@ pragma solidity ^0.8;
 ///      - `_activeInvoices[safe]` only contains invoice hashes with status BRIDGING
 ///      - `completedInvoices[invoiceHash]` is only true for valid invoice hashes that have been released
 ///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
-///      - Destination-side release is a funded pass-through: `releaseByInvoiceId` pays the account strictly
-///        from funds the calling adapter provides in the same call (ADR 0012); the destination escrow holds
-///        no standing per-asset pool, so a release can never be paid from another invoice's funds.
+///      - Destination-side release (`releaseByInvoiceId`) is callable only by an authorized adapter — there is
+///        no `fallback()` dispatcher and MANAGER cannot call it directly, so the release path is unreachable to
+///        an attacker (ADR 0012, C1). In this PR release pays the account from the escrow's own balance; the
+///        per-invoice *funded pass-through* (escrow pulls the amount from the calling adapter, no standing pool)
+///        lands with the recipient→adapter change in the follow-up adapter-provenance PR.
 interface IBridgeEscrow {
     //
     // Errors
@@ -59,6 +61,10 @@ interface IBridgeEscrow {
     /// @notice Thrown when attempting to unregister or repoint an asset with active invoices
     /// @param symbol The asset symbol (string)
     error AssetHasActiveInvoices(string symbol);
+
+    /// @notice Thrown when attempting to revoke an account that still has active (BRIDGING) invoices
+    /// @param account The account address
+    error AccountHasActiveInvoices(address account);
 
     /// @notice Thrown when attempting to unregister a symbol that was never registered
     /// @param symbol The asset symbol (string)

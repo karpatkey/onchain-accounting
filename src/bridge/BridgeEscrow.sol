@@ -20,9 +20,11 @@ import "src/constants.sol";
 
 /// @title BridgeEscrow
 /// @notice Tracks assets in transit across chains and maintains the invoice ledger.
-/// @dev See ADR 0012. Destination-side release is a funded pass-through driven by a provenance-checked
-///      adapter; the destination escrow holds no standing per-asset pool. There is no `fallback()` dispatcher —
-///      protocol callbacks are received and authenticated by the adapters directly.
+/// @dev See ADR 0012. There is no `fallback()` dispatcher — protocol callbacks are received and authenticated
+///      by the adapters directly, and `releaseByInvoiceId` is callable only by an authorized adapter (never a
+///      public fallback, never MANAGER directly), which closes the forged-payload drain (C1). In this PR
+///      release pays from the escrow's balance; the per-invoice funded pass-through (escrow pulls from the
+///      calling adapter, no standing pool) arrives with the recipient→adapter change in the follow-up PR.
 /// @author kpk
 contract BridgeEscrow is
     AccessControlUpgradeable,
@@ -486,7 +488,12 @@ contract BridgeEscrow is
     }
 
     /// @notice Revokes authorization for an account
+    /// @dev Reverts if the account still has active (BRIDGING) invoices. `_hasActiveInvoicesForAsset` only
+    ///      scans authorized accounts, so revoking an account with in-flight invoices would hide them and let
+    ///      `registerAsset`/`unregisterAsset` repoint/remove a symbol that still has pending destination
+    ///      releases. Blocking the revoke keeps that guard complete.
     function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_activeInvoices[safe].length > 0) revert AccountHasActiveInvoices(safe);
         _authorizedAccounts.remove(safe);
         emit AccountRevoked(safe);
     }

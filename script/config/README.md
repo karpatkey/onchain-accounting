@@ -41,7 +41,7 @@ script/config/
 │   ├── custom-price-feeds/<chainId>.json          # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to deploy: { "<AdapterName>": { enabled, constructor } }
 │   ├── meta-balance-adapters/<chainId>.json       # META adapters to deploy: { "<AdapterName>": { enabled, constructor } }
-│   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize, callbackSelector? } } — read by 05
+│   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
 ├── nav-config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
@@ -202,7 +202,9 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 
 ## contracts-deployment-config/bridge-adapters/{chainId}.json
 
-**Bridge adapters to deploy on a chain.** Keyed by adapter name (e.g. `CCIP`, `CCTP`, `Across`, `Stargate`, `Superchain`, `Gnosis`), each with `enabled`, the adapter's `initialize` args, and an optional `callbackSelector` for callback-based protocols. Read by `05_DeployBridgeAdapters.s.sol`, which deploys every adapter where `enabled: true` and writes the address to `deployments/{chainId}.json` under `bridgeAdapters`. Top-level keys are adapter names — no chainId wrapper. (This config previously lived under a `bridgeAdapters` block in `chains/{chainId}.json`; it now lives here.)
+**Bridge adapters to deploy on a chain.** Keyed by adapter name (e.g. `CCIP`, `CCTP`, `Across`, `Stargate`, `Superchain`, `Gnosis`), each with `enabled`, the adapter's `initialize` args, and a `remoteChains` array (the standard chain ids this adapter bridges to/from). `05_DeployBridgeAdapters.s.sol` deploys every adapter where `enabled: true` via the canonical CREATE2 deployer (same address on every chain) and writes the address to `deployments/{chainId}.json` under `bridgeAdapters`. Top-level keys are adapter names — no chainId wrapper. (This config previously lived under a `bridgeAdapters` block in `chains/{chainId}.json`; it now lives here.)
+
+As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has **no callback dispatcher**: adapters are the direct on-chain protocol receivers and authenticate inbound messages themselves. There is no `callbackSelector` config — the escrow `authorizeAdapterWithCallback` / selector-registration mechanism was removed. Instead, source-sender authentication is configured from the **`remoteChains`** array here: `06_Configure.s.sol` reads it and calls `setTrustedRemoteAdapter(remoteChainId, <sibling adapter identity>)` per remote chain (keyed by the remote's **standard chain id**; the sibling shares this adapter's CREATE2 address). Leaving `remoteChains` unset means provenance is **not** configured and inbound messages from that chain are rejected. (Some legacy per-chain JSONs may still carry a vestigial `callbackSelector` key; it is no longer consumed by the current escrow.)
 
 ### Template
 
@@ -216,8 +218,7 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
       "router": "0x...",
       "feeToken": "0x...",
       "version": "1.0.0"
-    },
-    "callbackSelector": "0x85572ffb"
+    }
   },
   "CCTP": {
     "enabled": true,
@@ -238,8 +239,10 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | Deploy this bridge adapter on this chain? |
-| `initialize` | object | Initialize args for the adapter (admin, bridgeEscrow, protocol contracts, version) |
-| `callbackSelector` | string | Optional bytes4 callback selector for callback-based protocols (CCIP, Across, Stargate, Gnosis). Omitted for CCTP / Superchain (no callback). See the "Bridge adapters: callbacks" table below. |
+| `initialize` | object | Initialize args for the adapter (admin, bridgeEscrow, protocol contracts, version). Note: CCTP chain↔domain mappings are pinned in the adapter itself (`_setChainDomain`), **not** an `initialize` arg — a `cctpDomain` key here is ignored. |
+| `remoteChains` | uint[] | Standard chain ids this adapter bridges to/from. `06_Configure.s.sol` reads it to wire `setTrustedRemoteAdapter` per remote chain (provenance allowlist). |
+
+There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md): the escrow no longer dispatches callbacks. Each adapter is the direct protocol receiver and authenticates inbound messages; trusted source senders are wired by `06_Configure.s.sol` from the `remoteChains` array above (keyed by the remote's standard chain id). (See "Bridge adapters: provenance" below.)
 
 ---
 
@@ -374,12 +377,12 @@ Deployment does **not** use a single `dev-input.json`. User-provided values live
 - **`config/chains/{chainId}.json`** — Per chain: metadata + `addresses` (securityCouncil, admin, manager) only. Scripts read these for each chain.
 - **`config/contracts-deployment-config/custom-price-feeds/{chainId}.json`** — Per chain: `{feedName}` (enabled + constructor) custom price feeds to deploy; see [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson).
 - **`config/contracts-deployment-config/balance-adapters/{chainId}.json`** and **`config/contracts-deployment-config/meta-balance-adapters/{chainId}.json`** — Per chain: plain / meta `{adapter}` (enabled + constructor) balance adapters to deploy; see [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson).
-- **`config/contracts-deployment-config/bridge-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + initialize args + optional callbackSelector) bridge adapters to deploy; see [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson).
+- **`config/contracts-deployment-config/bridge-adapters/{chainId}.json`** — Per chain: `{adapter}` (enabled + initialize args) bridge adapters to deploy; see [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson).
 - **`config/nav-config/assets-and-price-feeds/{chainId}.json`** — Per chain: `{symbol}` (address + `priceFeeds[]`) assets to register on NAVCalculator; see [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson).
 - **`config/nav-config/balance-adapters/{chainId}.json`** and **`config/nav-config/meta-balance-adapters/{chainId}.json`** — Per chain: plain / meta adapters to register on NAVCalculator (meta entries carry `instances`/`instancesRaw`); see [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson).
 - **`config/deployments/{chainId}.json`** — The only place deployed addresses are written (proxies, impls, custom price feeds, balance adapters, bridge adapters); see [deployments/{chainId}.json](#deploymentschainidjson).
 
-The long template below is **deprecated** (single global dev-input is not used). For bridge adapter callbacks, see the table under "Bridge adapters: callbacks" in this file; CCTP and Superchain use `authorizeAdapter` only.
+The long template below is **deprecated** (single global dev-input is not used). All bridge adapters are authorized with `authorizeAdapter` only — there is no callback-based authorization (see "Bridge adapters: provenance" in this file).
 
 ### Deprecated dev-input-style template (not used by current scripts)
 
@@ -529,8 +532,7 @@ The long template below is **deprecated** (single global dev-input is not used).
           "routerAddress": "$FROM_CHAIN_CONFIG",
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
-        },
-        "callbackSelector": "0x85572ffb"
+        }
       },
       "Across": {
         "enabled": true,
@@ -539,8 +541,7 @@ The long template below is **deprecated** (single global dev-input is not used).
           "spokePoolAddress": "$FROM_CHAIN_CONFIG",
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
-        },
-        "callbackSelector": "0x0ea1f938"
+        }
       },
       "Superchain": {
         "enabled": true,
@@ -549,8 +550,7 @@ The long template below is **deprecated** (single global dev-input is not used).
           "portalAddress": "$FROM_CHAIN_CONFIG",
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
-        },
-        "callbackSelector": null
+        }
       },
       "Gnosis": {
         "enabled": true,
@@ -559,8 +559,7 @@ The long template below is **deprecated** (single global dev-input is not used).
           "ambAddress": "$FROM_CHAIN_CONFIG",
           "bridgeEscrow": "$DEPLOYED_BRIDGE_ADDRESS",
           "version": "1.0.0"
-        },
-        "callbackSelector": "0x0bad0c90"
+        }
       }
     }
   }
@@ -617,26 +616,27 @@ Each adapter has:
 - `constructor`: Constructor parameters
   - Use `$FROM_CHAIN_CONFIG` to reference values from chain config (e.g. protocols in chains)
   - Use `$DEPLOYED_NAV_ADDRESS` or `$DEPLOYED_BRIDGE_ADDRESS` for deployed contracts
-- `callbackSelector`: (Bridge adapters only) Function selector for protocol callbacks. See table below.
 
-**Bridge adapters: callbacks**
+**Bridge adapters: provenance**
 
-Adapters that receive protocol callbacks (e.g. CCIP router, LayerZero endpoint) must be authorized with `authorizeAdapterWithCallback(adapter, selector)` so BridgeEscrow can forward the callback to the correct adapter. The following adapters require a callback selector; others (CCTP, Superchain) use `authorizeAdapter(adapter)` only.
+As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) the escrow has **no callback dispatcher** and no `authorizeAdapterWithCallback` / selector registration. Each adapter is the **direct on-chain protocol receiver** on the destination chain and authenticates the inbound message itself (genuine protocol contract as `msg.sender`, source chain, and source sender) before triggering the funded release. So **every** adapter — including CCIP, Across, Stargate, and Gnosis — is authorized with `authorizeAdapter(adapter)` only.
 
-| Adapter    | Callback function                    | Selector (bytes4) | Notes |
-|-----------|--------------------------------------|-------------------|-------|
-| CCIP      | `ccipReceive(Any2EVMMessage)`        | `0x85572ffb`      | Chainlink CCIP delivery |
-| Across    | `handleAcrossMessage(...)`           | `0x0ea1f938`      | Across SpokePool fill |
-| Stargate  | `lzReceive(uint16,bytes,uint64,bytes)` | `0x001d3567`    | LayerZero delivery |
-| Gnosis    | `onTokenTransfer(address,bytes32,bytes)` | `0x0bad0c90`  | Omnibridge ERC677 callback |
-| CCTP      | —                                    | none              | No callback; use `authorizeAdapter` |
-| Superchain| —                                    | none              | No callback; use `authorizeAdapter` |
+Source-sender authentication is wired by `06_Configure.s.sol` from each adapter's `remoteChains` config via `setTrustedRemoteAdapter(sourceKey, remoteAdapter)` (admin), where `sourceKey` is the remote's **standard chain id** for every adapter — each adapter translates its protocol-specific source identifier (CCIP selector, LZ eid, CCTP domain, AMB/OP xDomain sender) back to the standard chain id internally before the lookup — and `remoteAdapter` is the sibling adapter's identity (equal to the adapter's own address under CREATE2 same-address deployment). The per-protocol authentic entry points and provenance checks are:
+
+| Adapter    | Authentic destination entry          | Authenticated `msg.sender` | Source authentication |
+|-----------|--------------------------------------|----------------------------|-----------------------|
+| CCIP      | `ccipReceive(Any2EVMMessage)`        | `== router`                | source selector + `message.sender == trustedRemoteAdapter` |
+| Across    | `handleV3AcrossMessage(...)` (V3)    | `== spokePool`             | token/amount bound to invoice + `trustedRemoteAdapter` |
+| Stargate  | `lzCompose(...)` (V2)                | `== endpoint`              | `srcEid` + `composeFrom == trustedRemoteAdapter` |
+| Gnosis    | `onTokenTransfer(address,uint256,bytes)` (ERC677) | `== omnibridge` | `amb.messageSender() == trustedRemoteAdapter` + source chain |
+| CCTP      | manager `completeBridge` + Circle attestation | n/a (attestation) | message-body binding + nonce dedup |
+| Superchain| L1→L2 messenger / L2→L1 portal proof | `== l2Messenger` (+ `xDomainMessageSender`) | xDomain sender; portal proof + real OP withdrawal hash |
+
+See `src/bridge/BRIDGE_ADAPTERS.md` §7 for the full per-protocol detail.
 
 **CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this — configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
 
-These bytes4 selectors are asserted in `test/bridge/BridgeAdapterCallbacks.t.sol` (`test_documentedCallbackSelectors_bytes4`). Keep this table in sync with that test.
-
-The script `AuthorizeBridgeAdapters.s.sol` reads each adapter's `callbackSelector` from `contracts-deployment-config/bridge-adapters/{chainId}.json` (via `ConfigReader.readAdapterCallbackSelector`): if present, it calls `authorizeAdapterWithCallback(adapter, selector)`, otherwise `authorizeAdapter(adapter)`. Keep the configured selectors in sync with the table above (which the test asserts).
+The script `script/manage/AuthorizeBridgeAdapters.s.sol` authorizes each enabled adapter with `authorizeAdapter(adapter)` only (no callback variant). Trusted source senders are configured separately via `BridgeAdapter.setTrustedRemoteAdapter` (admin), not by the authorization script.
 
 **Special Values:**
 - `$FROM_CHAIN_CONFIG`: Scripts look up the value from the chain config for that chain
@@ -732,7 +732,6 @@ After deployment, addresses are saved to `deployments/{chainId}.json`.
         "bridgeEscrow": "0x456...",
         "version": "1.0.0"
       },
-      "callbackSelector": "0x85572ffb",
       "authorized": true,
       "verified": {
         "etherscan": true,
@@ -877,16 +876,15 @@ NAVCalculator.revokeRole(MANAGER, oldManagerAddress);
 ### Bridge Adapter Authorization
 
 ```solidity
-// BridgeEscrow: Authorize adapter without callback
+// BridgeEscrow: Authorize adapter (no callback variant exists post-ADR 0012)
 BridgeEscrow.authorizeAdapter(adapterAddress);
 
-// BridgeEscrow: Authorize adapter WITH callback
-BridgeEscrow.authorizeAdapterWithCallback(
-    adapterAddress,
-    bytes4(keccak256("ccipReceive(...)"))  // Callback selector
-);
+// BridgeAdapter: Configure the trusted sibling adapter per source chain
+// (sourceKey is the remote's STANDARD chain id; adapters translate protocol-specific
+//  identifiers — CCIP selector / CCTP domain / LZ eid — to the chain id internally)
+BridgeAdapter.setTrustedRemoteAdapter(remoteChainId, remoteAdapterIdentity);
 
-// BridgeAdapter: Grant MANAGER to operations address
+// BridgeAdapter: Grant MANAGER to operations address (gates completeBridge / recoverStuckAssets)
 BridgeAdapter.grantRole(MANAGER, managerAddress);
 ```
 

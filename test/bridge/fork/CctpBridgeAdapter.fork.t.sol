@@ -190,4 +190,22 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
         assertEq(adapter.getChainForDomain(MAINNET_DOMAIN), MAINNET_CHAIN_ID, "Domain 0 -> chain 1");
         assertEq(adapter.getChainForDomain(OPTIMISM_DOMAIN), OPTIMISM_CHAIN_ID, "Domain 2 -> chain 10");
     }
+
+    // ============ Destination Completion (provenance) ============
+    //
+    // ADR 0012 CCTP completion model: on the destination chain the manager calls `completeBridge` with
+    // protocolData = abi.encode(cctpMessage, attestation). The adapter verifies the CCTP message body against
+    // the invoice (burnToken/amount/mintRecipient/sourceDomain), dedups by nonce, then calls the REAL
+    // MessageTransmitterV2.receiveMessage(message, attestation), which mints USDC to the adapter ONLY if the
+    // attestation is a genuine Circle signature over that exact message. The base then funds the escrow and
+    // releases (funded pass-through).
+    //
+    // TODO(fork-rpc): a faithful destination-completion fork test requires a live, Circle-attested CCTP message
+    // (the real MessageTransmitter rejects any unattested/forged message, so it cannot be produced offline).
+    // It is NOT exercised here on purpose — fabricating an attestation would either revert at the real
+    // transmitter (no signal) or require mocking receiveMessage, which would weaken the provenance assertion.
+    // The full provenance path (message-body verification, nonce dedup, mint-to-adapter, funded release, and
+    // every mismatch revert: amount / mintRecipient / burnToken / sourceDomain / replay) is covered against
+    // mocks in test/bridge/protocols/CctpBridgeAdapter.t.sol. To add a real fork completion, capture an
+    // attested mainnet CCTP message + attestation at a pinned block and feed it through `completeBridge`.
 }

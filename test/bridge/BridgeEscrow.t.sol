@@ -96,7 +96,11 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
     function test_releaseByInvoiceId_success() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
-        usdc.mint(address(destEscrow), 1000e6);
+        // Funded pass-through (ADR 0012): the escrow pulls the amount from the calling adapter, which holds
+        // the delivered funds and approves the escrow. It is never paid from the escrow's standing balance.
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
 
         uint256 balanceBefore = usdc.balanceOf(account);
         vm.prank(address(destMock));

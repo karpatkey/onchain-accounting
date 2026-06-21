@@ -49,10 +49,12 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
     address public constant CCTP_TOKEN_MESSENGER = 0xBd3fa81B58Ba92a82136038B25aDec7066af3155;
     address public constant CCTP_MESSAGE_TRANSMITTER = 0x0a992d191DEeC32aFe36203Ad87D7d289a738F81;
 
-    // Superchain addresses (Mainnet) - Optimism OP Mainnet
+    // Superchain addresses (Mainnet) - Optimism OP Mainnet.
+    // Source: ethereum-optimism/superchain-registry (superchain/configs/mainnet/op.toml + addresses.json).
     address public constant L1_STANDARD_BRIDGE = 0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1;
     address public constant OPTIMISM_PORTAL = 0xbEb5Fc579115071764c7423A4f12eDde41f106Ed;
-    address public constant L1_CROSS_DOMAIN_MESSENGER = 0x25aCE71C97b33cC4729Cf5aEa0b7c9C5E5B5b5B5;
+    // L1CrossDomainMessengerProxy for OP Mainnet (chain id 10) on Ethereum L1.
+    address public constant L1_CROSS_DOMAIN_MESSENGER = 0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1;
 
     // Superchain addresses (Optimism)
     address public constant L2_STANDARD_BRIDGE = 0x4200000000000000000000000000000000000010;
@@ -183,6 +185,52 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
         vm.startPrank(admin);
         bridgeEscrow.authorizeAdapter(adapter);
         vm.stopPrank();
+    }
+
+    /// @notice Authorizes an adapter on a specific escrow instance (used for destination-side fork tests).
+    function _authorizeAdapterForEscrow(address adapter, BridgeEscrow escrow) internal {
+        vm.startPrank(admin);
+        escrow.authorizeAdapter(adapter);
+        vm.stopPrank();
+    }
+
+    /// @notice Deploys a fresh BridgeEscrow proxy on the current fork pinned to `chainIdForEscrow`, grants
+    ///         MANAGER to admin+manager, authorizes `account` as a safe, and registers the standard assets so
+    ///         destination-side completion tests can release to the account. Mirrors the production escrow
+    ///         (UUPS proxy), so `releaseByInvoiceId` validates checksum/replay/account exactly as on-chain.
+    /// @dev `account` is registered as an initial safe via `initialize`. Use `vm.chainId(chainIdForEscrow)`
+    ///      before completion so the escrow's `block.chainid` checks line up with the destination.
+    function _deployDestinationEscrow(uint64 chainIdForEscrow) internal returns (BridgeEscrow destEscrow) {
+        address impl = address(new BridgeEscrow());
+        address[] memory initialSafes = new address[](1);
+        initialSafes[0] = account;
+        address[] memory initialAdapters = new address[](0);
+
+        address payable proxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                impl, abi.encodeCall(BridgeEscrow.initialize, (admin, chainIdForEscrow, initialSafes, initialAdapters))
+            ));
+        destEscrow = BridgeEscrow(proxy);
+
+        vm.startPrank(admin);
+        destEscrow.grantRole(MANAGER, admin);
+        destEscrow.grantRole(MANAGER, manager);
+        // Register assets for the chain we are simulating on this fork.
+        if (chainIdForEscrow == MAINNET_CHAIN_ID) {
+            destEscrow.registerAsset(USDC_SYMBOL, MAINNET_USDC);
+            destEscrow.registerAsset(WETH_SYMBOL, MAINNET_WETH);
+            destEscrow.registerAsset(DAI_SYMBOL, MAINNET_DAI);
+        } else if (chainIdForEscrow == OPTIMISM_CHAIN_ID) {
+            destEscrow.registerAsset(USDC_SYMBOL, OPTIMISM_USDC);
+            destEscrow.registerAsset(WETH_SYMBOL, OPTIMISM_WETH);
+        }
+        vm.stopPrank();
+    }
+
+    /// @notice Trusted-remote identity for the (CREATE2 same-address) sibling adapter.
+    /// @dev ADR 0012 deploys escrow+adapters at the same address on every chain via CREATE2, so the trusted
+    ///      remote sibling for a source chain is simply the destination adapter's own address widened to bytes32.
+    function _siblingIdentity(address destAdapter) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(destAdapter)));
     }
 
     /// @notice Funds an account with ETH

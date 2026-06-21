@@ -220,12 +220,14 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(destAdapter)))));
         destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
         // Manager fallback: tokens already at escrow
-        usdc.mint(address(destBridgeEscrow), amount);
+        usdc.mint(address(destAdapter), amount);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         assertFalse(
@@ -238,7 +240,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         Client.Any2EVMMessage memory minimalMessage = Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: "",
+            sender: abi.encode(address(destAdapter)),
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
@@ -367,18 +369,20 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(destAdapter)))));
         destAdapter.grantRole(MANAGER, manager);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
         // TODO(PR2): provenance-checked protocol callback
         // Manager completion path: tokens already at escrow, manager drives completeBridge.
-        usdc.mint(address(destBridgeEscrow), amount);
+        usdc.mint(address(destAdapter), amount);
 
         Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: "",
+            sender: abi.encode(address(destAdapter)),
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
@@ -412,18 +416,20 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(destAdapter)))));
         destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(destAdapterProxy);
         vm.stopPrank();
 
         // TODO(PR2): provenance-checked protocol callback
         // Manager completion path: tokens already at escrow, manager drives completeBridge.
-        usdc.mint(address(destEscrow), amount);
+        usdc.mint(address(destAdapter), amount);
 
         Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: "",
+            sender: abi.encode(address(destAdapter)),
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
@@ -553,18 +559,20 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
+        // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
+        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(address(destAdapter)))));
         destAdapter.grantRole(MANAGER, manager);
         destEscrow.authorizeAdapter(destAdapterProxy);
         vm.stopPrank();
 
         // TODO(PR2): provenance-checked protocol callback
         // Manager completion path: tokens already at escrow, manager drives completeBridge.
-        usdc.mint(address(destEscrow), amount);
+        usdc.mint(address(destAdapter), amount);
 
         Client.Any2EVMMessage memory ccipMessage = Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: SOURCE_CHAIN_SELECTOR,
-            sender: "",
+            sender: abi.encode(address(destAdapter)),
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });

@@ -192,12 +192,14 @@ contract BridgeEscrow is
     }
 
     /// @inheritdoc IBridgeEscrow
-    /// @dev Destination-side release. Callable ONLY by an authorized adapter — there is no `fallback()`
-    ///      dispatcher and MANAGER cannot call this directly, so an attacker can no longer reach the release
-    ///      path (ADR 0012, C1). The adapter drives this via its MANAGER-gated completeBridge (or, after
-    ///      PR2, its provenance-checked protocol callback). NOTE (PR2): release still pays from the escrow's
-    ///      balance here; per-invoice funded pass-through (H2/H9) lands with the recipient→adapter change.
-    function releaseByInvoiceId(bytes calldata messagePayload) external nonReentrant whenNotPaused {
+    /// @dev Destination-side funded pass-through (ADR 0012). Callable ONLY by an authorized adapter — there
+    ///      is no `fallback()` dispatcher and MANAGER cannot call this directly, so an attacker can never
+    ///      reach the release path (C1). The adapter, having authenticated the genuine inbound protocol
+    ///      message and source sender, supplies the funds in the SAME call: the escrow pulls exactly
+    ///      `amount` of the asset from the adapter (or requires `msg.value == amount` for native) and
+    ///      forwards it to the account. The escrow never pays from a standing balance, so one invoice can
+    ///      never be funded by another's tokens (H2) and a release cannot drain pre-existing funds (H9).
+    function releaseByInvoiceId(bytes calldata messagePayload) external payable nonReentrant whenNotPaused {
         if (!_authorizedAdapters.contains(msg.sender)) revert NotAuthorized();
 
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
@@ -222,17 +224,17 @@ contract BridgeEscrow is
         address asset = _assetRegistry[data.assetSymbol];
         if (_registeredSymbolsIndex[data.assetSymbol] == 0) revert InvalidArguments();
 
-        uint256 balance = _isNativeToken(asset) ? address(this).balance : IERC20(asset).balanceOf(address(this));
-        if (balance < data.amount) revert InsufficientBalance(asset, data.amount, balance);
-
         completedInvoices[invoiceHash] = true;
         emit InvoiceCompleted(invoiceHash, data.invoiceId);
 
+        // Funded pass-through: take the funds from the calling adapter, forward to the account.
         if (_isNativeToken(asset)) {
+            if (msg.value != data.amount) revert InvalidValue();
             (bool success,) = data.account.call{value: data.amount}("");
             if (!success) revert TransferFailed();
         } else {
-            IERC20(asset).safeTransfer(data.account, data.amount);
+            if (msg.value != 0) revert InvalidValue();
+            IERC20(asset).safeTransferFrom(msg.sender, data.account, data.amount);
         }
 
         emit AssetsReleased(data.invoiceId, data.sourceChainId, asset, data.amount, data.account);

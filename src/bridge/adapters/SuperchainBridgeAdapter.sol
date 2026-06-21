@@ -6,16 +6,32 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./interfaces/ISuperchainInterfaces.sol";
+import {
+    IL1StandardBridge,
+    IL2StandardBridge,
+    IOptimismPortal,
+    ICrossDomainMessenger
+} from "./interfaces/ISuperchainInterfaces.sol";
 import {Types} from "@optimism/libraries/Types.sol";
 import {ISuperchainBridgeAdapter} from "./interfaces/ISuperchainBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title SuperchainBridgeAdapter
-/// @notice Bridge adapter for Optimism Superchain canonical bridges
-/// @dev Enables bridging ETH and ERC20 tokens between L1 and Superchain L2s (Optimism, Base, Unichain, etc.)
-/// @dev Uses the canonical bridge contracts (L1StandardBridge, L2StandardBridge, OptimismPortal)
+/// @notice Bridge adapter for Optimism Superchain canonical bridges (L1 <-> L2, both directions).
+/// @dev The destination recipient is always the sibling adapter (`address(this)`, same address across chains
+///      via CREATE2) for both L1->L2 deposits and L2->L1 withdrawals, so delivered ETH/tokens land on the
+///      adapter and the funded pass-through release (ADR 0012) draws from the adapter's own balance.
+///
+///      Provenance (ADR 0012, D1/D2): there is no escrow fallback dispatcher. Each inbound completion path
+///      authenticates the genuine OP Stack contract and the source-chain sender:
+///        - L1->L2 deposit: the L2CrossDomainMessenger relays the message to this adapter. The adapter
+///          requires `msg.sender == l2Messenger` AND
+///          `l2Messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`.
+///        - L2->L1 withdrawal: proof-gated through the OptimismPortal. The adapter computes the REAL OP
+///          withdrawal hash (`keccak256(abi.encode(nonce, sender, target, value, gasLimit, data))`,
+///          matching `Hashing.hashWithdrawal`) and only completes once the portal reports the withdrawal
+///          proven, then finalizes it (the portal delivers the ETH to this adapter as the withdrawal target).
 /// @author kpk
 contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -47,7 +63,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     mapping(bytes32 => bytes) public messagePayloads;
 
     /// @notice Mapping from withdrawal hash to invoice ID
-    /// @dev Used to correlate withdrawal transactions with invoice IDs
+    /// @dev Used to correlate withdrawal transactions with invoice IDs. The key is the REAL OP withdrawal
+    ///      hash (see `_hashWithdrawal`), set on L1 when the manager proves the withdrawal.
     mapping(bytes32 => bytes32) public withdrawalHashToInvoiceId;
 
     /// @notice Mapping from invoice ID to withdrawal hash
@@ -160,7 +177,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     //
-    // BridgeAdapter Implementation
+    // BridgeAdapter Implementation (outbound)
     //
 
     /// @inheritdoc BridgeAdapter
@@ -173,58 +190,41 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
         bool isEth = _isNativeToken(asset);
 
-        // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
-        // If we're on L1 (mainnet), it's L1 → L2 deposit
-        // Otherwise, it's L2 → L1 withdrawal (may not be Optimism, but we handle it)
-        bool isL1ToL2 = (chainId == 1);
-
-        if (isL1ToL2) {
-            // L1 → L2 Deposit (fast, can be completed immediately)
+        // If we're on L1 (mainnet), it's an L1 → L2 deposit; otherwise an L2 → L1 withdrawal.
+        if (chainId == 1) {
             if (address(l1Bridge) == address(0)) revert InvalidL1Bridge();
             _depositToL2(data, asset, isEth, messagePayload);
         } else {
-            // L2 → L1 Withdrawal (requires two-step process: prove + finalize)
             if (address(l2Bridge) == address(0)) revert InvalidL2Bridge();
             _withdrawToL1(data, asset, isEth, messagePayload);
         }
     }
 
     /// @notice Handles L1 → L2 deposit
-    /// @param data The invoice data
-    /// @param asset The asset address (address(0) for ETH)
-    /// @param isEth Whether the asset is native ETH
-    /// @param messagePayload The encoded message payload
+    /// @dev Recipient on L2 is the sibling adapter (`address(this)`, same address via CREATE2). Delivered
+    ///      ETH/tokens land on the L2 adapter, which authenticates and releases on completion.
     function _depositToL2(
         InvoiceDataLib.InvoiceData memory data,
         address asset,
         bool isEth,
         bytes memory messagePayload
     ) internal {
-        // Use bridgeEscrow as receiver on L2 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to account via releaseByInvoiceId() using account from messagePayload
-        address receiver = bridgeEscrow;
+        address receiver = address(this);
 
         if (isEth) {
-            // Deposit ETH to L2
             l1Bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
         } else {
             // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
             IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-            // Deposit ERC20 token to L2
-            // Get L2 token address from mapping
+            // Resolve the L2 token; default to the same address (standard bridge tokens) when unmapped.
             address l2Token = l1ToL2Token[asset];
-            // Note: l2Token can be address(0) if not mapped, which is different from native token check
-            // We use _isNativeToken() for asset checks, but l2Token == address(0) here means "not mapped"
             if (l2Token == address(0)) {
-                // If not mapped, assume same address (for standard bridge tokens)
                 l2Token = asset;
             }
 
-            // Approve L1 bridge to spend tokens
+            // Approve L1 bridge to spend tokens and deposit to L2
             IERC20(asset).forceApprove(address(l1Bridge), data.amount);
-
-            // Deposit ERC20 token to L2
             l1Bridge.depositERC20To(asset, l2Token, receiver, data.amount, defaultL2GasLimit, messagePayload);
         }
 
@@ -235,24 +235,19 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @notice Handles L2 → L1 withdrawal
-    /// @param data The invoice data
-    /// @param asset The asset address (address(0) for ETH)
-    /// @param isEth Whether the asset is native ETH
-    /// @param messagePayload The encoded message payload
+    /// @dev Recipient on L1 is the sibling adapter (`address(this)`). The real OP withdrawal hash is only
+    ///      known on L1 (it depends on the L2ToL1MessagePasser nonce), so invoice↔withdrawalHash correlation
+    ///      is established on L1 at prove time (see `proveWithdrawal`) from the actual WithdrawalTransaction.
     function _withdrawToL1(
         InvoiceDataLib.InvoiceData memory data,
         address asset,
         bool isEth,
         bytes memory messagePayload
     ) internal {
-        // Use bridgeEscrow as receiver on L1 - bridgeEscrow on destination chain (all BridgeEscrows have the same address)
-        // BridgeEscrow will release to account via releaseByInvoiceId() using account from messagePayload
-        address receiver = bridgeEscrow;
+        address receiver = address(this);
 
         if (isEth) {
-            // Withdraw ETH to L1
-            // L2StandardBridge.withdrawTo signature: withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _minGasLimit, bytes calldata _extraData)
-            // For ETH, _l2Token should be Predeploys.LEGACY_ERC20_ETH (0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000)
+            // For ETH, _l2Token is the legacy ERC20 ETH predeploy.
             address legacyErc20Eth = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
             l2Bridge.withdrawTo{value: data.amount}(
                 legacyErc20Eth, receiver, data.amount, defaultL1GasLimit, messagePayload
@@ -261,197 +256,152 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
             IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-            // Withdraw ERC20 token to L1
-            // Approve L2 bridge to spend tokens
             IERC20(asset).forceApprove(address(l2Bridge), data.amount);
-
-            // Withdraw ERC20 token to L1 using the 5-parameter version
             l2Bridge.withdrawTo(asset, receiver, data.amount, defaultL1GasLimit, messagePayload);
         }
 
-        // Calculate withdrawal hash for tracking
-        // The withdrawal hash is calculated from the withdrawal transaction
-        // For now, we'll use a hash of the invoiceId and amount as a placeholder
-        // In practice, this should be extracted from the withdrawal transaction
-        // forge-lint: disable-next-line(asm-keccak256)
-        bytes32 withdrawalHash = keccak256(abi.encodePacked(data.invoiceId, data.amount, block.timestamp));
-
-        // Store mappings for correlation
-        withdrawalHashToInvoiceId[withdrawalHash] = data.invoiceId;
-        invoiceToWithdrawalHash[data.invoiceId] = withdrawalHash;
-
-        // Store messagePayload for later retrieval
+        // Store messagePayload for later retrieval (withdrawal hash is set on L1 at prove time).
         messagePayloads[data.invoiceId] = messagePayload;
 
         emit SuperchainWithdrawalInitiated(
-            data.invoiceId, uint64(data.destinationChainId), bytes32(data.amount), withdrawalHash
+            data.invoiceId, uint64(data.destinationChainId), bytes32(data.amount), bytes32(0)
         );
     }
 
-    /// @inheritdoc BridgeAdapter
-    /// @dev Handles completion for both deposits and withdrawals
-    /// @notice For L1 → L2 deposits: Completion is automatic (tokens arrive on L2 immediately)
-    ///         For L2 → L1 withdrawals: Requires two-step process (prove + finalize)
-    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
-        // Validate messagePayload is not empty
-        if (messagePayload.length == 0) {
-            revert InvalidCompletionData();
-        }
+    //
+    // Provenance helpers
+    //
 
-        // Decode messagePayload into invoice data struct
+    /// @notice Computes the canonical OP Stack withdrawal hash for a withdrawal transaction.
+    /// @dev Matches `Hashing.hashWithdrawal`: `keccak256(abi.encode(nonce, sender, target, value, gasLimit, data))`.
+    function _hashWithdrawal(Types.WithdrawalTransaction memory wtx) internal pure returns (bytes32) {
+        // forge-lint: disable-next-line(asm-keccak256)
+        return keccak256(abi.encode(wtx.nonce, wtx.sender, wtx.target, wtx.value, wtx.gasLimit, wtx.data));
+    }
+
+    /// @notice Authenticates an inbound cross-domain message relayed by the L2CrossDomainMessenger.
+    /// @dev Provenance check for L1 → L2 deposit completion: the genuine messenger must be the caller and the
+    ///      original source-chain sender (revealed by `xDomainMessageSender()`) must be the trusted sibling
+    ///      adapter configured for `srcChainId`.
+    /// @param srcChainId The source chain id carried in the invoice (the L1 chain for a deposit).
+    function _authenticateMessengerSource(uint64 srcChainId) internal view {
+        if (msg.sender != l2Messenger) revert NotAuthorized();
+        bytes32 expected = trustedRemoteAdapter[srcChainId];
+        if (expected == bytes32(0)) revert NotAuthorized();
+        address xSender = ICrossDomainMessenger(l2Messenger).xDomainMessageSender();
+        if (_toBytes32(xSender) != expected) revert NotAuthorized();
+    }
+
+    //
+    // BridgeAdapter Implementation (inbound completion)
+    //
+
+    /// @inheritdoc BridgeAdapter
+    /// @dev MANAGER-operated completion. Performs only protocol verification here; the base
+    ///      (`completeBridge`) then funds the escrow and releases (funded pass-through, ADR 0012).
+    ///      - On L1 (an L2 → L1 withdrawal completion): finalize the proven withdrawal through the portal,
+    ///        which delivers the ETH to this adapter; the base then releases.
+    ///      - On L2 (an L1 → L2 deposit completion fallback): the canonical bridge already delivered the
+    ///        tokens to this adapter; nothing to do here beyond bookkeeping. (The trust-minimized auto path
+    ///        is `completeDeposit`, authenticated against the L2CrossDomainMessenger.)
+    function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
-        // No need to validate here to avoid redundant gas costs
-
-        // Determine if this is L1 → L2 (deposit) or L2 → L1 (withdrawal)
-        // If we're on L1 (mainnet), it's L1 → L2 deposit
-        // Otherwise, it's L2 → L1 withdrawal
-        bool isL1ToL2 = (chainId == 1);
-
-        if (isL1ToL2) {
-            // L1 → L2 deposits are fast - tokens should already be on L2
-            // Just verify and complete
-            _completeDeposit(data, messagePayload);
-        } else {
-            // L2 → L1 withdrawals require two-step process
-            // Check if protocolData contains withdrawal finalization data
-            if (protocolData.length > 0) {
-                // Decode and finalize withdrawal
-                _finalizeWithdrawal(protocolData);
-            } else {
-                // No protocol data - assume deposit completion or manager will provide finalization later
-                // For withdrawals, tokens are not yet available until finalization
-                _completeDeposit(data, messagePayload);
-            }
+        if (chainId == 1) {
+            // L2 → L1 withdrawal: finalize via the portal (proof-gated).
+            if (protocolData.length == 0) revert InvalidWithdrawalFinalization();
+            address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+            _finalizeWithdrawal(protocolData, data.amount, _isNativeToken(asset));
         }
+        // On L2 the tokens were delivered to this adapter by the canonical bridge; the base verifies the
+        // adapter balance covers `amount` in `_fundAndRelease` and reverts otherwise.
 
-        // Store messagePayload if provided
-        if (messagePayload.length > 0) {
-            messagePayloads[data.invoiceId] = messagePayload;
-        }
+        messagePayloads[data.invoiceId] = messagePayload;
 
         emit SuperchainBridgeCompleted(data.invoiceId, uint64(data.sourceChainId));
     }
 
-    /// @notice Completes a deposit (L1 → L2)
-    /// @param data The invoice data
-    function _completeDeposit(
-        InvoiceDataLib.InvoiceData memory data,
-        bytes calldata /* messagePayload */
-    )
-        internal
-    {
-        // For L1 → L2 deposits, tokens should be at bridgeEscrow (receiver = bridgeEscrow)
-        // But if they arrived at adapter, transfer them to bridgeEscrow
+    /// @notice Trust-minimized L1 → L2 deposit completion: the L2CrossDomainMessenger relays the deposit
+    ///         message to this adapter, which authenticates the messenger + source sender, then funds the
+    ///         escrow and releases (funded pass-through, ADR 0012).
+    /// @param messagePayload The encoded invoice payload authored on L1 (forwarded through the messenger).
+    /// @dev Authenticated path (no MANAGER role): `msg.sender == l2Messenger` and
+    ///      `l2Messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`. The canonical bridge
+    ///      credits the adapter with the bridged ETH/tokens before the messenger relays this call.
+    function completeDeposit(bytes calldata messagePayload) external nonReentrant {
+        if (messagePayload.length == 0) revert InvalidCompletionData();
+
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+
+        // Provenance: genuine L2 messenger + trusted sibling adapter as the L1 source sender.
+        _authenticateMessengerSource(uint64(data.sourceChainId));
+
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
 
-        // Transfer tokens to escrow (requires exact amount, reverts if insufficient)
-        // This will also notify BridgeEscrow to emit TokensTransferredToEscrow event
-        _transferTokensToEscrow(data.invoiceId, asset, data.amount);
+        messagePayloads[data.invoiceId] = messagePayload;
+
+        // Funds-and-releases: the escrow validates checksum/replay/account and forwards to the account.
+        _fundAndRelease(messagePayload, asset, data.amount);
+
+        emit SuperchainBridgeCompleted(data.invoiceId, uint64(data.sourceChainId));
     }
 
-    /// @notice Finalizes a withdrawal (L2 → L1)
-    /// @param protocolData The protocol data containing withdrawal transaction
-    function _finalizeWithdrawal(bytes calldata protocolData) internal {
-        // Decode withdrawal transaction from protocolData
+    /// @notice Finalizes a withdrawal (L2 → L1) through the portal so the funds are delivered to this adapter.
+    /// @param protocolData ABI-encoded `Types.WithdrawalTransaction`.
+    /// @param amount The invoiced amount.
+    /// @param isEth True for native-ETH withdrawals, false for ERC20.
+    /// @dev For ETH the withdrawal `target` is this adapter and `value == amount`, so we bind both to the
+    ///      invoice. For ERC20 the OP withdrawal `target` is the L1 bridge/messenger and `value == 0` (the
+    ///      ERC20 is delivered to the adapter as the `withdrawTo` receiver, not via `target`/`value`), so those
+    ///      bindings don't apply — provenance still comes from the proven withdrawal hash + portal Merkle
+    ///      proof, and the base `_fundAndRelease` reverts unless the adapter actually received `amount`.
+    ///      The withdrawal must already be proven; the portal enforces the challenge period.
+    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth) internal {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
 
-        // Calculate withdrawal hash (matches Optimism's calculation)
-        // forge-lint: disable-start(asm-keccak256)
-        bytes32 withdrawalHash = keccak256(
-            abi.encodePacked(
-                withdrawalTx.nonce,
-                withdrawalTx.sender,
-                withdrawalTx.target,
-                withdrawalTx.value,
-                withdrawalTx.gasLimit,
-                withdrawalTx.data
-            )
-        );
-        // forge-lint: disable-end(asm-keccak256)
+        if (isEth) {
+            // ETH withdrawals deliver `value` directly to `target` (this adapter); bind both to the invoice.
+            if (withdrawalTx.target != address(this)) revert InvalidWithdrawalFinalization();
+            if (withdrawalTx.value != amount) revert InvalidWithdrawalFinalization();
+        }
 
-        // Verify withdrawal has been proven
+        bytes32 withdrawalHash = _hashWithdrawal(withdrawalTx);
+
+        // Verify withdrawal has been proven (provenance: real OP withdrawal hash, portal Merkle proof).
         if (!optimismPortal.provenWithdrawals(withdrawalHash)) {
             revert WithdrawalNotProven();
         }
 
-        // Finalize the withdrawal (portal will check challenge period)
+        // Finalize the withdrawal (portal checks the challenge period; delivers value to the target adapter).
         optimismPortal.finalizeWithdrawalTransaction(withdrawalTx);
-
-        // Get invoice ID from withdrawal hash
-        bytes32 invoiceId = withdrawalHashToInvoiceId[withdrawalHash];
-        if (invoiceId != bytes32(0)) {
-            emit SuperchainBridgeCompleted(invoiceId, 1); // Source is L1
-        }
     }
 
-    /// @notice Proves a withdrawal transaction
-    /// @param withdrawalTx The withdrawal transaction to prove
+    /// @notice Proves a withdrawal transaction and correlates it to its invoice.
+    /// @param withdrawalTx The withdrawal transaction to prove (its `target` must be this adapter).
     /// @param l2OutputIndex The L2 output index
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof
-    /// @dev This function should be called by a manager after the withdrawal is initiated
+    /// @param invoiceId The invoice this withdrawal settles (for invoice ↔ withdrawalHash correlation)
+    /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
+    ///      hash and records the invoice correlation so completion can be tracked.
     function proveWithdrawal(
         Types.WithdrawalTransaction memory withdrawalTx,
         uint256 l2OutputIndex,
         Types.OutputRootProof memory outputRootProof,
-        bytes[] calldata withdrawalProof
+        bytes[] calldata withdrawalProof,
+        bytes32 invoiceId
     ) external onlyRole(MANAGER_ROLE) {
-        // Calculate withdrawal hash
-        // forge-lint: disable-start(asm-keccak256)
-        bytes32 withdrawalHash = keccak256(
-            abi.encodePacked(
-                withdrawalTx.nonce,
-                withdrawalTx.sender,
-                withdrawalTx.target,
-                withdrawalTx.value,
-                withdrawalTx.gasLimit,
-                withdrawalTx.data
-            )
-        );
-        // forge-lint: disable-end(asm-keccak256)
+        bytes32 withdrawalHash = _hashWithdrawal(withdrawalTx);
 
-        // Prove the withdrawal
         optimismPortal.proveWithdrawalTransaction(withdrawalTx, l2OutputIndex, outputRootProof, withdrawalProof);
 
-        // Get invoice ID from withdrawal hash
-        bytes32 invoiceId = withdrawalHashToInvoiceId[withdrawalHash];
+        // Correlate invoice ↔ real withdrawal hash.
         if (invoiceId != bytes32(0)) {
+            withdrawalHashToInvoiceId[withdrawalHash] = invoiceId;
+            invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
             emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
-        }
-    }
-
-    /// @notice Finalizes a withdrawal transaction (public function for Managers)
-    /// @param withdrawalTx The withdrawal transaction to finalize
-    /// @dev This function should be called by a manager after the withdrawal is proven and challenge period has elapsed
-    function finalizeWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external onlyRole(MANAGER_ROLE) {
-        // Calculate withdrawal hash
-        // forge-lint: disable-start(asm-keccak256)
-        bytes32 withdrawalHash = keccak256(
-            abi.encodePacked(
-                withdrawalTx.nonce,
-                withdrawalTx.sender,
-                withdrawalTx.target,
-                withdrawalTx.value,
-                withdrawalTx.gasLimit,
-                withdrawalTx.data
-            )
-        );
-        // forge-lint: disable-end(asm-keccak256)
-
-        // Verify withdrawal has been proven
-        if (!optimismPortal.provenWithdrawals(withdrawalHash)) {
-            revert WithdrawalNotProven();
-        }
-
-        // Finalize the withdrawal (portal will check challenge period)
-        optimismPortal.finalizeWithdrawalTransaction(withdrawalTx);
-
-        // Get invoice ID from withdrawal hash
-        bytes32 invoiceId = withdrawalHashToInvoiceId[withdrawalHash];
-        if (invoiceId != bytes32(0)) {
-            emit SuperchainBridgeCompleted(invoiceId, 1); // Source is L1
         }
     }
 
@@ -481,24 +431,21 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
     /// @inheritdoc ISuperchainBridgeAdapter
     function canFinalizeWithdrawal(bytes32 withdrawalHash) external view returns (bool) {
-        // Check if withdrawal has been proven
-        if (!optimismPortal.provenWithdrawals(withdrawalHash)) {
-            return false;
-        }
+        // The portal enforces the actual challenge period at finalize; this just reports proven-ness.
+        return optimismPortal.provenWithdrawals(withdrawalHash);
+    }
 
-        // Note: The actual challenge period check is done in the OptimismPortal contract
-        // This function just checks if the withdrawal is proven
-        // The portal will revert if the challenge period hasn't elapsed
-        return true;
+    /// @notice Computes the canonical OP Stack withdrawal hash for a withdrawal transaction.
+    /// @param withdrawalTx The withdrawal transaction
+    /// @return The real OP withdrawal hash (matches `Hashing.hashWithdrawal`)
+    function hashWithdrawal(Types.WithdrawalTransaction memory withdrawalTx) external pure returns (bytes32) {
+        return _hashWithdrawal(withdrawalTx);
     }
 
     //
     // Receive Function
     //
 
-    /// @notice Receives native ETH
-    /// @dev This function is called when native ETH is received
-    receive() external payable {
-        // Native ETH received - messagePayload should be provided via completeBridge
-    }
+    /// @notice Receives native ETH (canonical bridge deposits / portal withdrawal finalization deliver here).
+    receive() external payable {}
 }

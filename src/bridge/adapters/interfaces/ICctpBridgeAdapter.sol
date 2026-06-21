@@ -34,10 +34,10 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     // Errors
     //
 
-    /// @notice Thrown when an invalid CCTP domain is provided
+    /// @notice Thrown when an invalid CCTP domain is provided (destination/source not configured)
     error InvalidDomain();
 
-    /// @notice Thrown when an invalid CCTP message is provided
+    /// @notice Thrown when an invalid CCTP message is provided (too short / malformed)
     error InvalidMessage();
 
     /// @notice Thrown when message reception fails
@@ -45,6 +45,21 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
 
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
+
+    /// @notice Thrown when the CCTP message body's mintRecipient is not this adapter
+    error InvalidMintRecipient();
+
+    /// @notice Thrown when the CCTP message body's burnToken does not match the invoice asset
+    error BurnTokenMismatch();
+
+    /// @notice Thrown when the CCTP message body's amount does not match the invoice amount
+    error AmountMismatch();
+
+    /// @notice Thrown when the CCTP message sourceDomain does not map to the invoice sourceChainId
+    error SourceDomainMismatch();
+
+    /// @notice Thrown when a CCTP message nonce has already been consumed (replay protection)
+    error NonceAlreadyUsed(uint32 sourceDomain, uint64 nonce);
 
     //
     // State Variables (Public)
@@ -78,6 +93,19 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     /// @param domain The CCTP domain ID
     /// @return The chain ID, or 0 if not set
     function domainToChainId(uint32 domain) external view returns (uint64);
+
+    /// @notice Whether a chain ID has an explicitly configured CCTP domain mapping
+    /// @param chainId The chain ID
+    /// @return True if a domain mapping has been set for this chain
+    /// @dev Ethereum's canonical CCTP domain IS 0, so domain==0 cannot be used as an
+    ///      "unconfigured" sentinel; this explicit flag distinguishes configured-as-0 from unset.
+    function domainConfigured(uint64 chainId) external view returns (bool);
+
+    /// @notice Whether a (sourceDomain, nonce) CCTP message has already been consumed
+    /// @param sourceDomain The source CCTP domain
+    /// @param nonce The CCTP message nonce
+    /// @return True if the nonce was already used to complete a bridge (replay protection)
+    function usedNonces(uint32 sourceDomain, uint64 nonce) external view returns (bool);
 
     //
     // Configuration Functions

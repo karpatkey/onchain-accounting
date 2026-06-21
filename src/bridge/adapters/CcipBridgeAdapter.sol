@@ -16,7 +16,10 @@ import "src/errors.sol";
 
 /// @title CcipBridgeAdapter
 /// @notice Bridge adapter for Chainlink's Cross-Chain Interoperability Protocol (CCIP)
-/// @dev Recipient is always BridgeEscrow; escrow fallback forwards protocol callbacks (e.g. ccipReceive) to this adapter.
+/// @dev The destination recipient is the sibling adapter (this contract, same address across chains via
+///      CREATE2). The CCIP Router calls `ccipReceive` directly on the adapter; the adapter authenticates the
+///      router, the source chain selector and the source sender against `trustedRemoteAdapter`, then funds the
+///      escrow and releases (funded pass-through, ADR 0012).
 /// @author kpk
 contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -168,8 +171,9 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
             tokenAmounts = new Client.EVMTokenAmount[](0);
         }
 
-        // Recipient is BridgeEscrow; escrow fallback forwards ccipReceive to this adapter
-        bytes memory receiver = abi.encode(bridgeEscrow);
+        // Recipient is the sibling adapter on the destination chain (same address via CREATE2).
+        // The destination CCIP Router calls ccipReceive on it; it authenticates and funds the release.
+        bytes memory receiver = abi.encode(address(this));
 
         // Get extraArgs for this chain (use configured or empty for default)
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
@@ -206,51 +210,57 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Receives CCIP message and processes it
+    /// @dev MANAGER fallback completion: the CCIP Router normally calls `ccipReceive` directly (auto path).
+    ///      This manager path is used only if that did not run. `protocolData` carries the delivered
+    ///      Any2EVMMessage so we can authenticate the source the same way. The adapter must already hold the
+    ///      delivered tokens (CCIP delivered them to this adapter as the receiver); the base then funds+releases.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
-        // Decode protocol data (Any2EVMMessage)
         Client.Any2EVMMessage memory message = abi.decode(protocolData, (Client.Any2EVMMessage));
-
-        if (message.data.length == 0) {
-            revert InvalidCompletionData();
-        }
-
-        // Use messagePayload parameter if available, otherwise use message data directly
-        bytes memory payloadToUse = messagePayload.length > 0 ? messagePayload : message.data;
-
-        // Decode payload using InvoiceDataLib
-        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(payloadToUse);
-
-        // Note: Checksum validation is done in BridgeEscrow.releaseByInvoiceId()
-        // No need to validate here to avoid redundant gas costs
-
-        // Store message payload if provided
-        if (payloadToUse.length > 0) {
-            messagePayloads[data.invoiceId] = payloadToUse;
-        }
-
-        // When recipient is BridgeEscrow, tokens are already at escrow; no transfer needed
+        if (message.data.length == 0) revert InvalidCompletionData();
+        _authenticateSource(message.sourceChainSelector, message.sender);
+        // The base completeBridge funds + releases against `messagePayload`, so it MUST equal the payload we
+        // authenticated from the CCIP message — otherwise a manager could release a different invoice than the
+        // one provenance vouches for.
+        if (keccak256(messagePayload) != keccak256(message.data)) revert InvalidCompletionData();
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(message.data);
+        messagePayloads[data.invoiceId] = message.data;
         emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);
     }
 
     /// @inheritdoc IAny2EVMMessageReceiver
-    /// @dev When called by BridgeEscrow (escrow fallback forwards here), completes delivery.
-    ///      When called directly on the adapter, reverts.
-    function ccipReceive(Client.Any2EVMMessage calldata message) external override {
-        if (msg.sender != bridgeEscrow) {
-            if (msg.sender != address(router)) revert InvalidRouter();
-            revert InvalidBridgeData();
+    /// @dev Auto completion path. Called by the genuine CCIP Router on the destination chain. Authenticates
+    ///      the router, the source chain selector and the source sender, verifies the delivered token matches
+    ///      the invoice, then funds the escrow and releases (funded pass-through).
+    function ccipReceive(Client.Any2EVMMessage calldata message) external override nonReentrant {
+        if (msg.sender != address(router)) revert InvalidRouter();
+        _authenticateSource(message.sourceChainSelector, message.sender);
+        if (message.data.length == 0) revert InvalidCompletionData();
+
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(message.data);
+        address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+
+        // Verify CCIP actually delivered the invoiced asset+amount to this adapter.
+        bool delivered;
+        for (uint256 i = 0; i < message.destTokenAmounts.length; i++) {
+            if (message.destTokenAmounts[i].token == asset && message.destTokenAmounts[i].amount >= data.amount) {
+                delivered = true;
+                break;
+            }
         }
-        _completeDelivery(message.data);
+        if (!delivered) revert InvalidBridgeData();
+
+        messagePayloads[data.invoiceId] = message.data;
+        _fundAndRelease(message.data, asset, data.amount);
+
+        emit CcipBridgeCompleted(data.invoiceId, message.messageId, message.sourceChainSelector);
     }
 
-    function _completeDelivery(bytes memory messagePayload) internal {
-        if (messagePayload.length == 0) revert InvalidCompletionData();
-        if (messagePayload.length >= 96) {
-            InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
-            messagePayloads[data.invoiceId] = messagePayload;
-        }
-        IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
+    /// @dev Authenticates that an inbound CCIP message came from a known sibling adapter on a known source chain.
+    function _authenticateSource(uint64 sourceChainSelector, bytes memory sender) internal view {
+        uint64 srcChainId = selectorToChainId[sourceChainSelector];
+        if (srcChainId == 0) revert UnsupportedChain(sourceChainSelector);
+        address remote = abi.decode(sender, (address));
+        if (_toBytes32(remote) != trustedRemoteAdapter[srcChainId]) revert InvalidBridgeData();
     }
 
     //

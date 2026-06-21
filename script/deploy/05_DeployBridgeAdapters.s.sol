@@ -179,14 +179,15 @@ contract DeployBridgeAdapters is BaseDeployScript {
             console2.log("Stargate already deployed");
             return;
         }
-        address router = vm.parseAddress(routerStr);
+        // Stargate V2 routes via the LayerZero endpoint; the legacy V1 router param is no longer used.
+        routerStr;
         string memory endpointStr =
             ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Stargate", "endpoint");
         address endpoint = vm.parseAddress(endpointStr);
         string memory version = _adapterVersion("Stargate");
 
         StargateBridgeAdapter adapter = new StargateBridgeAdapter();
-        adapter.initialize(chainConfig.admin, bridgeProxy, router, endpoint, version);
+        adapter.initialize(chainConfig.admin, bridgeProxy, endpoint, version);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Stargate", address(adapter));
         console2.log("StargateBridgeAdapter deployed at:", address(adapter));
     }

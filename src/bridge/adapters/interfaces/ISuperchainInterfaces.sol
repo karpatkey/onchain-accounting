@@ -103,6 +103,24 @@ interface IL2StandardBridge {
 }
 
 // ============================================================================
+// Optimism Cross-Domain Messenger Interface
+// ============================================================================
+
+/// @title ICrossDomainMessenger Interface
+/// @notice Minimal interface for the OP Stack Cross-Domain Messenger (L1 and L2)
+/// @dev Used to authenticate the provenance of a relayed cross-domain message. On the destination chain the
+///      messenger relays the message and exposes the original sender on the source chain via
+///      `xDomainMessageSender()` (only meaningful during the relayed call). The Superchain adapter, as the
+///      destination recipient, verifies `msg.sender == <messenger>` and
+///      `messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`.
+interface ICrossDomainMessenger {
+    /// @notice Returns the address of the sender of the currently-being-relayed cross-domain message.
+    /// @return The source-chain sender address (the sibling adapter for an authenticated bridge message).
+    // forge-lint: disable-next-line(mixed-case-function)
+    function xDomainMessageSender() external view returns (address);
+}
+
+// ============================================================================
 // Optimism Portal Interface
 // ============================================================================
 
